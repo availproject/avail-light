@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
+use avail_light::types::IdentityConfig;
 use avail_light::{api, data, network::rpc, telemetry};
 use avail_light::{
 	consts::EXPECTED_NETWORK_VERSION,
@@ -21,9 +22,11 @@ use tokio::sync::{
 	broadcast,
 	mpsc::{channel, Sender},
 };
+use tracing::Subscriber;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::{
-	fmt::format::{self, DefaultFields, Format, Full, Json},
+	fmt::format::{self},
 	FmtSubscriber,
 };
 
@@ -45,16 +48,16 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 
 /// Light Client for Avail Blockchain
 
-fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
+fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_max_level(log_level)
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.event_format(format::json())
 		.finish()
 }
 
-fn default_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Full>> {
+fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_max_level(log_level)
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
@@ -82,9 +85,14 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
+
+	let identity_cfg =
+		IdentityConfig::load_or_init("identity.toml", opts.avail_passphrase.as_deref())?;
+
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}");
+	info!("Running Avail light client version: {version}. Role: {CLIENT_ROLE}.");
 	info!("Using config: {cfg:?}");
+	info!("Avail address is: {}", &identity_cfg.avail_address);
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
@@ -115,6 +123,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			cfg.ot_collector_endpoint.clone(),
 			peer_id,
 			CLIENT_ROLE.into(),
+			identity_cfg.avail_address.clone(),
+			#[cfg(feature = "crawl")]
+			cfg.crawl.crawl_block_delay,
 		)
 		.context("Unable to initialize OpenTelemetry service")?,
 	);
@@ -135,7 +146,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Start listening on provided port
 	let port = cfg.port;
-	info!("Listening on port: {port}");
 
 	// always listen on UDP to prioritize QUIC
 	p2p_client
@@ -147,6 +157,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		)
 		.await
 		.context("Listening on UDP not to fail.")?;
+	info!("Listening for QUIC on port: {port}");
+
+	p2p_client
+		.start_listening(
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Tcp(port + 1)),
+		)
+		.await
+		.context("Listening on TCP not to fail.")?;
+	info!("Listening for TCP on port: {port}");
 
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
@@ -154,10 +175,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.bootstrap_on_startup(cfg.clone().bootstraps.iter().map(Into::into).collect())
 		.await?;
 
+	info!("Bootstrap done");
+
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
 
-	let pp = Arc::new(kate_recovery::testnet::public_params(1024));
+	let pp = Arc::new(kate_recovery::couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();
@@ -188,6 +211,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let server = api::server::Server {
 		db: db.clone(),
 		cfg: cfg.clone(),
+		identity_cfg,
 		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),

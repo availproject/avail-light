@@ -57,6 +57,7 @@ pub async fn run(
 	mode: CrawlMode,
 ) {
 	info!("Starting crawl client...");
+
 	let delay = Delay(Some(Duration::from_secs(delay)));
 
 	while let Ok(rpc::Event::HeaderUpdate {

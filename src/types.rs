@@ -6,6 +6,8 @@ use anyhow::anyhow;
 use anyhow::{Context, Result};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use bip39::{Language, Mnemonic, MnemonicType};
+use clap::Parser;
 use codec::{Decode, Encode};
 use kate_recovery::{
 	commitments,
@@ -13,16 +15,14 @@ use kate_recovery::{
 };
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
+use sp_core::crypto::Ss58Codec;
 use sp_core::{blake2_256, bytes, ed25519};
+use std::fs;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::str::FromStr;
-
-use clap::Parser;
-use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
-use std::{fmt, fs};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
-use subxt::ext::sp_runtime::app_crypto::SecretStringError;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -49,6 +49,9 @@ pub struct CliOpts {
 	/// Log level
 	#[arg(long)]
 	pub verbosity: Option<LogLevel>,
+	/// Avail secret seed phrase password
+	#[arg(long)]
+	pub avail_passphrase: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -162,11 +165,11 @@ impl TryFrom<String> for CompactMultiaddress {
 	type Error = anyhow::Error;
 
 	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
-		let Some((multiaddr, peer_id)) = value.rsplit_once('/') else {
+		let Some((_, peer_id)) = value.rsplit_once('/') else {
 			return Err(anyhow!("Invalid multiaddress string"));
 		};
 		let peer_id = PeerId::from_str(peer_id)?;
-		let multiaddr = Multiaddr::from_str(multiaddr)?;
+		let multiaddr = Multiaddr::from_str(&value)?;
 		Ok(CompactMultiaddress((peer_id, multiaddr)))
 	}
 }
@@ -289,7 +292,7 @@ pub struct RuntimeConfig {
 	pub replication_factor: u16,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
-	pub connection_idle_timeout: u32,
+	pub connection_idle_timeout: u64,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub query_timeout: u32,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
@@ -307,34 +310,9 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
-	/// Avail account secret key. (default: None)
-	#[serde(skip_serializing)]
-	pub avail_secret_key: Option<AvailSecretKey>,
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
 	pub crawl: crate::crawl_client::CrawlConfig,
-}
-
-#[derive(Deserialize, Clone)]
-#[serde(try_from = "String")]
-pub struct AvailSecretKey(pub Pair);
-
-impl fmt::Debug for AvailSecretKey {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_tuple("AvailSecretKey")
-			.field(&self.0.public())
-			.finish()
-	}
-}
-
-impl TryFrom<String> for AvailSecretKey {
-	type Error = SecretStringError;
-
-	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
-		Pair::from_string_with_seed(&value, None)
-			.map(|(pair, _)| pair)
-			.map(AvailSecretKey)
-	}
 }
 
 pub struct Delay(pub Option<Duration>);
@@ -390,6 +368,7 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
+	pub connection_idle_timeout: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -402,6 +381,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
+			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout),
 		}
 	}
 }
@@ -412,7 +392,6 @@ pub struct KademliaConfig {
 	pub record_replication_factor: NonZeroUsize,
 	pub record_replication_interval: Option<Duration>,
 	pub publication_interval: Option<Duration>,
-	pub connection_idle_timeout: Duration,
 	pub query_timeout: Duration,
 	pub query_parallelism: NonZeroUsize,
 	pub caching_max_peers: u16,
@@ -430,7 +409,6 @@ impl From<&RuntimeConfig> for KademliaConfig {
 				.expect("Invalid replication factor"),
 			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
 			publication_interval: Some(Duration::from_secs(val.publication_interval.into())),
-			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout.into()),
 			query_timeout: Duration::from_secs(val.query_timeout.into()),
 			query_parallelism: std::num::NonZeroUsize::new(val.query_parallelism as usize)
 				.expect("Invalid query parallelism value"),
@@ -537,7 +515,7 @@ impl Default for RuntimeConfig {
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
-			ot_collector_endpoint: "http://otelcollector.avail.tools:4317".to_string(),
+			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			disable_rpc: false,
 			disable_proof_verification: false,
 			dht_parallelization_limit: 20,
@@ -561,7 +539,6 @@ impl Default for RuntimeConfig {
 			max_kad_record_number: 2400000,
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
-			avail_secret_key: None,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 		}
@@ -571,7 +548,7 @@ impl Default for RuntimeConfig {
 #[derive(Clone)]
 pub enum Network {
 	Local,
-	Biryani,
+	Goldberg,
 }
 
 impl FromStr for Network {
@@ -580,8 +557,8 @@ impl FromStr for Network {
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		match s {
 			"local" => Ok(Network::Local),
-			"biryani" => Ok(Network::Biryani),
-			_ => Err("valid values are: local, biryani".to_string()),
+			"goldberg" => Ok(Network::Goldberg),
+			_ => Err("valid values are: local, biryani, goldberg".to_string()),
 		}
 	}
 }
@@ -590,15 +567,15 @@ impl Network {
 	fn peer_id(&self) -> &str {
 		match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
-			Network::Biryani => "12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf",
+			Network::Goldberg => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		}
 	}
 
 	fn multiaddr(&self) -> &str {
 		match self {
 			Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
-			Network::Biryani => {
-				"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1"
+			Network::Goldberg => {
+				"/dns/bootnode.1.lightclient.goldberg.avail.tools/udp/37000/quic-v1"
 			},
 		}
 	}
@@ -606,7 +583,14 @@ impl Network {
 	fn full_node_ws(&self) -> &str {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
-			Network::Biryani => "wss://biryani-devnet.avail.tools:443/ws",
+			Network::Goldberg => "wss://goldberg.avail.tools:443/ws",
+		}
+	}
+
+	fn ot_collector_endpoint(&self) -> &str {
+		match self {
+			Network::Local => "http://127.0.0.1:4317",
+			Network::Goldberg => "http://otel.lightclient.goldberg.avail.tools:4317",
 		}
 	}
 }
@@ -673,6 +657,7 @@ impl RuntimeConfig {
 			);
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+			self.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		}
 
 		if let Some(loglvl) = &opts.verbosity {
@@ -686,6 +671,42 @@ impl RuntimeConfig {
 		self.app_id = opts.app_id.or(self.app_id);
 
 		Ok(())
+	}
+}
+
+pub struct IdentityConfig {
+	/// Avail account secret key. (secret is generated if it is not configured)
+	pub avail_key_pair: Pair,
+	/// Avail ss58 address
+	pub avail_address: String,
+}
+
+impl IdentityConfig {
+	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
+		#[derive(Default, Serialize, Deserialize)]
+		struct Config {
+			pub avail_secret_seed_phrase: Option<String>,
+		}
+
+		let mut config: Config = confy::load_path(path)?;
+
+		let phrase = match config.avail_secret_seed_phrase.as_ref() {
+			None => Mnemonic::new(MnemonicType::Words24, Language::English).into_phrase(),
+			Some(phrase) => phrase.to_owned(),
+		};
+
+		if config.avail_secret_seed_phrase.is_none() {
+			config.avail_secret_seed_phrase = Some(phrase.clone());
+			confy::store_path(path, &config)?;
+		}
+
+		let (avail_key_pair, _) = Pair::from_string_with_seed(&phrase, password)?;
+		let avail_address = avail_key_pair.public().to_ss58check();
+
+		Ok(IdentityConfig {
+			avail_key_pair,
+			avail_address,
+		})
 	}
 }
 

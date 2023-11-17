@@ -7,12 +7,17 @@ use crate::{
 	data::{Database, RocksDB},
 	network::rpc::Client,
 	types::{RuntimeConfig, State},
+	network::rpc::{Client, Node},
+	types::{IdentityConfig, RuntimeConfig, State},
 };
+use avail_subxt::AvailConfig;
+use sp_core::sr25519::Pair;
 use std::{
 	convert::Infallible,
 	fmt::Display,
 	sync::{Arc, Mutex},
 };
+use subxt::tx::PairSigner;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
@@ -179,6 +184,7 @@ pub fn routes(
 	network_version: String,
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
+	identity_config: IdentityConfig,
 	node_client: Client,
 	ws_clients: WsClients,
 	db: RocksDB,
@@ -189,7 +195,7 @@ pub fn routes(
 	};
 
 	let app_id = config.app_id.as_ref();
-	let pair_signer = config.avail_secret_key.clone().map(From::from);
+	let pair_signer = <PairSigner<AvailConfig, Pair>>::new(identity_config.avail_key_pair);
 
 	let submitter = app_id.map(|&app_id| {
 		Arc::new(transactions::Submitter {
@@ -458,7 +464,7 @@ mod tests {
 			.await;
 		assert_eq!(
 			response.body(),
-			r#"{"hash":"0x02419eab253b08659745c684e0bb26c15f327336d46c2c1e76e6cb67f734f79f","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":null,"commitments":[],"app_lookup":{"size":0,"index":[]}}}"#
+			r#"{"hash":"0xffb84ad27c9d095b0f4790bd168637a6891f962d5a738e2dc7fbdb7a482cce83","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":0,"index":[]}}}"#
 		);
 	}
 
@@ -593,9 +599,7 @@ mod tests {
 	}
 
 	#[derive(Clone)]
-	struct MockSubmitter {
-		pub has_signer: bool,
-	}
+	struct MockSubmitter {}
 
 	#[async_trait]
 	impl transactions::Submit for MockSubmitter {
@@ -605,10 +609,6 @@ mod tests {
 				hash: H256::random(),
 				index: 0,
 			})
-		}
-
-		fn has_signer(&self) -> bool {
-			self.has_signer
 		}
 	}
 
@@ -637,7 +637,7 @@ mod tests {
 	#[test_case(r#"{"data":"dHJhbnooNhY3Rpb24:"}"#, b"Request body deserialize error: Invalid byte" ; "Invalid base64 value")]
 	#[tokio::test]
 	async fn submit_route_bad_request(json: &str, message: &[u8]) {
-		let route = super::submit_route(Some(Arc::new(MockSubmitter { has_signer: true })));
+		let route = super::submit_route(Some(Arc::new(MockSubmitter {})));
 		let response = warp::test::request()
 			.method("POST")
 			.path("/v2/submit")
@@ -648,23 +648,11 @@ mod tests {
 		assert!(response.body().starts_with(message));
 	}
 
-	#[tokio::test]
-	async fn submit_route_no_signign_key() {
-		let route = super::submit_route(Some(Arc::new(MockSubmitter { has_signer: false })));
-		let response = warp::test::request()
-			.method("POST")
-			.path("/v2/submit")
-			.body(r#"{"data":"dHJhbnNhY3Rpb24K"}"#)
-			.reply(&route)
-			.await;
-		assert_eq!(response.status(), StatusCode::NOT_FOUND);
-	}
-
 	#[test_case(r#"{"data":"dHJhbnNhY3Rpb24K"}"# ; "No errors in case of submitted data")]
 	#[test_case(r#"{"extrinsic":"dHJhbnNhY3Rpb24K"}"# ; "No errors in case of submitted extrinsic")]
 	#[tokio::test]
 	async fn submit_route_extrinsic(body: &str) {
-		let route = super::submit_route(Some(Arc::new(MockSubmitter { has_signer: true })));
+		let route = super::submit_route(Some(Arc::new(MockSubmitter {})));
 		let response = warp::test::request()
 			.method("POST")
 			.path("/v2/submit")
@@ -801,20 +789,19 @@ mod tests {
 		Uuid::try_parse(uuid).unwrap()
 	}
 
-	#[test_case(r#"{"type":"submit","request_id":"16b24956-2e01-4ba8-bad5-456c561c87d7","message":{"data":""}}"#, None, Some("16b24956-2e01-4ba8-bad5-456c561c87d7"), "Submit is not configured" ; "No submitter")]
-	#[test_case(r#"{"type":"submit","request_id":"537a3c39-c029-4283-9612-17465bf7cfd1","message":{"data":"dHJhbnNhY3Rpb24K"}}"#, Some(false), Some("537a3c39-c029-4283-9612-17465bf7cfd1"), "Signer is not configured" ; "No signer")]
-	#[test_case(r#"{"type":"submit","request_id":"36bc1f28-e093-422f-964b-1cb1b3882baf","message":{"extrinsic":""}}"#, Some(false), Some("36bc1f28-e093-422f-964b-1cb1b3882baf"), "Transaction is empty" ; "Empty extrinsic")]
-	#[test_case(r#"{"type":"submit","request_id":"cc60b2f3-d9ff-4c73-9632-d21d07f7b620","message":{"data":""}}"#, Some(true), Some("cc60b2f3-d9ff-4c73-9632-d21d07f7b620"), "Transaction is empty" ; "Empty data")]
-	#[test_case(r#"{"type":"submit","request_id":"9181df86-22f0-42a1-a965-60adb9fc6bdc","message":{"extrinsic":"bad"}}"#, Some(false), None, "Failed to parse request" ; "Bad extrinsic")]
-	#[test_case(r#"{"type":"submit","request_id":"78cd7b7b-ba70-48e9-a1da-96b370db4d8f","message":{"data":"bad"}}"#, Some(true), None, "Failed to parse request" ; "Bad data")]
+	#[test_case(r#"{"type":"submit","request_id":"16b24956-2e01-4ba8-bad5-456c561c87d7","message":{"data":""}}"#, false, Some("16b24956-2e01-4ba8-bad5-456c561c87d7"), "Submit is not configured" ; "No submitter")]
+	#[test_case(r#"{"type":"submit","request_id":"36bc1f28-e093-422f-964b-1cb1b3882baf","message":{"extrinsic":""}}"#, true, Some("36bc1f28-e093-422f-964b-1cb1b3882baf"), "Transaction is empty" ; "Empty extrinsic")]
+	#[test_case(r#"{"type":"submit","request_id":"cc60b2f3-d9ff-4c73-9632-d21d07f7b620","message":{"data":""}}"#, true, Some("cc60b2f3-d9ff-4c73-9632-d21d07f7b620"), "Transaction is empty" ; "Empty data")]
+	#[test_case(r#"{"type":"submit","request_id":"9181df86-22f0-42a1-a965-60adb9fc6bdc","message":{"extrinsic":"bad"}}"#, true, None, "Failed to parse request" ; "Bad extrinsic")]
+	#[test_case(r#"{"type":"submit","request_id":"78cd7b7b-ba70-48e9-a1da-96b370db4d8f","message":{"data":"bad"}}"#, true, None, "Failed to parse request" ; "Bad data")]
 	#[tokio::test]
 	async fn ws_route_submit_bad_requests(
 		request: &str,
-		signer: Option<bool>,
+		submitter: bool,
 		expected_request_id: Option<&str>,
 		expected: &str,
 	) {
-		let submitter = signer.map(|has_signer| MockSubmitter { has_signer });
+		let submitter = submitter.then_some(MockSubmitter {});
 		let expected_request_id = expected_request_id.map(to_uuid);
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 		let response = test.ws_send_text(request).await;
@@ -826,7 +813,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn ws_route_submit_data() {
-		let submitter = Some(MockSubmitter { has_signer: true });
+		let submitter = Some(MockSubmitter {});
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 
 		let request = r#"{"type":"submit","request_id":"fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a","message":{"data":"dHJhbnNhY3Rpb24K"}}"#;
@@ -844,7 +831,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn ws_route_submit_extrinsic() {
-		let submitter = Some(MockSubmitter { has_signer: true });
+		let submitter = Some(MockSubmitter {});
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 
 		let request = r#"{"type":"submit","request_id":"fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a","message":{"extrinsic":"dHJhbnNhY3Rpb24K"}}"#;

@@ -21,6 +21,7 @@ pub enum MetricValue {
 	DHTPutRowsSuccess(f64),
 	KadRoutingPeerNum(usize),
 	HealthCheck(),
+	BlockProcessingDelay(f64),
 	#[cfg(feature = "crawl")]
 	CrawlCellsSuccessRate(f64),
 	#[cfg(feature = "crawl")]

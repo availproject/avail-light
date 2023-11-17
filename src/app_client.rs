@@ -66,8 +66,12 @@ trait AppClient {
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>>;
 
-	async fn get_kate_rows(&self, rows: Vec<u32>, block_hash: H256)
-		-> Result<Vec<Option<Vec<u8>>>>;
+	async fn get_kate_rows(
+		&self,
+		rows: Vec<u32>,
+		dimensions: Dimensions,
+		block_hash: H256,
+	) -> Result<Vec<Option<Vec<u8>>>>;
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
 		&self,
@@ -195,9 +199,18 @@ impl AppClient for AppClientImpl {
 	async fn get_kate_rows(
 		&self,
 		rows: Vec<u32>,
+		dimensions: Dimensions,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		self.rpc_client.request_kate_rows(rows, block_hash).await
+		let rows = rows
+			.clone()
+			.into_iter()
+			.zip(self.rpc_client.request_kate_rows(rows, block_hash).await?);
+		let mut result = vec![None; dimensions.extended_rows() as usize];
+		for (i, row) in rows {
+			result[i as usize] = row;
+		}
+		Ok(result)
 	}
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
@@ -322,7 +335,7 @@ async fn process_block(
 			"Fetching missing app rows from RPC: {dht_missing_rows:?}",
 		);
 		app_client
-			.get_kate_rows(dht_missing_rows, block.header_hash)
+			.get_kate_rows(dht_missing_rows, dimensions, block.header_hash)
 			.await?
 	};
 
@@ -609,10 +622,12 @@ mod tests {
 		if cfg.disable_rpc {
 			mock_client.expect_get_kate_rows().never();
 		} else {
-			mock_client.expect_get_kate_rows().returning(move |_, _| {
-				let kate_rows_clone = kate_rows.clone();
-				Box::pin(async move { Ok(kate_rows_clone) })
-			});
+			mock_client
+				.expect_get_kate_rows()
+				.returning(move |_, _, _| {
+					let kate_rows_clone = kate_rows.clone();
+					Box::pin(async move { Ok(kate_rows_clone) })
+				});
 		}
 		mock_client
 			.expect_reconstruct_rows_from_dht()

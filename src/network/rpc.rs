@@ -136,6 +136,10 @@ impl Nodes {
 		Some(node.clone())
 	}
 
+	pub fn get_current_mut(&mut self) -> &mut Node {
+		&mut self.list[self.current_index]
+	}
+
 	pub fn new(nodes: &[String]) -> Self {
 		let candidates = nodes.to_owned();
 		Self {

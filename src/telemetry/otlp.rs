@@ -9,6 +9,8 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 7 } else { 6 };
+
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
@@ -17,16 +19,22 @@ pub struct Metrics {
 	multiaddress: RwLock<String>,
 	ip: RwLock<String>,
 	role: String,
+	avail_address: String,
+	#[cfg(feature = "crawl")]
+	crawl_block_delay: u64,
 }
 
 impl Metrics {
-	async fn attributes(&self) -> [KeyValue; 5] {
+	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		[
 			KeyValue::new("version", clap::crate_version!()),
 			KeyValue::new("role", self.role.clone()),
 			KeyValue::new("peerID", self.peer_id.clone()),
 			KeyValue::new("multiaddress", self.multiaddress.read().await.clone()),
 			KeyValue::new("ip", self.ip.read().await.clone()),
+			KeyValue::new("avail_address", self.avail_address.clone()),
+			#[cfg(feature = "crawl")]
+			KeyValue::new("crawl_block_delay", self.crawl_block_delay.to_string()),
 		]
 	}
 
@@ -110,6 +118,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::HealthCheck() => {
 				self.record_u64("up", 1).await?;
 			},
+			super::MetricValue::BlockProcessingDelay(number) => {
+				self.record_f64("block_processing_delay", number).await?;
+			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
 				self.record_f64("crawl_cells_success_rate", number).await?;
@@ -131,7 +142,13 @@ impl super::Metrics for Metrics {
 	}
 }
 
-pub fn initialize(endpoint: String, peer_id: String, role: String) -> Result<Metrics, Error> {
+pub fn initialize(
+	endpoint: String,
+	peer_id: String,
+	role: String,
+	avail_address: String,
+	#[cfg(feature = "crawl")] crawl_block_delay: u64,
+) -> Result<Metrics, Error> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),
@@ -160,5 +177,8 @@ pub fn initialize(endpoint: String, peer_id: String, role: String) -> Result<Met
 		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update
 		ip: RwLock::new("".to_string()),
 		role,
+		avail_address,
+		#[cfg(feature = "crawl")]
+		crawl_block_delay,
 	})
 }

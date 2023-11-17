@@ -1,8 +1,6 @@
 use super::{
 	transactions,
-	types::{
-		Payload, Request, Response, Status, Transaction, Version, WsClients, WsError, WsResponse,
-	},
+	types::{Payload, Request, Response, Status, Version, WsClients, WsError, WsResponse},
 };
 use crate::{
 	api::v2::types::{Error, Sender},
@@ -107,9 +105,6 @@ async fn handle_request(
 			if transaction.is_empty() {
 				return Err(Error::bad_request(request_id, "Transaction is empty."));
 			}
-			if matches!(transaction, Transaction::Data(_)) && !submitter.has_signer() {
-				return Err(Error::bad_request(request_id, "Signer is not configured."));
-			};
 
 			submitter
 				.submit(transaction)

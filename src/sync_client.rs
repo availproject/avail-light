@@ -137,6 +137,7 @@ async fn process_block(
 	{
 		// TODO: If block header storing fails, that block will be skipped upon restart
 		// Better option would be to check for confidence
+		info!("Block header {block_number} already in DB");
 		return Ok(());
 	};
 
@@ -271,8 +272,6 @@ pub async fn run(
 
 	info!("Syncing block headers for {sync_range:?}");
 	for block_number in sync_range {
-		info!("Testing block {block_number}!");
-
 		{
 			let mut state = state.lock().unwrap();
 			state.sync_latest.replace(block_number);
@@ -312,13 +311,13 @@ mod tests {
 		config::substrate::Digest,
 	};
 	use hex_literal::hex;
-	use kate_recovery::testnet;
+	use kate_recovery::couscous;
 	use mockall::predicate::eq;
 
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::public_params());
 		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let mut mock_client = MockSyncClient::new();
@@ -451,7 +450,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::public_params());
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		let header: DaHeader = DaHeader {
@@ -585,7 +584,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_header_in_dbstore() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::public_params());
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		mock_client

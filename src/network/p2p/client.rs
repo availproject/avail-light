@@ -12,7 +12,7 @@ use kate_recovery::{
 	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
-	kad::{record::Key, PeerRecord, Quorum, Record},
+	kad::{PeerRecord, Quorum, Record, RecordKey},
 	multiaddr::Protocol,
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
@@ -443,6 +443,7 @@ impl Client {
 		.await
 	}
 
+
 	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(DialPeer {
@@ -548,13 +549,13 @@ impl Client {
 	// Return type assumes that cell is not found in case when error is present.
 	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
 		let reference = position.reference(block_number);
-		let record_key = Key::from(reference.as_bytes().to_vec());
+		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
 		match self.get_kad_record(record_key).await {
 			Ok(peer_record) => {
-				debug!("Fetched cell {reference} from the DHT");
+				trace!("Fetched cell {reference} from the DHT");
 
 				let try_content: Result<[u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE], _> =
 					peer_record.record.value.try_into();
@@ -567,7 +568,7 @@ impl Client {
 				Some(Cell { position, content })
 			},
 			Err(error) => {
-				debug!("Cell {reference} not found in the DHT: {error}");
+				trace!("Cell {reference} not found in the DHT: {error}");
 				None
 			},
 		}
@@ -580,7 +581,7 @@ impl Client {
 	) -> Option<(u32, Vec<u8>)> {
 		let row_index = RowIndex(row_index);
 		let reference = row_index.reference(block_number);
-		let record_key = Key::from(reference.as_bytes().to_vec());
+		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
@@ -714,4 +715,75 @@ impl Client {
 		}
 		Err(anyhow!("No IP Address was present in Multiaddress"))
 	}
+}
+
+#[derive(Debug)]
+pub enum Command {
+	StartListening {
+		addr: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	AddAddress {
+		peer_id: PeerId,
+		peer_addr: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	DialAddress {
+		peer_id: PeerId,
+		peer_addr: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	Bootstrap {
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	GetKadRecord {
+		key: RecordKey,
+		response_sender: oneshot::Sender<Result<PeerRecord>>,
+	},
+	PutKadRecordBatch {
+		records: Vec<Record>,
+		quorum: Quorum,
+		response_sender: oneshot::Sender<DHTPutSuccess>,
+	},
+	CountDHTPeers {
+		response_sender: oneshot::Sender<usize>,
+	},
+	GetCellsInDHTPerBlock {
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	GetMultiaddress {
+		response_sender: oneshot::Sender<Option<Multiaddr>>,
+	},
+	ReduceKademliaMapSize,
+	AddAutonatServer {
+		peer_id: PeerId,
+		peer_address: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+}
+
+/// This utility function takes the Multiaddress as parameter and searches for
+/// the Protocol::Udp(_) part of it, and replaces it with a TCP variant, while
+/// shifting the port number by 1 up.
+///
+/// Used to setup a proper Multiaddress for AutoNat servers on TCP.
+fn autonat_address(addr: Multiaddr) -> Multiaddr {
+	let mut stacks = addr.iter().collect::<Vec<_>>();
+	// search for the first occurrence of Protocol::Udp, to replace it with Tcp variant
+	stacks.iter_mut().find_map(|protocol| {
+		if let Protocol::Udp(port) = protocol {
+			// replace the UDP variant, moving the port number 1 forward
+			*protocol = Protocol::Tcp(*port + 1);
+			Some(protocol)
+		} else {
+			None
+		}
+	});
+
+	let mut addr = Multiaddr::empty();
+	for stack in stacks {
+		addr.push(stack)
+	}
+
+	addr
 }

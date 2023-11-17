@@ -55,13 +55,13 @@ Resulting `avail-light` binary can be found in the `target/release` directory.
 The quickest way to run the Avail Light Client is to connect it to Avail testnet, using `--network` flag.
 
 ```sh
-./avail-light --network biryani
+./avail-light --network goldberg
 ```
 
 You can also specify a configuration file to supplement the default configuration:
 
 ```sh
-./avail-light --config config.yaml --network biryani
+./avail-light --config config.yaml --network goldberg
 ```
 
 ### Local development
@@ -97,7 +97,7 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
-bootstraps = ["/ip4/127.0.0.1/tcp/39000/quic-v1/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN"]
+bootstraps = ["/ip4/127.0.0.1/tcp/39000/quic-v1/p2p/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN"]
 ```
 
 Full configuration reference can be found [below](#configuration-reference).
@@ -105,11 +105,21 @@ Full configuration reference can be found [below](#configuration-reference).
 _NOTE_
 Flags and options take precedence to the configuration file if both are set (i.e. `--port` option overwrites the `port` parameter from the config file).
 
+Example identity file:
+
+_WARNING:_ This file contains a private key. Please ensure only authorized access and prefer using encrypted storage.
+
+```toml
+# identity.toml
+avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold race lonely fit walk//Alice"
+```
+
 ## Options
 
 - `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
-  - `biryani`: Biryani Testnet
-  - `local`: For local development
+  - `biryani`: Biryani Devnet
+  - `goldberg`: Goldberg Testnet
+  - `local`: Local development
 - `--config`: Location of the configuration file
 - `--appId`: The `appID` parameter for the application client
 - `--port`: LibP2P listener port
@@ -117,11 +127,18 @@ Flags and options take precedence to the configuration file if both are set (i.e
   - `trace`
   - `debug`
   - `info`
+  - `warn`
+  - `error`
+- `--avail-passphrase <PASSPHRASE>`: Avail secret seed phrase password, flag is optional
 
 ## Flags
 
 - `--version`: Light Client version
 - `--clean`: Remove previous state dir set in `avail_path` config parameter
+
+## Identity
+
+In the Avail network, a light client's identity can be configured using the `identity.toml` file. If not specified, a secret seed phrase will be generated and stored in the identity file when the light client starts. To use an existing seed phrase, set the `avail_secret_seed_phrase` entry in the `identity.toml` file. Seed phrase will be used to derive Sr25519 key pair for signing.
 
 ## Configuration reference
 
@@ -146,7 +163,7 @@ autonat_throttle = 2
 autonat_retry_interval = 10
 # Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
 autonat_refresh_interval = 30
-# AutoNat on init delay before starting the fist probe. (default: 5 sec)
+# AutoNat on init delay before starting the first probe. (default: 5 sec)
 autonat_boot_delay = 10
 # Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
 identify_protocol = "/avail_kad/id/1.0.0"
@@ -160,12 +177,12 @@ relays = ["/ip4/13.49.44.246/udp/39111/quic-v1/12D3KooWBETtE42fN7DZ5QsGgi7qfrN3j
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 app_id = 0
-# Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
+# Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
 confidence = 92.0
 # File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
-# OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
-ot_collector_endpoint = "http://otelcollector.avail.tools:4317"
+# OpenTelemetry Collector endpoint (default: `http://127.0.0.1:4317`)
+ot_collector_endpoint = "http://127.0.0.1:4317"
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 log_format_json = true
 # Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client (default: None)
@@ -180,7 +197,7 @@ query_proof_rpc_parallel_tasks = 8
 max_cells_per_rpc = 30
 # Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 dht_parallelization_limit = 20
-# Number of records to be put in DHT simultaneuosly (defaut: 100)
+# Number of records to be put in DHT simultaneously (default: 100)
 put_batch_size = 100
 # Number of seconds to postpone block processing after the block finalized message arrives. (default: 0).
 block_processing_delay = 0
@@ -190,7 +207,7 @@ sync_start_block = 0
 # starting block at the point the LC is started and is only checked for new blocks. (default: true)
 sync_finality_enable = true
 # Time-to-live for DHT entries in seconds (default: 24h).
-# Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this value - not greater than 1hr.
+# Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far below this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
 record_ttl = 86400
 # Sets the (re-)publication interval of stored records, in seconds. This interval should be significantly shorter than the record TTL, ensure records do not expire prematurely. (default: 12h).
@@ -230,7 +247,7 @@ max_kad_provided_keys = 1024
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
 - `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).
 - When an LC is freshly connected to a network, block finality is synced from the first block. If the LC is connected to a non-archive node on a long running network, initial validator sets won't be available and the finality checks will fail. In that case we recommend disabling the `sync_finality_enable` flag
-- When switching between the networks (i.e. Biryani and local devnet), LC state in the `avail_path` directory has to be cleared
+- When switching between the networks (i.e. Goldberg and local devnet), LC state in the `avail_path` directory has to be cleared
 - OpenTelemetry push metrics are used for light client observability
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
 
@@ -254,7 +271,7 @@ Response:
 
 ### Fetching the confidence for given block
 
-To fetch the the confidence for specific block, which is already processed by application client, we can perform `GET` request on `/v1/confidece/{block_number}` endpoint.
+To fetch the confidence for specific block, which is already processed by application client, we can perform `GET` request on `/v1/confidece/{block_number}` endpoint.
 
 ```sh
 curl "http://localhost:7000/v1/confidence/1"
@@ -404,7 +421,7 @@ Given a block number, it returns the confidence computed by the light client for
 
 > Path parameters:
 
-- `block_number` - block number (requred)
+- `block_number` - block number (required)
 
 #### Responses
 
@@ -438,7 +455,7 @@ Given a block number, it retrieves the hex-encoded extrinsics for the specified 
 
 > Path parameters:
 
-- `block_number` - block number (requred)
+- `block_number` - block number (required)
 
 > Query parameters:
 
@@ -489,7 +506,7 @@ Retrieves the status of the latest block processed by the light client.
 
 > Path parameters:
 
-- `block_number` - block number (requred)
+- `block_number` - block number (required)
 
 #### Responses
 

@@ -115,6 +115,7 @@ impl EventLoop {
 		// connecting to the selected node was a success,
 		// put it in the state, for all to use
 		self.store_node_data(node.clone())?;
+		let genesis_hash = client.genesis_hash();
 		// client was built successfully, keep it
 		self.subxt_client.replace(client);
 		let system_version = self.get_system_version().await?;
@@ -126,13 +127,19 @@ impl EventLoop {
 		);
 
 		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			log_warn(anyhow!("Expected {expected_version}, found {version}"));
+			return Err(log_warn(anyhow!(
+				"Expected {expected_version}, found {version}"
+			)));
 		}
 
 		info!(
 			"Connection established to the Node: {:?} <{version}>",
 			node.host
 		);
+		let current_node = self.nodes.get_current_mut();
+		current_node.spec_version = runtime_version.spec_version;
+		current_node.system_version = system_version;
+		current_node.genesis_hash = genesis_hash;
 
 		Ok(())
 	}
@@ -263,6 +270,7 @@ impl EventLoop {
 	}
 
 	async fn verify_and_output_block_headers(&mut self) {
+		let mut finality_synced = false;
 		while let Some(justification) = self.block_data.justifications.pop() {
 			// iterate through Headers and try to find a matching one
 			if let Some(pos) = self
@@ -296,9 +304,14 @@ impl EventLoop {
 							&signed_message,
 							&precommit.id,
 						);
-						is_ok
-							.then(|| precommit.clone().id)
-							.ok_or_else(|| anyhow!("Not signed by this signature!"))
+						is_ok.then(|| precommit.clone().id).ok_or_else(|| {
+							anyhow!(
+								"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",
+								&precommit.id,
+								self.block_data.current_valset.set_id,
+								justification
+							)
+						})
 					})
 					.collect::<Result<Vec<_>>>();
 
@@ -329,9 +342,12 @@ impl EventLoop {
 					"Not signed by the supermajority of the validator set."
 				);
 
-				// store Finality Checkpoint if finality is synced
-				let finality_synced = self.state.lock().unwrap().finality_synced;
+				// To avoid locking the global state all the time, after finality is synced, it will not be necessary to read the state
 				if !finality_synced {
+					finality_synced = self.state.lock().unwrap().finality_synced;
+				}
+				// store Finality Checkpoint if finality is synced
+				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
 					store_finality_sync_checkpoint(
 						self.db.clone(),
