@@ -9,6 +9,8 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 7 } else { 6 };
+
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
@@ -18,10 +20,12 @@ pub struct Metrics {
 	ip: RwLock<String>,
 	role: String,
 	avail_address: String,
+	#[cfg(feature = "crawl")]
+	crawl_block_delay: u64,
 }
 
 impl Metrics {
-	async fn attributes(&self) -> [KeyValue; 6] {
+	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		[
 			KeyValue::new("version", clap::crate_version!()),
 			KeyValue::new("role", self.role.clone()),
@@ -29,6 +33,8 @@ impl Metrics {
 			KeyValue::new("multiaddress", self.multiaddress.read().await.clone()),
 			KeyValue::new("ip", self.ip.read().await.clone()),
 			KeyValue::new("avail_address", self.avail_address.clone()),
+			#[cfg(feature = "crawl")]
+			KeyValue::new("crawl_block_delay", self.crawl_block_delay.to_string()),
 		]
 	}
 
@@ -123,10 +129,6 @@ impl super::Metrics for Metrics {
 			super::MetricValue::CrawlRowsSuccessRate(number) => {
 				self.record_f64("crawl_rows_success_rate", number).await?;
 			},
-			#[cfg(feature = "crawl")]
-			super::MetricValue::CrawlBlockDelay(number) => {
-				self.record_f64("crawl_block_delay", number).await?;
-			},
 		};
 		Ok(())
 	}
@@ -145,6 +147,7 @@ pub fn initialize(
 	peer_id: String,
 	role: String,
 	avail_address: String,
+	#[cfg(feature = "crawl")] crawl_block_delay: u64,
 ) -> Result<Metrics, Error> {
 	let export_config = ExportConfig {
 		endpoint,
@@ -175,5 +178,7 @@ pub fn initialize(
 		ip: RwLock::new("".to_string()),
 		role,
 		avail_address,
+		#[cfg(feature = "crawl")]
+		crawl_block_delay,
 	})
 }

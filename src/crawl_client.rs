@@ -75,12 +75,6 @@ pub async fn run(
 
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
-			if let Err(error) = metrics
-				.record(MetricValue::CrawlBlockDelay(seconds.as_secs_f64()))
-				.await
-			{
-				error!("Cannot record crawl block delay: {}", error);
-			}
 			tokio::time::sleep(seconds).await;
 		}
 		let block_number = block.block_num;
