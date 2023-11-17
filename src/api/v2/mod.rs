@@ -6,8 +6,6 @@ use crate::{
 	api::v2::types::Topic,
 	data::{Database, RocksDB},
 	network::rpc::Client,
-	types::{RuntimeConfig, State},
-	network::rpc::{Client, Node},
 	types::{IdentityConfig, RuntimeConfig, State},
 };
 use avail_subxt::AvailConfig;

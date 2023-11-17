@@ -152,7 +152,7 @@ impl Command for Bootstrap {
 }
 
 struct GetKadRecord {
-	key: Key,
+	key: RecordKey,
 	response_sender: Option<oneshot::Sender<Result<PeerRecord>>>,
 }
 
@@ -358,7 +358,6 @@ impl Command for ReduceKademliaMapSize {
 
 	fn abort(&mut self, _: anyhow::Error) {
 		// theres should be no errors from running this Command
-		// TODO: consider what to do if this results with None
 		debug!("No possible errors for ReduceKademliaMapSize");
 	}
 }
@@ -389,6 +388,35 @@ impl Command for DialPeer {
 			.unwrap()
 			.send(Err(error))
 			.expect("DialPeer receiver dropped");
+	}
+}
+
+struct AddAutonatServer {
+	peer_id: PeerId,
+	address: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for AddAutonatServer {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		entries
+			.behavior_mut()
+			.auto_nat
+			.add_server(self.peer_id, Some(self.address.clone()));
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("AddAutonatServer receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, _: anyhow::Error) {
+		// theres should be no errors from running this Command
+		debug!("No possible errors for AddAutonatServer command");
 	}
 }
 
@@ -443,7 +471,6 @@ impl Client {
 		.await
 	}
 
-
 	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(DialPeer {
@@ -464,17 +491,30 @@ impl Client {
 		.await
 	}
 
+	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(AddAutonatServer {
+				peer_id,
+				address,
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
 	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		for (peer, addr) in nodes {
 			self.dial_peer(peer, addr.clone())
 				.await
 				.context("Dialing Bootstrap peer failed.")?;
-			self.add_address(peer, addr).await?;
+			self.add_address(peer, addr.clone()).await?;
+
+			self.add_autonat_server(peer, autonat_address(addr)).await?;
 		}
 		self.bootstrap().await
 	}
 
-	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
+	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetKadRecord {
 				key,
@@ -715,51 +755,6 @@ impl Client {
 		}
 		Err(anyhow!("No IP Address was present in Multiaddress"))
 	}
-}
-
-#[derive(Debug)]
-pub enum Command {
-	StartListening {
-		addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	AddAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	DialAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	Bootstrap {
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	GetKadRecord {
-		key: RecordKey,
-		response_sender: oneshot::Sender<Result<PeerRecord>>,
-	},
-	PutKadRecordBatch {
-		records: Vec<Record>,
-		quorum: Quorum,
-		response_sender: oneshot::Sender<DHTPutSuccess>,
-	},
-	CountDHTPeers {
-		response_sender: oneshot::Sender<usize>,
-	},
-	GetCellsInDHTPerBlock {
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	GetMultiaddress {
-		response_sender: oneshot::Sender<Option<Multiaddr>>,
-	},
-	ReduceKademliaMapSize,
-	AddAutonatServer {
-		peer_id: PeerId,
-		peer_address: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
 }
 
 /// This utility function takes the Multiaddress as parameter and searches for

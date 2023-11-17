@@ -100,6 +100,21 @@ impl Node {
 			spec_version = self.spec_version,
 		)
 	}
+
+	pub fn with_spec_version(&mut self, spec_version: u32) -> &mut Self {
+		self.spec_version = spec_version;
+		self
+	}
+
+	pub fn with_system_version(&mut self, system_version: String) -> &mut Self {
+		self.system_version = system_version;
+		self
+	}
+
+	pub fn with_genesis_hash(&mut self, genesis_hash: H256) -> &mut Self {
+		self.genesis_hash = genesis_hash;
+		self
+	}
 }
 
 impl Default for Node {
@@ -134,10 +149,6 @@ impl Nodes {
 	pub fn get_current(&self) -> Option<Node> {
 		let node = &self.list[self.current_index];
 		Some(node.clone())
-	}
-
-	pub fn get_current_mut(&mut self) -> &mut Node {
-		&mut self.list[self.current_index]
 	}
 
 	pub fn new(nodes: &[String]) -> Self {

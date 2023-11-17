@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use avail_subxt::{
 	api::{self},
 	avail::{self},
@@ -25,7 +25,7 @@ use subxt::{
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{info, trace, warn};
+use tracing::{info, trace};
 
 use super::{CommandReceiver, ExpectedVersion, Node, Nodes, SendableCommand};
 use crate::{
@@ -101,25 +101,26 @@ impl EventLoop {
 
 	async fn create_subxt_client(&mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
 		// shuffle passed Nodes and start try to connect the first one
-		let node = self
-			.nodes
-			.reset()
-			.ok_or_else(|| anyhow!("RPC WS Nodes list must not be empty"))?;
+		let node = self.reset_nodes()?;
 
-		let log_warn = |error| {
-			warn!("Skipping connection to {:?}: {error}", node.clone().host);
-			error
-		};
+		let client: OnlineClient<AvailConfig> = build_client(&node.host, false).await?;
 
-		let client = build_client(&node.host, false).await?;
+		let genesis_hash = client.genesis_hash();
+		let system_version = client.rpc().system_version().await?;
+		let runtime_version: RuntimeVersion = client
+			.rpc()
+			.request("state_getRuntimeVersion", RpcParams::new())
+			.await?;
+		// client was built successfully, keep it
+		self.set_subxt_client(client);
+
+		node.clone()
+			.with_spec_version(runtime_version.spec_version)
+			.with_system_version(system_version.clone())
+			.with_genesis_hash(genesis_hash);
 		// connecting to the selected node was a success,
 		// put it in the state, for all to use
 		self.store_node_data(node.clone())?;
-		let genesis_hash = client.genesis_hash();
-		// client was built successfully, keep it
-		self.subxt_client.replace(client);
-		let system_version = self.get_system_version().await?;
-		let runtime_version = self.request_runtime_version().await?;
 
 		let version = format!(
 			"v/{}/{}/{}",
@@ -127,19 +128,13 @@ impl EventLoop {
 		);
 
 		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			return Err(log_warn(anyhow!(
-				"Expected {expected_version}, found {version}"
-			)));
+			return Err(anyhow!("Expected {expected_version}, found {version}"));
 		}
 
 		info!(
 			"Connection established to the Node: {:?} <{version}>",
 			node.host
 		);
-		let current_node = self.nodes.get_current_mut();
-		current_node.spec_version = runtime_version.spec_version;
-		current_node.system_version = system_version;
-		current_node.genesis_hash = genesis_hash;
 
 		Ok(())
 	}
@@ -421,22 +416,6 @@ impl EventLoop {
 		}
 	}
 
-	async fn get_system_version(&self) -> Result<String> {
-		self.unpack_client()?
-			.rpc()
-			.system_version()
-			.await
-			.context("Failed to retrieve System version")
-	}
-
-	async fn request_runtime_version(&self) -> Result<RuntimeVersion> {
-		self.unpack_client()?
-			.rpc()
-			.request("state_getRuntimeVersion", RpcParams::new())
-			.await
-			.map_err(|e| anyhow!("Failed to retrieve Runtime version. Error: {e}"))
-	}
-
 	async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
 		self.unpack_client()?
 			.rpc()
@@ -486,6 +465,19 @@ impl EventLoop {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(Header, H256)> {
 		let hash = self.get_block_hash(block_number).await?;
 		self.get_header_by_hash(hash).await.map(|e| (e, hash))
+	}
+
+	fn reset_nodes(&mut self) -> Result<Node> {
+		let node = self
+			.nodes
+			.reset()
+			.ok_or_else(|| anyhow!("RPC WS Nodes list must not be empty"))?;
+
+		Ok(node)
+	}
+
+	fn set_subxt_client(&mut self, client: avail::Client) {
+		self.subxt_client.replace(client);
 	}
 
 	fn store_node_data(&self, node: Node) -> Result<()> {

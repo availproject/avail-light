@@ -1,10 +1,10 @@
-use anyhow::Result;
-use futures::{future, FutureExt, StreamExt};
+use anyhow::{anyhow, Result};
+use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
 	dcutr,
 	identify::{self, Info},
-	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, PeerRecord, QueryId, QueryResult},
+	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult},
 	mdns,
 	multiaddr::Protocol,
 	swarm::{
@@ -20,6 +20,11 @@ use tokio::{
 	time::{interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace};
+
+use super::{
+	Behaviour, BehaviourEvent, CommandReceiver, DHTPutSuccess, EventLoopEntries, QueryChannel,
+	SendableCommand,
+};
 
 // RelayState keeps track of all things relay related
 struct RelayState {

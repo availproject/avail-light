@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat, dcutr, identify, identity,
-	kad::{self, Mode},
+	kad::{self, Mode, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, yamux, PeerId, SwarmBuilder,
+	tcp, yamux, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
 use std::collections::HashMap;
