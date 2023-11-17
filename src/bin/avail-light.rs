@@ -90,7 +90,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		IdentityConfig::load_or_init("identity.toml", opts.avail_passphrase.as_deref())?;
 
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}. Mode: {CLIENT_ROLE}.");
+	info!("Running Avail light client version: {version}. Role: {CLIENT_ROLE}.");
 	info!("Using config: {cfg:?}");
 	info!("Avail address is: {}", &identity_cfg.avail_address);
 
