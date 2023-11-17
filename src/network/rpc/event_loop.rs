@@ -56,15 +56,17 @@ enum Subscription {
 	Justification(GrandpaJustification),
 }
 
-struct CurrentValidators {
+#[derive(Clone, Debug)]
+struct ValidatorSet {
 	set_id: u64,
 	validator_set: Vec<Public>,
 }
 
 struct BlockData {
 	justifications: Vec<GrandpaJustification>,
-	unverified_headers: Vec<(Header, Instant)>,
-	current_valset: CurrentValidators,
+	unverified_headers: Vec<(Header, Instant, ValidatorSet)>,
+	current_valset: ValidatorSet,
+	next_valset: Option<ValidatorSet>,
 	last_finalized_block_header: Option<Header>,
 }
 
@@ -96,10 +98,11 @@ impl EventLoop {
 			block_data: BlockData {
 				justifications: Default::default(),
 				unverified_headers: Default::default(),
-				current_valset: CurrentValidators {
+				current_valset: ValidatorSet {
 					set_id: Default::default(),
 					validator_set: Default::default(),
 				},
+				next_valset: None,
 				last_finalized_block_header: None,
 			},
 		}
@@ -194,7 +197,7 @@ impl EventLoop {
 		let set_id = self.fetch_set_id_at(last_finalized_block_hash).await?;
 		// set Current Valset
 		info!("Current set: {:?}", (validator_set.clone(), set_id));
-		self.block_data.current_valset = CurrentValidators {
+		self.block_data.current_valset = ValidatorSet {
 			set_id,
 			validator_set,
 		};
@@ -234,10 +237,18 @@ impl EventLoop {
 				let received_at = Instant::now();
 				self.state.lock().unwrap().latest = header.clone().number;
 				info!("Header no.: {}", header.number);
+
+				// if new validator set becomes active, replace the current one
+				if self.block_data.next_valset.is_some() {
+					self.block_data.current_valset = self.block_data.next_valset.take().unwrap();
+				}
+
 				// push new Unverified Header
-				self.block_data
-					.unverified_headers
-					.push((header.clone(), received_at));
+				self.block_data.unverified_headers.push((
+					header.clone(),
+					received_at,
+					self.block_data.current_valset.clone(),
+				));
 
 				// search the header logs for validator set change
 				let mut new_auths = filter_auth_set_changes(&header);
@@ -254,10 +265,12 @@ impl EventLoop {
 						.map(|(a, _)| ed25519::Public::from_raw(a.0 .0 .0))
 						.collect::<Vec<Public>>();
 
-					// increment Current Validator Set ID by 1
-					self.block_data.current_valset.set_id += 1;
-					// set new Validator Set
-					self.block_data.current_valset.validator_set = new_valset;
+					self.block_data.next_valset = Some(ValidatorSet {
+						set_id: self.block_data.current_valset.set_id + 1,
+						validator_set: new_valset,
+					});
+
+					info!("Validator set change: {:?}", self.block_data.next_valset);
 				}
 			},
 			Subscription::Justification(justification) => {
@@ -280,11 +293,12 @@ impl EventLoop {
 				.block_data
 				.unverified_headers
 				.iter()
-				.map(|(h, _)| Encode::using_encoded(h, blake2_256).into())
+				.map(|(h, _, _)| Encode::using_encoded(h, blake2_256).into())
 				.position(|hash| justification.commit.target_hash == hash)
 			{
 				// basically, pop it out of the collection
-				let (header, received_at) = self.block_data.unverified_headers.swap_remove(pos);
+				let (header, received_at, valset) =
+					self.block_data.unverified_headers.swap_remove(pos);
 				// form a message which is signed in the Justification, it's a triplet of a Precommit,
 				// round number and set_id (taken from Substrate code)
 				let signed_message = Encode::encode(&(
@@ -292,7 +306,7 @@ impl EventLoop {
 						justification.commit.precommits[0].clone().precommit,
 					),
 					&justification.round,
-					&self.block_data.current_valset.set_id, // Set ID is needed here.
+					&valset.set_id, // Set ID is needed here.
 				));
 
 				// verify all the Signatures of the Justification signs,
@@ -311,7 +325,7 @@ impl EventLoop {
 							anyhow!(
 								"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",
 								&precommit.id,
-								self.block_data.current_valset.set_id,
+								valset.set_id,
 								justification
 							)
 						})
@@ -322,26 +336,18 @@ impl EventLoop {
 				// match all the Signer addresses to the Current Validator Set
 				let num_matched_addresses = signer_addresses
 					.iter()
-					.filter(|x| {
-						self.block_data
-							.current_valset
-							.validator_set
-							.iter()
-							.any(|e| e.0.eq(&x.0))
-					})
+					.filter(|x| valset.validator_set.iter().any(|e| e.0.eq(&x.0)))
 					.count();
 
 				info!(
-					"Number of matching signatures: {num_matched_addresses}/{} for block {}",
-					self.block_data.current_valset.validator_set.len(),
-					header.number
+					"Number of matching signatures: {num_matched_addresses}/{} for block {}, set_id {}",
+					valset.validator_set.len(),
+					header.number,
+					valset.set_id
 				);
 
 				assert!(
-					is_signed_by_supermajority(
-						num_matched_addresses,
-						self.block_data.current_valset.validator_set.len()
-					),
+					is_signed_by_supermajority(num_matched_addresses, valset.validator_set.len()),
 					"Not signed by the supermajority of the validator set."
 				);
 
@@ -371,11 +377,12 @@ impl EventLoop {
 							.block_data
 							.unverified_headers
 							.iter()
-							.position(|(h, _)| h.number == bl_num)
+							.position(|(h, _, _)| h.number == bl_num)
 						{
 							Some(pos) => {
 								info!("Fetching header from unverified headers");
-								self.block_data.unverified_headers.swap_remove(pos)
+								let p = self.block_data.unverified_headers.swap_remove(pos);
+								(p.0, p.1)
 							},
 							None => {
 								info!("Fetching header from RPC");
@@ -793,7 +800,15 @@ fn is_signed_by_supermajority(num_signatures: usize, validator_set_size: usize) 
 
 #[cfg(test)]
 mod tests {
+	use codec::Encode;
+	use hex::FromHex;
+	use sp_core::{
+		ed25519::{self, Public, Signature},
+		Pair, H256,
+	};
 	use test_case::test_case;
+
+	use crate::types::{Precommit, SignerMessage};
 	#[test_case(1, 1 => true)]
 	#[test_case(1, 2 => false)]
 	#[test_case(2, 2 => true)]
@@ -806,5 +821,31 @@ mod tests {
 	fn check_supermajority_condition(num_signatures: usize, validator_set_size: usize) -> bool {
 		use crate::network::rpc::event_loop::is_signed_by_supermajority;
 		is_signed_by_supermajority(num_signatures, validator_set_size)
+	}
+
+	#[test_case("019150591418c44041725fc53bbe69fdfb5ec4ad7c35fa3f680db07f41e096988ac3fe0314ca9829fa44fc29e5507bd56f5fa4c45fc955030309bb662f70a10e", "f55c915b3e25a013931f5401a22c3481123584d9ce5a119cabf353bca5c43f05", 41911, "0501c3f8cbba5745aa58ff5f4d8dea89fc2326aa0c95d3eb6fb8070d77511ba9", 14, 9649   => true)]
+	#[test_case("b7d22a1854a4836f3d4e7f1af03f8d762913afcf2aa5b20dbdfd23af3e046e80d7410281fdb185b820687a7abe1d201ff866759b00ed2cfc0bab210cea1f7b07", "b91026ef68a88f5ab767a2a7386ac0e7dbb4e62220df1f1c865595bf3afc990b", 39863, "07bc6fca05724fb6cac16fedb80688185ddc74746c7105bddb871cccc626e5e0", 12, 8628   => true)]
+	fn check_sig(
+		sig_hex: &str,
+		target_hash_hex: &str,
+		target_number: u32,
+		sig_id_hex: &str,
+		set_id: u64,
+		round: u64,
+	) -> bool {
+		let sig = Signature(<[u8; 64]>::from_hex(sig_hex).unwrap());
+		let precommit_message = Precommit {
+			target_hash: <[u8; 32]>::from_hex(target_hash_hex).unwrap().into(),
+			target_number,
+		};
+		let id: Public = Public(<[u8; 32]>::from_hex(sig_id_hex).unwrap());
+		let signed_message = Encode::encode(&(
+			&SignerMessage::PrecommitMessage(precommit_message),
+			&round,
+			&set_id,
+		));
+
+		let is_ok = <ed25519::Pair as Pair>::verify(&sig, &signed_message, &id);
+		is_ok
 	}
 }
