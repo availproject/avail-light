@@ -246,6 +246,7 @@ pub struct RuntimeConfig {
 	pub avail_path: String,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
 	pub log_level: String,
+	pub origin: String,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
 	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
@@ -543,6 +544,7 @@ impl Default for RuntimeConfig {
 			max_kad_provided_keys: 1024,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
+			origin: "external".to_string(),
 		}
 	}
 }

@@ -9,7 +9,7 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
-const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 7 } else { 6 };
+const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 8 } else { 7 };
 
 #[derive(Debug)]
 pub struct Metrics {
@@ -19,6 +19,7 @@ pub struct Metrics {
 	multiaddress: RwLock<String>,
 	ip: RwLock<String>,
 	role: String,
+	origin: String,
 	avail_address: String,
 	#[cfg(feature = "crawl")]
 	crawl_block_delay: u64,
@@ -29,6 +30,7 @@ impl Metrics {
 		[
 			KeyValue::new("version", clap::crate_version!()),
 			KeyValue::new("role", self.role.clone()),
+			KeyValue::new("origin", self.origin.clone()),
 			KeyValue::new("peerID", self.peer_id.clone()),
 			KeyValue::new("multiaddress", self.multiaddress.read().await.clone()),
 			KeyValue::new("ip", self.ip.read().await.clone()),
@@ -146,6 +148,7 @@ pub fn initialize(
 	endpoint: String,
 	peer_id: String,
 	role: String,
+	origin: String,
 	avail_address: String,
 	#[cfg(feature = "crawl")] crawl_block_delay: u64,
 ) -> Result<Metrics, Error> {
@@ -177,6 +180,7 @@ pub fn initialize(
 		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update
 		ip: RwLock::new("".to_string()),
 		role,
+		origin,
 		avail_address,
 		#[cfg(feature = "crawl")]
 		crawl_block_delay,
