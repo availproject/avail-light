@@ -227,9 +227,11 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::Database,
+		network::rpc::DEFAULT_GENESIS_HASH,
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
+	use avail_subxt::utils::H256;
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -240,7 +242,6 @@ mod tests {
 	};
 	use hyper::StatusCode;
 	use kate_recovery::{com::AppData, matrix::Partition};
-	use sp_core::H256;
 	use std::{
 		collections::HashSet,
 		str::FromStr,
@@ -257,7 +258,6 @@ mod tests {
 		}
 	}
 
-	const GENESIS_HASH: &str = "0xc590b3c924c35c2f241746522284e4709df490d73a38aaa7d6de4ed1eac2f500";
 	const NETWORK: &str = "{host}/{system_version}/data-avail/0";
 
 	#[tokio::test]
@@ -285,8 +285,10 @@ mod tests {
 			.reply(&route)
 			.await;
 
+		let gen_hash = H256::from_str(DEFAULT_GENESIS_HASH).unwrap();
 		let expected = format!(
-			r#"{{"modes":["light"],"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":0}}}}"#
+			r#"{{"modes":["light"],"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":0}}}}"#,
+			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
 	}
@@ -324,8 +326,10 @@ mod tests {
 			.reply(&route)
 			.await;
 
+		let gen_hash = H256::from_str(DEFAULT_GENESIS_HASH).unwrap();
 		let expected = format!(
-			r#"{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}"#
+			r#"{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{:#x}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}"#,
+			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
 	}
@@ -763,8 +767,11 @@ mod tests {
 			state.sync_data_verified.set(10);
 			state.sync_data_verified.set(18);
 		}
+
+		let gen_hash = H256::from_str(DEFAULT_GENESIS_HASH).unwrap();
 		let expected = format!(
-			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#
+			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#,
+			gen_hash
 		);
 
 		let status_request =
