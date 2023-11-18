@@ -123,6 +123,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			cfg.ot_collector_endpoint.clone(),
 			peer_id,
 			CLIENT_ROLE.into(),
+			cfg.origin.clone(),
 			identity_cfg.avail_address.clone(),
 			#[cfg(feature = "crawl")]
 			cfg.crawl.crawl_block_delay,
