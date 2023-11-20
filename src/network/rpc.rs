@@ -10,7 +10,6 @@ use sp_core::bytes::from_hex;
 use std::{
 	collections::HashSet,
 	fmt::Display,
-	str::FromStr,
 	sync::{Arc, Mutex},
 };
 use tokio::{
@@ -32,8 +31,6 @@ pub use client::Client;
 use event_loop::EventLoop;
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
-pub const DEFAULT_GENESIS_HASH: &str =
-	"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 pub use event_loop::Event;
 
@@ -123,7 +120,7 @@ impl Default for Node {
 			host: "{host}".to_string(),
 			system_version: "{system_version}".to_string(),
 			spec_version: 0,
-			genesis_hash: H256::from_str(DEFAULT_GENESIS_HASH).unwrap(),
+			genesis_hash: H256::default(),
 		}
 	}
 }
