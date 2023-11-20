@@ -734,11 +734,6 @@ impl Client {
 			.map(|header| (header, hash))
 	}
 
-	// pub async fn get_connected_node(&self) -> Result<Node> {
-	// 	self.execute_sync(|response_sender| GetConnectedNode { response_sender })
-	// 		.await
-	// }
-
 	pub async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetValidatorSetAt {

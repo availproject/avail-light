@@ -516,7 +516,7 @@ mod tests {
 	use hex::FromHex;
 	use sp_core::{
 		ed25519::{self, Public, Signature},
-		Pair, H256,
+		Pair,
 	};
 	use test_case::test_case;
 
@@ -557,7 +557,6 @@ mod tests {
 			&set_id,
 		));
 
-		let is_ok = <ed25519::Pair as Pair>::verify(&sig, &signed_message, &id);
-		is_ok
+		<ed25519::Pair as Pair>::verify(&sig, signed_message, &id)
 	}
 }

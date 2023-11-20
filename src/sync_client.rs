@@ -17,7 +17,7 @@
 
 use crate::{
 	data::{
-		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
+		get_block_header_from_db, is_confidence_in_db, store_block_header_in_db,
 		store_confidence_in_db,
 	},
 	network::{
@@ -31,11 +31,13 @@ use crate::{
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
 use kate_recovery::{data::Cell, matrix::Position};
 use mockall::automock;
 use rocksdb::DB;
+use sp_core::blake2_256;
 use std::{
 	ops::Range,
 	sync::{Arc, Mutex},
@@ -47,9 +49,7 @@ use tracing::{error, info, warn};
 #[async_trait]
 #[automock]
 pub trait SyncClient {
-	fn block_header_in_db(&self, block_number: u32) -> Result<bool>;
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
-	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()>;
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
@@ -77,21 +77,28 @@ pub fn new(db: Arc<DB>, network_client: P2pClient, rpc_client: RpcClient) -> imp
 
 #[async_trait]
 impl SyncClient for SyncClientImpl {
-	fn block_header_in_db(&self, block_number: u32) -> Result<bool> {
-		is_block_header_in_db(self.db.clone(), block_number)
-			.context("Failed to check if block header is in DB")
-	}
-
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
-		self.rpc_client
+		if let Some(header) = get_block_header_from_db(self.db.clone(), block_number)
+			.context("Failed to get block header from the DB")?
+		{
+			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
+			return Ok((header, hash));
+		}
+
+		let (header, hash) = match self
+			.rpc_client
 			.get_header_by_block_number(block_number)
 			.await
 			.with_context(|| format!("Failed to get block {block_number} by block number"))
-	}
+		{
+			Ok(value) => value,
+			Err(error) => return Err(error),
+		};
 
-	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
 		store_block_header_in_db(self.db.clone(), block_number, &header)
-			.context("Failed to store block header in DB")
+			.context("Failed to store block header in DB")?;
+
+		Ok((header, hash))
 	}
 
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool> {
@@ -126,46 +133,19 @@ impl SyncClient for SyncClientImpl {
 
 async fn process_block(
 	sync_client: &impl SyncClient,
-	block_number: u32,
+	header: DaHeader,
+	header_hash: H256,
 	cfg: &SyncClientConfig,
 	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 ) -> Result<()> {
-	if sync_client
-		.block_header_in_db(block_number)
-		.context("Failed to check if block header is in DB")?
-	{
-		// TODO: If block header storing fails, that block will be skipped upon restart
-		// Better option would be to check for confidence
-		info!("Block header {block_number} already in DB");
-		return Ok(());
-	};
-
-	// if block header look up fails, only then comes here for
-	// fetching and storing block header as part of (light weight)
-	// syncing process
+	let block_number = header.number;
 	let begin = Instant::now();
-
-	let (header, header_hash) = sync_client.get_header_by_block_number(block_number).await?;
 
 	let app_lookup = extract_app_lookup(&header.extension);
 
 	info!(block_number, "App index {:?}", app_lookup);
-
-	sync_client
-		.store_block_header_in_db(header.clone(), block_number)
-		.context("Failed to store block header in DB")?;
-
 	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
-
-	// If it's found that this certain block is not verified
-	// then it'll be verified now
-	if sync_client
-		.is_confidence_in_db(block_number)
-		.context("Failed to check if confidence is in DB")?
-	{
-		return Ok(());
-	};
 
 	let begin = Instant::now();
 
@@ -272,6 +252,27 @@ pub async fn run(
 
 	info!("Syncing block headers for {sync_range:?}");
 	for block_number in sync_range {
+		// TODO: This is still an ambigous check since data fetch can fail.
+		// We should write block status in DB explicitly.
+		match sync_client.is_confidence_in_db(block_number) {
+			Ok(false) => (),
+			Ok(true) => continue,
+			Err(error) => {
+				// TODO: Is it valid to have skipped block?
+				error!(block_number, "Cannot process block: {error:#}");
+				continue;
+			},
+		};
+
+		let (header, header_hash) = match sync_client.get_header_by_block_number(block_number).await
+		{
+			Ok(value) => value,
+			Err(error) => {
+				error!(block_number, "Cannot process block: {error:#}");
+				continue;
+			},
+		};
+
 		{
 			let mut state = state.lock().unwrap();
 			state.sync_latest.replace(block_number);
@@ -282,8 +283,15 @@ pub async fn run(
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
 		let pp = pp.clone();
-		if let Err(error) =
-			process_block(&sync_client, block_number, &cfg, pp, block_verified_sender).await
+		if let Err(error) = process_block(
+			&sync_client,
+			header,
+			header_hash,
+			&cfg,
+			pp,
+			block_verified_sender,
+		)
+		.await
 		{
 			error!(block_number, "Cannot process block: {error:#}");
 		} else {
@@ -314,14 +322,8 @@ mod tests {
 	use kate_recovery::couscous;
 	use mockall::predicate::eq;
 
-	#[tokio::test]
-	pub async fn test_process_blocks_without_rpc() {
-		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(couscous::public_params());
-		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
-		cfg.disable_rpc = true;
-		let mut mock_client = MockSyncClient::new();
-		let header: DaHeader = DaHeader {
+	fn default_header() -> DaHeader {
+		DaHeader {
 			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
 				.into(),
 			number: 2,
@@ -354,33 +356,23 @@ mod tests {
 					index: vec![],
 				},
 			}),
-		};
+		}
+	}
+
+	#[tokio::test]
+	pub async fn test_process_blocks_without_rpc() {
+		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
+		let pp = Arc::new(couscous::public_params());
+		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
+		cfg.disable_rpc = true;
+		let mut mock_client = MockSyncClient::new();
+		let header = default_header();
 		let header_hash: H256 =
 			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
-		mock_client
-			.expect_block_header_in_db()
-			.with(eq(42))
-			.returning(|_| Ok(false));
 
-		mock_client
-			.expect_get_header_by_block_number()
-			.with(eq(42))
-			.returning(move |_| {
-				let header = header.clone();
-
-				Box::pin(async move { Ok((header, header_hash)) })
-			});
-		mock_client
-			.expect_store_block_header_in_db()
-			.withf(|_, x| *x == 42)
-			.returning(|_, _| Ok(()));
-		mock_client
-			.expect_is_confidence_in_db()
-			.with(eq(42))
-			.returning(|_| Ok(true));
 		mock_client
 			.expect_fetch_cells_from_dht()
-			.withf(|_, x: &u32| *x == 42)
+			.withf(|_, x: &u32| *x == 2)
 			.returning(|_, _| {
 				let dht = vec![];
 				let fetch: Vec<Cell> = vec![
@@ -435,14 +427,18 @@ mod tests {
 		}
 		mock_client
 			.expect_is_confidence_in_db()
-			.with(eq(42))
+			.with(eq(2))
 			.returning(|_| Ok(true));
 
 		mock_client
 			.expect_insert_cells_into_dht()
-			.withf(move |x, _| *x == 42)
+			.withf(move |x, _| *x == 2)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(&mock_client, 42, &cfg, pp, Some(block_tx))
+		mock_client
+			.expect_store_confidence_in_db()
+			.withf(move |_, block_number| *block_number == 2)
+			.returning(move |_, _| Ok(()));
+		process_block(&mock_client, header, header_hash, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -453,40 +449,7 @@ mod tests {
 		let pp = Arc::new(couscous::public_params());
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
-		let header: DaHeader = DaHeader {
-			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
-				.into(),
-			number: 2,
-			state_root: hex!("6f41d5a26a34f7bc3a09d4811b444c09daaebbd5c5d67c4525f42b3ed11bef86")
-				.into(),
-			extrinsics_root: hex!(
-				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
-			)
-			.into(),
-			digest: Digest { logs: vec![] },
-			extension: V1(HeaderExtension {
-				commitment: KateCommitment {
-					rows: 1,
-					cols: 4,
-					data_root: hex!(
-						"0000000000000000000000000000000000000000000000000000000000000000"
-					)
-					.into(),
-					commitment: vec![
-						181, 10, 104, 251, 33, 171, 87, 192, 13, 195, 93, 127, 215, 78, 114, 192,
-						95, 92, 167, 10, 49, 17, 20, 204, 222, 102, 70, 218, 173, 18, 30, 49, 232,
-						10, 137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242, 181,
-						10, 104, 251, 33, 171, 87, 192, 13, 195, 93, 127, 215, 78, 114, 192, 95,
-						92, 167, 10, 49, 17, 20, 204, 222, 102, 70, 218, 173, 18, 30, 49, 232, 10,
-						137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242,
-					],
-				},
-				app_lookup: CompactDataLookup {
-					size: 1,
-					index: vec![],
-				},
-			}),
-		};
+		let header = default_header();
 		let header_hash: H256 =
 			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
 		let unfetched: Vec<Cell> = vec![Cell {
@@ -499,30 +462,10 @@ mod tests {
 				59, 170, 52, 243, 140, 237, 0,
 			],
 		}];
-		mock_client
-			.expect_block_header_in_db()
-			.with(eq(42))
-			.returning(|_| Ok(false));
 
-		mock_client
-			.expect_get_header_by_block_number()
-			.with(eq(42))
-			.returning(move |_| {
-				let header = header.clone();
-
-				Box::pin(async move { Ok((header, header_hash)) })
-			});
-		mock_client
-			.expect_store_block_header_in_db()
-			.withf(|_, x| *x == 42)
-			.returning(|_, _| Ok(()));
-		mock_client
-			.expect_is_confidence_in_db()
-			.with(eq(42))
-			.returning(|_| Ok(true));
 		mock_client
 			.expect_fetch_cells_from_dht()
-			.withf(|_, x: &u32| *x == 42)
+			.withf(|_, x: &u32| *x == 2)
 			.returning(|_, _| {
 				let dht = vec![Position { row: 0, col: 3 }];
 				let fetch: Vec<Cell> = vec![
@@ -570,30 +513,15 @@ mod tests {
 			});
 		}
 		mock_client
-			.expect_is_confidence_in_db()
-			.with(eq(42))
-			.returning(|_| Ok(true));
-		mock_client
 			.expect_insert_cells_into_dht()
-			.withf(move |x, _| *x == 42)
+			.withf(move |x, _| *x == 2)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(&mock_client, 42, &cfg, pp, Some(block_tx))
-			.await
-			.unwrap();
-	}
-	#[tokio::test]
-	pub async fn test_header_in_dbstore() {
-		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(couscous::public_params());
-		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
-		let mut mock_client = MockSyncClient::new();
+
 		mock_client
-			.expect_block_header_in_db()
-			.withf(|block: &u32| *block == 42)
-			.returning(|_| Ok(true));
-		mock_client.expect_get_header_by_block_number().never();
-		mock_client.block_header_in_db(42).unwrap();
-		process_block(&mock_client, 42, &cfg, pp, Some(block_tx))
+			.expect_store_confidence_in_db()
+			.withf(move |_, block_number| *block_number == 2)
+			.returning(move |_, _| Ok(()));
+		process_block(&mock_client, header, header_hash, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
 	}

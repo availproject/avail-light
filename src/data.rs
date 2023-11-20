@@ -104,17 +104,6 @@ pub fn get_block_header_from_db(db: Arc<DB>, block_number: u32) -> Result<Option
 		.transpose()
 }
 
-/// Checks if block header for given block number is in database
-pub fn is_block_header_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
-	let handle = db
-		.cf_handle(BLOCK_HEADER_CF)
-		.context("Failed to get cf handle")?;
-
-	db.get_pinned_cf(&handle, block_number.to_be_bytes())
-		.context("Failed to get block header")
-		.map(|value| value.is_some())
-}
-
 /// Stores block header into database under the given block number key
 pub fn store_block_header_in_db(db: Arc<DB>, block_number: u32, header: &DaHeader) -> Result<()> {
 	let handle = db
