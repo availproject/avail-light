@@ -1,5 +1,6 @@
 use anyhow::anyhow;
-use avail_subxt::{primitives::Header, utils::H256};
+use async_trait::async_trait;
+use avail_subxt::{avail, primitives::Header, utils::H256};
 use codec::Decode;
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -32,6 +33,16 @@ const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 pub use event_loop::Event;
+
+#[async_trait]
+pub trait Command {
+	async fn run(&mut self, client: &avail::Client) -> anyhow::Result<(), anyhow::Error>;
+	fn abort(&mut self, error: anyhow::Error);
+}
+
+type SendableCommand = Box<dyn Command + Send + Sync>;
+type CommandSender = mpsc::Sender<SendableCommand>;
+type CommandReceiver = mpsc::Receiver<SendableCommand>;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct WrappedJustification(pub GrandpaJustification);
@@ -86,6 +97,32 @@ impl Node {
 			spec_version = self.spec_version,
 		)
 	}
+
+	pub fn with_spec_version(&mut self, spec_version: u32) -> &mut Self {
+		self.spec_version = spec_version;
+		self
+	}
+
+	pub fn with_system_version(&mut self, system_version: String) -> &mut Self {
+		self.system_version = system_version;
+		self
+	}
+
+	pub fn with_genesis_hash(&mut self, genesis_hash: H256) -> &mut Self {
+		self.genesis_hash = genesis_hash;
+		self
+	}
+}
+
+impl Default for Node {
+	fn default() -> Self {
+		Self {
+			host: "{host}".to_string(),
+			system_version: "{system_version}".to_string(),
+			spec_version: 0,
+			genesis_hash: H256::default(),
+		}
+	}
 }
 
 pub struct Nodes {
@@ -109,10 +146,6 @@ impl Nodes {
 	pub fn get_current(&self) -> Option<Node> {
 		let node = &self.list[self.current_index];
 		Some(node.clone())
-	}
-
-	pub fn get_current_mut(&mut self) -> &mut Node {
-		&mut self.list[self.current_index]
 	}
 
 	pub fn new(nodes: &[String]) -> Self {

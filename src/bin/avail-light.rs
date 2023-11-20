@@ -173,7 +173,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	p2p_client
-		.bootstrap(cfg.clone().bootstraps.iter().map(Into::into).collect())
+		.bootstrap_on_startup(cfg.clone().bootstraps.iter().map(Into::into).collect())
 		.await?;
 
 	info!("Bootstrap done");
@@ -200,19 +200,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// spawn the RPC Network task for Event Loop to run in the background
 	tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
 
-	let node = rpc_client.get_connected_node().await?;
-	info!("Genesis hash: {:?}", node.genesis_hash);
-	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
-		if !node.genesis_hash.eq(&stored_genesis_hash) {
-			Err(anyhow!(
-				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
-			))?
-		}
-	} else {
-		info!("No genesis hash is found in the db, storing the new hash now.");
-		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
-	}
-
 	info!("Waiting for first finalized header...");
 	let block_header = rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 60).await?;
 
@@ -229,7 +216,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
-		node,
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 	};

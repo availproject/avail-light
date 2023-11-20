@@ -1,5 +1,11 @@
+use super::{
+	Command, CommandSender, DHTPutSuccess, EventLoopEntries, QueryChannel, SendableCommand,
+};
 use anyhow::{anyhow, Context, Result};
-use futures::future::join_all;
+use futures::{
+	future::{self, join_all},
+	FutureExt, StreamExt,
+};
 use kate_recovery::{
 	config,
 	data::Cell,
@@ -8,17 +14,21 @@ use kate_recovery::{
 use libp2p::{
 	kad::{PeerRecord, Quorum, Record, RecordKey},
 	multiaddr::Protocol,
+	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
-use std::time::{Duration, Instant};
+use std::str;
+use std::{
+	collections::HashMap,
+	time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace};
-
-use super::DHTPutSuccess;
 
 #[derive(Clone)]
 pub struct Client {
-	command_sender: mpsc::Sender<Command>,
+	command_sender: CommandSender,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
@@ -60,9 +70,359 @@ impl DHTRow {
 	}
 }
 
+struct StartListening {
+	addr: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for StartListening {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		_ = entries.swarm().listen_on(self.addr.clone())?;
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("StartListening receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("StartListening receiver dropped");
+	}
+}
+
+struct AddAddress {
+	peer_id: PeerId,
+	peer_addr: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for AddAddress {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		_ = entries
+			.behavior_mut()
+			.kademlia
+			.add_address(&self.peer_id, self.peer_addr.clone());
+
+		// insert response channel into Swarm Events pending map
+		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("AddAddress receiver dropped");
+	}
+}
+
+struct Bootstrap {
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for Bootstrap {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let query_id = entries.behavior_mut().kademlia.bootstrap()?;
+
+		// insert response channel into KAD Queries pending map
+		let response_sender = self.response_sender.take().unwrap();
+		entries.insert_query(query_id, super::QueryChannel::Bootstrap(response_sender));
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("Bootstrap receiver dropped");
+	}
+}
+
+struct GetKadRecord {
+	key: RecordKey,
+	response_sender: Option<oneshot::Sender<Result<PeerRecord>>>,
+}
+
+impl Command for GetKadRecord {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let query_id = entries.behavior_mut().kademlia.get_record(self.key.clone());
+
+		// insert response channel into KAD Queries pending map
+		let response_sender = self.response_sender.take().unwrap();
+		entries.insert_query(query_id, super::QueryChannel::GetRecord(response_sender));
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("GetKadRecord receiver dropped");
+	}
+}
+
+struct PutKadRecordBatch {
+	records: Vec<Record>,
+	quorum: Quorum,
+	response_sender: Option<oneshot::Sender<Result<DHTPutSuccess>>>,
+}
+
+impl Command for PutKadRecordBatch {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		// create channels to track individual PUT results needed for success count
+		let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(self.records.len());
+
+		// spawn new task that waits and count all successful put queries from this batch,
+		// but don't block event_loop
+		let response_sender = self.response_sender.take().unwrap();
+		tokio::spawn(
+			<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
+				// consider only while receiving single successful results
+				.filter(|item| future::ready(item == &DHTPutSuccess::Single))
+				.count()
+				.map(DHTPutSuccess::Batch)
+				// send back counted successful puts
+				// signal back that this chunk of records is done
+				.map(|successful_puts| response_sender.send(Ok(successful_puts))),
+		);
+
+		// go record by record and dispatch put requests through KAD
+		for record in self.records.clone() {
+			let query_id = entries
+				.behavior_mut()
+				.kademlia
+				.put_record(record, self.quorum)
+				.expect("Unable to perform batch Kademlia PUT operation.");
+			// insert response channel into KAD Queries pending map
+			entries.insert_query(
+				query_id,
+				QueryChannel::PutRecordBatch(put_result_tx.clone()),
+			);
+		}
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("PutKadRecordBatch receiver dropped");
+	}
+}
+
+struct CountDHTPeers {
+	response_sender: Option<oneshot::Sender<Result<usize>>>,
+}
+
+impl Command for CountDHTPeers {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut total_peers: usize = 0;
+		for bucket in entries.behavior_mut().kademlia.kbuckets() {
+			total_peers += bucket.num_entries();
+		}
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(total_peers))
+			.expect("CountDHTPeers receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("CountDHTPeers receiver dropped");
+	}
+}
+
+struct GetCellsInDHTPerBlock {
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for GetCellsInDHTPerBlock {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut occurrence_map = HashMap::new();
+		for record in entries.behavior_mut().kademlia.store_mut().records_iter() {
+			let vec_key = record.0.to_vec();
+			let record_key = str::from_utf8(&vec_key);
+
+			let (block_num, _) = record_key
+				.expect("unable to cast key to string")
+				.split_once(':')
+				.expect("unable to split the key string");
+
+			let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
+			*count += 1;
+		}
+		let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
+		sorted.sort_by(|a, b| a.0.cmp(b.0));
+		for (block_number, cell_count) in sorted {
+			trace!(
+				"Number of cells in DHT for block {:?}: {}",
+				block_number,
+				cell_count
+			);
+		}
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("GetCellsInDHTPerBlock receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("GetCellsInDHTPerBlock receiver dropped");
+	}
+}
+
+struct GetMultiaddress {
+	response_sender: Option<oneshot::Sender<Result<Multiaddr>>>,
+}
+
+impl Command for GetMultiaddress {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let last_address = entries
+			.swarm()
+			.external_addresses()
+			.last()
+			.ok_or_else(|| anyhow!("The last_address should exist"))?;
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(last_address.clone()))
+			.expect("GetMultiaddress receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("GetMultiaddress receiver dropped");
+	}
+}
+
+struct ReduceKademliaMapSize {
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for ReduceKademliaMapSize {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		entries.behavior_mut().kademlia.store_mut().shrink_hashmap();
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("ReduceKademliaMapSize receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, _: anyhow::Error) {
+		// theres should be no errors from running this Command
+		debug!("No possible errors for ReduceKademliaMapSize");
+	}
+}
+
+struct DialPeer {
+	peer_id: PeerId,
+	peer_address: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for DialPeer {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		entries.swarm().dial(
+			DialOpts::peer_id(self.peer_id)
+				.addresses(vec![self.peer_address.clone()])
+				.build(),
+		)?;
+
+		// insert response channel into Swarm Events pending map
+		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("DialPeer receiver dropped");
+	}
+}
+
+struct AddAutonatServer {
+	peer_id: PeerId,
+	address: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for AddAutonatServer {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		entries
+			.behavior_mut()
+			.auto_nat
+			.add_server(self.peer_id, Some(self.address.clone()));
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("AddAutonatServer receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, _: anyhow::Error) {
+		// theres should be no errors from running this Command
+		debug!("No possible errors for AddAutonatServer command");
+	}
+}
+
 impl Client {
 	pub fn new(
-		sender: mpsc::Sender<Command>,
+		sender: CommandSender,
 		dht_parallelization_limit: usize,
 		ttl: u64,
 		put_batch_size: usize,
@@ -75,157 +435,154 @@ impl Client {
 		}
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
+	where
+		F: FnOnce(oneshot::Sender<Result<T>>) -> SendableCommand,
+	{
 		let (response_sender, response_receiver) = oneshot::channel();
+		let command = command_with_sender(response_sender);
 		self.command_sender
-			.send(Command::StartListening {
-				addr,
-				response_sender,
-			})
+			.send(command)
 			.await
-			.context("Command receiver should not be dropped.")?;
+			.context("receiver should not be dropped")?;
 		response_receiver
 			.await
-			.context("Sender not to be dropped.")?
+			.context("sender should not be dropped")?
+	}
+
+	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(StartListening {
+				addr,
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::AddAddress {
+		self.execute_sync(|response_sender| {
+			Box::new(AddAddress {
 				peer_id,
 				peer_addr,
-				response_sender,
+				response_sender: Some(response_sender),
 			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		})
+		.await
 	}
 
-	pub async fn dial_peer(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::DialAddress {
+	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(DialPeer {
 				peer_id,
-				peer_addr,
-				response_sender,
+				peer_address,
+				response_sender: Some(response_sender),
 			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		})
+		.await
 	}
 
-	async fn add_autonat_server(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::AddAutonatServer {
+	pub async fn bootstrap(&self) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(Bootstrap {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(AddAutonatServer {
 				peer_id,
-				peer_address: peer_addr,
-				response_sender,
+				address,
+				response_sender: Some(response_sender),
 			})
-			.await
-			.context("Command receiver not to be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		})
+		.await
 	}
 
-	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
-
+	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		for (peer, addr) in nodes {
 			self.dial_peer(peer, addr.clone())
 				.await
-				.context("Error dialing bootstrap peer")?;
+				.context("Dialing Bootstrap peer failed.")?;
 			self.add_address(peer, addr.clone()).await?;
 
-			// add proper address for auto-nat servers
 			self.add_autonat_server(peer, autonat_address(addr)).await?;
 		}
-
-		self.command_sender
-			.send(Command::Bootstrap { response_sender })
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		self.bootstrap().await
 	}
 
 	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetKadRecord {
+		self.execute_sync(|response_sender| {
+			Box::new(GetKadRecord {
 				key,
-				response_sender,
+				response_sender: Some(response_sender),
 			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		})
+		.await
 	}
 
-	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> DHTPutSuccess {
+	async fn put_kad_record_batch(
+		&self,
+		records: Vec<Record>,
+		quorum: Quorum,
+	) -> Result<DHTPutSuccess> {
 		let mut num_success: usize = 0;
 		// split input batch records into chunks that will be sent consecutively
 		// these chunks are defined by the config parameter [put_batch_size]
 		for chunk in records.chunks(self.put_batch_size) {
 			// create oneshot for each chunk, through which will success counts be sent,
 			// only for the records in that chunk
-			let (response_sender, response_receiver) = oneshot::channel::<DHTPutSuccess>();
-			if self
-				.command_sender
-				.send(Command::PutKadRecordBatch {
-					records: chunk.into(),
-					quorum,
-					response_sender,
+			match self
+				.execute_sync(|response_sender| {
+					Box::new(PutKadRecordBatch {
+						records: chunk.into(),
+						quorum,
+						response_sender: Some(response_sender),
+					})
 				})
 				.await
-				.context("Command receiver should not be dropped.")
-				.is_err()
 			{
-				return DHTPutSuccess::Batch(num_success);
-			}
-			// wait here for successfully counted put operations from this chunk
-			// waiting in this manner introduces a back pressure from overwhelming the network
-			// with too many possible PUT request coming in from the whole batch
-			// this is the reason why input parameter vector of records is split into chunks
-			if let Ok(DHTPutSuccess::Batch(num)) = response_receiver.await {
-				num_success += num;
-			}
+				Ok(DHTPutSuccess::Single) => num_success += 1,
+				// wait here for successfully counted put operations from this chunk
+				// waiting in this manner introduces a back pressure from overwhelming the network
+				// with too many possible PUT request coming in from the whole batch
+				// this is the reason why input parameter vector of records is split into chunks
+				Ok(DHTPutSuccess::Batch(num)) => num_success += num,
+				Err(err) => return Err(err),
+			};
 		}
-		DHTPutSuccess::Batch(num_success)
+		Ok(DHTPutSuccess::Batch(num_success))
 	}
 
 	pub async fn count_dht_entries(&self) -> Result<usize> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::CountDHTPeers { response_sender })
-			.await
-			.context("Command receiver not to be dropped.")?;
-		response_receiver.await.context("Sender not to be dropped.")
+		self.execute_sync(|response_sender| {
+			Box::new(CountDHTPeers {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
-	async fn get_multiaddress(&self) -> Result<Option<Multiaddr>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetMultiaddress { response_sender })
-			.await
-			.context("Command receiver not to be dropped.")?;
-		response_receiver.await.context("Sender not to be dropped.")
+	async fn get_multiaddress(&self) -> Result<Multiaddr> {
+		self.execute_sync(|response_sender| {
+			Box::new(GetMultiaddress {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.command_sender
-			.send(Command::ReduceKademliaMapSize)
-			.await
-			.context("Command receiver should not be dropped.")
+		self.execute_sync(|response_sender| {
+			Box::new(ReduceKademliaMapSize {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
@@ -338,7 +695,7 @@ impl Client {
 			return 1.0;
 		}
 		let len = records.len() as f32;
-		if let DHTPutSuccess::Batch(num) = self
+		if let Ok(DHTPutSuccess::Batch(num)) = self
 			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
 			.await
 		{
@@ -388,63 +745,16 @@ impl Client {
 	}
 
 	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
-		if let Ok(Some(addr)) = self.get_multiaddress().await {
-			for protocol in &addr {
-				match protocol {
-					Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
-					Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
-					_ => continue,
-				}
+		let addr = self.get_multiaddress().await?;
+		for protocol in &addr {
+			match protocol {
+				Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
+				Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
+				_ => continue,
 			}
-			return Err(anyhow!("No IP Address was present in Multiaddress"));
 		}
-		Err(anyhow!("No Multiaddress was present for Local Node"))
+		Err(anyhow!("No IP Address was present in Multiaddress"))
 	}
-}
-
-#[derive(Debug)]
-pub enum Command {
-	StartListening {
-		addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	AddAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	DialAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	Bootstrap {
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	GetKadRecord {
-		key: RecordKey,
-		response_sender: oneshot::Sender<Result<PeerRecord>>,
-	},
-	PutKadRecordBatch {
-		records: Vec<Record>,
-		quorum: Quorum,
-		response_sender: oneshot::Sender<DHTPutSuccess>,
-	},
-	CountDHTPeers {
-		response_sender: oneshot::Sender<usize>,
-	},
-	GetCellsInDHTPerBlock {
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	GetMultiaddress {
-		response_sender: oneshot::Sender<Option<Multiaddr>>,
-	},
-	ReduceKademliaMapSize,
-	AddAutonatServer {
-		peer_id: PeerId,
-		peer_address: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
 }
 
 /// This utility function takes the Multiaddress as parameter and searches for

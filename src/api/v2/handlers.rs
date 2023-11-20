@@ -10,7 +10,6 @@ use super::{
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
 	data::Database,
-	network::rpc::Node,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -50,7 +49,6 @@ pub async fn ws(
 	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) -> Result<impl Reply, Rejection> {
@@ -65,16 +63,15 @@ pub async fn ws(
 			clients,
 			version,
 			config,
-			node,
 			submitter.clone(),
 			state.clone(),
 		)
 	}))
 }
 
-pub fn status(config: RuntimeConfig, node: Node, state: Arc<Mutex<State>>) -> impl Reply {
+pub fn status(config: RuntimeConfig, state: Arc<Mutex<State>>) -> impl Reply {
 	let state = state.lock().expect("Lock should be acquired");
-	Status::new(&config, &node, &state)
+	Status::new(&config, &state)
 }
 
 pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {

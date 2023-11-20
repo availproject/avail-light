@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 
+use crate::network::rpc::Node as RpcNode;
 use crate::utils::{extract_app_lookup, extract_kate};
 use anyhow::anyhow;
 use anyhow::{Context, Result};
@@ -214,8 +215,6 @@ pub struct RuntimeConfig {
 	pub secret_key: Option<SecretKey>,
 	/// P2P service port (default: 37000).
 	pub port: u16,
-	/// Configures TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
-	pub tcp_port_reuse: bool,
 	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 	pub autonat_only_global_ips: bool,
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
@@ -501,7 +500,6 @@ impl Default for RuntimeConfig {
 			http_server_port: 7000,
 			port: 37000,
 			secret_key: None,
-			tcp_port_reuse: false,
 			autonat_only_global_ips: false,
 			autonat_refresh_interval: 30,
 			autonat_retry_interval: 10,
@@ -743,6 +741,7 @@ pub struct State {
 	pub sync_confidence_achieved: Option<BlockRange>,
 	pub sync_data_verified: Option<BlockRange>,
 	pub finality_synced: bool,
+	pub connected_node: RpcNode,
 }
 
 pub trait OptionBlockRange {

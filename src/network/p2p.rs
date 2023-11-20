@@ -2,13 +2,17 @@ use anyhow::{Context, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat, dcutr, identify, identity,
-	kad::{self, Mode},
+	kad::{self, Mode, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, yamux, PeerId, SwarmBuilder,
+	tcp, yamux, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
-use tokio::sync::mpsc::{self};
+use std::collections::HashMap;
+use tokio::sync::{
+	mpsc::{self},
+	oneshot,
+};
 use tracing::info;
 
 #[cfg(feature = "network-analysis")]
@@ -29,6 +33,62 @@ pub enum DHTPutSuccess {
 	Batch(usize),
 	Single,
 }
+
+#[derive(Debug)]
+pub enum QueryChannel {
+	GetRecord(oneshot::Sender<Result<PeerRecord>>),
+	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
+	Bootstrap(oneshot::Sender<Result<()>>),
+}
+
+pub struct EventLoopEntries<'a> {
+	swarm: &'a mut Swarm<Behaviour>,
+	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
+	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+}
+
+impl<'a> EventLoopEntries<'a> {
+	pub fn new(
+		swarm: &'a mut Swarm<Behaviour>,
+		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
+		pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	) -> Self {
+		Self {
+			swarm,
+			pending_kad_queries,
+			pending_swarm_events,
+		}
+	}
+
+	pub fn insert_query(&mut self, query_id: QueryId, result_sender: QueryChannel) {
+		self.pending_kad_queries.insert(query_id, result_sender);
+	}
+
+	pub fn insert_swarm_event(
+		&mut self,
+		peer_id: PeerId,
+		result_sender: oneshot::Sender<Result<()>>,
+	) {
+		self.pending_swarm_events.insert(peer_id, result_sender);
+	}
+
+	pub fn behavior_mut(&mut self) -> &mut Behaviour {
+		self.swarm.behaviour_mut()
+	}
+
+	pub fn swarm(&mut self) -> &mut Swarm<Behaviour> {
+		self.swarm
+	}
+}
+
+pub trait Command {
+	fn run(&mut self, entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error>;
+	fn abort(&mut self, error: anyhow::Error);
+}
+
+type SendableCommand = Box<dyn Command + Send + Sync>;
+type CommandSender = mpsc::Sender<SendableCommand>;
+type CommandReceiver = mpsc::Receiver<SendableCommand>;
 
 // Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]

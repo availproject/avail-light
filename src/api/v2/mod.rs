@@ -5,7 +5,7 @@ use self::{
 use crate::{
 	api::v2::types::Topic,
 	data::{Database, RocksDB},
-	network::rpc::{Client, Node},
+	network::rpc::Client,
 	types::{IdentityConfig, RuntimeConfig, State},
 };
 use avail_subxt::AvailConfig;
@@ -48,13 +48,11 @@ fn version_route(
 
 fn status_route(
 	config: RuntimeConfig,
-	node: Node,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || node.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.map(handlers::status)
 }
@@ -127,7 +125,6 @@ fn ws_route(
 	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -136,7 +133,6 @@ fn ws_route(
 		.and(with_ws_clients(clients))
 		.and(warp::any().map(move || version.clone()))
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || node.clone()))
 		.and(warp::any().map(move || submitter.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.and_then(handlers::ws)
@@ -184,7 +180,6 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 pub fn routes(
 	version: String,
 	network_version: String,
-	node: Node,
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	identity_config: IdentityConfig,
@@ -209,7 +204,7 @@ pub fn routes(
 	});
 
 	version_route(version.clone())
-		.or(status_route(config.clone(), node.clone(), state.clone()))
+		.or(status_route(config.clone(), state.clone()))
 		.or(block_route(config.clone(), state.clone(), db.clone()))
 		.or(block_header_route(
 			config.clone(),
@@ -219,9 +214,7 @@ pub fn routes(
 		.or(block_data_route(config.clone(), state.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
-		.or(ws_route(
-			ws_clients, version, config, node, submitter, state,
-		))
+		.or(ws_route(ws_clients, version, config, submitter, state))
 		.recover(handle_rejection)
 }
 
@@ -234,10 +227,10 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::Database,
-		network::rpc::Node,
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
+	use avail_subxt::utils::H256;
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -248,7 +241,6 @@ mod tests {
 	};
 	use hyper::StatusCode;
 	use kate_recovery::{com::AppData, matrix::Partition};
-	use sp_core::H256;
 	use std::{
 		collections::HashSet,
 		str::FromStr,
@@ -265,7 +257,6 @@ mod tests {
 		}
 	}
 
-	const GENESIS_HASH: &str = "0xc590b3c924c35c2f241746522284e4709df490d73a38aaa7d6de4ed1eac2f500";
 	const NETWORK: &str = "{host}/{system_version}/data-avail/0";
 
 	#[tokio::test]
@@ -283,29 +274,20 @@ mod tests {
 		);
 	}
 
-	impl Default for Node {
-		fn default() -> Self {
-			Self {
-				host: "{host}".to_string(),
-				system_version: "{system_version}".to_string(),
-				spec_version: 0,
-				genesis_hash: H256::from_str(GENESIS_HASH).unwrap(),
-			}
-		}
-	}
-
 	#[tokio::test]
 	async fn status_route_defaults() {
 		let state = Arc::new(Mutex::new(State::default()));
-		let route = super::status_route(RuntimeConfig::default(), Node::default(), state);
+		let route = super::status_route(RuntimeConfig::default(), state);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
 			.reply(&route)
 			.await;
 
+		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light"],"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":0}}}}"#
+			r#"{{"modes":["light"],"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":0}}}}"#,
+			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
 	}
@@ -336,15 +318,17 @@ mod tests {
 			state.sync_data_verified.set(18);
 		}
 
-		let route = super::status_route(runtime_config, Node::default(), state);
+		let route = super::status_route(runtime_config, state);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
 			.reply(&route)
 			.await;
 
+		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}"#
+			r#"{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{:#x}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}"#,
+			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
 	}
@@ -725,7 +709,6 @@ mod tests {
 				clients.clone(),
 				v1(),
 				config.clone(),
-				Node::default(),
 				submitter.map(Arc::new),
 				state.clone(),
 			);
@@ -783,8 +766,11 @@ mod tests {
 			state.sync_data_verified.set(10);
 			state.sync_data_verified.set(18);
 		}
+
+		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#
+			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#,
+			gen_hash
 		);
 
 		let status_request =

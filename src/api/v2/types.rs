@@ -22,7 +22,7 @@ use warp::{
 };
 
 use crate::{
-	network::rpc::{Event as RpcEvent, Node},
+	network::rpc::Event as RpcEvent,
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
@@ -156,7 +156,7 @@ impl Reply for SubmitResponse {
 }
 
 impl Status {
-	pub fn new(config: &RuntimeConfig, node: &Node, state: &State) -> Self {
+	pub fn new(config: &RuntimeConfig, state: &State) -> Self {
 		let historical_sync = state.synced.map(|synced| HistoricalSync {
 			synced,
 			available: state.sync_confidence_achieved.as_ref().map(From::from),
@@ -169,6 +169,8 @@ impl Status {
 			app_data: state.data_verified.as_ref().map(From::from),
 			historical_sync,
 		};
+
+		let node = state.connected_node.clone();
 
 		Status {
 			modes: config.into(),

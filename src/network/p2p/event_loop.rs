@@ -1,10 +1,10 @@
-use anyhow::Result;
-use futures::{future, FutureExt, StreamExt};
+use anyhow::{anyhow, Result};
+use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
 	dcutr,
 	identify::{self, Info},
-	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, PeerRecord, QueryId, QueryResult},
+	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult},
 	mdns,
 	multiaddr::Protocol,
 	swarm::{
@@ -14,26 +14,17 @@ use libp2p::{
 	Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::str;
 use std::{collections::HashMap, time::Duration};
 use tokio::{
-	sync::{
-		mpsc::{self},
-		oneshot,
-	},
+	sync::oneshot,
 	time::{interval_at, Instant, Interval},
 };
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info, trace};
 
-use super::{client::Command, Behaviour, BehaviourEvent, DHTPutSuccess};
-
-#[derive(Debug)]
-enum QueryChannel {
-	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
-	Bootstrap(oneshot::Sender<Result<()>>),
-}
+use super::{
+	Behaviour, BehaviourEvent, CommandReceiver, DHTPutSuccess, EventLoopEntries, QueryChannel,
+	SendableCommand,
+};
 
 // RelayState keeps track of all things relay related
 struct RelayState {
@@ -76,7 +67,7 @@ struct BootstrapState {
 
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
-	command_receiver: mpsc::Receiver<Command>,
+	command_receiver: CommandReceiver,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
@@ -88,7 +79,7 @@ pub struct EventLoop {
 impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
-		command_receiver: mpsc::Receiver<Command>,
+		command_receiver: CommandReceiver,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
@@ -419,166 +410,13 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_command(&mut self, command: Command) {
-		match command {
-			Command::AddAutonatServer {
-				peer_id,
-				peer_address,
-				response_sender,
-			} => {
-				self.swarm
-					.behaviour_mut()
-					.auto_nat
-					.add_server(peer_id, Some(peer_address));
-
-				_ = response_sender.send(Ok(()));
-			},
-			Command::StartListening {
-				addr,
-				response_sender: sender,
-			} => {
-				_ = match self.swarm.listen_on(addr) {
-					Ok(_) => sender.send(Ok(())),
-					Err(e) => sender.send(Err(e.into())),
-				}
-			},
-			Command::AddAddress {
-				peer_id,
-				peer_addr,
-				response_sender: sender,
-			} => {
-				self.swarm
-					.behaviour_mut()
-					.kademlia
-					.add_address(&peer_id, peer_addr);
-
-				self.pending_kad_routing.insert(peer_id, sender);
-			},
-			Command::DialAddress {
-				peer_id,
-				peer_addr,
-				response_sender: sender,
-			} => {
-				let res = self.swarm.dial(
-					DialOpts::peer_id(peer_id)
-						.addresses(vec![peer_addr])
-						.build(),
-				);
-				if let Err(e) = res {
-					_ = sender.send(Err(e.into()));
-					return;
-				}
-				self.pending_swarm_events.insert(peer_id, sender);
-			},
-			Command::Bootstrap {
-				response_sender: sender,
-			} => {
-				let query_id = self
-					.swarm
-					.behaviour_mut()
-					.kademlia
-					.bootstrap()
-					.expect("DHT not to be empty");
-
-				self.pending_kad_queries
-					.insert(query_id, QueryChannel::Bootstrap(sender));
-			},
-			Command::GetKadRecord {
-				key,
-				response_sender: sender,
-			} => {
-				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key);
-
-				self.pending_kad_queries
-					.insert(query_id, QueryChannel::GetRecord(sender));
-			},
-			Command::PutKadRecordBatch {
-				records,
-				quorum,
-				response_sender: chunk_success_sender,
-			} => {
-				// create channels to track individual PUT results needed for success count
-				let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(records.len());
-
-				// spawn new task that waits and count all successful put queries from this batch,
-				// but don't block event_loop
-				tokio::spawn(
-					<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
-						// consider only while receiving single successful results
-						.filter(|item| future::ready(item == &DHTPutSuccess::Single))
-						.count()
-						.map(DHTPutSuccess::Batch)
-						// send back counted successful puts
-						// signal back that this chunk of records is done
-						.map(|successful_puts| chunk_success_sender.send(successful_puts)),
-				);
-
-				// go record by record and dispatch put requests through KAD
-				for record in records {
-					let query_id = self
-						.swarm
-						.behaviour_mut()
-						.kademlia
-						.put_record(record, quorum)
-						.expect("Unable to perform batch Kademlia PUT operation.");
-					// insert query id into pending KAD requests map
-					self.pending_kad_queries.insert(
-						query_id,
-						QueryChannel::PutRecordBatch(put_result_tx.clone()),
-					);
-				}
-			},
-			Command::ReduceKademliaMapSize => {
-				self.swarm
-					.behaviour_mut()
-					.kademlia
-					.store_mut()
-					.shrink_hashmap();
-			},
-			Command::CountDHTPeers { response_sender } => {
-				let mut total_peers: usize = 0;
-				for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
-					total_peers += bucket.num_entries();
-				}
-				_ = response_sender.send(total_peers);
-			},
-			Command::GetCellsInDHTPerBlock { response_sender } => {
-				let mut occurrence_map = HashMap::new();
-
-				for record in self
-					.swarm
-					.behaviour_mut()
-					.kademlia
-					.store_mut()
-					.records_iter()
-				{
-					let vec_key = record.0.to_vec();
-					let record_key = str::from_utf8(&vec_key);
-
-					let (block_num, _) = record_key
-						.expect("unable to cast key to string")
-						.split_once(':')
-						.expect("unable to split the key string");
-
-					let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
-					*count += 1;
-				}
-				let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
-				sorted.sort_by(|a, b| a.0.cmp(b.0));
-				for (block_number, cell_count) in sorted {
-					trace!(
-						"Number of cells in DHT for block {:?}: {}",
-						block_number,
-						cell_count
-					);
-				}
-
-				_ = response_sender.send(Ok(()));
-			},
-			Command::GetMultiaddress { response_sender } => {
-				let last_address = self.swarm.external_addresses().last();
-				_ = response_sender.send(last_address.cloned());
-			},
+	async fn handle_command(&mut self, mut command: SendableCommand) {
+		if let Err(err) = command.run(EventLoopEntries::new(
+			&mut self.swarm,
+			&mut self.pending_kad_queries,
+			&mut self.pending_kad_routing,
+		)) {
+			command.abort(anyhow!(err));
 		}
 	}
 

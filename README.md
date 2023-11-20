@@ -155,8 +155,6 @@ http_server_port = 7000
 secret_key = { seed={seed} }
 # P2P service port (default: 37000).
 port = 37000
-# Configures TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
-tcp_port_reuse = bool
 # Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 autonat_only_global_ips = false
 # AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
