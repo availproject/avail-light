@@ -340,13 +340,13 @@ impl EventLoop {
 					info!("New external address: {addr}");
 				},
 				upnp::Event::GatewayNotFound => {
-					info!("Gateway does not support UPnP");
+					trace!("Gateway does not support UPnP");
 				},
 				upnp::Event::NonRoutableGateway => {
-					info!("Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
+					trace!("Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
 				},
 				upnp::Event::ExpiredExternalAddr(addr) => {
-					info!("Gateway address expired: {addr}");
+					trace!("Gateway address expired: {addr}");
 				},
 			},
 			swarm_event => {
