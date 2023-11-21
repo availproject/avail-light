@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{
 	api::{
@@ -9,6 +8,10 @@ use avail_subxt::{
 	primitives::{AvailExtrinsicParams, Header},
 	utils::H256,
 	AvailConfig,
+};
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
 };
 use kate_recovery::{data::Cell, matrix::Position};
 use sp_core::ed25519::{self, Public};
@@ -36,15 +39,12 @@ struct GetBlockHash {
 
 #[async_trait]
 impl Command for GetBlockHash {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let hash = client
 			.rpc()
 			.block_hash(Some(BlockNumber::from(self.block_number)))
 			.await?
-			.ok_or_else(|| anyhow!("Block with number: {} not found", self.block_number))?;
+			.ok_or_else(|| eyre!("Block with number: {} not found", self.block_number))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -54,7 +54,7 @@ impl Command for GetBlockHash {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -70,15 +70,12 @@ struct GetHeaderByHash {
 
 #[async_trait]
 impl Command for GetHeaderByHash {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let header = client
 			.rpc()
 			.header(Some(self.block_hash))
 			.await?
-			.ok_or_else(|| anyhow!("Block Header with hash: {:?} not found", self.block_hash))?;
+			.ok_or_else(|| eyre!("Block Header with hash: {:?} not found", self.block_hash))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -88,7 +85,7 @@ impl Command for GetHeaderByHash {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -104,10 +101,7 @@ struct GetValidatorSetByHash {
 
 #[async_trait]
 impl Command for GetValidatorSetByHash {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let res = client
 			.runtime_api()
 			.at(self.block_hash)
@@ -125,7 +119,7 @@ impl Command for GetValidatorSetByHash {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -143,10 +137,7 @@ struct RequestKateRows {
 
 #[async_trait]
 impl Command for RequestKateRows {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let mut params = RpcParams::new();
 		params.push(self.rows.clone())?;
 		params.push(self.block_hash)?;
@@ -161,7 +152,7 @@ impl Command for RequestKateRows {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -178,10 +169,7 @@ struct RequestKateProof {
 
 #[async_trait]
 impl Command for RequestKateProof {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let mut params = RpcParams::new();
 		params.push(self.positions.clone())?;
 		params.push(self.block_hash)?;
@@ -207,7 +195,7 @@ impl Command for RequestKateProof {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -222,10 +210,7 @@ struct GetSystemVersion {
 
 #[async_trait]
 impl Command for GetSystemVersion {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let res = client.rpc().system_version().await?;
 
 		// send result back
@@ -236,7 +221,7 @@ impl Command for GetSystemVersion {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -251,10 +236,7 @@ struct RequestRuntimeVersion {
 
 #[async_trait]
 impl Command for RequestRuntimeVersion {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let res: RuntimeVersion = client
 			.rpc()
 			.request("state_getRuntimeVersion", RpcParams::new())
@@ -268,7 +250,7 @@ impl Command for RequestRuntimeVersion {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -284,17 +266,14 @@ struct FetchSetIdAt {
 
 #[async_trait]
 impl Command for FetchSetIdAt {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let set_id_key = api::storage().grandpa().current_set_id();
 		let res = client
 			.storage()
 			.at(self.block_hash)
 			.fetch(&set_id_key)
 			.await?
-			.ok_or_else(|| anyhow!("The set_id should exist"))?;
+			.ok_or_else(|| eyre!("The set_id should exist"))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -304,7 +283,7 @@ impl Command for FetchSetIdAt {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -320,10 +299,7 @@ struct GetValidatorSetAt {
 
 #[async_trait]
 impl Command for GetValidatorSetAt {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		// get validator set from genesis (Substrate Account ID)
 		let validators_key = api::storage().session().validators();
 		let res = client
@@ -331,7 +307,7 @@ impl Command for GetValidatorSetAt {
 			.at(self.block_hash)
 			.fetch(&validators_key)
 			.await
-			.map_err(|e| anyhow!(e))?;
+			.map_err(|e| eyre!(e))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -341,7 +317,7 @@ impl Command for GetValidatorSetAt {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -358,14 +334,11 @@ struct SubmitFromBytesAndWatch {
 
 #[async_trait]
 impl Command for SubmitFromBytesAndWatch {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let ext = SubmittableExtrinsic::from_bytes(client.clone(), self.tx_bytes.clone())
 			.submit_and_watch()
 			.await
-			.map_err(|e| anyhow!(e))?;
+			.map_err(|e| eyre!(e))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -375,7 +348,7 @@ impl Command for SubmitFromBytesAndWatch {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -394,15 +367,12 @@ struct SubmitSignedAndWatch {
 
 #[async_trait]
 impl Command for SubmitSignedAndWatch {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let res = client
 			.tx()
 			.sign_and_submit_then_watch(&self.extrinsic, &self.pair_signer, self.params.clone())
 			.await
-			.map_err(|e| anyhow!(e))?;
+			.map_err(|e| eyre!(e))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -412,7 +382,7 @@ impl Command for SubmitSignedAndWatch {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -431,15 +401,12 @@ struct GetPagedStorageKeys {
 
 #[async_trait]
 impl Command for GetPagedStorageKeys {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let res = client
 			.rpc()
 			.storage_keys_paged(&self.key, self.count, self.start_key.as_deref(), self.hash)
 			.await
-			.map_err(|e| anyhow!(e))?;
+			.map_err(|e| eyre!(e))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -449,7 +416,7 @@ impl Command for GetPagedStorageKeys {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -466,10 +433,7 @@ struct GetSessionKeyOwnerAt {
 
 #[async_trait]
 impl Command for GetSessionKeyOwnerAt {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let session_key_key_owner = api::storage().session().key_owner(
 			KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
 			self.public_key.0,
@@ -480,7 +444,7 @@ impl Command for GetSessionKeyOwnerAt {
 			.at(self.block_hash)
 			.fetch(&session_key_key_owner)
 			.await
-			.map_err(|e| anyhow!(e))?;
+			.map_err(|e| eyre!(e))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -490,7 +454,7 @@ impl Command for GetSessionKeyOwnerAt {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -506,10 +470,7 @@ struct RequestFinalityProof {
 
 #[async_trait]
 impl Command for RequestFinalityProof {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let mut params = RpcParams::new();
 		params.push(self.block_number)?;
 
@@ -517,7 +478,7 @@ impl Command for RequestFinalityProof {
 			.rpc()
 			.request("grandpa_proveFinality", params)
 			.await
-			.map_err(|e| anyhow!("Request failed at Finality Proof. Error: {e}"))?;
+			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -527,7 +488,7 @@ impl Command for RequestFinalityProof {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -542,10 +503,7 @@ struct GetGenesisHash {
 
 #[async_trait]
 impl Command for GetGenesisHash {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let res = client.genesis_hash();
 
 		// send result back
@@ -556,7 +514,7 @@ impl Command for GetGenesisHash {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {
@@ -571,10 +529,7 @@ struct GetFinalizedHeadHash {
 
 #[async_trait]
 impl Command for GetFinalizedHeadHash {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
 		let head = client.rpc().finalized_head().await?;
 
 		// send result back
@@ -585,7 +540,7 @@ impl Command for GetFinalizedHeadHash {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		// TODO: maybe wrap error with specific error message per Command type implementation
 		if let Some(sender) = self.response_sender.take() {

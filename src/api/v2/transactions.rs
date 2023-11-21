@@ -1,11 +1,11 @@
-use crate::network::rpc;
-
-use super::types::{SubmitResponse, Transaction};
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{api, primitives::AvailExtrinsicParams, AvailConfig};
+use color_eyre::{eyre::WrapErr, Result};
 use sp_core::sr25519::Pair;
 use subxt::tx::PairSigner;
+
+use super::types::{SubmitResponse, Transaction};
+use crate::network::rpc;
 
 #[async_trait]
 pub trait Submit {
@@ -39,7 +39,7 @@ impl Submit for Submitter {
 		let event = tx_progress
 			.wait_for_finalized_success()
 			.await
-			.context("Cannot sign and submit transaction")?;
+			.wrap_err("Cannot sign and submit transaction")?;
 
 		let block_number = self
 			.node_client

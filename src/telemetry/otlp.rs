@@ -1,5 +1,5 @@
-use anyhow::{Error, Ok, Result};
 use async_trait::async_trait;
+use color_eyre::Result;
 use opentelemetry_api::{
 	global,
 	metrics::{Counter, Meter},
@@ -151,7 +151,7 @@ pub fn initialize(
 	origin: String,
 	avail_address: String,
 	#[cfg(feature = "crawl")] crawl_block_delay: u64,
-) -> Result<Metrics, Error> {
+) -> Result<Metrics> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),

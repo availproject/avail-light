@@ -1,10 +1,10 @@
-use anyhow::Result;
 use avail_light::{
 	data,
 	network::rpc::{self, ExpectedVersion},
 	types::State,
 };
 use clap::Parser;
+use color_eyre::Result;
 use kate_recovery::matrix::Position;
 use std::sync::{Arc, Mutex};
 

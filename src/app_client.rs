@@ -11,12 +11,14 @@
 //! # Notes
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
-
-use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_core::AppId;
 use avail_subxt::utils::H256;
 use codec::Encode;
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
+};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
 	com::{
@@ -177,7 +179,7 @@ impl AppClient for AppClientImpl {
 					.collect::<Vec<_>>();
 
 				if data.len() != dimensions.width() * config::CHUNK_SIZE {
-					return Err(anyhow!("Row size is not valid after reconstruction"));
+					return Err(eyre!("Row size is not valid after reconstruction"));
 				}
 
 				Ok((row, data))
@@ -264,7 +266,7 @@ fn data_cell(
 		// Dividing with extension factor since reconstracted column is not extended
 		.and_then(|column| column.get(row / config::EXTENSION_FACTOR))
 		.map(|&data| DataCell { position, data })
-		.context("Data cell not found")
+		.ok_or_else(|| eyre!("Data cell not found"))
 }
 
 async fn fetch_verified(
@@ -281,7 +283,7 @@ async fn fetch_verified(
 
 	let (verified, mut unverified) =
 		proof::verify(block_number, dimensions, &fetched, commitments, pp)
-			.context("Failed to verify fetched cells")?;
+			.wrap_err("Failed to verify fetched cells")?;
 
 	fetched.retain(|cell| verified.contains(&cell.position));
 	unfetched.append(&mut unverified);
@@ -375,7 +377,7 @@ async fn process_block(
 	);
 
 	if missing_rows.len() * dimensions.width() > cfg.threshold {
-		return Err(anyhow::anyhow!("Too many cells are missing"));
+		return Err(eyre!("Too many cells are missing"));
 	}
 
 	debug!(
@@ -439,7 +441,7 @@ pub async fn run(
 	state: Arc<Mutex<State>>,
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
-	error_sender: Sender<anyhow::Error>,
+	error_sender: Sender<Report>,
 ) {
 	info!("Starting for app {app_id}...");
 

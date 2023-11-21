@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use color_eyre::{eyre::WrapErr, Report, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat, dcutr, identify, identity,
@@ -77,8 +77,8 @@ impl<'a> EventLoopEntries<'a> {
 }
 
 pub trait Command {
-	fn run(&mut self, entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error>;
-	fn abort(&mut self, error: anyhow::Error);
+	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report>;
+	fn abort(&mut self, error: Report);
 }
 
 type SendableCommand = Box<dyn Command + Send + Sync>;

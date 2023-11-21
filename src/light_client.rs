@@ -18,10 +18,10 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 //! In case partition is configured, block partition is fetched and inserted into DHT.
 
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
+use color_eyre::{eyre::WrapErr, Report, Result};
 use futures::future::join_all;
 use kate_recovery::{
 	commitments, data,
@@ -100,11 +100,11 @@ impl LightClient for LightClientImpl {
 	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)
-			.context("Failed to store confidence in DB")
+			.wrap_err("Failed to store confidence in DB")
 	}
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
 		store_block_header_in_db(self.db.clone(), block_number, header)
-			.context("Failed to store block header in DB")
+			.wrap_err("Failed to store block header in DB")
 	}
 }
 
@@ -225,7 +225,7 @@ pub async fn process_block(
 	// when this process started
 	light_client
 		.store_block_header_in_db(header, block_number)
-		.context("Failed to store block header in DB")?;
+		.wrap_err("Failed to store block header in DB")?;
 
 	let mut rpc_fetched: Vec<Cell> = vec![];
 
@@ -259,7 +259,7 @@ pub async fn process_block(
 				.into_iter()
 				.enumerate()
 				.map(|(i, e)| {
-					e.context(format!("Failed to fetch cells from node RPC at batch {i}"))
+					e.wrap_err(format!("Failed to fetch cells from node RPC at batch {i}"))
 				})
 				.collect::<Vec<_>>()
 			{
@@ -312,7 +312,7 @@ pub async fn process_block(
 	light_client
 		.shrink_kademlia_map()
 		.await
-		.context("Unable to perform Kademlia map shrink")?;
+		.wrap_err("Unable to perform Kademlia map shrink")?;
 
 	// dump what we have on the current p2p network
 	if let Ok((multiaddr, ip)) = light_client.get_multiaddress_and_ip().await {
@@ -334,7 +334,7 @@ pub async fn process_block(
 pub struct Channels {
 	pub block_sender: Option<broadcast::Sender<BlockVerified>>,
 	pub rpc_event_receiver: broadcast::Receiver<Event>,
-	pub error_sender: Sender<anyhow::Error>,
+	pub error_sender: Sender<Report>,
 }
 
 /// Runs light client.

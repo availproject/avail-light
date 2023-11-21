@@ -13,7 +13,7 @@ use crate::{
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
-use anyhow::anyhow;
+use color_eyre::{eyre::eyre, Result};
 use hyper::StatusCode;
 use std::{
 	convert::Infallible,
@@ -127,7 +127,7 @@ pub async fn block_header(
 	};
 
 	db.get_header(block_number)
-		.and_then(|header| header.ok_or_else(|| anyhow!("Header not found")))
+		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
 }
@@ -167,7 +167,7 @@ pub async fn block_data(
 	let mut data_transactions: Vec<DataTransaction> = data
 		.into_iter()
 		.map(DataTransaction::try_from)
-		.collect::<anyhow::Result<_>>()
+		.collect::<Result<_>>()
 		.map_err(Error::internal_server_error)?;
 
 	if let Some(FieldsQueryParameter(fields)) = &query.fields {

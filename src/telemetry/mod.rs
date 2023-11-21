@@ -1,5 +1,5 @@
-use anyhow::Result;
 use async_trait::async_trait;
+use color_eyre::Result;
 use mockall::automock;
 
 pub mod otlp;

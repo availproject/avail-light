@@ -4,6 +4,7 @@ version = "1.7.4"
 authors = ["Avail Team"]
 default-run = "avail-light"
 edition = "2021"
+repository = "https://github.com/availproject/avail-light.git"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]
@@ -26,8 +27,6 @@ avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.gi
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v1.8.0.0" }
 
-# Substrate
-anyhow = "1.0.41"
 # 3rd-party
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.66"
@@ -69,6 +68,11 @@ opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] 
 opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
 tiny-bip39 = "1.0.0"
+color-eyre = "0.6.2"
+human-panic = { version = "1.2.2", features = ["color"]}
+better-panic = "0.3.0"
+strip-ansi-escapes = "0.2.0"
+libc = "0.2.150"
 
 [features]
 network-analysis = []

@@ -1,5 +1,8 @@
 use super::{Command, CommandSender, EventLoopEntries, QueryChannel, SendableCommand};
-use anyhow::{anyhow, Context, Result};
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
+};
 use futures::future::join_all;
 use kate_recovery::{
 	config,
@@ -68,7 +71,7 @@ struct StartListening {
 }
 
 impl Command for StartListening {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		_ = entries.swarm().listen_on(self.addr.clone())?;
 
 		// send result back
@@ -81,7 +84,7 @@ impl Command for StartListening {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -98,7 +101,7 @@ struct AddAddress {
 }
 
 impl Command for AddAddress {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		_ = entries
 			.behavior_mut()
 			.kademlia
@@ -109,7 +112,7 @@ impl Command for AddAddress {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -124,7 +127,7 @@ struct Bootstrap {
 }
 
 impl Command for Bootstrap {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let query_id = entries.behavior_mut().kademlia.bootstrap()?;
 
 		// insert response channel into KAD Queries pending map
@@ -133,7 +136,7 @@ impl Command for Bootstrap {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -149,7 +152,7 @@ struct GetKadRecord {
 }
 
 impl Command for GetKadRecord {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let query_id = entries.behavior_mut().kademlia.get_record(self.key.clone());
 
 		// insert response channel into KAD Queries pending map
@@ -158,7 +161,7 @@ impl Command for GetKadRecord {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -176,7 +179,7 @@ struct PutKadRecord {
 
 // `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
 impl Command for PutKadRecord {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		// `block_entry` is in format (total_cells, result_cell_counter, time_stat)
 		entries
 			.active_blocks
@@ -197,7 +200,7 @@ impl Command for PutKadRecord {
 		Ok(())
 	}
 
-	fn abort(&mut self, _: anyhow::Error) {}
+	fn abort(&mut self, _: Report) {}
 }
 
 struct CountDHTPeers {
@@ -205,7 +208,7 @@ struct CountDHTPeers {
 }
 
 impl Command for CountDHTPeers {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let mut total_peers: usize = 0;
 		for bucket in entries.behavior_mut().kademlia.kbuckets() {
 			total_peers += bucket.num_entries();
@@ -221,7 +224,7 @@ impl Command for CountDHTPeers {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -236,7 +239,7 @@ struct GetCellsInDHTPerBlock {
 }
 
 impl Command for GetCellsInDHTPerBlock {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let mut occurrence_map = HashMap::new();
 		for record in entries.behavior_mut().kademlia.store_mut().records_iter() {
 			let vec_key = record.0.to_vec();
@@ -269,7 +272,7 @@ impl Command for GetCellsInDHTPerBlock {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -284,12 +287,12 @@ struct GetMultiaddress {
 }
 
 impl Command for GetMultiaddress {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let last_address = entries
 			.swarm()
 			.external_addresses()
 			.last()
-			.ok_or_else(|| anyhow!("The last_address should exist"))?;
+			.ok_or_else(|| eyre!("The last_address should exist"))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -301,7 +304,7 @@ impl Command for GetMultiaddress {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -316,7 +319,7 @@ struct ReduceKademliaMapSize {
 }
 
 impl Command for ReduceKademliaMapSize {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		entries.behavior_mut().kademlia.store_mut().shrink_hashmap();
 
 		// send result back
@@ -329,7 +332,7 @@ impl Command for ReduceKademliaMapSize {
 		Ok(())
 	}
 
-	fn abort(&mut self, _: anyhow::Error) {
+	fn abort(&mut self, _: Report) {
 		// theres should be no errors from running this Command
 		debug!("No possible errors for ReduceKademliaMapSize");
 	}
@@ -342,7 +345,7 @@ struct DialPeer {
 }
 
 impl Command for DialPeer {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		entries.swarm().dial(
 			DialOpts::peer_id(self.peer_id)
 				.addresses(vec![self.peer_address.clone()])
@@ -354,7 +357,7 @@ impl Command for DialPeer {
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, error: Report) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
@@ -371,7 +374,7 @@ struct AddAutonatServer {
 }
 
 impl Command for AddAutonatServer {
-	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		entries
 			.behavior_mut()
 			.auto_nat
@@ -387,7 +390,7 @@ impl Command for AddAutonatServer {
 		Ok(())
 	}
 
-	fn abort(&mut self, _: anyhow::Error) {
+	fn abort(&mut self, _: Report) {
 		// theres should be no errors from running this Command
 		debug!("No possible errors for AddAutonatServer command");
 	}
@@ -411,10 +414,10 @@ impl Client {
 		self.command_sender
 			.send(command)
 			.await
-			.context("receiver should not be dropped")?;
+			.wrap_err("receiver should not be dropped")?;
 		response_receiver
 			.await
-			.context("sender should not be dropped")?
+			.wrap_err("sender should not be dropped")?
 	}
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
@@ -473,7 +476,7 @@ impl Client {
 		for (peer, addr) in nodes {
 			self.dial_peer(peer, addr.clone())
 				.await
-				.context("Dialing Bootstrap peer failed.")?;
+				.wrap_err("Dialing Bootstrap peer failed.")?;
 			self.add_address(peer, addr.clone()).await?;
 
 			self.add_autonat_server(peer, autonat_address(addr)).await?;
@@ -642,7 +645,7 @@ impl Client {
 
 	async fn insert_into_dht(&self, records: Vec<(String, Record)>, block_num: u32) -> Result<()> {
 		if records.is_empty() {
-			return Err(anyhow!("Cant send empty record list."));
+			return Err(eyre!("Cant send empty record list."));
 		}
 		self.put_kad_record(
 			records.into_iter().map(|e| e.1).collect(),
@@ -704,7 +707,7 @@ impl Client {
 				_ => continue,
 			}
 		}
-		Err(anyhow!("No IP Address was present in Multiaddress"))
+		Err(eyre!("No IP Address was present in Multiaddress"))
 	}
 }
 

@@ -1,4 +1,5 @@
 use avail_subxt::primitives::AppUncheckedExtrinsic;
+use color_eyre::Report;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +12,7 @@ where
 	NotFound,
 	NotFinalized,
 	InProcess,
-	Error(anyhow::Error),
+	Error(Report),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

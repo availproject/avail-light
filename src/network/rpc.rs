@@ -1,7 +1,7 @@
-use anyhow::anyhow;
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header, utils::H256};
 use codec::Decode;
+use color_eyre::{eyre::eyre, Report, Result};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rocksdb::DB;
@@ -36,8 +36,8 @@ pub use event_loop::Event;
 
 #[async_trait]
 pub trait Command {
-	async fn run(&mut self, client: &avail::Client) -> anyhow::Result<(), anyhow::Error>;
-	fn abort(&mut self, error: anyhow::Error);
+	async fn run(&mut self, client: &avail::Client) -> Result<()>;
+	fn abort(&mut self, error: Report);
 }
 
 type SendableCommand = Box<dyn Command + Send + Sync>;
@@ -275,11 +275,11 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 pub async fn wait_for_finalized_header(
 	mut rpc_events_receiver: broadcast::Receiver<Event>,
 	timeout_seconds: u64,
-) -> anyhow::Result<Header> {
+) -> Result<Header> {
 	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
 	match timeout(timeout_seconds, rpc_events_receiver.recv()).await {
 		Ok(Ok(rpc::Event::HeaderUpdate { header, .. })) => Ok(header),
-		Ok(Err(error)) => Err(anyhow!("Failed to receive finalized header: {error}")),
-		Err(_) => Err(anyhow!("Timeout on waiting for first finalized header")),
+		Ok(Err(error)) => Err(eyre!("Failed to receive finalized header: {error}")),
+		Err(_) => Err(eyre!("Timeout on waiting for first finalized header")),
 	}
 }

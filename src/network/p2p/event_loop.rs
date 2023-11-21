@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
@@ -514,7 +514,7 @@ impl EventLoop {
 			&mut self.pending_kad_routing,
 			&mut self.active_blocks,
 		)) {
-			command.abort(anyhow!(err));
+			command.abort(eyre!(err));
 		}
 	}
 

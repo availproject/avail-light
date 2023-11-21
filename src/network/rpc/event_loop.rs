@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use avail_subxt::{
 	api::{self},
 	avail::{self},
@@ -8,6 +7,7 @@ use avail_subxt::{
 	AvailConfig,
 };
 use codec::Encode;
+use color_eyre::{eyre::eyre, Result};
 use futures::Stream;
 use rocksdb::DB;
 use sp_core::{
@@ -106,7 +106,9 @@ impl EventLoop {
 		// shuffle passed Nodes and start try to connect the first one
 		let mut node = self.reset_nodes()?;
 
-		let client: OnlineClient<AvailConfig> = build_client(&node.host, false).await?;
+		let client: OnlineClient<AvailConfig> = build_client(&node.host, false)
+			.await
+			.map_err(|e| eyre!(e))?;
 
 		let genesis_hash = client.genesis_hash();
 		let system_version = client.rpc().system_version().await?;
@@ -130,7 +132,7 @@ impl EventLoop {
 		);
 
 		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			return Err(anyhow!("Expected {expected_version}, found {version}"));
+			return Err(eyre!("Expected {expected_version}, found {version}"));
 		}
 
 		info!(
@@ -145,7 +147,7 @@ impl EventLoop {
 		let c = self
 			.subxt_client
 			.as_ref()
-			.ok_or_else(|| anyhow!("RPC client not initialized"))?;
+			.ok_or_else(|| eyre!("RPC client not initialized"))?;
 		Ok(c)
 	}
 
@@ -216,7 +218,7 @@ impl EventLoop {
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the RPC Event Loop
-					None => return Err(anyhow!("RPC Event Loop shutting down")),
+					None => return Err(eyre!("RPC Event Loop shutting down")),
 				},
 			}
 		}
@@ -313,7 +315,7 @@ impl EventLoop {
 							&precommit.id,
 						);
 						is_ok.then(|| precommit.clone().id).ok_or_else(|| {
-							anyhow!(
+							eyre!(
 								"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",
 								&precommit.id,
 								valset.set_id,
@@ -418,7 +420,7 @@ impl EventLoop {
 	async fn handle_command(&self, mut command: SendableCommand) {
 		let client = self.unpack_client().unwrap();
 		if let Err(err) = command.run(client).await {
-			command.abort(anyhow!(err));
+			command.abort(eyre!(err));
 		}
 	}
 
@@ -427,7 +429,7 @@ impl EventLoop {
 			.rpc()
 			.block_hash(Some(BlockNumber::from(block_number)))
 			.await?
-			.ok_or_else(|| anyhow!("Block with number: {block_number} not found"))
+			.ok_or_else(|| eyre!("Block with number: {block_number} not found"))
 	}
 
 	async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
@@ -435,7 +437,7 @@ impl EventLoop {
 			.rpc()
 			.header(Some(block_hash))
 			.await?
-			.ok_or_else(|| anyhow!("Block Header with hash: {block_hash:?} not found"))
+			.ok_or_else(|| eyre!("Block Header with hash: {block_hash:?} not found"))
 	}
 
 	async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
@@ -454,7 +456,7 @@ impl EventLoop {
 			.rpc()
 			.finalized_head()
 			.await
-			.map_err(|e| anyhow!(e))
+			.map_err(|e| eyre!(e))
 	}
 
 	async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
@@ -465,7 +467,7 @@ impl EventLoop {
 			.at(block_hash)
 			.fetch(&set_id_key)
 			.await?
-			.ok_or_else(|| anyhow!("The set_id should exist"))
+			.ok_or_else(|| eyre!("The set_id should exist"))
 	}
 
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(Header, H256)> {
@@ -477,7 +479,7 @@ impl EventLoop {
 		let node = self
 			.nodes
 			.reset()
-			.ok_or_else(|| anyhow!("RPC WS Nodes list must not be empty"))?;
+			.ok_or_else(|| eyre!("RPC WS Nodes list must not be empty"))?;
 
 		Ok(node)
 	}
@@ -492,8 +494,8 @@ impl EventLoop {
 		info!("Genesis hash: {:?}", node.genesis_hash);
 		if let Some(stored_genesis_hash) = data::get_genesis_hash(self.db.clone())? {
 			if !node.genesis_hash.eq(&stored_genesis_hash) {
-				Err(anyhow!(
-					"Genesis hash doesn't match the stored one! Clear the db or change nodes."
+				Err(eyre!(
+					"Genesis hash doesn't match the stored one! Clear the db or change nodes.",
 				))?
 			}
 		} else {

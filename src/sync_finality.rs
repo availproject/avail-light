@@ -1,6 +1,9 @@
-use anyhow::{anyhow, bail, Context, Result};
 use avail_subxt::primitives::Header;
 use codec::Encode;
+use color_eyre::{
+	eyre::{bail, eyre, Context},
+	Report, Result,
+};
 use futures::future::join_all;
 use rocksdb::DB;
 use sp_core::{
@@ -59,8 +62,8 @@ async fn get_valset_at_genesis(
 	let validator_set_pre = rpc_client
 		.get_validator_set_at(genesis_hash)
 		.await
-		.context("Couldn't get initial validator set")?
-		.ok_or_else(|| anyhow!("Validator set is empty!"))?;
+		.wrap_err("Couldn't get initial validator set")?
+		.ok_or_else(|| eyre!("Validator set is empty!"))?;
 
 	// Get all grandpa session keys from genesis (GRANDPA ed25519 keys)
 	let grandpa_keys_and_account = rpc_client
@@ -68,7 +71,7 @@ async fn get_valset_at_genesis(
 		// perhaps there is a better way, but I don't know it
 		.get_paged_storage_keys(k1.clone(), 1000, None, Some(genesis_hash))
 		.await
-		.context("Couldn't get storage keys associated with key owners!")?
+		.wrap_err("Couldn't get storage keys associated with key owners!")?
 		.into_iter()
 		// throw away the beginning, we don't need it
 		.map(|e| e.0[k1.len()..].to_vec())
@@ -105,7 +108,7 @@ async fn get_valset_at_genesis(
 
 pub async fn run(
 	sync_finality_impl: impl SyncFinality,
-	error_sender: Sender<anyhow::Error>,
+	error_sender: Sender<Report>,
 	state: Arc<Mutex<State>>,
 	from_header: Header,
 ) {
@@ -143,7 +146,7 @@ pub async fn sync_finality(
 		set_id = rpc_client
 			.fetch_set_id_at(gen_hash)
 			.await
-			.context(format!("Couldn't get set_id at {}", gen_hash))?;
+			.wrap_err(format!("Couldn't get set_id at {}", gen_hash))?;
 		info!("Set ID at genesis is {set_id}");
 	}
 
@@ -155,7 +158,7 @@ pub async fn sync_finality(
 	let mut prev_hash = rpc_client
 		.get_block_hash(curr_block_num - 1)
 		.await
-		.context("Hash doesn't exist?")?;
+		.wrap_err("Hash doesn't exist?")?;
 	loop {
 		if curr_block_num == last_block_num + 1 {
 			info!("Finished verifying finality up to block no. {last_block_num}!");
@@ -164,14 +167,14 @@ pub async fn sync_finality(
 		let hash = rpc_client
 			.get_block_hash(curr_block_num)
 			.await
-			.context(format!(
+			.wrap_err(format!(
 				"Couldn't get hash for block no. {}",
 				curr_block_num
 			))?;
 		from_header = rpc_client
 			.get_header_by_hash(hash)
 			.await
-			.context(format!("Couldn't get header for {}", hash))?;
+			.wrap_err(format!("Couldn't get header for {}", hash))?;
 		store_block_header_in_db(db.clone(), curr_block_num, &from_header)?;
 
 		assert_eq!(
@@ -189,7 +192,7 @@ pub async fn sync_finality(
 		let proof: WrappedProof = rpc_client
 			.request_finality_proof(curr_block_num)
 			.await
-			.context(format!(
+			.wrap_err(format!(
 				"Couldn't get finality proof for block no. {}",
 				curr_block_num
 			))?;
@@ -197,7 +200,7 @@ pub async fn sync_finality(
 		let p_h = rpc_client
 			.get_header_by_hash(proof_block_hash)
 			.await
-			.context(format!("Couldn't get header for {}", proof_block_hash))?;
+			.wrap_err(format!("Couldn't get header for {}", proof_block_hash))?;
 
 		let signed_message = Encode::encode(&(
 			&SignerMessage::PrecommitMessage(
@@ -224,7 +227,7 @@ pub async fn sync_finality(
 				);
 				is_ok
 					.then(|| precommit.clone().id)
-					.ok_or_else(|| anyhow!("Not signed by this signature!"))
+					.ok_or_else(|| eyre!("Not signed by this signature!"))
 			})
 			.collect::<Result<Vec<_>>>();
 
