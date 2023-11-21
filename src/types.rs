@@ -501,7 +501,7 @@ impl Default for RuntimeConfig {
 			port: 37000,
 			secret_key: None,
 			autonat_only_global_ips: false,
-			autonat_refresh_interval: 120,
+			autonat_refresh_interval: 360,
 			autonat_retry_interval: 20,
 			autonat_throttle: 1,
 			autonat_boot_delay: 5,
