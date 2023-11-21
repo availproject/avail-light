@@ -104,7 +104,7 @@ impl EventLoop {
 
 	async fn create_subxt_client(&mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
 		// shuffle passed Nodes and start try to connect the first one
-		let node = self.reset_nodes()?;
+		let mut node = self.reset_nodes()?;
 
 		let client: OnlineClient<AvailConfig> = build_client(&node.host, false).await?;
 
@@ -117,8 +117,7 @@ impl EventLoop {
 		// client was built successfully, keep it
 		self.set_subxt_client(client);
 
-		node.clone()
-			.with_spec_version(runtime_version.spec_version)
+		node.with_spec_version(runtime_version.spec_version)
 			.with_system_version(system_version.clone())
 			.with_genesis_hash(genesis_hash);
 		// connecting to the selected node was a success,
