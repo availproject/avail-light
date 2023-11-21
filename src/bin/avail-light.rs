@@ -170,13 +170,22 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.context("Listening on TCP not to fail.")?;
 	info!("Listening for TCP on port: {port}");
 
-	// wait here for bootstrap to finish
-	info!("Bootstraping the DHT with bootstrap nodes...");
-	p2p_client
-		.bootstrap_on_startup(cfg.clone().bootstraps.iter().map(Into::into).collect())
-		.await?;
-
-	info!("Bootstrap done");
+	let p2p_clone = p2p_client.to_owned();
+	let cfg_clone = cfg.to_owned();
+	tokio::spawn(async move {
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		let bs_result = p2p_clone
+			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
+			.await;
+		match bs_result {
+			Ok(_) => {
+				info!("Bootstrap done.");
+			},
+			Err(e) => {
+				error!("Error in the bootstrap process: {e:?}.");
+			},
+		}
+	});
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
