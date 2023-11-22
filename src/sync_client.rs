@@ -21,20 +21,17 @@ use crate::{
 		store_confidence_in_db,
 	},
 	network::{
-		p2p::Client as P2pClient,
+		self,
 		rpc::{self, Client as RpcClient},
 	},
-	proof,
 	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
 	utils::{calculate_confidence, extract_app_lookup, extract_kate},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::Encode;
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
-use kate_recovery::{data::Cell, matrix::Position};
 use mockall::automock;
 use rocksdb::DB;
 use sp_core::blake2_256;
@@ -52,27 +49,15 @@ pub trait SyncClient {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
-	async fn fetch_cells_from_dht(
-		&self,
-		positions: &[Position],
-		block_number: u32,
-	) -> (Vec<Cell>, Vec<Position>);
 }
 #[derive(Clone)]
 struct SyncClientImpl {
 	db: Arc<DB>,
-	network_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-pub fn new(db: Arc<DB>, network_client: P2pClient, rpc_client: RpcClient) -> impl SyncClient {
-	SyncClientImpl {
-		db,
-		network_client,
-		rpc_client,
-	}
+pub fn new(db: Arc<DB>, rpc_client: RpcClient) -> impl SyncClient {
+	SyncClientImpl { db, rpc_client }
 }
 
 #[async_trait]
@@ -110,33 +95,14 @@ impl SyncClient for SyncClientImpl {
 		store_confidence_in_db(self.db.clone(), block_number, count)
 			.context("Failed to store confidence in DB")
 	}
-
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		self.rpc_client.request_kate_proof(hash, positions).await
-	}
-
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
-		self.network_client
-			.insert_cells_into_dht(block, cells)
-			.await
-	}
-	async fn fetch_cells_from_dht(
-		&self,
-		positions: &[Position],
-		block_number: u32,
-	) -> (Vec<Cell>, Vec<Position>) {
-		self.network_client
-			.fetch_cells_from_dht(block_number, positions)
-			.await
-	}
 }
 
 async fn process_block(
 	sync_client: &impl SyncClient,
+	network_client: &impl network::Client,
 	header: DaHeader,
 	header_hash: H256,
 	cfg: &SyncClientConfig,
-	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 ) -> Result<()> {
 	let block_number = header.number;
@@ -147,8 +113,6 @@ async fn process_block(
 	info!(block_number, "App index {:?}", app_lookup);
 	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
 
-	let begin = Instant::now();
-
 	let (rows, cols, _, commitment) = extract_kate(&header.extension);
 	let dimensions = Dimensions::new(rows, cols).context("Invalid dimensions")?;
 
@@ -158,60 +122,27 @@ async fn process_block(
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(dimensions, cell_count);
 
-	let (dht_fetched, unfetched) = sync_client
-		.fetch_cells_from_dht(&positions, block_number)
-		.await;
+	let (fetched, unfetched, _fetch_stats) = network_client
+		.fetch_verified(
+			block_number,
+			header_hash,
+			dimensions,
+			&commitments,
+			&positions,
+		)
+		.await?;
 
-	info!(
-		block_number,
-		"Number of cells fetched from DHT: {}",
-		dht_fetched.len()
-	);
-
-	let rpc_fetched = if cfg.disable_rpc {
-		vec![]
-	} else {
-		sync_client.get_kate_proof(header_hash, &unfetched).await?
-	};
-
-	info!(
-		block_number,
-		"Number of cells fetched from RPC: {}",
-		rpc_fetched.len()
-	);
-
-	let mut cells = vec![];
-	cells.extend(dht_fetched);
-	cells.extend(rpc_fetched.clone());
-	if positions.len() > cells.len() {
-		return Err(anyhow!(
-			"Failed to fetch {} cells",
-			positions.len() - cells.len()
-		));
+	if positions.len() > fetched.len() {
+		error!(block_number, "Failed to fetch {} cells", unfetched.len());
+		return Ok(());
 	}
-
-	let cells_len = cells.len();
-	info!(block_number, "Fetched {cells_len} cells for verification");
-
-	let (verified, _) = proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
-
-	info!(
-		block_number,
-		elapsed = ?begin.elapsed(),
-		"Completed {cells_len} verification rounds",
-	);
 
 	// write confidence factor into on-disk database
 	sync_client
-		.store_confidence_in_db(verified.len().try_into()?, block_number)
+		.store_confidence_in_db(fetched.len().try_into()?, block_number)
 		.context("Failed to store confidence in DB")?;
 
-	let inserted_cells = sync_client
-		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await;
-	info!(block_number, "Cells inserted into DHT: {inserted_cells}");
-
-	let confidence = Some(calculate_confidence(verified.len() as u32));
+	let confidence = Some(calculate_confidence(fetched.len() as u32));
 	let client_msg =
 		BlockVerified::try_from((header, confidence)).context("converting to message failed")?;
 
@@ -231,13 +162,12 @@ async fn process_block(
 /// * `cfg` - Sync client configuration
 /// * `start_block` - Sync start block
 /// * `end_block` - Sync end block
-/// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 /// * `block_verified_sender` - Optional channel to send verified blocks
 pub async fn run(
 	sync_client: impl SyncClient,
+	network_client: impl network::Client,
 	cfg: SyncClientConfig,
 	sync_range: Range<u32>,
-	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 	state: Arc<Mutex<State>>,
 ) {
@@ -282,13 +212,12 @@ pub async fn run(
 
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
-		let pp = pp.clone();
 		if let Err(error) = process_block(
 			&sync_client,
+			&network_client,
 			header,
 			header_hash,
 			&cfg,
-			pp,
 			block_verified_sender,
 		)
 		.await
@@ -319,7 +248,7 @@ mod tests {
 		config::substrate::Digest,
 	};
 	use hex_literal::hex;
-	use kate_recovery::couscous;
+	use kate_recovery::{data::Cell, matrix::Position};
 	use mockall::predicate::eq;
 
 	fn default_header() -> DaHeader {
@@ -362,20 +291,19 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(couscous::public_params());
 		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
+		let mut mock_network_client = network::MockClient::new();
 		let mut mock_client = MockSyncClient::new();
 		let header = default_header();
 		let header_hash: H256 =
 			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
 
-		mock_client
-			.expect_fetch_cells_from_dht()
-			.withf(|_, x: &u32| *x == 2)
-			.returning(|_, _| {
-				let dht = vec![];
-				let fetch: Vec<Cell> = vec![
+		mock_network_client
+			.expect_fetch_verified()
+			.returning(move |_, _, _, _, positions| {
+				let unfetched = vec![];
+				let fetched: Vec<Cell> = vec![
 					Cell {
 						position: Position { row: 0, col: 0 },
 						content: [
@@ -420,34 +348,35 @@ mod tests {
 						],
 					},
 				];
-				Box::pin(async move { (fetch, dht) })
+
+				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
-		if cfg.disable_rpc {
-			mock_client.expect_get_kate_proof().never();
-		}
 		mock_client
 			.expect_is_confidence_in_db()
 			.with(eq(2))
 			.returning(|_| Ok(true));
-
-		mock_client
-			.expect_insert_cells_into_dht()
-			.withf(move |x, _| *x == 2)
-			.returning(move |_, _| Box::pin(async move { 1f32 }));
 		mock_client
 			.expect_store_confidence_in_db()
 			.withf(move |_, block_number| *block_number == 2)
 			.returning(move |_, _| Ok(()));
-		process_block(&mock_client, header, header_hash, &cfg, pp, Some(block_tx))
-			.await
-			.unwrap();
+		process_block(
+			&mock_client,
+			&mock_network_client,
+			header,
+			header_hash,
+			&cfg,
+			Some(block_tx),
+		)
+		.await
+		.unwrap();
 	}
 
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(couscous::public_params());
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
+		let mut mock_network_client = network::MockClient::new();
 		let mut mock_client = MockSyncClient::new();
 		let header = default_header();
 		let header_hash: H256 =
@@ -463,12 +392,12 @@ mod tests {
 			],
 		}];
 
-		mock_client
-			.expect_fetch_cells_from_dht()
-			.withf(|_, x: &u32| *x == 2)
-			.returning(|_, _| {
-				let dht = vec![Position { row: 0, col: 3 }];
-				let fetch: Vec<Cell> = vec![
+		mock_network_client
+			.expect_fetch_verified()
+			.withf(|&x, _, _, _, _| x == 2)
+			.returning(move |_, _, _, _, positions| {
+				let unfetched = vec![Position { row: 0, col: 3 }];
+				let fetched: Vec<Cell> = vec![
 					Cell {
 						position: Position { row: 0, col: 0 },
 						content: [
@@ -502,27 +431,23 @@ mod tests {
 						],
 					},
 				];
-				Box::pin(async move { (fetch, dht) })
+				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
-		if cfg.disable_rpc {
-			mock_client.expect_get_kate_proof().never();
-		} else {
-			mock_client.expect_get_kate_proof().returning(move |_, _| {
-				let unfetched = unfetched.clone();
-				Box::pin(async move { Ok(unfetched) })
-			});
-		}
-		mock_client
-			.expect_insert_cells_into_dht()
-			.withf(move |x, _| *x == 2)
-			.returning(move |_, _| Box::pin(async move { 1f32 }));
 
 		mock_client
 			.expect_store_confidence_in_db()
 			.withf(move |_, block_number| *block_number == 2)
 			.returning(move |_, _| Ok(()));
-		process_block(&mock_client, header, header_hash, &cfg, pp, Some(block_tx))
-			.await
-			.unwrap();
+		process_block(
+			&mock_client,
+			&mock_network_client,
+			header,
+			header_hash,
+			&cfg,
+			Some(block_tx),
+		)
+		.await
+		.unwrap();
 	}
 }

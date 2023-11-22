@@ -288,16 +288,22 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		));
 	}
 
-	let sync_client =
-		avail_light::sync_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
+	let sync_client = avail_light::sync_client::new(db.clone(), rpc_client.clone());
+
+	let sync_network_client = network::new(
+		p2p_client.clone(),
+		rpc_client.clone(),
+		pp.clone(),
+		cfg.disable_rpc,
+	);
 
 	if cfg.sync_start_block.is_some() {
 		state.lock().unwrap().synced.replace(false);
 		tokio::task::spawn(avail_light::sync_client::run(
 			sync_client,
+			sync_network_client,
 			(&cfg).into(),
 			sync_range,
-			pp.clone(),
 			block_tx.clone(),
 			state.clone(),
 		));
@@ -322,7 +328,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let light_client =
 		avail_light::light_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
 
-	let network_client = network::new(p2p_client.clone(), rpc_client.clone(), pp, cfg.disable_rpc);
+	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
@@ -332,7 +338,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	tokio::task::spawn(avail_light::light_client::run(
 		light_client,
-		network_client,
+		light_network_client,
 		(&cfg).into(),
 		ot_metrics,
 		state.clone(),
