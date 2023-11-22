@@ -1,7 +1,7 @@
 //! Persistence to RocksDB.
 
 use avail_core::AppId;
-use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -16,7 +16,6 @@ use crate::{
 	types::FinalitySyncCheckpoint,
 };
 
-const GENESIS_HASH_KEY: &str = "genesis_hash";
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
 fn store_data_in_db(db: Arc<DB>, app_id: AppId, block_number: u32, data: &[u8]) -> Result<()> {
@@ -180,35 +179,6 @@ pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Res
 
 	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
 		.wrap_err("Failed to write confidence")
-}
-
-pub fn get_genesis_hash(db: Arc<DB>) -> Result<Option<H256>> {
-	let cf_handle = db
-		.cf_handle(STATE_CF)
-		.ok_or_else(|| eyre!("Couldn't get column handle from db"))?;
-
-	let result = db
-		.get_cf(&cf_handle, GENESIS_HASH_KEY.as_bytes())
-		.wrap_err("Couldn't get genesis hash from db")?;
-
-	result.map_or(Ok(None), |e| {
-		let raw_hash: std::result::Result<[u8; 32], _> = e.try_into();
-		raw_hash
-			.map(|e| Some(H256::from(e)))
-			.map_err(|_| eyre!("Bad genesis hash format!"))
-	})
-}
-
-pub fn store_genesis_hash(db: Arc<DB>, genesis_hash: H256) -> Result<()> {
-	let cf_handle = db
-		.cf_handle(STATE_CF)
-		.ok_or_else(|| eyre!("Couldn't get column handle from db"))?;
-	db.put_cf(
-		&cf_handle,
-		GENESIS_HASH_KEY.as_bytes(),
-		genesis_hash.as_bytes(),
-	)
-	.wrap_err("Failed to write genesis hash to db")
 }
 
 pub fn get_finality_sync_checkpoint(db: Arc<DB>) -> Result<Option<FinalitySyncCheckpoint>> {

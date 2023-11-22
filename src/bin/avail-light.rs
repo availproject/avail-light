@@ -213,8 +213,12 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let state = Arc::new(Mutex::new(State::default()));
-	let (rpc_client, rpc_events, rpc_event_loop) =
-		rpc::init(db.clone(), state.clone(), &cfg.full_node_ws);
+	let (rpc_client, rpc_events, rpc_event_loop) = rpc::init(
+		db.clone(),
+		state.clone(),
+		&cfg.full_node_ws,
+		&cfg.genesis_hash,
+	);
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_events.subscribe();
