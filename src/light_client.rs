@@ -223,34 +223,31 @@ pub async fn process_block(
 		return Ok(None);
 	}
 
-	let mut confidence = None;
-	if !cfg.disable_proof_verification {
-		let (verified, unverified) =
-			proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
-		let count = verified.len().saturating_sub(unverified.len());
-		info!(
-			block_number,
-			elapsed = ?begin.elapsed(),
-			"Completed {count} verification rounds",
-		);
+	let (verified, unverified) = proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
+	let count = verified.len().saturating_sub(unverified.len());
+	info!(
+		block_number,
+		elapsed = ?begin.elapsed(),
+		"Completed {count} verification rounds",
+	);
 
-		// write confidence factor into on-disk database
-		light_client
-			.store_confidence_in_db(verified.len() as u32, block_number)
-			.context("Failed to store confidence in DB")?;
+	// write confidence factor into on-disk database
+	light_client
+		.store_confidence_in_db(verified.len() as u32, block_number)
+		.context("Failed to store confidence in DB")?;
 
-		state.lock().unwrap().confidence_achieved.set(block_number);
+	state.lock().unwrap().confidence_achieved.set(block_number);
 
-		let conf = calculate_confidence(verified.len() as u32);
-		info!(
-			block_number,
-			"confidence" = conf,
-			"Confidence factor: {}",
-			conf
-		);
-		metrics.record(MetricValue::BlockConfidence(conf)).await?;
-		confidence = Some(conf);
-	}
+	let confidence = calculate_confidence(verified.len() as u32);
+	info!(
+		block_number,
+		"confidence" = confidence,
+		"Confidence factor: {}",
+		confidence
+	);
+	metrics
+		.record(MetricValue::BlockConfidence(confidence))
+		.await?;
 
 	// push latest mined block's header into column family specified
 	// for keeping block headers, to be used
@@ -404,7 +401,7 @@ pub async fn process_block(
 
 	metrics.record(MetricValue::HealthCheck()).await?;
 
-	Ok(confidence)
+	Ok(Some(confidence))
 }
 
 pub struct Channels {
