@@ -16,7 +16,7 @@ use tokio::{
 	sync::{broadcast, mpsc},
 	time::{self, timeout},
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
 	consts::EXPECTED_NETWORK_VERSION,
@@ -241,25 +241,33 @@ pub fn generate_random_cells(dimensions: Dimensions, cell_count: u32) -> Vec<Pos
 /* @note: fn to take the number of cells needs to get equal to or greater than
 the percentage of confidence mentioned in config file */
 
+pub const CELL_COUNT_99_99: u32 = 14;
+
 /// Calculates number of cells required to achieve given confidence
 pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 	let mut cell_count: u32;
-	if !(50.0..100f64).contains(&confidence) {
+	if !(50.0..=100f64).contains(&confidence) {
 		//in this default of 8 cells will be taken
-		debug!(
+		info!(
 			"confidence is {} invalid so taking default confidence of 99",
 			confidence
 		);
-		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
+		cell_count = (-((1f64 - (99.3f64 / 100f64)).log2())).ceil() as u32;
 	} else {
 		cell_count = (-((1f64 - (confidence / 100f64)).log2())).ceil() as u32;
 	}
-	if cell_count == 0 || cell_count > 10 {
-		debug!(
-			"confidence is {} invalid so taking default confidence of 99",
+	if cell_count <= 1 {
+		info!(
+			"confidence of {} is too low so taking confidence of 50.0",
 			confidence
 		);
-		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
+		cell_count = 1;
+	} else if cell_count > CELL_COUNT_99_99 {
+		info!(
+			"confidence of {} is invalid so taking confidence of 99.99",
+			confidence
+		);
+		cell_count = CELL_COUNT_99_99;
 	}
 	cell_count
 }
