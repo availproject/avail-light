@@ -495,7 +495,11 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{network::rpc::cell_count_for_confidence, telemetry, types::RuntimeConfig};
+	use crate::{
+		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
+		telemetry,
+		types::RuntimeConfig,
+	};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -506,23 +510,18 @@ mod tests {
 	};
 	use hex_literal::hex;
 	use kate_recovery::couscous;
+	use test_case::test_case;
 
-	#[test]
-	fn test_cell_count_for_confidence() {
-		let count = 1;
-		assert!(cell_count_for_confidence(60f64) > count);
-		assert_eq!(
-			cell_count_for_confidence(100f64),
-			(-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32
-		);
-		assert_eq!(
-			cell_count_for_confidence(49f64),
-			(-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32
-		);
-		assert!(
-			(cell_count_for_confidence(99.99999999)) < 10
-				&& (cell_count_for_confidence(99.99999999)) > 0
-		);
+	#[test_case(99.9 => 10)]
+	#[test_case(99.99 => CELL_COUNT_99_99)]
+	#[test_case(60.0 => 2)]
+	#[test_case(100.0 => CELL_COUNT_99_99)]
+	#[test_case(99.99999999 => CELL_COUNT_99_99)]
+	#[test_case(49.0 => 8)]
+	#[test_case(50.0 => 1)]
+	#[test_case(50.1 => 2)]
+	fn test_cell_count_for_confidence(confidence: f64) -> u32 {
+		cell_count_for_confidence(confidence)
 	}
 
 	#[tokio::test]
