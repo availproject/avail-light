@@ -22,7 +22,6 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use kate_recovery::{
 	commitments, data,
@@ -42,10 +41,10 @@ use tracing::{error, info};
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
 	network::{
+		self,
 		p2p::Client as P2pClient,
 		rpc::{self, Client as RpcClient, Event},
 	},
-	proof,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, BlockVerified, LightClientConfig, OptionBlockRange, State},
 	utils::{calculate_confidence, extract_kate},
@@ -54,11 +53,6 @@ use crate::{
 #[async_trait]
 #[automock]
 pub trait LightClient {
-	async fn fetch_cells_from_dht(
-		&self,
-		positions: &[Position],
-		block_number: u32,
-	) -> (Vec<Cell>, Vec<Position>);
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
@@ -95,15 +89,6 @@ impl LightClient for LightClientImpl {
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
 		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
-	async fn fetch_cells_from_dht(
-		&self,
-		positions: &[Position],
-		block_number: u32,
-	) -> (Vec<Cell>, Vec<Position>) {
-		self.p2p_client
-			.fetch_cells_from_dht(block_number, positions)
-			.await
-	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		self.rpc_client.request_kate_proof(hash, positions).await
 	}
@@ -125,9 +110,9 @@ impl LightClient for LightClientImpl {
 
 pub async fn process_block(
 	light_client: &impl LightClient,
+	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
-	pp: Arc<PublicParameters>,
 	header: &Header,
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
@@ -145,8 +130,6 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let begin = Instant::now();
-
 	let (rows, cols, _, commitment) = extract_kate(&header.extension);
 	let Some(dimensions) = Dimensions::new(rows, cols) else {
 		info!(
@@ -162,7 +145,6 @@ pub async fn process_block(
 	}
 
 	let commitments = commitments::from_slice(&commitment)?;
-
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(dimensions, cell_count);
 	info!(
@@ -172,73 +154,55 @@ pub async fn process_block(
 		positions.len()
 	);
 
-	let (cells_fetched, unfetched) = light_client
-		.fetch_cells_from_dht(&positions, block_number)
-		.await;
-	info!(
-		block_number,
-		"cells_from_dht" = cells_fetched.len(),
-		"Number of cells fetched from DHT: {}",
-		cells_fetched.len()
-	);
+	let (fetched, unfetched, fetch_stats) = network_client
+		.fetch_verified(
+			block_number,
+			header_hash,
+			dimensions,
+			&commitments,
+			&positions,
+		)
+		.await?;
+
 	metrics
-		.record(MetricValue::DHTFetched(cells_fetched.len() as f64))
+		.record(MetricValue::DHTFetched(fetch_stats.dht_fetched))
 		.await?;
 
 	metrics
 		.record(MetricValue::DHTFetchedPercentage(
-			cells_fetched.len() as f64 / positions.len() as f64,
+			fetch_stats.dht_fetched_percentage,
 		))
 		.await?;
 
-	let mut rpc_fetched = if cfg.disable_rpc {
-		vec![]
-	} else {
-		light_client
-			.get_kate_proof(header_hash, &unfetched)
-			.await
-			.context("Failed to fetch cells from node RPC")?
-	};
-
-	info!(
-		block_number,
-		"cells_from_rpc" = rpc_fetched.len(),
-		"Number of cells fetched from RPC: {}",
-		rpc_fetched.len()
-	);
 	metrics
-		.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))
+		.record(MetricValue::NodeRPCFetched(fetch_stats.rpc_fetched))
 		.await?;
 
-	let mut cells = vec![];
-	cells.extend(cells_fetched);
-	cells.extend(rpc_fetched.clone());
+	if let Some(dht_put_success_rate) = fetch_stats.dht_put_success_rate {
+		metrics
+			.record(MetricValue::DHTPutSuccess(dht_put_success_rate))
+			.await?;
+	}
 
-	if positions.len() > cells.len() {
-		error!(
-			block_number,
-			"Failed to fetch {} cells",
-			positions.len() - cells.len()
-		);
+	if let Some(dht_put_duration) = fetch_stats.dht_put_duration {
+		metrics
+			.record(MetricValue::DHTPutDuration(dht_put_duration))
+			.await?;
+	}
+
+	if positions.len() > fetched.len() {
+		error!(block_number, "Failed to fetch {} cells", unfetched.len());
 		return Ok(None);
 	}
 
-	let (verified, unverified) = proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
-	let count = verified.len().saturating_sub(unverified.len());
-	info!(
-		block_number,
-		elapsed = ?begin.elapsed(),
-		"Completed {count} verification rounds",
-	);
-
 	// write confidence factor into on-disk database
 	light_client
-		.store_confidence_in_db(verified.len() as u32, block_number)
+		.store_confidence_in_db(fetched.len() as u32, block_number)
 		.context("Failed to store confidence in DB")?;
 
 	state.lock().unwrap().confidence_achieved.set(block_number);
 
-	let confidence = calculate_confidence(verified.len() as u32);
+	let confidence = calculate_confidence(fetched.len() as u32);
 	info!(
 		block_number,
 		"confidence" = confidence,
@@ -261,6 +225,7 @@ pub async fn process_block(
 		.store_block_header_in_db(header, block_number)
 		.context("Failed to store block header in DB")?;
 
+	let mut rpc_fetched: Vec<Cell> = vec![];
 	let mut begin = Instant::now();
 	if let Some(partition) = &cfg.block_matrix_partition {
 		let positions: Vec<Position> = dimensions
@@ -276,6 +241,7 @@ pub async fn process_block(
 
 		let rpc_cells = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
 		for batch in rpc_cells
+			// TODO: Filter already fetched cells since they are verified and in DHT
 			.chunks(cfg.query_proof_rpc_parallel_tasks)
 			.map(|e| {
 				join_all(
@@ -417,13 +383,12 @@ pub struct Channels {
 /// * `light_client` - Light client implementation
 /// * `cfg` - Light client configuration
 /// * `block_tx` - Channel used to send header of verified block
-/// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 /// * `registry` - Prometheus metrics registry
 /// * `state` - Processed blocks state
 pub async fn run(
 	light_client: impl LightClient,
+	network_client: impl network::Client,
 	cfg: LightClientConfig,
-	pp: Arc<PublicParameters>,
 	metrics: Arc<impl Metrics>,
 	state: Arc<Mutex<State>>,
 	mut channels: Channels,
@@ -457,9 +422,9 @@ pub async fn run(
 
 		let process_block_result = process_block(
 			&light_client,
+			&network_client,
 			&metrics,
 			&cfg,
-			pp.clone(),
 			&header,
 			received_at,
 			state.clone(),
@@ -509,7 +474,6 @@ mod tests {
 		config::substrate::Digest,
 	};
 	use hex_literal::hex;
-	use kate_recovery::couscous;
 	use test_case::test_case;
 
 	#[test_case(99.9 => 10)]
@@ -527,8 +491,8 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let mut mock_client = MockLightClient::new();
+		let mut mock_network_client = network::MockClient::new();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
-		let pp = Arc::new(couscous::public_params());
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -617,12 +581,13 @@ mod tests {
 			},
 		]
 		.to_vec();
-		mock_client
-			.expect_fetch_cells_from_dht()
-			.returning(move |_, _| {
+		mock_network_client
+			.expect_fetch_verified()
+			.returning(move |_, _, _, _, positions| {
 				let fetched = cells_fetched.clone();
 				let unfetched = cells_unfetched.clone();
-				Box::pin(async move { (fetched, unfetched) })
+				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client.expect_get_kate_proof().returning(move |_, _| {
 			let kate_proof = kate_proof.clone();
@@ -657,9 +622,9 @@ mod tests {
 		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
+			&mock_network_client,
 			&Arc::new(mock_metrics),
 			&cfg,
-			pp,
 			&header,
 			recv,
 			state,
@@ -671,9 +636,9 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_without_rpc() {
 		let mut mock_client = MockLightClient::new();
+		let mut mock_network_client = network::MockClient::new();
 		let mut cfg = LightClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
-		let pp = Arc::new(couscous::public_params());
 		let cells_unfetched: Vec<Position> = vec![];
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
@@ -755,12 +720,13 @@ mod tests {
 			},
 		]
 		.to_vec();
-		mock_client
-			.expect_fetch_cells_from_dht()
-			.returning(move |_, _| {
+		mock_network_client
+			.expect_fetch_verified()
+			.returning(move |_, _, _, _, positions| {
 				let fetched = cells_fetched.clone();
 				let unfetched = cells_unfetched.clone();
-				Box::pin(async move { (fetched, unfetched) })
+				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client.expect_get_kate_proof().never();
 		mock_client
@@ -792,9 +758,9 @@ mod tests {
 		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
+			&mock_network_client,
 			&Arc::new(mock_metrics),
 			&cfg,
-			pp,
 			&header,
 			recv,
 			state,

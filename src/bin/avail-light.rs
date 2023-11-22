@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
+use avail_light::network;
 use avail_light::types::IdentityConfig;
 use avail_light::{api, data, network::rpc, telemetry};
 use avail_light::{
@@ -321,6 +322,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let light_client =
 		avail_light::light_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
 
+	let network_client = network::new(p2p_client.clone(), rpc_client.clone(), pp, cfg.disable_rpc);
+
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
 		rpc_event_receiver: lc_rpc_event_receiver,
@@ -329,8 +332,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	tokio::task::spawn(avail_light::light_client::run(
 		light_client,
+		network_client,
 		(&cfg).into(),
-		pp,
 		ot_metrics,
 		state.clone(),
 		lc_channels,
