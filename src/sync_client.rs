@@ -252,7 +252,7 @@ pub async fn run(
 
 	info!("Syncing block headers for {sync_range:?}");
 	for block_number in sync_range {
-		// TODO: This is still an ambigous check since data fetch can fail.
+		// TODO: This is still an ambiguous check since data fetch can fail.
 		// We should write block status in DB explicitly.
 		match sync_client.is_confidence_in_db(block_number) {
 			Ok(false) => (),
