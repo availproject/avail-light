@@ -252,8 +252,6 @@ pub struct RuntimeConfig {
 	pub ot_collector_endpoint: String,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
-	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
-	pub disable_proof_verification: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 	pub dht_parallelization_limit: usize,
 	/// Number of records to be inserted into DHT simultaneously (default: 1000)
@@ -327,7 +325,6 @@ pub struct LightClientConfig {
 	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Delay,
 	pub block_matrix_partition: Option<Partition>,
-	pub disable_proof_verification: bool,
 	pub max_cells_per_rpc: usize,
 	pub ttl: u64,
 }
@@ -354,7 +351,6 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: Delay(block_processing_delay),
 			block_matrix_partition: val.block_matrix_partition,
-			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
 			ttl: val.kad_record_ttl,
 		}
@@ -518,7 +514,6 @@ impl Default for RuntimeConfig {
 			log_format_json: false,
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			disable_rpc: false,
-			disable_proof_verification: false,
 			dht_parallelization_limit: 20,
 			put_batch_size: 1000,
 			query_proof_rpc_parallel_tasks: 8,
