@@ -362,10 +362,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	Ok(())
 }
 
-#[tokio::main]
-pub async fn main() -> Result<()> {
-	let (error_sender, mut error_receiver) = channel::<Report>(1);
-
+fn install_panic_hooks() -> Result<()> {
 	// initialize color-eyre hooks
 	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
 		.panic_section(format!(
@@ -411,6 +408,14 @@ pub async fn main() -> Result<()> {
 
 		std::process::exit(libc::EXIT_FAILURE);
 	}));
+	Ok(())
+}
+
+#[tokio::main]
+pub async fn main() -> Result<()> {
+	install_panic_hooks()?;
+
+	let (error_sender, mut error_receiver) = channel::<Report>(1);
 
 	if let Err(error) = run(error_sender).await {
 		error!("{error:#}");
