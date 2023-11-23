@@ -106,6 +106,7 @@ pub struct Behaviour {
 
 // Init function initializes all needed needed configs for the functioning
 // p2p network Client and network Event Loop
+// If in fat client mode, we enable deleting local Kademlia records as a memory optimization
 pub fn init(
 	cfg: LibP2PConfig,
 	dht_parallelization_limit: usize,

@@ -110,11 +110,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let db = data::init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
-	// If in fat client mode, enable deleting local Kademlia records
-	// This is a fat client memory optimization
-	let kad_remove_local_record = cfg.block_matrix_partition.is_some();
-	if kad_remove_local_record {
+	let mut client_role: String = CLIENT_ROLE.into();
+	let is_fat_client = cfg.block_matrix_partition.is_some();
+	if is_fat_client {
 		info!("Fat client mode");
+		client_role = "fatnode".to_string();
 	}
 
 	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
@@ -123,7 +123,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		telemetry::otlp::initialize(
 			cfg.ot_collector_endpoint.clone(),
 			peer_id,
-			CLIENT_ROLE.into(),
+			client_role,
 			cfg.origin.clone(),
 			identity_cfg.avail_address.clone(),
 			#[cfg(feature = "crawl")]
@@ -138,7 +138,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
-		kad_remove_local_record,
+		is_fat_client,
 		id_keys,
 	)
 	.context("Failed to init Network Service")?;
