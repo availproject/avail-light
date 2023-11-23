@@ -11,6 +11,7 @@ use avail_light::{
 	types::{CliOpts, Mode, RuntimeConfig, State},
 };
 use clap::Parser;
+use futures::TryFutureExt;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use std::{
@@ -209,10 +210,20 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
-	tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
+	let rpc_event_loop_handle = tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
 
 	info!("Waiting for first finalized header...");
-	let block_header = rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 60).await?;
+	let block_header = rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 60)
+		.or_else(|err| async move {
+			if !rpc_event_loop_handle.is_finished() {
+				return Err(err);
+			}
+			let Ok(Err(event_loop_error)) = rpc_event_loop_handle.await else {
+				return Err(err);
+			};
+			Err(event_loop_error.context(err))
+		})
+		.await?;
 
 	state.lock().unwrap().latest = block_header.number;
 	let sync_range = cfg.sync_range(block_header.number);
