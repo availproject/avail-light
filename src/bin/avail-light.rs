@@ -161,15 +161,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.context("Listening on UDP not to fail.")?;
 	info!("Listening for QUIC on port: {port}");
 
+	let tcp_port = port + 1;
 	p2p_client
 		.start_listening(
 			Multiaddr::empty()
 				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Tcp(port + 1)),
+				.with(Protocol::Tcp(tcp_port)),
 		)
 		.await
 		.context("Listening on TCP not to fail.")?;
-	info!("Listening for TCP on port: {port}");
+	info!("Listening for TCP on port: {tcp_port}");
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
