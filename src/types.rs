@@ -542,7 +542,7 @@ impl Default for RuntimeConfig {
 			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
-			confidence: 92.0,
+			confidence: 99.9,
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
