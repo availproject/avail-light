@@ -183,7 +183,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 				info!("Bootstrap done.");
 			},
 			Err(e) => {
-				error!("Error in the bootstrap process: {e:?}.");
+				warn!("Bootstrap process: {e:?}.");
 			},
 		}
 	});

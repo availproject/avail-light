@@ -13,6 +13,7 @@ use kate_recovery::{
 	commitments,
 	matrix::{Dimensions, Partition},
 };
+use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::crypto::Ss58Codec;
@@ -98,11 +99,41 @@ impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
 	}
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(try_from = "String")]
+pub enum KademliaMode {
+	Client,
+	Server,
+}
+
+impl KademliaMode {
+	pub fn to_kad_mode(self) -> KadMode {
+		match self {
+			KademliaMode::Client => KadMode::Client,
+			KademliaMode::Server => KadMode::Server,
+		}
+	}
+}
+
+impl TryFrom<String> for KademliaMode {
+	type Error = anyhow::Error;
+
+	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+		match value.to_lowercase().as_str() {
+			"client" => Ok(KademliaMode::Client),
+			"server" => Ok(KademliaMode::Server),
+			_ => Err(anyhow!(
+				"Wrong Kademlia mode. Expecting 'client' or 'server'."
+			)),
+		}
+	}
+}
+
 /// Client mode
 ///
 /// * `LightClient` - light client is running
 /// * `AppClient` - app client is running alongside the light client
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Mode {
 	LightClient,
 	AppClient(u32),
@@ -233,6 +264,7 @@ pub struct RuntimeConfig {
 	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
+	pub operation_mode: KademliaMode,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
@@ -366,6 +398,7 @@ pub struct LibP2PConfig {
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
 	pub connection_idle_timeout: Duration,
+	pub kademlia_mode: KademliaMode,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -379,6 +412,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout),
+			kademlia_mode: val.operation_mode,
 		}
 	}
 }
@@ -538,6 +572,7 @@ impl Default for RuntimeConfig {
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: "external".to_string(),
+			operation_mode: KademliaMode::Server,
 		}
 	}
 }

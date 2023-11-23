@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat, dcutr, identify, identity,
-	kad::{self, Mode, PeerRecord, QueryId},
+	kad::{self, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
@@ -191,7 +191,10 @@ pub fn init(
 		.build();
 
 	if is_fat_client {
-		swarm.behaviour_mut().kademlia.set_mode(Some(Mode::Server));
+		swarm
+			.behaviour_mut()
+			.kademlia
+			.set_mode(Some(cfg.kademlia_mode.to_kad_mode()));
 	}
 
 	// create sender channel for Event Loop Commands
