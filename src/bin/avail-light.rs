@@ -91,8 +91,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let identity_cfg =
 		IdentityConfig::load_or_init("identity.toml", opts.avail_passphrase.as_deref())?;
 
+	let client_role = if cfg.is_fat_client() {
+		info!("Fat client mode");
+		"fatnode"
+	} else {
+		CLIENT_ROLE
+	};
+
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}. Role: {CLIENT_ROLE}.");
+	info!("Running Avail light client version: {version}. Role: {client_role}.");
 	info!("Using config: {cfg:?}");
 	info!("Avail address is: {}", &identity_cfg.avail_address);
 
@@ -111,20 +118,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let db = data::init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
-	// If in fat client mode, enable deleting local Kademlia records
-	// This is a fat client memory optimization
-	let kad_remove_local_record = cfg.block_matrix_partition.is_some();
-	if kad_remove_local_record {
-		info!("Fat client mode");
-	}
-
 	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
 			cfg.ot_collector_endpoint.clone(),
 			peer_id,
-			CLIENT_ROLE.into(),
+			client_role.into(),
 			cfg.origin.clone(),
 			identity_cfg.avail_address.clone(),
 			#[cfg(feature = "crawl")]
@@ -139,7 +139,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
-		kad_remove_local_record,
+		cfg.is_fat_client(),
 		id_keys,
 	)
 	.context("Failed to init Network Service")?;

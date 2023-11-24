@@ -346,6 +346,12 @@ pub struct RuntimeConfig {
 	pub crawl: crate::crawl_client::CrawlConfig,
 }
 
+impl RuntimeConfig {
+	pub fn is_fat_client(&self) -> bool {
+		self.block_matrix_partition.is_some()
+	}
+}
+
 pub struct Delay(pub Option<Duration>);
 
 /// Light client configuration (see [RuntimeConfig] for details)

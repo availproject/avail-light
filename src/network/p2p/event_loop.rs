@@ -184,9 +184,9 @@ impl EventLoop {
 								self.pending_kad_queries.remove(&id)
 							{
 								if let Ok(record) = result {
-									// Remove local records for fat clients (memory optimization)
-									debug!("Pruning local records on fat client");
 									if self.kad_remove_local_record {
+										// Remove local records for fat clients (memory optimization)
+										debug!("Pruning local records on fat client");
 										self.swarm
 											.behaviour_mut()
 											.kademlia
