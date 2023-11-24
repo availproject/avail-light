@@ -92,6 +92,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::DHTFetchedPercentage(number) => {
 				self.record_f64("dht_fetched_percentage", number).await?;
 			},
+			super::MetricValue::DHTFetchDuration(number) => {
+				self.record_f64("dht_fetch_duration", number).await?;
+			},
 			super::MetricValue::NodeRPCFetched(number) => {
 				self.record_f64("node_rpc_fetched", number).await?;
 			},

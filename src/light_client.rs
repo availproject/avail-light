@@ -175,6 +175,12 @@ pub async fn process_block(
 		.await?;
 
 	metrics
+		.record(MetricValue::DHTFetchDuration(
+			fetch_stats.dht_fetch_duration,
+		))
+		.await?;
+
+	metrics
 		.record(MetricValue::NodeRPCFetched(fetch_stats.rpc_fetched))
 		.await?;
 
@@ -459,6 +465,8 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
+	use std::time::Duration;
+
 	use super::*;
 	use crate::{
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
@@ -586,7 +594,13 @@ mod tests {
 			.returning(move |_, _, _, _, positions| {
 				let fetched = cells_fetched.clone();
 				let unfetched = cells_unfetched.clone();
-				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				let stats = network::FetchStats::new(
+					positions.len(),
+					fetched.len(),
+					Duration::from_secs(0),
+					0,
+					None,
+				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client.expect_get_kate_proof().returning(move |_, _| {
@@ -725,7 +739,13 @@ mod tests {
 			.returning(move |_, _, _, _, positions| {
 				let fetched = cells_fetched.clone();
 				let unfetched = cells_unfetched.clone();
-				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				let stats = network::FetchStats::new(
+					positions.len(),
+					fetched.len(),
+					Duration::from_secs(0),
+					0,
+					None,
+				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client.expect_get_kate_proof().never();
