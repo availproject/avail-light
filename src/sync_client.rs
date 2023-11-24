@@ -355,7 +355,7 @@ mod tests {
 					positions.len(),
 					fetched.len(),
 					Duration::from_secs(0),
-					0,
+					None,
 					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
@@ -444,7 +444,7 @@ mod tests {
 					positions.len(),
 					dht_fetched.len(),
 					Duration::from_secs(0),
-					rpc_fetched.len(),
+					Some((rpc_fetched.len(), Duration::from_secs(1))),
 					Some((1.0, Duration::from_secs(1))),
 				);
 				let fetched = [&dht_fetched[..], &rpc_fetched[..]].concat();

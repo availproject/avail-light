@@ -34,24 +34,30 @@ pub struct FetchStats {
 	pub dht_fetched: f64,
 	pub dht_fetched_percentage: f64,
 	pub dht_fetch_duration: f64,
-	pub rpc_fetched: f64,
+	pub rpc_fetched: Option<f64>,
+	pub rpc_fetch_duration: Option<f64>,
 	pub dht_put_success_rate: Option<f64>,
 	pub dht_put_duration: Option<f64>,
 }
+
+type RPCFetchStats = (usize, Duration);
+
+type DHTPutStats = (f64, Duration);
 
 impl FetchStats {
 	pub fn new(
 		total: usize,
 		dht_fetched: usize,
 		dht_fetch_duration: Duration,
-		rpc_fetched: usize,
-		dht_put_stats: Option<(f64, Duration)>,
+		rpc_fetch_stats: Option<RPCFetchStats>,
+		dht_put_stats: Option<DHTPutStats>,
 	) -> Self {
 		FetchStats {
 			dht_fetched: dht_fetched as f64,
 			dht_fetched_percentage: dht_fetched as f64 / total as f64,
 			dht_fetch_duration: dht_fetch_duration.as_secs_f64(),
-			rpc_fetched: rpc_fetched as f64,
+			rpc_fetched: rpc_fetch_stats.map(|(rpc_fetched, _)| rpc_fetched as f64),
+			rpc_fetch_duration: rpc_fetch_stats.map(|(_, duration)| duration.as_secs_f64()),
 			dht_put_success_rate: dht_put_stats.map(|(rate, _)| rate),
 			dht_put_duration: dht_put_stats.map(|(_, duration)| duration.as_secs_f64()),
 		}
@@ -116,7 +122,7 @@ impl DHTWithRPCFallbackClient {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
 		let mut fetched = self
@@ -146,7 +152,7 @@ impl DHTWithRPCFallbackClient {
 		);
 
 		fetched.retain(|cell| verified.contains(&cell.position));
-		Ok((fetched, unverified))
+		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
 
@@ -169,13 +175,13 @@ impl Client for DHTWithRPCFallbackClient {
 				positions.len(),
 				dht_fetched.len(),
 				dht_fetch_duration,
-				0,
+				None,
 				None,
 			);
 			return Ok((dht_fetched, unfetched, stats));
 		};
 
-		let (rpc_fetched, unfetched) = self
+		let (rpc_fetched, unfetched, rpc_fetch_duration) = self
 			.fetch_verified_from_rpc(
 				block_number,
 				block_hash,
@@ -201,7 +207,7 @@ impl Client for DHTWithRPCFallbackClient {
 			positions.len(),
 			dht_fetched.len(),
 			dht_fetch_duration,
-			rpc_fetched.len(),
+			Some((rpc_fetched.len(), rpc_fetch_duration)),
 			Some((dht_put_success_rate as f64, begin.elapsed())),
 		);
 
