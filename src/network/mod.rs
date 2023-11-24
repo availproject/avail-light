@@ -33,6 +33,7 @@ pub trait Client {
 pub struct FetchStats {
 	pub dht_fetched: f64,
 	pub dht_fetched_percentage: f64,
+	pub dht_fetch_duration: f64,
 	pub rpc_fetched: f64,
 	pub dht_put_success_rate: Option<f64>,
 	pub dht_put_duration: Option<f64>,
@@ -42,15 +43,17 @@ impl FetchStats {
 	pub fn new(
 		total: usize,
 		dht_fetched: usize,
+		dht_fetch_duration: Duration,
 		rpc_fetched: usize,
-		dht_stats: Option<(f64, Duration)>,
+		dht_put_stats: Option<(f64, Duration)>,
 	) -> Self {
 		FetchStats {
 			dht_fetched: dht_fetched as f64,
 			dht_fetched_percentage: dht_fetched as f64 / total as f64,
+			dht_fetch_duration: dht_fetch_duration.as_secs_f64(),
 			rpc_fetched: rpc_fetched as f64,
-			dht_put_success_rate: dht_stats.map(|(rate, _)| rate),
-			dht_put_duration: dht_stats.map(|(_, duration)| duration.as_secs_f64()),
+			dht_put_success_rate: dht_put_stats.map(|(rate, _)| rate),
+			dht_put_duration: dht_put_stats.map(|(_, duration)| duration.as_secs_f64()),
 		}
 	}
 }
@@ -71,7 +74,7 @@ impl DHTWithRPCFallbackClient {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
 		let (mut dht_fetched, mut unfetched) = self
@@ -103,7 +106,7 @@ impl DHTWithRPCFallbackClient {
 		dht_fetched.retain(|cell| verified.contains(&cell.position));
 		unfetched.append(&mut unverified);
 
-		Ok((dht_fetched, unfetched))
+		Ok((dht_fetched, unfetched, fetch_elapsed))
 	}
 
 	async fn fetch_verified_from_rpc(
@@ -157,12 +160,18 @@ impl Client for DHTWithRPCFallbackClient {
 		commitments: &Commitments,
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
-		let (dht_fetched, unfetched) = self
+		let (dht_fetched, unfetched, dht_fetch_duration) = self
 			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
 			.await?;
 
 		if self.disable_rpc {
-			let stats = FetchStats::new(positions.len(), dht_fetched.len(), 0, None);
+			let stats = FetchStats::new(
+				positions.len(),
+				dht_fetched.len(),
+				dht_fetch_duration,
+				0,
+				None,
+			);
 			return Ok((dht_fetched, unfetched, stats));
 		};
 
@@ -191,6 +200,7 @@ impl Client for DHTWithRPCFallbackClient {
 		let stats = FetchStats::new(
 			positions.len(),
 			dht_fetched.len(),
+			dht_fetch_duration,
 			rpc_fetched.len(),
 			Some((dht_put_success_rate as f64, begin.elapsed())),
 		);

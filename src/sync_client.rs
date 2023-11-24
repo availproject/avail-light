@@ -351,7 +351,13 @@ mod tests {
 					},
 				];
 
-				let stats = network::FetchStats::new(positions.len(), fetched.len(), 0, None);
+				let stats = network::FetchStats::new(
+					positions.len(),
+					fetched.len(),
+					Duration::from_secs(0),
+					0,
+					None,
+				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -437,6 +443,7 @@ mod tests {
 				let stats = network::FetchStats::new(
 					positions.len(),
 					dht_fetched.len(),
+					Duration::from_secs(0),
 					rpc_fetched.len(),
 					Some((1.0, Duration::from_secs(1))),
 				);

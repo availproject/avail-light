@@ -12,6 +12,7 @@ pub enum MetricValue {
 	TotalBlockNumber(u32),
 	DHTFetched(f64),
 	DHTFetchedPercentage(f64),
+	DHTFetchDuration(f64),
 	NodeRPCFetched(f64),
 	BlockConfidence(f64),
 	RPCCallDuration(f64),
