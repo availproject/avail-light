@@ -72,10 +72,14 @@ impl DHTWithRPCFallbackClient {
 		commitments: &Commitments,
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>)> {
+		let begin = Instant::now();
+
 		let (mut dht_fetched, mut unfetched) = self
 			.p2p_client
 			.fetch_cells_from_dht(block_number, positions)
 			.await;
+
+		let fetch_elapsed = begin.elapsed();
 
 		let (verified, mut unverified) = proof::verify(
 			block_number,
@@ -91,6 +95,8 @@ impl DHTWithRPCFallbackClient {
 			cells_total = positions.len(),
 			cells_fetched = dht_fetched.len(),
 			cells_verified = verified.len(),
+			fetch_elapsed = ?fetch_elapsed,
+			proof_verification_elapsed = ?(begin.elapsed() - fetch_elapsed),
 			"Cells fetched from DHT"
 		);
 
@@ -108,10 +114,14 @@ impl DHTWithRPCFallbackClient {
 		commitments: &Commitments,
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>)> {
+		let begin = Instant::now();
+
 		let mut fetched = self
 			.rpc_client
 			.request_kate_proof(block_hash, positions)
 			.await?;
+
+		let fetch_elapsed = begin.elapsed();
 
 		let (verified, unverified) = proof::verify(
 			block_number,
@@ -127,6 +137,8 @@ impl DHTWithRPCFallbackClient {
 			cells_total = positions.len(),
 			cells_fetched = fetched.len(),
 			cells_verified = verified.len(),
+			fetch_elapsed = ?fetch_elapsed,
+			proof_verification_elapsed = ?(begin.elapsed() - fetch_elapsed),
 			"Cells fetched from RPC"
 		);
 
