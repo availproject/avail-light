@@ -98,6 +98,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::NodeRPCFetched(number) => {
 				self.record_f64("node_rpc_fetched", number).await?;
 			},
+			super::MetricValue::NodeRPCFetchDuration(number) => {
+				self.record_f64("node_rpc_fetch_duration", number).await?;
+			},
 			super::MetricValue::BlockConfidence(number) => {
 				self.record_f64("block_confidence", number).await?;
 			},

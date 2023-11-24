@@ -180,9 +180,17 @@ pub async fn process_block(
 		))
 		.await?;
 
-	metrics
-		.record(MetricValue::NodeRPCFetched(fetch_stats.rpc_fetched))
-		.await?;
+	if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
+		metrics
+			.record(MetricValue::NodeRPCFetched(rpc_fetched))
+			.await?;
+	}
+
+	if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
+		metrics
+			.record(MetricValue::NodeRPCFetchDuration(rpc_fetch_duration))
+			.await?;
+	}
 
 	if let Some(dht_put_success_rate) = fetch_stats.dht_put_success_rate {
 		metrics
@@ -598,7 +606,7 @@ mod tests {
 					positions.len(),
 					fetched.len(),
 					Duration::from_secs(0),
-					0,
+					None,
 					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
@@ -743,7 +751,7 @@ mod tests {
 					positions.len(),
 					fetched.len(),
 					Duration::from_secs(0),
-					0,
+					None,
 					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
