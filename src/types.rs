@@ -348,7 +348,7 @@ pub struct RuntimeConfig {
 
 impl RuntimeConfig {
 	pub fn is_fat_client(&self) -> bool {
-		return self.block_matrix_partition.is_some();
+		self.block_matrix_partition.is_some()
 	}
 }
 
