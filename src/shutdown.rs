@@ -46,6 +46,12 @@ impl Controller {
 	}
 }
 
+impl Default for Controller {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 /// A [`Monitor`] observes the shutdown signal from the [`Controller`]
 /// instance and tracks its reception status.
 ///
