@@ -93,3 +93,62 @@ impl Monitor {
 		self.cancellation_token.cancelled().await;
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use crate::shutdown::Controller;
+
+	#[tokio::test]
+	async fn shutdown_ends() {
+		let shutdown = Controller::new();
+
+		let t = tokio::spawn({
+			let monitor = shutdown.watch();
+			async move {
+				monitor.canceled().await;
+			}
+		});
+
+		shutdown.shutdown().await;
+		assert!(t.await.is_ok());
+	}
+
+	#[tokio::test]
+	async fn monitor_is_shutdown() {
+		let shutdown = Controller::new();
+
+		let t = tokio::spawn({
+			let monitor = shutdown.watch();
+			async move {
+				monitor.canceled().await;
+				assert!(monitor.is_shutdown());
+			}
+		});
+
+		shutdown.shutdown().await;
+		assert!(t.await.is_ok());
+	}
+
+	#[tokio::test]
+	async fn default() {
+		let shutdown = Controller::default();
+		let monitor = shutdown.watch();
+		assert!(!monitor.is_shutdown());
+	}
+
+	#[tokio::test]
+	async fn canceled_is_idempotent() {
+		let shutdown = Controller::new();
+
+		let t = tokio::spawn({
+			let monitor = shutdown.watch();
+			async move {
+				monitor.canceled().await;
+				monitor.canceled().await;
+			}
+		});
+
+		shutdown.shutdown().await;
+		assert!(t.await.is_ok());
+	}
+}
