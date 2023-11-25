@@ -163,7 +163,7 @@ mod tests {
 	async fn watch_panics() {
 		let mut shutdown = Controller::new();
 
-		let t = tokio::spawn({
+		tokio::spawn({
 			let monitor = shutdown.watch();
 			async move {
 				monitor.canceled().await;
@@ -171,8 +171,7 @@ mod tests {
 		});
 
 		shutdown.shutdown().await;
-		_ = t.await;
-
+		// it should panic, right here
 		_ = shutdown.watch();
 	}
 }
