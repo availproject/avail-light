@@ -11,7 +11,7 @@ pub struct Controller {
 	cancellation_token: CancellationToken,
 
 	/// Used to determine when all [`Monitor`] instances have been dropped.
-	task_tracker: mpsc::Sender<()>,
+	task_tracker: Option<mpsc::Sender<()>>,
 
 	/// This channel is used to ascertain when all tasks have completed.
 	/// Calling recv() will return once all of the corresponding send halves have been dropped."
@@ -23,23 +23,29 @@ impl Controller {
 		let (task_tracker, task_waiter) = mpsc::channel::<()>(1);
 		Self {
 			cancellation_token: CancellationToken::new(),
-			task_tracker,
+			task_tracker: Some(task_tracker),
 			task_waiter,
 		}
 	}
 
 	/// Creates a new [`Monitor`] instance that can listen for the shutdown signal.
 	pub fn watch(&self) -> Monitor {
-		Monitor::new(self.cancellation_token.clone(), self.task_tracker.clone())
+		Monitor::new(
+			self.cancellation_token.clone(),
+			self.task_tracker.clone().take().unwrap(),
+		)
 	}
 
-	pub async fn shutdown(mut self) {
+	pub async fn shutdown(&mut self) {
 		// notify all task monitors that shutdown has begun
 		self.cancellation_token.cancel();
 
 		// destroy the kept mpsc::Sender so that mpsc::Receiver::recv()
 		// will return immediately once all tasks have completed (i.e. dropped their mpsc::Sender)
-		drop(self.task_tracker);
+		if let Some(task_tracker) = self.task_tracker.take() {
+			// drop the Sender inside the temporary Option
+			drop(task_tracker);
+		}
 
 		// wait for all tasks to finish
 		let _ = self.task_waiter.recv().await;
@@ -100,7 +106,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn shutdown_ends() {
-		let shutdown = Controller::new();
+		let mut shutdown = Controller::new();
 
 		let t = tokio::spawn({
 			let monitor = shutdown.watch();
@@ -115,7 +121,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn monitor_is_shutdown() {
-		let shutdown = Controller::new();
+		let mut shutdown = Controller::new();
 
 		let t = tokio::spawn({
 			let monitor = shutdown.watch();
@@ -138,7 +144,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn canceled_is_idempotent() {
-		let shutdown = Controller::new();
+		let mut shutdown = Controller::new();
 
 		let t = tokio::spawn({
 			let monitor = shutdown.watch();
@@ -150,5 +156,23 @@ mod tests {
 
 		shutdown.shutdown().await;
 		assert!(t.await.is_ok());
+	}
+
+	#[tokio::test]
+	#[should_panic(expected = "called `Option::unwrap()` on a `None` value")]
+	async fn watch_panics() {
+		let mut shutdown = Controller::new();
+
+		let t = tokio::spawn({
+			let monitor = shutdown.watch();
+			async move {
+				monitor.canceled().await;
+			}
+		});
+
+		shutdown.shutdown().await;
+		_ = t.await;
+
+		_ = shutdown.watch();
 	}
 }
