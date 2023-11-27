@@ -241,6 +241,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
+  "block_number": {block-number},
   "block_hash": "{block-hash}",
   "hash": "{transaction-hash}",
   "index": {transaction-index}
@@ -424,6 +425,7 @@ Data transaction submitted response. It contains transaction **hash** used to co
   "topic": "data-transaction-submitted",
   "request_id": "{uuid}",
   "message": {
+    "block_number": {block-number},
     "block_hash": "{block-hash}",
     "hash": "{transaction-hash}",
     "index": {transaction-index}
@@ -509,7 +511,7 @@ When high confidence in data availability is achieved, the message is pushed to 
 {
 	"topic": "data-verified",
 	"message": {
-		"block_number": "{block-number}",
+		"block_number": {block-number},
 		"data_transactions": [{
 			"data": "{base-64-encoded-data}", // Optional
 			"extrinsic": "{base-64-encoded-extrinsic}" // Optional

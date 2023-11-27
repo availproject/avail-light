@@ -144,6 +144,7 @@ impl Transaction {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitResponse {
+	pub block_number: u32,
 	pub block_hash: H256,
 	pub hash: H256,
 	pub index: u32,
