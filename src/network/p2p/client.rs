@@ -2,10 +2,7 @@ use super::{
 	Command, CommandSender, DHTPutSuccess, EventLoopEntries, QueryChannel, SendableCommand,
 };
 use anyhow::{anyhow, Context, Result};
-use futures::{
-	future::{self, join_all},
-	FutureExt, StreamExt,
-};
+use futures::future::join_all;
 use kate_recovery::{
 	config,
 	data::Cell,
@@ -22,9 +19,8 @@ use std::{
 	collections::HashMap,
 	time::{Duration, Instant},
 };
-use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, trace};
+use tokio::sync::oneshot;
+use tracing::{debug, info, trace};
 
 #[derive(Clone)]
 pub struct Client {
@@ -176,43 +172,40 @@ impl Command for GetKadRecord {
 	}
 }
 
-struct PutKadRecordBatch {
+struct PutKadRecord {
 	records: Vec<Record>,
 	quorum: Quorum,
+	cells_to_track: (u32, usize), // (block_number, total_cell_count)
 	response_sender: Option<oneshot::Sender<Result<DHTPutSuccess>>>,
 }
 
-impl Command for PutKadRecordBatch {
+// `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
+impl Command for PutKadRecord {
 	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		// create channels to track individual PUT results needed for success count
-		let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(self.records.len());
+		let total_cell_count = self.records.len();
 
-		// spawn new task that waits and count all successful put queries from this batch,
-		// but don't block event_loop
-		let response_sender = self.response_sender.take().unwrap();
-		tokio::spawn(
-			<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
-				// consider only while receiving single successful results
-				.filter(|item| future::ready(item == &DHTPutSuccess::Single))
-				.count()
-				.map(DHTPutSuccess::Batch)
-				// send back counted successful puts
-				// signal back that this chunk of records is done
-				.map(|successful_puts| response_sender.send(Ok(successful_puts))),
-		);
+		let cells_to_track = self.cells_to_track;
+		// `block_entry` is of format (total_cells, result_cell_counter)
+		if let Some(block_entry) = entries.active_blocks.get_mut(&cells_to_track.0) {
+			// Increase the total cell count we monitor if the block entry already exists
+			block_entry.0 += total_cell_count;
+			info!("Increased total cell count: {}", block_entry.0);
+		} else {
+			// Initiate counting for the new block
+			entries
+				.active_blocks
+				.insert(self.cells_to_track.0, (self.cells_to_track.1, 0));
+			info!("New block total cell count: {}", self.cells_to_track.1);
+		}
 
-		// go record by record and dispatch put requests through KAD
 		for record in self.records.clone() {
 			let query_id = entries
 				.behavior_mut()
 				.kademlia
 				.put_record(record, self.quorum)
 				.expect("Unable to perform batch Kademlia PUT operation.");
-			// insert response channel into KAD Queries pending map
-			entries.insert_query(
-				query_id,
-				QueryChannel::PutRecordBatch(put_result_tx.clone()),
-			);
+			// Insert response channel into KAD Queries pending map
+			entries.insert_query(query_id, QueryChannel::PutRecord());
 		}
 		Ok(())
 	}
@@ -528,18 +521,23 @@ impl Client {
 		&self,
 		records: Vec<Record>,
 		quorum: Quorum,
+		block_num: u32,
 	) -> Result<DHTPutSuccess> {
 		let mut num_success: usize = 0;
 		// split input batch records into chunks that will be sent consecutively
 		// these chunks are defined by the config parameter [put_batch_size]
+
+		let block_size = records.len();
+
 		for chunk in records.chunks(self.put_batch_size) {
 			// create oneshot for each chunk, through which will success counts be sent,
 			// only for the records in that chunk
 			match self
 				.execute_sync(|response_sender| {
-					Box::new(PutKadRecordBatch {
+					Box::new(PutKadRecord {
 						records: chunk.into(),
 						quorum,
+						cells_to_track: (block_num, block_size),
 						response_sender: Some(response_sender),
 					})
 				})
@@ -690,13 +688,17 @@ impl Client {
 		rows
 	}
 
-	async fn insert_into_dht(&self, records: Vec<(String, Record)>) -> f32 {
+	async fn insert_into_dht(&self, records: Vec<(String, Record)>, block_num: u32) -> f32 {
 		if records.is_empty() {
 			return 1.0;
 		}
 		let len = records.len() as f32;
 		if let Ok(DHTPutSuccess::Batch(num)) = self
-			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
+			.put_kad_record_batch(
+				records.into_iter().map(|e| e.1).collect(),
+				Quorum::One,
+				block_num,
+			)
 			.await
 		{
 			num as f32 / len
@@ -721,7 +723,7 @@ impl Client {
 			.map(DHTCell)
 			.map(|cell| (cell.reference(block), cell.dht_record(block, self.ttl)))
 			.collect::<Vec<_>>();
-		self.insert_into_dht(records).await
+		self.insert_into_dht(records, block).await
 	}
 
 	/// Inserts rows into the DHT.
@@ -741,7 +743,7 @@ impl Client {
 			.map(|row| (row.reference(block), row.dht_record(block, self.ttl)))
 			.collect::<Vec<_>>();
 
-		self.insert_into_dht(records).await
+		self.insert_into_dht(records, block).await
 	}
 
 	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {

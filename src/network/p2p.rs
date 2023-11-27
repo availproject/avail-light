@@ -37,7 +37,7 @@ pub enum DHTPutSuccess {
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
+	PutRecord(),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
@@ -45,6 +45,7 @@ pub struct EventLoopEntries<'a> {
 	swarm: &'a mut Swarm<Behaviour>,
 	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	active_blocks: &'a mut HashMap<u32, (usize, usize)>,
 }
 
 impl<'a> EventLoopEntries<'a> {
@@ -52,11 +53,13 @@ impl<'a> EventLoopEntries<'a> {
 		swarm: &'a mut Swarm<Behaviour>,
 		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 		pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+		active_blocks: &'a mut HashMap<u32, (usize, usize)>,
 	) -> Self {
 		Self {
 			swarm,
 			pending_kad_queries,
 			pending_swarm_events,
+			active_blocks,
 		}
 	}
 

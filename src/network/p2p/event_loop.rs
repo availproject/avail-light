@@ -19,11 +19,10 @@ use tokio::{
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
 };
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use super::{
-	Behaviour, BehaviourEvent, CommandReceiver, DHTPutSuccess, EventLoopEntries, QueryChannel,
-	SendableCommand,
+	Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries, QueryChannel, SendableCommand,
 };
 
 // RelayState keeps track of all things relay related
@@ -74,6 +73,7 @@ pub struct EventLoop {
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
+	active_blocks: HashMap<u32, (usize, usize)>, // <block_num, (total_cells, result_cell_counter)
 }
 
 impl EventLoop {
@@ -101,6 +101,7 @@ impl EventLoop {
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 			kad_remove_local_record,
+			active_blocks: Default::default(),
 		}
 	}
 
@@ -161,7 +162,9 @@ impl EventLoop {
 							}
 						}
 					},
-					kad::Event::OutboundQueryProgressed { id, result, .. } => match result {
+					kad::Event::OutboundQueryProgressed {
+						id, result, stats, ..
+					} => match result {
 						QueryResult::GetRecord(result) => match result {
 							Ok(GetRecordOk::FoundRecord(record)) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
@@ -180,10 +183,68 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecordBatch(success_tx)) =
+							if let Some(QueryChannel::PutRecord()) =
 								self.pending_kad_queries.remove(&id)
 							{
 								if let Ok(record) = result {
+									// Extract key from the record
+									let kad_key = match String::from_utf8(record.key.to_vec()) {
+										Ok(key) => key,
+										Err(_) => {
+											warn!("Unable to cast Kademlia key to UTF-8");
+											return;
+										},
+									};
+
+									// "block_num:row:column" format
+									let record_key_parts: Result<Vec<u32>, _> = kad_key
+										.split(":")
+										.map(|part| part.parse::<u32>())
+										.collect();
+
+									match record_key_parts {
+										Ok(parts) => {
+											let current_block_num = parts[0];
+											// Get cell counter data for previos block
+											let prev_block_cell_counter_pair = self
+												.active_blocks
+												.get(&(current_block_num - 1))
+												.cloned();
+
+											// Get cell counter data for current block
+											// This value has already been added during the PUT operation
+											if let Some(counter_pair) =
+												self.active_blocks.get_mut(&current_block_num)
+											{
+												// Current blocks cell counter = 0 means the first new block cell just arrived
+												// We take that as the cut-off point for previous blocks cell delivery
+												if counter_pair.1 == 0 {
+													if let Some(val) = prev_block_cell_counter_pair
+													{
+														let mut timing_stats: u64 = 0;
+														if let Some(timing) = stats.duration() {
+															timing_stats = timing.as_secs();
+														}
+														info!("Number of cells from the prev. block {} sent {}/{}. Duration: {timing_stats}", current_block_num - 1, val.1, val.0);
+														// Remove previous block from the list
+														self.active_blocks
+															.remove(&(current_block_num - 1));
+														return;
+													}
+												}
+												// Increment the cell counter for current block
+												counter_pair.1 += 1;
+											} else {
+												debug!(
+													"No data for block {current_block_num} found in active blocks list"
+												);
+											}
+										},
+										_ => debug!(
+											"Unable to extract block number from Kademlia key"
+										),
+									}
+
 									if self.kad_remove_local_record {
 										// Remove local records for fat clients (memory optimization)
 										debug!("Pruning local records on fat client");
@@ -192,9 +253,6 @@ impl EventLoop {
 											.kademlia
 											.remove_record(&record.key);
 									}
-									// signal back that this PUT request was a success,
-									// so it can be accounted for
-									_ = success_tx.send(DHTPutSuccess::Single).await;
 								}
 							}
 						},
@@ -429,6 +487,7 @@ impl EventLoop {
 			&mut self.swarm,
 			&mut self.pending_kad_queries,
 			&mut self.pending_kad_routing,
+			&mut self.active_blocks,
 		)) {
 			command.abort(anyhow!(err));
 		}
