@@ -428,7 +428,7 @@ pub async fn run(
 				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
 				.await
 			{
-				error!("Cannot record crawl block delay: {}", error);
+				error!("Cannot record block processing delay: {}", error);
 			}
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
