@@ -73,7 +73,7 @@ pub struct EventLoop {
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
-	active_blocks: HashMap<u32, (usize, usize)>, // <block_num, (total_cells, result_cell_counter)
+	active_blocks: HashMap<u32, (usize, usize, u64)>, // <block_num, (total_cells, result_cell_counter, time_stat)
 }
 
 impl EventLoop {
@@ -206,26 +206,26 @@ impl EventLoop {
 										Ok(parts) => {
 											let current_block_num = parts[0];
 											// Get cell counter data for previos block
-											let prev_block_cell_counter_pair = self
+											let prev_block_cell_counter_data = self
 												.active_blocks
 												.get(&(current_block_num - 1))
 												.cloned();
 
 											// Get cell counter data for current block
 											// This value has already been added during the PUT operation
-											if let Some(counter_pair) =
+											if let Some(cell_counter_data) =
 												self.active_blocks.get_mut(&current_block_num)
 											{
+												let mut timing_stats: u64 = 0;
+												if let Some(timing) = stats.duration() {
+													timing_stats = timing.as_secs();
+												}
 												// Current blocks cell counter = 0 means the first new block cell just arrived
 												// We take that as the cut-off point for previous blocks cell delivery
-												if counter_pair.1 == 0 {
-													if let Some(val) = prev_block_cell_counter_pair
+												if cell_counter_data.1 == 0 {
+													if let Some(val) = prev_block_cell_counter_data
 													{
-														let mut timing_stats: u64 = 0;
-														if let Some(timing) = stats.duration() {
-															timing_stats = timing.as_secs();
-														}
-														info!("Number of cells from the prev. block {} sent {}/{}. Duration: {timing_stats}", current_block_num - 1, val.1, val.0);
+														info!("Number of comfirmed uploaded cells from the prev. block {} sent {}/{}. Duration: {}", current_block_num - 1, val.1, val.0, val.2);
 														// Remove previous block from the list
 														self.active_blocks
 															.remove(&(current_block_num - 1));
@@ -233,7 +233,8 @@ impl EventLoop {
 													}
 												}
 												// Increment the cell counter for current block
-												counter_pair.1 += 1;
+												cell_counter_data.1 += 1;
+												cell_counter_data.2 = timing_stats;
 											} else {
 												debug!(
 													"No data for block {current_block_num} found in active blocks list"

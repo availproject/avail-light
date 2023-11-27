@@ -20,7 +20,7 @@ use std::{
 	time::{Duration, Instant},
 };
 use tokio::sync::oneshot;
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 #[derive(Clone)]
 pub struct Client {
@@ -185,17 +185,15 @@ impl Command for PutKadRecord {
 		let total_cell_count = self.records.len();
 
 		let cells_to_track = self.cells_to_track;
-		// `block_entry` is of format (total_cells, result_cell_counter)
+		// `block_entry` is of format (total_cells, result_cell_counter, time_stat)
 		if let Some(block_entry) = entries.active_blocks.get_mut(&cells_to_track.0) {
 			// Increase the total cell count we monitor if the block entry already exists
 			block_entry.0 += total_cell_count;
-			info!("Increased total cell count: {}", block_entry.0);
 		} else {
-			// Initiate counting for the new block
+			// Initiate counting for the new block if the block doesn't exist
 			entries
 				.active_blocks
-				.insert(self.cells_to_track.0, (self.cells_to_track.1, 0));
-			info!("New block total cell count: {}", self.cells_to_track.1);
+				.insert(self.cells_to_track.0, (self.cells_to_track.1, 0, 0));
 		}
 
 		for record in self.records.clone() {
@@ -204,7 +202,6 @@ impl Command for PutKadRecord {
 				.kademlia
 				.put_record(record, self.quorum)
 				.expect("Unable to perform batch Kademlia PUT operation.");
-			// Insert response channel into KAD Queries pending map
 			entries.insert_query(query_id, QueryChannel::PutRecord());
 		}
 		Ok(())
