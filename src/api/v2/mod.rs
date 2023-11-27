@@ -606,6 +606,7 @@ mod tests {
 	impl transactions::Submit for MockSubmitter {
 		async fn submit(&self, _: Transaction) -> anyhow::Result<SubmitResponse> {
 			Ok(SubmitResponse {
+				block_number: 0,
 				block_hash: H256::random(),
 				hash: H256::random(),
 				index: 0,

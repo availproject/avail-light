@@ -36,14 +36,22 @@ impl Submit for Submitter {
 					.await?
 			},
 		};
-		tx_progress
+		let event = tx_progress
 			.wait_for_finalized_success()
 			.await
-			.map(|event| SubmitResponse {
-				block_hash: event.block_hash(),
-				hash: event.extrinsic_hash(),
-				index: event.extrinsic_index(),
-			})
-			.context("Cannot sign and submit transaction")
+			.context("Cannot sign and submit transaction")?;
+
+		let block_number = self
+			.node_client
+			.get_header_by_hash(event.block_hash())
+			.await?
+			.number;
+
+		Ok(SubmitResponse {
+			block_number,
+			block_hash: event.block_hash(),
+			hash: event.extrinsic_hash(),
+			index: event.extrinsic_index(),
+		})
 	}
 }
