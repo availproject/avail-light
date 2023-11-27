@@ -89,6 +89,7 @@ impl Controller {
 /// instance and tracks its reception status.
 ///
 /// Callers can query whether the shutdown signal has been received or not.
+#[derive(Clone)]
 pub struct Monitor {
 	/// This represents a cloned reference from the [Controller] instance,
 	/// utilized for listening to initiated shutdown signals.
@@ -189,6 +190,31 @@ mod tests {
 
 		shutdown.shutdown().await;
 		assert!(t.await.is_ok());
+
+		Ok(())
+	}
+
+	#[tokio::test]
+	async fn monitor_cloned() -> Result<()> {
+		let mut shutdown = Controller::new();
+		let monitor = shutdown.watch().await?;
+		let cloned_monitor = monitor.clone();
+
+		let t1 = tokio::spawn({
+			async move {
+				assert!(monitor.is_shutdown());
+			}
+		});
+
+		let t2 = tokio::spawn({
+			async move {
+				assert!(cloned_monitor.is_shutdown());
+			}
+		});
+
+		shutdown.shutdown().await;
+		assert!(t1.await.is_ok());
+		assert!(t2.await.is_ok());
 
 		Ok(())
 	}
