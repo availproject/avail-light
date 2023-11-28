@@ -198,7 +198,7 @@ impl Command for PutKadRecord {
 				.behavior_mut()
 				.kademlia
 				.put_record(record, self.quorum)
-				.expect("Unable to perform batch Kademlia PUT operation.");
+				.expect("Unable to perform Kademlia PUT operation.");
 			entries.insert_query(query_id, QueryChannel::PutRecord());
 		}
 		self.response_sender
@@ -215,7 +215,7 @@ impl Command for PutKadRecord {
 			.take()
 			.unwrap()
 			.send(Err(error))
-			.expect("PutKadRecordBatch receiver dropped");
+			.expect("PutKadRecord receiver dropped");
 	}
 }
 
@@ -510,7 +510,7 @@ impl Client {
 		.await
 	}
 
-	async fn put_kad_record_batch(
+	async fn put_kad_record(
 		&self,
 		records: Vec<Record>,
 		quorum: Quorum,
@@ -668,7 +668,7 @@ impl Client {
 		if records.is_empty() {
 			return Err(anyhow!("Cant send empty record list."));
 		}
-		self.put_kad_record_batch(
+		self.put_kad_record(
 			records.into_iter().map(|e| e.1).collect(),
 			Quorum::One,
 			block_num,

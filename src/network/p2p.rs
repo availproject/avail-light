@@ -25,15 +25,6 @@ use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 use event_loop::EventLoop;
 
-// DHTPutSuccess enum is used to signal back and then
-// count the successful DHT Put operations.
-// Used for single or batch operations.
-#[derive(Clone, Debug, PartialEq)]
-pub enum DHTPutSuccess {
-	Batch(usize),
-	Single,
-}
-
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
