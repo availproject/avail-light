@@ -205,6 +205,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let lc_rpc_event_receiver = rpc_events.subscribe();
+	let fc_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
 	#[cfg(feature = "crawl")]
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
@@ -337,13 +338,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		s.finality_synced = true;
 	}
 
-	let light_client =
-		avail_light::light_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
+	let light_client = avail_light::light_client::new(db.clone(), p2p_client.clone());
 
-	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
+	let light_network_client =
+		network::new(p2p_client.clone(), rpc_client.clone(), pp, cfg.disable_rpc);
 
 	let lc_channels = avail_light::light_client::Channels {
-		block_sender: block_tx,
+		block_sender: block_tx.clone(),
 		rpc_event_receiver: lc_rpc_event_receiver,
 		error_sender: error_sender.clone(),
 	};
@@ -352,10 +353,27 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		light_client,
 		light_network_client,
 		(&cfg).into(),
-		ot_metrics,
+		ot_metrics.clone(),
 		state.clone(),
 		lc_channels,
 	));
+
+	if let Some(partition) = cfg.block_matrix_partition {
+		let fat_client = avail_light::fat_client::new(p2p_client.clone(), rpc_client.clone());
+
+		let fc_channels = avail_light::fat_client::Channels {
+			rpc_event_receiver: fc_rpc_event_receiver,
+			error_sender: error_sender.clone(),
+		};
+
+		tokio::task::spawn(avail_light::fat_client::run(
+			partition,
+			fat_client,
+			(&cfg).into(),
+			ot_metrics,
+			fc_channels,
+		));
+	}
 
 	Ok(())
 }

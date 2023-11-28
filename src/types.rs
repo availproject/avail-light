@@ -358,13 +358,7 @@ pub struct Delay(pub Option<Duration>);
 pub struct LightClientConfig {
 	pub full_nodes_ws: Vec<String>,
 	pub confidence: f64,
-	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
-	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Delay,
-	pub block_matrix_partition: Option<Partition>,
-	pub max_cells_per_rpc: usize,
-	pub ttl: u64,
 }
 
 impl Delay {
@@ -384,11 +378,21 @@ impl From<&RuntimeConfig> for LightClientConfig {
 		LightClientConfig {
 			full_nodes_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
-			disable_rpc: val.disable_rpc,
-			dht_parallelization_limit: val.dht_parallelization_limit,
-			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: Delay(block_processing_delay),
-			block_matrix_partition: val.block_matrix_partition,
+		}
+	}
+}
+
+pub struct FatClientConfig {
+	pub query_proof_rpc_parallel_tasks: usize,
+	pub max_cells_per_rpc: usize,
+	pub ttl: u64,
+}
+
+impl From<&RuntimeConfig> for FatClientConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		FatClientConfig {
+			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
 			ttl: val.kad_record_ttl,
 		}
