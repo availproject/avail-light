@@ -235,10 +235,6 @@ impl EventLoop {
 													if let Some(val) = prev_block_cell_counter_data
 													{
 														info!("Number of comfirmed uploaded cells from the prev. block {} sent {}/{}. Duration: {}", current_block_num - 1, val.1, val.0, val.2);
-														info!(
-															"val1/val0:{}",
-															val.1 as f64 / val.0 as f64
-														);
 														_ = metrics
 															.record(MetricValue::DHTPutSuccess(
 																val.1 as f64 / val.0 as f64,
