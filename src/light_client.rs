@@ -240,7 +240,8 @@ pub async fn process_block(
 		.context("Failed to store block header in DB")?;
 
 	let mut rpc_fetched: Vec<Cell> = vec![];
-	let mut begin = Instant::now();
+
+	// Fat client partition upload logic
 	if let Some(partition) = &cfg.block_matrix_partition {
 		let positions: Vec<Position> = dimensions
 			.iter_extended_partition_positions(partition)
@@ -253,6 +254,7 @@ pub async fn process_block(
 			partition.fraction
 		);
 
+		let begin = Instant::now();
 		let rpc_cells = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
 		for batch in rpc_cells
 			// TODO: Filter already fetched cells since they are verified and in DHT
@@ -283,9 +285,20 @@ pub async fn process_block(
 					.collect::<Vec<_>>();
 				rpc_fetched.extend(partition_fetched_filtered.clone());
 			}
+			let rpc_call_duration = begin.elapsed();
+			let rpc_fetched_len = rpc_fetched.len();
+			info!(
+				block_number,
+				"partition_rpc_retrieve_time_elapsed" = ?rpc_call_duration,
+				"partition_rpc_cells_fetched" = rpc_fetched_len,
+				"Partition cells received from RPC",
+			);
+			metrics
+				.record(MetricValue::RPCCallDuration(
+					rpc_call_duration.as_secs_f64(),
+				))
+				.await?;
 		}
-
-		let begin = Instant::now();
 
 		let rpc_fetched_data_cells = rpc_fetched
 			.iter()
@@ -297,70 +310,17 @@ pub async fn process_block(
 		let dht_insert_rows_success_rate = light_client
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
 			.await;
-		let success_rate: f64 = dht_insert_rows_success_rate.into();
-		let time_elapsed = begin.elapsed();
 
 		info!(
 			block_number,
-			"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
+			"DHT PUT rows operation success rate" = dht_insert_rows_success_rate,
+			"rows inserted into DHT" = rows_len
 		);
-
-		metrics
-			.record(MetricValue::DHTPutRowsSuccess(success_rate))
-			.await?;
-
-		info!(
-			block_number,
-			"partition_dht_rows_insert_time_elapsed" = ?time_elapsed,
-			"{rows_len} rows inserted into DHT"
-		);
-
-		metrics
-			.record(MetricValue::DHTPutRowsDuration(time_elapsed.as_secs_f64()))
-			.await?;
 	}
 
-	let partition_time_elapsed = begin.elapsed();
-	let rpc_fetched_len = rpc_fetched.len();
-	info!(
-		block_number,
-		"partition_retrieve_time_elapsed" = ?partition_time_elapsed,
-		"partition_cells_fetched" = rpc_fetched_len,
-		"Partition cells received",
-	);
-	metrics
-		.record(MetricValue::RPCCallDuration(
-			partition_time_elapsed.as_secs_f64(),
-		))
-		.await?;
-
-	begin = Instant::now();
-
-	let dht_insert_success_rate = light_client
+	_ = light_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
 		.await;
-
-	info!(
-		block_number,
-		"DHT PUT operation success rate: {}", dht_insert_success_rate
-	);
-
-	metrics
-		.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))
-		.await?;
-
-	let dht_put_time_elapsed = begin.elapsed();
-	info!(
-		block_number,
-		elapsed = ?dht_put_time_elapsed,
-		"{rpc_fetched_len} cells inserted into DHT",
-	);
-
-	metrics
-		.record(MetricValue::DHTPutDuration(
-			dht_put_time_elapsed.as_secs_f64(),
-		))
-		.await?;
 
 	light_client
 		.shrink_kademlia_map()

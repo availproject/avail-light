@@ -14,12 +14,14 @@ use libp2p::{
 	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
+
+use crate::telemetry::{MetricValue, Metrics};
 
 use super::{
 	Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries, QueryChannel, SendableCommand,
@@ -73,7 +75,9 @@ pub struct EventLoop {
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
-	active_blocks: HashMap<u32, (usize, usize, u64)>, // <block_num, (total_cells, result_cell_counter, time_stat)
+	/// Blocks we monitor for PUT success rate
+	/// <block_num, (total_cells, result_cell_counter, time_stat)>
+	active_blocks: HashMap<u32, (usize, usize, u64)>,
 }
 
 impl EventLoop {
@@ -105,10 +109,10 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(mut self) {
+	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
+				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the network event loop.
@@ -119,8 +123,12 @@ impl EventLoop {
 		}
 	}
 
-	#[tracing::instrument(level = "trace", skip(self))]
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
+	#[tracing::instrument(level = "trace", skip(self, metrics))]
+	async fn handle_event(
+		&mut self,
+		event: SwarmEvent<BehaviourEvent>,
+		metrics: Arc<impl Metrics>,
+	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
@@ -217,6 +225,7 @@ impl EventLoop {
 												self.active_blocks.get_mut(&current_block_num)
 											{
 												let mut timing_stats: u64 = 0;
+
 												if let Some(timing) = stats.duration() {
 													timing_stats = timing.as_secs();
 												}
@@ -226,6 +235,22 @@ impl EventLoop {
 													if let Some(val) = prev_block_cell_counter_data
 													{
 														info!("Number of comfirmed uploaded cells from the prev. block {} sent {}/{}. Duration: {}", current_block_num - 1, val.1, val.0, val.2);
+														info!(
+															"val1/val0:{}",
+															val.1 as f64 / val.0 as f64
+														);
+														_ = metrics
+															.record(MetricValue::DHTPutSuccess(
+																val.1 as f64 / val.0 as f64,
+															))
+															.await;
+
+														_ = metrics
+															.record(MetricValue::DHTPutDuration(
+																val.2 as f64,
+															))
+															.await;
+
 														// Remove previous block from the list
 														self.active_blocks
 															.remove(&(current_block_num - 1));

@@ -175,7 +175,8 @@ impl Command for GetKadRecord {
 struct PutKadRecord {
 	records: Vec<Record>,
 	quorum: Quorum,
-	cells_to_track: (u32, usize), // (block_number, total_cell_count)
+	/// (block_number, total_cell_count)
+	cells_to_track: (u32, usize),
 	response_sender: Option<oneshot::Sender<Result<DHTPutSuccess>>>,
 }
 
@@ -185,7 +186,7 @@ impl Command for PutKadRecord {
 		let total_cell_count = self.records.len();
 
 		let cells_to_track = self.cells_to_track;
-		// `block_entry` is of format (total_cells, result_cell_counter, time_stat)
+		// `block_entry` is in format (total_cells, result_cell_counter, time_stat)
 		if let Some(block_entry) = entries.active_blocks.get_mut(&cells_to_track.0) {
 			// Increase the total cell count we monitor if the block entry already exists
 			block_entry.0 += total_cell_count;
@@ -541,10 +542,9 @@ impl Client {
 				.await
 			{
 				Ok(DHTPutSuccess::Single) => num_success += 1,
-				// wait here for successfully counted put operations from this chunk
-				// waiting in this manner introduces a back pressure from overwhelming the network
-				// with too many possible PUT request coming in from the whole batch
-				// this is the reason why input parameter vector of records is split into chunks
+				// Wait for the confirmation that the Kademlia put record has been successfult
+				// `put_record` only initiates the cell upload, we don't wait for the actual confirmation here
+				// Query confirmation is handled in the event loop
 				Ok(DHTPutSuccess::Batch(num)) => num_success += num,
 				Err(err) => return Err(err),
 			};

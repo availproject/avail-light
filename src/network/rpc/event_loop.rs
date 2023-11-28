@@ -25,7 +25,7 @@ use subxt::{
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 
 use super::{CommandReceiver, ExpectedVersion, Node, Nodes, SendableCommand};
 use crate::{
@@ -187,7 +187,7 @@ impl EventLoop {
 		// fetch the set ID from storage at current height
 		let set_id = self.fetch_set_id_at(last_finalized_block_hash).await?;
 		// set Current Valset
-		info!("Current set: {:?}", (validator_set.clone(), set_id));
+		debug!("Current set: {:?}", (validator_set.clone(), set_id));
 		self.block_data.current_valset = ValidatorSet {
 			set_id,
 			validator_set,
@@ -261,7 +261,7 @@ impl EventLoop {
 						validator_set: new_valset,
 					});
 
-					info!("Validator set change: {:?}", self.block_data.next_valset);
+					debug!("Validator set change: {:?}", self.block_data.next_valset);
 				}
 			},
 			Subscription::Justification(justification) => {

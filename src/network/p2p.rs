@@ -45,6 +45,7 @@ pub struct EventLoopEntries<'a> {
 	swarm: &'a mut Swarm<Behaviour>,
 	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: &'a mut HashMap<u32, (usize, usize, u64)>,
 }
 
