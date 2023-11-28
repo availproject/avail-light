@@ -206,7 +206,7 @@ impl EventLoop {
 
 									// "block_num:row:column" format
 									let record_key_parts: Result<Vec<u32>, _> = kad_key
-										.split(":")
+										.split(':')
 										.map(|part| part.parse::<u32>())
 										.collect();
 
