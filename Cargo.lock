@@ -693,6 +693,7 @@ dependencies = [
  "tiny-bip39 1.0.0",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
  "tracing-subscriber 0.3.18",
  "uuid",
