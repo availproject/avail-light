@@ -10,7 +10,7 @@ use mockall::automock;
 use sp_core::H256;
 use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::proof;
 
@@ -36,13 +36,9 @@ pub struct FetchStats {
 	pub dht_fetch_duration: f64,
 	pub rpc_fetched: Option<f64>,
 	pub rpc_fetch_duration: Option<f64>,
-	pub dht_put_success_rate: Option<f64>,
-	pub dht_put_duration: Option<f64>,
 }
 
 type RPCFetchStats = (usize, Duration);
-
-type DHTPutStats = (f64, Duration);
 
 impl FetchStats {
 	pub fn new(
@@ -50,7 +46,6 @@ impl FetchStats {
 		dht_fetched: usize,
 		dht_fetch_duration: Duration,
 		rpc_fetch_stats: Option<RPCFetchStats>,
-		dht_put_stats: Option<DHTPutStats>,
 	) -> Self {
 		FetchStats {
 			dht_fetched: dht_fetched as f64,
@@ -58,8 +53,6 @@ impl FetchStats {
 			dht_fetch_duration: dht_fetch_duration.as_secs_f64(),
 			rpc_fetched: rpc_fetch_stats.map(|(rpc_fetched, _)| rpc_fetched as f64),
 			rpc_fetch_duration: rpc_fetch_stats.map(|(_, duration)| duration.as_secs_f64()),
-			dht_put_success_rate: dht_put_stats.map(|(rate, _)| rate),
-			dht_put_duration: dht_put_stats.map(|(_, duration)| duration.as_secs_f64()),
 		}
 	}
 }
@@ -171,13 +164,8 @@ impl Client for DHTWithRPCFallbackClient {
 			.await?;
 
 		if self.disable_rpc {
-			let stats = FetchStats::new(
-				positions.len(),
-				dht_fetched.len(),
-				dht_fetch_duration,
-				None,
-				None,
-			);
+			let stats =
+				FetchStats::new(positions.len(), dht_fetched.len(), dht_fetch_duration, None);
 			return Ok((dht_fetched, unfetched, stats));
 		};
 
@@ -191,24 +179,20 @@ impl Client for DHTWithRPCFallbackClient {
 			)
 			.await?;
 
-		let begin = Instant::now();
-
-		let dht_put_success_rate = self
-			.p2p_client
+		self.p2p_client
 			.insert_cells_into_dht(block_number, rpc_fetched.clone())
-			.await;
-
-		info!(
-			block_number,
-			"DHT PUT operation success rate: {dht_put_success_rate}"
-		);
+			.await
+			.map_err(|e| {
+				warn!("Error inserting cells into DHT: {e}");
+				e
+			})
+			.ok();
 
 		let stats = FetchStats::new(
 			positions.len(),
 			dht_fetched.len(),
 			dht_fetch_duration,
 			Some((rpc_fetched.len(), rpc_fetch_duration)),
-			Some((dht_put_success_rate as f64, begin.elapsed())),
 		);
 
 		let mut fetched = vec![];

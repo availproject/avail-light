@@ -138,7 +138,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(&cfg).into(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
-		cfg.put_batch_size,
 		cfg.is_fat_client(),
 		id_keys,
 	)

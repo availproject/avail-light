@@ -36,7 +36,7 @@ use std::{
 	time::Instant,
 };
 use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
@@ -53,8 +53,8 @@ use crate::{
 #[async_trait]
 #[automock]
 pub trait LightClient {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
-	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn shrink_kademlia_map(&self) -> Result<()>;
 	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)>;
@@ -80,13 +80,13 @@ pub fn new(db: Arc<DB>, p2p_client: P2pClient, rpc_client: RpcClient) -> impl Li
 
 #[async_trait]
 impl LightClient for LightClientImpl {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
 	async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.p2p_client.shrink_kademlia_map().await
 	}
-	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()> {
 		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
@@ -192,18 +192,6 @@ pub async fn process_block(
 			.await?;
 	}
 
-	if let Some(dht_put_success_rate) = fetch_stats.dht_put_success_rate {
-		metrics
-			.record(MetricValue::DHTPutSuccess(dht_put_success_rate))
-			.await?;
-	}
-
-	if let Some(dht_put_duration) = fetch_stats.dht_put_duration {
-		metrics
-			.record(MetricValue::DHTPutDuration(dht_put_duration))
-			.await?;
-	}
-
 	if positions.len() > fetched.len() {
 		error!(block_number, "Failed to fetch {} cells", unfetched.len());
 		return Ok(None);
@@ -305,22 +293,25 @@ pub async fn process_block(
 			.filter(|cell| !cell.position.is_extended())
 			.collect::<Vec<_>>();
 		let rpc_fetched_data_rows = data::rows(dimensions, &rpc_fetched_data_cells);
-		let rows_len = rpc_fetched_data_rows.len();
 
-		let dht_insert_rows_success_rate = light_client
+		light_client
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
-			.await;
-
-		info!(
-			block_number,
-			"DHT PUT rows operation success rate" = dht_insert_rows_success_rate,
-			"rows inserted into DHT" = rows_len
-		);
+			.await
+			.map_err(|e| {
+				warn!("Error inserting rows into DHT: {e}");
+				e
+			})
+			.ok();
 	}
 
-	_ = light_client
+	light_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await;
+		.await
+		.map_err(|e| {
+			warn!("Error inserting cells into DHT: {e}");
+			e
+		})
+		.ok();
 
 	light_client
 		.shrink_kademlia_map()
@@ -567,7 +558,6 @@ mod tests {
 					fetched.len(),
 					Duration::from_secs(0),
 					None,
-					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
@@ -583,10 +573,10 @@ mod tests {
 			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_insert_cells_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
@@ -712,7 +702,6 @@ mod tests {
 					fetched.len(),
 					Duration::from_secs(0),
 					None,
-					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
@@ -725,10 +714,10 @@ mod tests {
 			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_insert_cells_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));

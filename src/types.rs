@@ -286,8 +286,6 @@ pub struct RuntimeConfig {
 	pub disable_rpc: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 	pub dht_parallelization_limit: usize,
-	/// Number of records to be inserted into DHT simultaneously (default: 1000)
-	pub put_batch_size: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0).
@@ -555,7 +553,6 @@ impl Default for RuntimeConfig {
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
-			put_batch_size: 1000,
 			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: Some(10),
 			block_matrix_partition: None,

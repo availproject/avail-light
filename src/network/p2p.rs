@@ -115,7 +115,6 @@ pub fn init(
 	cfg: LibP2PConfig,
 	dht_parallelization_limit: usize,
 	ttl: u64,
-	put_batch_size: usize,
 	is_fat_client: bool,
 	id_keys: libp2p::identity::Keypair,
 ) -> Result<(Client, EventLoop)> {
@@ -206,12 +205,7 @@ pub fn init(
 	let (command_sender, command_receiver) = mpsc::channel(10000);
 
 	Ok((
-		Client::new(
-			command_sender,
-			dht_parallelization_limit,
-			ttl,
-			put_batch_size,
-		),
+		Client::new(command_sender, dht_parallelization_limit, ttl),
 		EventLoop::new(
 			swarm,
 			command_receiver,
