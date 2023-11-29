@@ -221,7 +221,10 @@ impl<T> std::fmt::Display for ShutdownHasCompleted<T> {
 mod tests {
 	use color_eyre::Result;
 	use std::{future::Future, time::Duration};
-	use tokio::{runtime, time::timeout};
+	use tokio::{
+		runtime,
+		time::{sleep, timeout},
+	};
 
 	use crate::shutdown::Controller;
 
@@ -244,6 +247,27 @@ mod tests {
 			let controller = Controller::new();
 			assert!(controller.trigger_shutdown(1).is_ok());
 			assert!(controller.completed_shutdown().await == 1);
+		})?;
+
+		Ok(())
+	}
+
+	#[test]
+	fn shutdown_trigger_after_sleep() -> Result<()> {
+		test_runtime(async {
+			let controller = Controller::new();
+
+			tokio::spawn({
+				let controller = controller.clone();
+				async move {
+					// sleep, but don't overdue it
+					// must not be longer than 100 millis
+					sleep(Duration::from_millis(20)).await;
+					assert!(controller.trigger_shutdown(2).is_ok());
+				}
+			});
+
+			assert!(controller.completed_shutdown().await == 2);
 		})?;
 
 		Ok(())
