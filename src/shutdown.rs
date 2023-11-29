@@ -225,7 +225,7 @@ mod tests {
 		time::{sleep, timeout},
 	};
 
-	use crate::shutdown::{Controller, ShutdownHasStarted};
+	use crate::shutdown::{Controller, ShutdownHasCompleted, ShutdownHasStarted};
 
 	// using custom runtime to create non-blocking promises instead of `[tokio::test]`,
 	// ensuring predictable asynchronous operations without indefinite blocking
@@ -269,19 +269,17 @@ mod tests {
 	#[test]
 	fn shutdown_only_once() {
 		let controller = Controller::new();
+
 		assert!(controller
 			.trigger_shutdown("haven't finished planning yet")
 			.is_ok());
 
 		let res = controller.trigger_shutdown("that's not my job");
-		assert!(res.is_err());
-		if let Err(err) = res {
-			match err {
-				ShutdownHasStarted { reason, ignored } => {
-					assert_eq!(reason, "haven't finished planning yet");
-					assert_eq!(ignored, "that's not my job");
-				},
-			}
+		if let Err(ShutdownHasStarted { reason, ignored }) = res {
+			assert_eq!(reason, "haven't finished planning yet");
+			assert_eq!(ignored, "that's not my job");
+		} else {
+			panic!("Expected ShutdownHasStarted error");
 		}
 	}
 
@@ -299,5 +297,42 @@ mod tests {
 
 			controller.completed_shutdown().await;
 		});
+	}
+
+	#[test]
+	fn shutdown_completed_from_other_tasks() {
+		test_runtime(async {
+			let controller = Controller::new();
+
+			tokio::spawn({
+				let controller = controller.clone();
+				async move {
+					sleep(Duration::from_millis(10)).await;
+					assert!(controller.trigger_shutdown("i'm bored").is_ok());
+				}
+			});
+
+			let t = tokio::spawn({
+				let controller = controller.clone();
+				async move {
+					assert!(controller.completed_shutdown().await == "i'm bored".to_string());
+				}
+			});
+
+			assert!(t.await.is_ok());
+		});
+	}
+
+	#[test]
+	fn creating_delay_token_after_shutdown() {
+		let controller = Controller::new();
+		assert!(controller.trigger_shutdown("i'm loose").is_ok());
+
+		let token_res = controller.delay_token();
+		if let Err(ShutdownHasCompleted { reason }) = token_res {
+			assert_eq!(reason, "i'm loose");
+		} else {
+			panic!("Expected ShutdownHasCompleted error");
+		}
 	}
 }
