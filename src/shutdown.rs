@@ -11,11 +11,13 @@ use self::{completed::Completed, with_delay::WithDelay};
 mod completed;
 mod with_delay;
 
+#[derive(Clone)]
 pub struct Controller<T: Clone> {
 	inner: Arc<Mutex<ControllerInner<T>>>,
 }
 
 impl<T: Clone> Controller<T> {
+	#[inline]
 	pub fn new() -> Self {
 		Self {
 			inner: Arc::new(Mutex::new(ControllerInner::new())),
@@ -44,7 +46,7 @@ impl<T: Clone> Controller<T> {
 	///
 	/// The shutdown is considered complete when all counted instances of [`DelayTokens`]
 	/// are dropped.
-	pub fn wait_completed_shutdown(&self) -> Completed<T> {
+	pub fn completed_shutdown(&self) -> Completed<T> {
 		Completed {
 			inner: self.inner.clone(),
 		}
@@ -69,6 +71,12 @@ impl<T: Clone> Controller<T> {
 		Ok(DelayToken {
 			inner: self.inner.clone(),
 		})
+	}
+}
+
+impl<T: Clone> Default for Controller<T> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
@@ -120,12 +128,6 @@ impl<T: Clone> ControllerInner<T> {
 				Ok(())
 			},
 		}
-	}
-}
-
-impl<T: Clone> Default for Controller<T> {
-	fn default() -> Self {
-		Self::new()
 	}
 }
 
@@ -212,5 +214,38 @@ impl<T: std::fmt::Debug> std::error::Error for ShutdownHasCompleted<T> {}
 impl<T> std::fmt::Display for ShutdownHasCompleted<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "shutdown has been completed, can not delay any further")
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use color_eyre::Result;
+	use std::{future::Future, time::Duration};
+	use tokio::{runtime, time::timeout};
+
+	use crate::shutdown::Controller;
+
+	// using custom runtime to create non-blocking promises instead of `[tokio::test]`,
+	// ensuring predictable asynchronous operations without indefinite blocking
+	#[track_caller]
+	fn test_runtime(test: impl Future<Output = ()>) -> Result<()> {
+		let runtime = runtime::Runtime::new()?;
+		runtime.block_on(async move {
+			let test_with_timeout = timeout(Duration::from_millis(100), test);
+			assert!(test_with_timeout.await.is_ok());
+		});
+
+		Ok(())
+	}
+
+	#[test]
+	fn shutdown_trigger() -> Result<()> {
+		test_runtime(async {
+			let controller = Controller::new();
+			assert!(controller.trigger_shutdown(1).is_ok());
+			assert!(controller.completed_shutdown().await == 1);
+		})?;
+
+		Ok(())
 	}
 }
