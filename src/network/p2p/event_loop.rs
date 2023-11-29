@@ -234,36 +234,33 @@ impl EventLoop {
 							};
 
 							let previous_block_num = block_num - 1;
-							// Get cell counter data for previos block
-							let prev_block_cell_counter_data =
-								self.active_blocks.get(&previous_block_num).cloned();
+
+							// If the first new block cell just arrived, and previous block is not removed
+							// We take that as the cut-off point for previous blocks cell delivery
+							if let Some(&(total_cells, cell_counter, time_stat)) = self
+								.active_blocks
+								.get(&block_num)
+								.and(self.active_blocks.get(&previous_block_num))
+							{
+								info!("Number of comfirmed uploaded cells from the prev. block {previous_block_num} sent {cell_counter}/{total_cells}. Duration: {time_stat}");
+								let success_rate = cell_counter as f64 / total_cells as f64;
+
+								_ = metrics
+									.record(MetricValue::DHTPutSuccess(success_rate))
+									.await;
+
+								_ = metrics
+									.record(MetricValue::DHTPutDuration(time_stat as f64))
+									.await;
+
+								self.active_blocks.remove(&previous_block_num);
+							};
 
 							// Get cell counter data for current block
 							// This value has already been added during the PUT operation
 							if let Some((_, cell_counter, time_stat)) =
 								self.active_blocks.get_mut(&block_num)
 							{
-								// Current blocks cell counter = 0 means the first new block cell just arrived
-								// We take that as the cut-off point for previous blocks cell delivery
-								if *cell_counter == 0 {
-									if let Some((total_cells, cell_counter, time_stat)) =
-										prev_block_cell_counter_data
-									{
-										info!("Number of comfirmed uploaded cells from the prev. block {previous_block_num} sent {cell_counter}/{total_cells}. Duration: {time_stat}");
-										let success_rate = cell_counter as f64 / total_cells as f64;
-
-										_ = metrics
-											.record(MetricValue::DHTPutSuccess(success_rate))
-											.await;
-
-										_ = metrics
-											.record(MetricValue::DHTPutDuration(time_stat as f64))
-											.await;
-
-										self.active_blocks.remove(&previous_block_num);
-										return;
-									}
-								}
 								// Increment the cell counter for current block
 								*cell_counter += 1;
 								*time_stat = stats
