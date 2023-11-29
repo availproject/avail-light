@@ -175,14 +175,14 @@ impl<T: Clone> Drop for DelayToken<T> {
 #[derive(Debug, Clone)]
 pub struct ShutdownHasStarted<T> {
 	pub reason: T,
-	pub ignored_reason: T,
+	pub ignored: T,
 }
 
 impl<T> ShutdownHasStarted<T> {
 	pub const fn new(reason: T, ignored_reason: T) -> Self {
 		Self {
 			reason,
-			ignored_reason,
+			ignored: ignored_reason,
 		}
 	}
 }
@@ -226,7 +226,7 @@ mod tests {
 		time::{sleep, timeout},
 	};
 
-	use crate::shutdown::Controller;
+	use crate::shutdown::{Controller, ShutdownHasStarted};
 
 	// using custom runtime to create non-blocking promises instead of `[tokio::test]`,
 	// ensuring predictable asynchronous operations without indefinite blocking
@@ -271,5 +271,24 @@ mod tests {
 		})?;
 
 		Ok(())
+	}
+
+	#[test]
+	fn shutdown_only_once() {
+		let controller = Controller::new();
+		assert!(controller
+			.trigger_shutdown("haven't finished planning yet")
+			.is_ok());
+
+		let res = controller.trigger_shutdown("that's not my job");
+		assert!(res.is_err());
+		if let Err(err) = res {
+			match err {
+				ShutdownHasStarted { reason, ignored } => {
+					assert_eq!(reason, "haven't finished planning yet");
+					assert_eq!(ignored, "that's not my job");
+				},
+			}
+		}
 	}
 }
