@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
 	dcutr,
 	identify::{self, Info},
-	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult},
+	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult, RecordKey},
 	mdns,
 	multiaddr::Protocol,
 	swarm::{
@@ -78,6 +78,33 @@ pub struct EventLoop {
 	/// Blocks we monitor for PUT success rate
 	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: HashMap<u32, (usize, usize, u64)>,
+}
+
+struct CellKey {
+	pub block_num: u32,
+	pub _row_num: u32,
+	pub _col_num: u32,
+}
+
+impl TryFrom<RecordKey> for CellKey {
+	type Error = anyhow::Error;
+
+	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
+		// Extract key from the record
+		let [block_num, _row_num, _col_num] = String::from_utf8(key.to_vec())?
+			.split(':')
+			.map(str::parse::<u32>)
+			.collect::<std::result::Result<Vec<_>, _>>()
+			.context("Cannot parse into u32")?
+			.try_into()
+			.map_err(|value| anyhow::anyhow!("Invalid key value: {value:?} "))?;
+
+		Ok(CellKey {
+			block_num,
+			_row_num,
+			_col_num,
+		})
+	}
 }
 
 impl EventLoop {
@@ -190,93 +217,71 @@ impl EventLoop {
 							},
 							_ => (),
 						},
-						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecord()) =
+						QueryResult::PutRecord(Err(error)) => {
+							warn!("Unable to put record: {error}");
+						},
+
+						QueryResult::PutRecord(Ok(record)) => {
+							let Some(QueryChannel::PutRecord) =
 								self.pending_kad_queries.remove(&id)
+							else {
+								return;
+							};
+							let Ok(CellKey { block_num, .. }) = record.key.clone().try_into()
+							else {
+								warn!("Unable to cast Kademlia key to UTF-8");
+								return;
+							};
+
+							let previous_block_num = block_num - 1;
+							// Get cell counter data for previos block
+							let prev_block_cell_counter_data =
+								self.active_blocks.get(&previous_block_num).cloned();
+
+							// Get cell counter data for current block
+							// This value has already been added during the PUT operation
+							if let Some((_, cell_counter, time_stat)) =
+								self.active_blocks.get_mut(&block_num)
 							{
-								if let Ok(record) = result {
-									// Extract key from the record
-									let kad_key = match String::from_utf8(record.key.to_vec()) {
-										Ok(key) => key,
-										Err(_) => {
-											warn!("Unable to cast Kademlia key to UTF-8");
-											return;
-										},
-									};
+								// Current blocks cell counter = 0 means the first new block cell just arrived
+								// We take that as the cut-off point for previous blocks cell delivery
+								if *cell_counter == 0 {
+									if let Some((total_cells, cell_counter, time_stat)) =
+										prev_block_cell_counter_data
+									{
+										info!("Number of comfirmed uploaded cells from the prev. block {previous_block_num} sent {cell_counter}/{total_cells}. Duration: {time_stat}");
+										let success_rate = cell_counter as f64 / total_cells as f64;
 
-									// "block_num:row:column" format
-									let record_key_parts: Result<Vec<u32>, _> = kad_key
-										.split(':')
-										.map(|part| part.parse::<u32>())
-										.collect();
+										_ = metrics
+											.record(MetricValue::DHTPutSuccess(success_rate))
+											.await;
 
-									match record_key_parts {
-										Ok(parts) => {
-											let current_block_num = parts[0];
-											// Get cell counter data for previos block
-											let prev_block_cell_counter_data = self
-												.active_blocks
-												.get(&(current_block_num - 1))
-												.cloned();
+										_ = metrics
+											.record(MetricValue::DHTPutDuration(time_stat as f64))
+											.await;
 
-											// Get cell counter data for current block
-											// This value has already been added during the PUT operation
-											if let Some(cell_counter_data) = self
-												.active_blocks
-												.clone()
-												.get_mut(&current_block_num)
-											{
-												let mut timing_stats: u64 = 0;
-
-												if let Some(timing) = stats.duration() {
-													timing_stats = timing.as_secs();
-												}
-												// Current blocks cell counter = 0 means the first new block cell just arrived
-												// We take that as the cut-off point for previous blocks cell delivery
-												if cell_counter_data.1 == 0 {
-													if let Some(val) = prev_block_cell_counter_data
-													{
-														info!("Number of comfirmed uploaded cells from the prev. block {} sent {}/{}. Duration: {}", current_block_num - 1, val.1, val.0, val.2);
-														_ = metrics
-															.record(MetricValue::DHTPutSuccess(
-																val.1 as f64 / val.0 as f64,
-															))
-															.await;
-
-														_ = metrics
-															.record(MetricValue::DHTPutDuration(
-																val.2 as f64,
-															))
-															.await;
-
-														// Remove previous block from the list
-														self.active_blocks
-															.remove(&(current_block_num - 1));
-													}
-												}
-												// Increment the cell counter for current block
-												cell_counter_data.1 += 1;
-												cell_counter_data.2 = timing_stats;
-											} else {
-												debug!(
-													"No data for block {current_block_num} found in active blocks list"
-												);
-											}
-										},
-										_ => debug!(
-											"Unable to extract block number from Kademlia key"
-										),
-									}
-
-									if self.kad_remove_local_record {
-										// Remove local records for fat clients (memory optimization)
-										debug!("Pruning local records on fat client");
-										self.swarm
-											.behaviour_mut()
-											.kademlia
-											.remove_record(&record.key);
+										self.active_blocks.remove(&previous_block_num);
+										return;
 									}
 								}
+								// Increment the cell counter for current block
+								*cell_counter += 1;
+								*time_stat = stats
+									.duration()
+									.as_ref()
+									.map(Duration::as_secs)
+									.unwrap_or_default();
+							} else {
+								debug!("No data for block {block_num} found in active blocks list");
+							}
+
+							if self.kad_remove_local_record {
+								// Remove local records for fat clients (memory optimization)
+								debug!("Pruning local records on fat client");
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.remove_record(&record.key);
 							}
 						},
 						QueryResult::Bootstrap(result) => match result {

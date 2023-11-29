@@ -198,7 +198,7 @@ impl Command for PutKadRecord {
 				.kademlia
 				.put_record(record, self.quorum)
 				.expect("Unable to perform Kademlia PUT operation.");
-			entries.insert_query(query_id, QueryChannel::PutRecord());
+			entries.insert_query(query_id, QueryChannel::PutRecord);
 		}
 		Ok(())
 	}
