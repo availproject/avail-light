@@ -219,7 +219,6 @@ impl<T> std::fmt::Display for ShutdownHasCompleted<T> {
 
 #[cfg(test)]
 mod tests {
-	use color_eyre::Result;
 	use std::{future::Future, time::Duration};
 	use tokio::{
 		runtime,
@@ -231,29 +230,25 @@ mod tests {
 	// using custom runtime to create non-blocking promises instead of `[tokio::test]`,
 	// ensuring predictable asynchronous operations without indefinite blocking
 	#[track_caller]
-	fn test_runtime(test: impl Future<Output = ()>) -> Result<()> {
-		let runtime = runtime::Runtime::new()?;
+	fn test_runtime(test: impl Future<Output = ()>) {
+		let runtime = runtime::Runtime::new().unwrap();
 		runtime.block_on(async move {
 			let test_with_timeout = timeout(Duration::from_millis(100), test);
 			assert!(test_with_timeout.await.is_ok());
 		});
-
-		Ok(())
 	}
 
 	#[test]
-	fn shutdown_trigger() -> Result<()> {
+	fn shutdown_trigger() {
 		test_runtime(async {
 			let controller = Controller::new();
 			assert!(controller.trigger_shutdown(1).is_ok());
 			assert!(controller.completed_shutdown().await == 1);
-		})?;
-
-		Ok(())
+		});
 	}
 
 	#[test]
-	fn shutdown_trigger_after_sleep() -> Result<()> {
+	fn shutdown_trigger_after_sleep() {
 		test_runtime(async {
 			let controller = Controller::new();
 
@@ -268,9 +263,7 @@ mod tests {
 			});
 
 			assert!(controller.completed_shutdown().await == 2);
-		})?;
-
-		Ok(())
+		});
 	}
 
 	#[test]
@@ -290,5 +283,21 @@ mod tests {
 				},
 			}
 		}
+	}
+
+	#[test]
+	fn delay_token_shutdown() {
+		test_runtime(async {
+			let controller = Controller::new();
+			let token = controller.delay_token().unwrap();
+
+			assert!(controller.trigger_shutdown(1).is_ok());
+
+			tokio::spawn(token.wrap_future(async move {
+				sleep(Duration::from_millis(10)).await;
+			}));
+
+			controller.completed_shutdown().await;
+		});
 	}
 }
