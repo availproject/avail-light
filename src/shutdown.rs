@@ -1,8 +1,37 @@
-use std::{fmt::Debug, mem, sync::Arc, task::Waker};
-use tokio::sync::Mutex;
+use std::{
+	fmt::Debug,
+	mem,
+	sync::{Arc, Mutex},
+	task::Waker,
+};
 
 pub struct Controller<T: Clone> {
 	inner: Arc<Mutex<ControllerInner<T>>>,
+}
+
+impl<T: Clone> Controller<T> {
+	pub fn new() -> Self {
+		Self {
+			inner: Arc::new(Mutex::new(ControllerInner::new())),
+		}
+	}
+
+	pub fn is_shutdown_triggered(&self) -> bool {
+		self.inner.lock().unwrap().reason.is_some()
+	}
+
+	pub fn is_shutdown_complete(&self) -> bool {
+		let inner = self.inner.lock().unwrap();
+		inner.reason.is_some() && inner.delay_tokens == 0
+	}
+
+	pub fn shutdown_reason(&self) -> Option<T> {
+		self.inner.lock().unwrap().reason.clone()
+	}
+
+	pub fn trigger_shutdown(&self, reason: T) -> Result<(), ShutdownHasStarted<T>> {
+		self.inner.lock().unwrap().shutdown(reason)
+	}
 }
 
 struct ControllerInner<T> {
@@ -53,6 +82,12 @@ impl<T: Clone> ControllerInner<T> {
 				Ok(())
 			},
 		}
+	}
+}
+
+impl<T: Clone> Default for Controller<T> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
