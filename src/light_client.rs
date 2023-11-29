@@ -294,24 +294,20 @@ pub async fn process_block(
 			.collect::<Vec<_>>();
 		let rpc_fetched_data_rows = data::rows(dimensions, &rpc_fetched_data_cells);
 
-		light_client
+		if let Err(e) = light_client
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
 			.await
-			.map_err(|e| {
-				warn!("Error inserting rows into DHT: {e}");
-				e
-			})
-			.ok();
+		{
+			warn!("Error inserting rows into DHT: {e}");
+		}
 	}
 
-	light_client
+	if let Err(e) = light_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
 		.await
-		.map_err(|e| {
-			warn!("Error inserting cells into DHT: {e}");
-			e
-		})
-		.ok();
+	{
+		warn!("Error inserting cells into DHT: {e}");
+	}
 
 	light_client
 		.shrink_kademlia_map()
