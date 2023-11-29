@@ -1,13 +1,15 @@
 use std::{
 	fmt::Debug,
+	future::Future,
 	mem,
 	sync::{Arc, Mutex},
 	task::Waker,
 };
 
-use self::completed::Completed;
+use self::{completed::Completed, with_delay::WithDelay};
 
 mod completed;
+mod with_delay;
 
 pub struct Controller<T: Clone> {
 	inner: Arc<Mutex<ControllerInner<T>>>,
@@ -46,6 +48,27 @@ impl<T: Clone> Controller<T> {
 		Completed {
 			inner: self.inner.clone(),
 		}
+	}
+
+	/// Produces a token that holds back the shutdown as long as it exists.
+	///
+	/// The [`Controller`] instance keeps record of all created tokens.
+	/// Tokens are thread-safe.
+	/// All tokens must be dropped for shutdown to be able to complete.
+	///
+	/// For already completed shutdowns, this function returns error.
+	fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
+		let mut inner = self.inner.lock().unwrap();
+		if inner.delay_tokens == 0 {
+			if let Some(reason) = &inner.reason {
+				return Err(ShutdownHasCompleted::new(reason.clone()));
+			}
+		}
+
+		inner.increment_delay_tokens();
+		Ok(DelayToken {
+			inner: self.inner.clone(),
+		})
 	}
 }
 
@@ -106,6 +129,47 @@ impl<T: Clone> Default for Controller<T> {
 	}
 }
 
+/// The shutdown is delayed as long as this token exists.
+///
+/// This token is thread-safe, and can be sent to different threads and tasks.
+///
+/// * Important: For shutdown to complete, all clones must be dropped.
+
+pub struct DelayToken<T: Clone> {
+	inner: Arc<Mutex<ControllerInner<T>>>,
+}
+
+impl<T: Clone> DelayToken<T> {
+	/// Wrapping a future defers shutdown completion until the wrapped future resolves or is dropped.
+	///
+	/// This function consumes the token to prevent retaining an unused token accidentally, which could
+	/// indefinitely postpone shutdown. The resulting future transparently resolves with the value of the
+	/// wrapped future.
+	///
+	/// However, the shutdown process remains pending until the future resolves or is dropped.
+	pub fn wrap_future<F: Future>(self, future: F) -> WithDelay<T, F> {
+		WithDelay {
+			delay_token: Some(self),
+			future,
+		}
+	}
+}
+
+impl<T: Clone> Clone for DelayToken<T> {
+	fn clone(&self) -> Self {
+		self.inner.lock().unwrap().increment_delay_tokens();
+		DelayToken {
+			inner: self.inner.clone(),
+		}
+	}
+}
+
+impl<T: Clone> Drop for DelayToken<T> {
+	fn drop(&mut self) {
+		self.inner.lock().unwrap().decrement_delay_tokens();
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct ShutdownHasStarted<T> {
 	pub reason: T,
@@ -129,5 +193,24 @@ impl<T> std::fmt::Display for ShutdownHasStarted<T> {
 			f,
 			"shutdown has already commenced, can not delay any further"
 		)
+	}
+}
+
+#[derive(Debug)]
+pub struct ShutdownHasCompleted<T> {
+	pub reason: T,
+}
+
+impl<T> ShutdownHasCompleted<T> {
+	pub const fn new(reason: T) -> Self {
+		Self { reason }
+	}
+}
+
+impl<T: std::fmt::Debug> std::error::Error for ShutdownHasCompleted<T> {}
+
+impl<T> std::fmt::Display for ShutdownHasCompleted<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "shutdown has been completed, can not delay any further")
 	}
 }
