@@ -273,20 +273,20 @@ pub async fn process_block(
 					.collect::<Vec<_>>();
 				rpc_fetched.extend(partition_fetched_filtered.clone());
 			}
-			let rpc_call_duration = begin.elapsed();
-			let rpc_fetched_len = rpc_fetched.len();
-			info!(
-				block_number,
-				"partition_rpc_retrieve_time_elapsed" = ?rpc_call_duration,
-				"partition_rpc_cells_fetched" = rpc_fetched_len,
-				"Partition cells received from RPC",
-			);
-			metrics
-				.record(MetricValue::RPCCallDuration(
-					rpc_call_duration.as_secs_f64(),
-				))
-				.await?;
 		}
+		let rpc_call_duration = begin.elapsed();
+		let rpc_fetched_len = rpc_fetched.len();
+		info!(
+			block_number,
+			"partition_rpc_retrieve_time_elapsed" = ?rpc_call_duration,
+			"partition_rpc_cells_fetched" = rpc_fetched_len,
+			"Partition cells received from RPC",
+		);
+		metrics
+			.record(MetricValue::RPCCallDuration(
+				rpc_call_duration.as_secs_f64(),
+			))
+			.await?;
 
 		let rpc_fetched_data_cells = rpc_fetched
 			.iter()
