@@ -221,8 +221,10 @@ impl EventLoop {
 
 											// Get cell counter data for current block
 											// This value has already been added during the PUT operation
-											if let Some(cell_counter_data) =
-												self.active_blocks.get_mut(&current_block_num)
+											if let Some(cell_counter_data) = self
+												.active_blocks
+												.clone()
+												.get_mut(&current_block_num)
 											{
 												let mut timing_stats: u64 = 0;
 
@@ -250,7 +252,6 @@ impl EventLoop {
 														// Remove previous block from the list
 														self.active_blocks
 															.remove(&(current_block_num - 1));
-														return;
 													}
 												}
 												// Increment the cell counter for current block
