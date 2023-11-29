@@ -5,6 +5,10 @@ use std::{
 	task::Waker,
 };
 
+use self::completed::Completed;
+
+mod completed;
+
 pub struct Controller<T: Clone> {
 	inner: Arc<Mutex<ControllerInner<T>>>,
 }
@@ -32,9 +36,20 @@ impl<T: Clone> Controller<T> {
 	pub fn trigger_shutdown(&self, reason: T) -> Result<(), ShutdownHasStarted<T>> {
 		self.inner.lock().unwrap().shutdown(reason)
 	}
+
+	/// This function returns a future that resolves when the shutdown is fully completed.
+	/// The resulting future can be cloned and safely dispatched to other threads or tasks.
+	///
+	/// The shutdown is considered complete when all counted instances of [`DelayTokens`]
+	/// are dropped.
+	pub fn wait_completed_shutdown(&self) -> Completed<T> {
+		Completed {
+			inner: self.inner.clone(),
+		}
+	}
 }
 
-struct ControllerInner<T> {
+pub struct ControllerInner<T> {
 	reason: Option<T>,
 	delay_tokens: usize,
 	on_shutdown_trigger: Vec<Waker>,
