@@ -173,7 +173,6 @@ struct PutKadRecord {
 	quorum: Quorum,
 	/// (block_number, total_cell_count)
 	cells_to_track: (u32, usize),
-	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
 // `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
@@ -201,22 +200,10 @@ impl Command for PutKadRecord {
 				.expect("Unable to perform Kademlia PUT operation.");
 			entries.insert_query(query_id, QueryChannel::PutRecord());
 		}
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(()))
-			.expect("PutRecord receiver dropped");
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("PutKadRecord receiver dropped");
-	}
+	fn abort(&mut self, _: anyhow::Error) {}
 }
 
 struct CountDHTPeers {
@@ -518,17 +505,14 @@ impl Client {
 	) -> Result<()> {
 		let block_size = records.len();
 
-		// create oneshot for each chunk, through which will success counts be sent,
-		// only for the records in that chunk
-		self.execute_sync(|response_sender| {
-			Box::new(PutKadRecord {
+		self.command_sender
+			.send(Box::new(PutKadRecord {
 				records,
 				quorum,
 				cells_to_track: (block_num, block_size),
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+			}))
+			.await
+			.context("receiver should not be dropped")
 	}
 
 	pub async fn count_dht_entries(&self) -> Result<usize> {
