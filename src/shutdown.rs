@@ -14,31 +14,56 @@ mod with_cancel;
 mod with_delay;
 
 #[derive(Clone)]
+/// Shutdown controller for graceful shutdowns in async code.
+///
+/// This controller addresses problems such as:
+/// * Stopping running futures when a shutdown signal is triggered.
+/// * Waiting for futures to complete potential clean-ups.
+/// * Retrieving the shutdown reason after shutdown triggers.
+///
+/// The Controller can be cloned and is thread-safe.
+///
+/// Caution: `JoinHandles` behave differently than regular futures.
+/// Dropping a `JoinHandle` might detach it from the task, leaving the task running.
+/// Take care to wrap futures before spawning to avoid potential data loss on shutdown.
 pub struct Controller<T: Clone> {
 	inner: Arc<Mutex<ControllerInner<T>>>,
 }
 
 impl<T: Clone> Controller<T> {
 	#[inline]
+	/// Instantiate new shutdown controller.
 	pub fn new() -> Self {
 		Self {
 			inner: Arc::new(Mutex::new(ControllerInner::new())),
 		}
 	}
 
+	/// Checks if the shutdown has been triggered.
 	pub fn is_shutdown_triggered(&self) -> bool {
 		self.inner.lock().unwrap().reason.is_some()
 	}
 
+	/// Checks if the shutdown has completed.
 	pub fn is_shutdown_completed(&self) -> bool {
 		let inner = self.inner.lock().unwrap();
 		inner.reason.is_some() && inner.delay_tokens == 0
 	}
 
+	/// Gets the shutdown reason, for the triggered shutdown.
+	///
+	/// Returns [`None`] if the shutdown has not been triggered yet.
 	pub fn shutdown_reason(&self) -> Option<T> {
 		self.inner.lock().unwrap().reason.clone()
 	}
 
+	/// Triggers the shutdown to begin.
+	///
+	/// This will make all [`Signal`] and [`WithCancel`] futures to be resolved.
+	///
+	/// The shutdown will not complete until every [`DelayToken`] has been dropped.
+	///
+	/// If the shutdown has already been started, this function returns an error.
 	pub fn trigger_shutdown(&self, reason: T) -> Result<(), ShutdownHasStarted<T>> {
 		self.inner.lock().unwrap().shutdown(reason)
 	}
@@ -120,9 +145,18 @@ impl<T: Clone> Default for Controller<T> {
 }
 
 pub struct ControllerInner<T> {
+	/// The reason why shutdown is happening.
 	reason: Option<T>,
+
+	/// Count of all delay tokens in existence.
+	///
+	/// Must reach 0 before shutdown can complete.
 	delay_tokens: usize,
+
+	/// Tasks that need to be awaken when shutdown is triggered.
 	on_shutdown_trigger: Vec<Waker>,
+
+	/// Tasks that need to be awaken when the shutdown is complete.
 	on_shutdown_complete: Vec<Waker>,
 }
 
@@ -175,7 +209,6 @@ impl<T: Clone> ControllerInner<T> {
 /// This token is thread-safe, and can be sent to different threads and tasks.
 ///
 /// * Important: For shutdown to complete, all clones must be dropped.
-
 pub struct DelayToken<T: Clone> {
 	inner: Arc<Mutex<ControllerInner<T>>>,
 }
@@ -211,9 +244,14 @@ impl<T: Clone> Drop for DelayToken<T> {
 	}
 }
 
+/// Error returned when [`Controller`] instance tries to trigger the shutdown
+/// multiple times on the same controller instance.
 #[derive(Debug, Clone)]
 pub struct ShutdownHasStarted<T> {
+	/// The shutdown reason of the already started shutdown.
 	pub reason: T,
+
+	/// The provided reason that was ignored because the shutdown was already started.
 	pub ignored: T,
 }
 
@@ -237,8 +275,10 @@ impl<T> std::fmt::Display for ShutdownHasStarted<T> {
 	}
 }
 
+/// Error returned when trying to delay a shutdown that has already been completed.
 #[derive(Debug)]
 pub struct ShutdownHasCompleted<T> {
+	/// The shutdown reason of the already completed shutdown.
 	pub reason: T,
 }
 
