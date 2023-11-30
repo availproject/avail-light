@@ -171,22 +171,20 @@ impl Command for GetKadRecord {
 struct PutKadRecord {
 	records: Vec<Record>,
 	quorum: Quorum,
-	/// (block_number, total_cell_count)
-	cells_to_track: (u32, usize),
+	block_num: u32,
 }
 
 // `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
 impl Command for PutKadRecord {
 	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let (block_number, total_cells) = self.cells_to_track;
 		// `block_entry` is in format (total_cells, result_cell_counter, time_stat)
 		entries
 			.active_blocks
-			.entry(block_number)
+			.entry(self.block_num)
 			// Increase the total cell count we monitor if the block entry already exists
 			.and_modify(|(total_cells, _, _)| *total_cells += self.records.len())
 			// Initiate counting for the new block if the block doesn't exist
-			.or_insert((total_cells, 0, 0));
+			.or_insert((self.records.len(), 0, 0));
 
 		for record in self.records.clone() {
 			let query_id = entries
@@ -499,13 +497,11 @@ impl Client {
 		quorum: Quorum,
 		block_num: u32,
 	) -> Result<()> {
-		let block_size = records.len();
-
 		self.command_sender
 			.send(Box::new(PutKadRecord {
 				records,
 				quorum,
-				cells_to_track: (block_num, block_size),
+				block_num,
 			}))
 			.await
 			.context("receiver should not be dropped")
