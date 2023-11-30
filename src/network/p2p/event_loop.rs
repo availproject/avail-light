@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
@@ -80,30 +80,26 @@ pub struct EventLoop {
 	active_blocks: HashMap<u32, (usize, usize, u64)>,
 }
 
-struct CellKey {
-	pub block_num: u32,
-	pub _row_num: u32,
-	pub _col_num: u32,
+#[derive(PartialEq, Debug)]
+enum DHTKey {
+	Cell(u32, u32, u32),
+	Row(u32, u32),
 }
 
-impl TryFrom<RecordKey> for CellKey {
+impl TryFrom<RecordKey> for DHTKey {
 	type Error = anyhow::Error;
 
 	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
-		// Extract key from the record
-		let [block_num, _row_num, _col_num] = String::from_utf8(key.to_vec())?
+		match *String::from_utf8(key.to_vec())?
 			.split(':')
 			.map(str::parse::<u32>)
-			.collect::<std::result::Result<Vec<_>, _>>()
-			.context("Cannot parse into u32")?
-			.try_into()
-			.map_err(|value| anyhow::anyhow!("Invalid key value: {value:?} "))?;
-
-		Ok(CellKey {
-			block_num,
-			_row_num,
-			_col_num,
-		})
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.as_slice()
+		{
+			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
+			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
+			_ => Err(anyhow::anyhow!("Invalid DHT key")),
+		}
 	}
 }
 
@@ -222,15 +218,21 @@ impl EventLoop {
 						},
 
 						QueryResult::PutRecord(Ok(record)) => {
-							let Some(QueryChannel::PutRecord) =
-								self.pending_kad_queries.remove(&id)
-							else {
+							if self.pending_kad_queries.remove(&id).is_none() {
 								return;
 							};
-							let Ok(CellKey { block_num, .. }) = record.key.clone().try_into()
-							else {
-								warn!("Unable to cast Kademlia key to UTF-8");
-								return;
+
+							let block_num = match record.key.clone().try_into() {
+								Ok(DHTKey::Cell(block_num, _, _)) => block_num,
+								Ok(DHTKey::Row(_, _)) => {
+									// Skipping in case its a row key.
+									// TODO: Do we have to remove record from kademlia in this case?
+									return;
+								},
+								Err(error) => {
+									warn!("Unable to cast Kademlia key to DHT key: {error}");
+									return;
+								},
 							};
 
 							let previous_block_num = block_num - 1;
@@ -240,9 +242,9 @@ impl EventLoop {
 							if let Some(&(total_cells, cell_counter, time_stat)) = self
 								.active_blocks
 								.get(&block_num)
-								.and(self.active_blocks.get(&previous_block_num))
+								.and_then(|_| self.active_blocks.get(&previous_block_num))
 							{
-								info!("Number of comfirmed uploaded cells from the prev. block {previous_block_num} sent {cell_counter}/{total_cells}. Duration: {time_stat}");
+								info!("Number of confirmed uploaded cells from the prev. block {previous_block_num} sent {cell_counter}/{total_cells}. Duration: {time_stat}");
 								let success_rate = cell_counter as f64 / total_cells as f64;
 
 								_ = metrics
@@ -573,5 +575,26 @@ impl EventLoop {
 				);
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::network::p2p::event_loop::DHTKey;
+	use libp2p::kad::RecordKey;
+
+	#[test]
+	fn dht_key_parse_record_key() {
+		let row_key: DHTKey = RecordKey::new(&"1:2").try_into().unwrap();
+		assert_eq!(row_key, DHTKey::Row(1, 2));
+
+		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
+		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
+
+		let result: anyhow::Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
+		result.unwrap_err();
+
+		let result: anyhow::Result<DHTKey> = RecordKey::new(&"123").try_into();
+		result.unwrap_err();
 	}
 }
