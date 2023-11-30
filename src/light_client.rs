@@ -200,7 +200,7 @@ pub async fn process_block(
 	// write confidence factor into on-disk database
 	light_client
 		.store_confidence_in_db(fetched.len() as u32, block_number)
-		.context("Failed to store confidence in DB")?;
+		.wrap_err("Failed to store confidence in DB")?;
 
 	state.lock().unwrap().confidence_achieved.set(block_number);
 

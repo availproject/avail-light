@@ -489,7 +489,7 @@ impl TryFrom<String> for FieldsQueryParameter {
 		value
 			.split(',')
 			.map(|part| format!(r#""{part}""#))
-			.map(|part| serde_json::from_str(&part).context("Cannot deserialize field"))
+			.map(|part| serde_json::from_str(&part).wrap_err("Cannot deserialize field"))
 			.collect::<Result<HashSet<_>>>()
 			.map(FieldsQueryParameter)
 	}
@@ -590,7 +590,7 @@ impl TryFrom<PublishMessage> for Message {
 	fn try_from(value: PublishMessage) -> Result<Self, Self::Error> {
 		serde_json::to_string(&value)
 			.map(ws::Message::text)
-			.context("Cannot serialize publish message")
+			.wrap_err("Cannot serialize publish message")
 	}
 }
 
@@ -653,9 +653,9 @@ impl WsClients {
 				message.apply_filter(data_fields);
 				message
 					.try_into()
-					.context("Cannot convert to ws message")
+					.wrap_err("Cannot convert to ws message")
 					.and_then(|message: warp::ws::Message| {
-						sender.send(Ok(message)).context("Send failed")
+						sender.send(Ok(message)).wrap_err("Send failed")
 					})
 			})
 			.collect::<Vec<_>>())
@@ -713,7 +713,7 @@ impl TryFrom<ws::Message> for Request {
 	type Error = Report;
 
 	fn try_from(value: ws::Message) -> Result<Self, Self::Error> {
-		serde_json::from_slice(value.as_bytes()).context("Cannot parse json")
+		serde_json::from_slice(value.as_bytes()).wrap_err("Cannot parse json")
 	}
 }
 

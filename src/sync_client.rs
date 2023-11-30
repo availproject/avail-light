@@ -144,7 +144,7 @@ async fn process_block(
 	// write confidence factor into on-disk database
 	sync_client
 		.store_confidence_in_db(fetched.len().try_into()?, block_number)
-		.context("Failed to store confidence in DB")?;
+		.wrap_err("Failed to store confidence in DB")?;
 
 	let confidence = Some(calculate_confidence(fetched.len() as u32));
 	let client_msg =

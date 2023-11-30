@@ -7,8 +7,10 @@ use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use bip39::{Language, Mnemonic, MnemonicType};
 use clap::Parser;
 use codec::{Decode, Encode};
-use color_eyre::eyre::Context;
-use color_eyre::{eyre::eyre, Report, Result};
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
+};
 use kate_recovery::{
 	commitments,
 	matrix::{Dimensions, Partition},
@@ -116,13 +118,13 @@ impl KademliaMode {
 }
 
 impl TryFrom<String> for KademliaMode {
-	type Error = anyhow::Error;
+	type Error = color_eyre::Report;
 
 	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
 		match value.to_lowercase().as_str() {
 			"client" => Ok(KademliaMode::Client),
 			"server" => Ok(KademliaMode::Server),
-			_ => Err(anyhow!(
+			_ => Err(eyre!(
 				"Wrong Kademlia mode. Expecting 'client' or 'server'."
 			)),
 		}
@@ -685,9 +687,9 @@ impl RuntimeConfig {
 		if let Some(network) = &opts.network {
 			let bootstrap: (PeerId, Multiaddr) = (
 				PeerId::from_str(network.peer_id())
-					.context("unable to parse default bootstrap peerID")?,
+					.wrap_err("unable to parse default bootstrap peerID")?,
 				Multiaddr::from_str(network.multiaddr())
-					.context("unable to parse default bootstrap multi-address")?,
+					.wrap_err("unable to parse default bootstrap multi-address")?,
 			);
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];

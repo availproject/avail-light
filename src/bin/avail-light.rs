@@ -172,7 +172,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 				.with(Protocol::Tcp(tcp_port)),
 		)
 		.await
-		.context("Listening on TCP not to fail.")?;
+		.wrap_err("Listening on TCP not to fail.")?;
 	info!("Listening for TCP on port: {tcp_port}");
 
 	let p2p_clone = p2p_client.to_owned();
@@ -223,7 +223,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 			let Ok(Err(event_loop_error)) = rpc_event_loop_handle.await else {
 				return Err(err);
 			};
-			Err(event_loop_error.context(err))
+			Err(event_loop_error.wrap_err(err))
 		})
 		.await?;
 

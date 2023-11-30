@@ -222,7 +222,7 @@ impl AppClient for AppClientImpl {
 		data: &T,
 	) -> Result<()> {
 		store_encoded_data_in_db(self.db.clone(), app_id, block_number, &data)
-			.context("Failed to store data into database")
+			.wrap_err("Failed to store data into database")
 	}
 }
 
@@ -401,16 +401,16 @@ async fn process_block(
 		rows[i] = Some(row);
 	}
 
-	let data_cells =
-		data_cells_from_rows(rows).context("Failed to create data cells from rows got from RPC")?;
+	let data_cells = data_cells_from_rows(rows)
+		.wrap_err("Failed to create data cells from rows got from RPC")?;
 
 	let data = decode_app_extrinsics(lookup, dimensions, data_cells, app_id)
-		.context("Failed to decode app extrinsics")?;
+		.wrap_err("Failed to decode app extrinsics")?;
 
 	debug!(block_number, "Storing data into database");
 	app_client
 		.store_encoded_data_in_db(app_id, block_number, &data)
-		.context("Failed to store data into database")?;
+		.wrap_err("Failed to store data into database")?;
 
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
 	debug!(block_number, "Stored {bytes_count} bytes into database");

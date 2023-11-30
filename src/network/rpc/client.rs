@@ -567,7 +567,7 @@ impl Client {
 		self.command_sender.send(command).await?;
 		response_receiver
 			.await
-			.context("sender should not be dropped")?
+			.wrap_err("sender should not be dropped")?
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
