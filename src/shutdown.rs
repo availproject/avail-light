@@ -87,7 +87,7 @@ impl<T: Clone> Controller<T> {
 		&self,
 		future: F,
 	) -> Result<WithDelay<T, F>, ShutdownHasCompleted<T>> {
-		Ok(self.delay_token()?.with_delay(future))
+		Ok(self.delay_token()?.with_future(future))
 	}
 
 	/// Produces a token that delays the shutdown as long as it exists.
@@ -188,7 +188,7 @@ impl<T: Clone> DelayToken<T> {
 	/// wrapped future.
 	///
 	/// However, the shutdown process remains pending until the future resolves or is dropped.
-	pub fn with_delay<F: Future>(self, future: F) -> WithDelay<T, F> {
+	pub fn with_future<F: Future>(self, future: F) -> WithDelay<T, F> {
 		WithDelay {
 			delay_token: Some(self),
 			future,
@@ -258,7 +258,10 @@ impl<T> std::fmt::Display for ShutdownHasCompleted<T> {
 
 #[cfg(test)]
 mod tests {
-	use std::{future::Future, time::Duration};
+	use std::{
+		future::{self, Future},
+		time::Duration,
+	};
 	use tokio::{
 		runtime,
 		time::{sleep, timeout},
@@ -279,15 +282,18 @@ mod tests {
 
 	#[test]
 	fn shutdown_trigger() {
+		// create a `Controller` and instantly trigger a shutdown
 		test_runtime(async {
 			let controller = Controller::new();
 			assert!(controller.trigger_shutdown(1).is_ok());
+			assert!(controller.triggered_shutdown().await == 1);
 			assert!(controller.completed_shutdown().await == 1);
 		});
 	}
 
 	#[test]
 	fn shutdown_trigger_after_sleep() {
+		// use a separate task to trigger a shutdown after a short sleep
 		test_runtime(async {
 			let controller = Controller::new();
 
@@ -297,11 +303,12 @@ mod tests {
 					// sleep, but don't overdue it
 					// must not be longer than 100 millis
 					sleep(Duration::from_millis(20)).await;
-					assert!(controller.trigger_shutdown(2).is_ok());
+					assert!(controller.trigger_shutdown(22).is_ok());
 				}
 			});
 
-			assert!(controller.completed_shutdown().await == 2);
+			assert!(controller.triggered_shutdown().await == 22);
+			assert!(controller.completed_shutdown().await == 22);
 		});
 	}
 
@@ -324,16 +331,37 @@ mod tests {
 
 	#[test]
 	fn delay_token_shutdown() {
+		// postpone shutdown completion using a delay token
 		test_runtime(async {
 			let controller = Controller::new();
 			let token = controller.delay_token().unwrap();
 
 			assert!(controller.trigger_shutdown(1).is_ok());
+			controller.triggered_shutdown().await;
+			assert!(controller.is_shutdown_completed() == false);
 
-			tokio::spawn(token.with_delay(async move {
+			tokio::spawn(async move {
+				sleep(Duration::from_millis(10)).await;
+				drop(token);
+			});
+
+			controller.completed_shutdown().await;
+		});
+	}
+
+	#[test]
+	fn shutdown_with_delay() {
+		// spawn a future that delays shutdown as long as it is running
+		test_runtime(async {
+			let controller = Controller::new();
+			let token = controller.delay_token().unwrap();
+			assert!(controller.trigger_shutdown(1).is_ok());
+
+			tokio::spawn(token.with_future(async move {
 				sleep(Duration::from_millis(10)).await;
 			}));
 
+			controller.triggered_shutdown().await;
 			controller.completed_shutdown().await;
 		});
 	}
@@ -364,14 +392,113 @@ mod tests {
 
 	#[test]
 	fn creating_delay_token_after_shutdown() {
+		// try to get delay token after completed shutdown
 		let controller = Controller::new();
 		assert!(controller.trigger_shutdown("i'm loose").is_ok());
 
-		let token_res = controller.delay_token();
-		if let Err(ShutdownHasCompleted { reason }) = token_res {
+		if let Err(ShutdownHasCompleted { reason }) = controller.delay_token() {
 			assert_eq!(reason, "i'm loose");
 		} else {
 			panic!("Expected ShutdownHasCompleted error");
 		}
+
+		if let Err(ShutdownHasCompleted { reason }) = controller.with_delay(future::pending::<()>())
+		{
+			assert_eq!(reason, "i'm loose");
+		} else {
+			panic!("Expected ShutdownHasCompleted error");
+		}
+	}
+
+	#[test]
+	fn shutdown_from_task_no_delay() {
+		// await a completed shutdown from another task
+		test_runtime(async {
+			let controller = Controller::new();
+
+			tokio::spawn({
+				let controller = controller.clone();
+				async move {
+					sleep(Duration::from_millis(10)).await;
+					assert!(controller.trigger_shutdown(1).is_ok());
+				}
+			});
+
+			let t = tokio::spawn({
+				let controller = controller.clone();
+				async move {
+					assert!(controller.completed_shutdown().await == 1);
+				}
+			});
+
+			assert!(t.await.is_ok());
+		});
+	}
+
+	#[test]
+	fn future_with_cancel() {
+		// spawn a never-ending task that is canceled on shutdown
+		test_runtime(async {
+			let controller = Controller::new();
+			let task = tokio::spawn(controller.with_cancel(future::pending::<()>()));
+
+			assert!(controller.trigger_shutdown("oi").is_ok());
+			if let Ok(Err(reason)) = task.await {
+				assert!(reason == "oi".to_string());
+			} else {
+				panic!("Expected `Err(reason)` error");
+			}
+		})
+	}
+
+	#[test]
+	fn future_with_cancel_from_signal() {
+		// use [`Signal::with_cancel()`] to wrap a future
+		test_runtime(async {
+			let controller = Controller::new();
+			let shutdown_signal = controller.triggered_shutdown();
+			let task = tokio::spawn(shutdown_signal.with_cancel(future::pending::<()>()));
+
+			assert!(controller.trigger_shutdown("oi").is_ok());
+			if let Ok(Err(reason)) = task.await {
+				assert!(reason == "oi".to_string());
+			} else {
+				panic!("Expected `Err(reason)` error");
+			}
+		})
+	}
+
+	#[test]
+	fn future_with_cancel_finishes_without_shutdown() {
+		// spawn a task with a `Poll::Ready` future and check if it completes with no triggered shutdowns
+		test_runtime(async {
+			let controller = Controller::<()>::new();
+			let task = tokio::spawn(controller.with_cancel(future::ready("born ready")));
+
+			if let Ok(Ok(val)) = task.await {
+				assert!(val == "born ready".to_string())
+			} else {
+				panic!("Expected Ok(Ok(val)) result");
+			}
+		})
+	}
+
+	#[test]
+	fn future_with_cancel_completes_after_sleep() {
+		// spawn a task with a `Poll::Ready` future and check if it completes with no triggered shutdowns
+		// after a short sleep
+		test_runtime(async {
+			let controller = Controller::<()>::new();
+			let task = tokio::spawn(controller.with_cancel(async {
+				sleep(Duration::from_millis(10)).await;
+				"I have heard the summons".to_string()
+			}));
+
+			if let Ok(Ok(val)) = task.await {
+				assert!(val == "I have heard the summons".to_string())
+			} else {
+				panic!("Expected Ok(Ok(val)) result");
+			}
+		})
 	}
 }
