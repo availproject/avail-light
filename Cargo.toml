@@ -31,15 +31,19 @@ kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.66"
 base64 = "0.21.0"
+better-panic = "0.3.0"
 chrono = "0.4.19"
 clap = { version = "4.3.23", features = ["derive", "cargo"] }
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
+color-eyre = "0.6.2"
 confy = "0.4.0"
 derive_more = { version = "0.99.17", features = ["from"] }
 futures = { version = "0.3.15", default-features = false, features = ["std", "async-await"] }
 hex = "0.4"
+human-panic = { version = "1.2.2", features = ["color"] }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 itertools = "0.10.5"
+libc = "0.2.150"
 libp2p = { version = "0.53.1", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde"] }
 mockall = "0.11.3"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
@@ -54,6 +58,7 @@ serde_json = "1.0.68"
 smallvec = "1.6.1"
 sp-core = { version = "21.0.0" }
 threadpool = "1.8.1"
+tiny-bip39 = "1.0.0"
 tokio = { version = "1.25", features = ["full"] }
 tokio-stream = { version = "0.1.14", features = ["sync"] }
 tracing = "0.1.35"
@@ -67,12 +72,7 @@ opentelemetry = "0.20.0"
 opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] }
 opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
-tiny-bip39 = "1.0.0"
-color-eyre = "0.6.2"
-human-panic = { version = "1.2.2", features = ["color"]}
-better-panic = "0.3.0"
 strip-ansi-escapes = "0.2.0"
-libc = "0.2.150"
 
 [features]
 network-analysis = []
