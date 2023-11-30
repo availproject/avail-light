@@ -6,9 +6,11 @@ use std::{
 	task::Waker,
 };
 
-use self::{completed::Completed, with_delay::WithDelay};
+use self::{completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay};
 
 mod completed;
+mod signal;
+mod with_cancel;
 mod with_delay;
 
 #[derive(Clone)]
@@ -28,7 +30,7 @@ impl<T: Clone> Controller<T> {
 		self.inner.lock().unwrap().reason.is_some()
 	}
 
-	pub fn is_shutdown_complete(&self) -> bool {
+	pub fn is_shutdown_completed(&self) -> bool {
 		let inner = self.inner.lock().unwrap();
 		inner.reason.is_some() && inner.delay_tokens == 0
 	}
@@ -52,13 +54,50 @@ impl<T: Clone> Controller<T> {
 		}
 	}
 
-	/// Produces a token that holds back the shutdown as long as it exists.
+	/// Awaits the triggering of the shutdown signal.
 	///
-	/// The [`Controller`] instance keeps record of all created tokens.
-	/// Tokens are thread-safe.
-	/// All tokens must be dropped for shutdown to be able to complete.
+	/// Returns a future that completes when the shutdown is initiated.
+	/// The future is designed to be thread-safe.
 	///
-	/// For already completed shutdowns, this function returns error.
+	/// If the shutdown signal is already triggered, the returned future immediately resolves.
+	///
+	/// To automatically cancel a future upon receiving the shutdown signal, use `Signal::with_cancel()`.
+	/// This method is equivalent to `Self::with_cancel()`.
+	pub fn triggered_shutdown(&self) -> Signal<T> {
+		Signal {
+			inner: self.inner.clone(),
+		}
+	}
+
+	/// Wraps a future to cancel it upon a triggered shutdown.
+	///
+	/// The returned future completes with `Err(reason)` if the shutdown is triggered before the wrapped future.
+	/// If the wrapped future completes before a shutdown, it yields `Ok(value)`.
+	pub fn with_cancel<F: Future>(&self, future: F) -> WithCancel<T, F> {
+		self.triggered_shutdown().with_cancel(future)
+	}
+
+	/// Wraps a future to defer shutdown completion until the wrapped future completes or is dropped.
+	///
+	/// Returns a future that transparently completes with the value of the wrapped future.
+	/// The shutdown process remains pending until the wrapped future completes or is dropped.
+	///
+	/// If the shutdown has already been finalized, an error will be returned.
+	pub fn with_delay<F: Future>(
+		&self,
+		future: F,
+	) -> Result<WithDelay<T, F>, ShutdownHasCompleted<T>> {
+		Ok(self.delay_token()?.with_delay(future))
+	}
+
+	/// Produces a token that delays the shutdown as long as it exists.
+	///
+	/// The [`Controller`] instance manages all created tokens, ensuring thread-safe operations.
+	/// For the shutdown to complete, all tokens must be dropped.
+	///
+	/// If the shutdown has already completed, this function returns an error.
+	///
+	/// Consider using [`Self::with_delay()`] to delay the shutdown until a future completes.
 	fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
 		let mut inner = self.inner.lock().unwrap();
 		if inner.delay_tokens == 0 {
@@ -149,7 +188,7 @@ impl<T: Clone> DelayToken<T> {
 	/// wrapped future.
 	///
 	/// However, the shutdown process remains pending until the future resolves or is dropped.
-	pub fn wrap_future<F: Future>(self, future: F) -> WithDelay<T, F> {
+	pub fn with_delay<F: Future>(self, future: F) -> WithDelay<T, F> {
 		WithDelay {
 			delay_token: Some(self),
 			future,
@@ -291,7 +330,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown(1).is_ok());
 
-			tokio::spawn(token.wrap_future(async move {
+			tokio::spawn(token.with_delay(async move {
 				sleep(Duration::from_millis(10)).await;
 			}));
 
