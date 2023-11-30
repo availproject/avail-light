@@ -214,6 +214,7 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(Err(error)) => {
+							_ = self.pending_kad_queries.remove(&id);
 							trace!("Unable to put record: {error}");
 						},
 
