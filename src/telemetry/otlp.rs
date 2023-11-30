@@ -113,12 +113,6 @@ impl super::Metrics for Metrics {
 			super::MetricValue::DHTPutSuccess(number) => {
 				self.record_f64("dht_put_success", number).await?;
 			},
-			super::MetricValue::DHTPutRowsDuration(number) => {
-				self.record_f64("dht_put_rows_duration", number).await?;
-			},
-			super::MetricValue::DHTPutRowsSuccess(number) => {
-				self.record_f64("dht_put_rows_success", number).await?;
-			},
 			super::MetricValue::KadRoutingPeerNum(number) => {
 				self.record_u64("kad_routing_table_peer_num", number as u64)
 					.await?;

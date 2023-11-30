@@ -36,7 +36,7 @@ use std::{
 	time::Instant,
 };
 use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
@@ -53,8 +53,8 @@ use crate::{
 #[async_trait]
 #[automock]
 pub trait LightClient {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
-	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn shrink_kademlia_map(&self) -> Result<()>;
 	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)>;
@@ -80,13 +80,13 @@ pub fn new(db: Arc<DB>, p2p_client: P2pClient, rpc_client: RpcClient) -> impl Li
 
 #[async_trait]
 impl LightClient for LightClientImpl {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
 	async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.p2p_client.shrink_kademlia_map().await
 	}
-	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()> {
 		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
@@ -192,18 +192,6 @@ pub async fn process_block(
 			.await?;
 	}
 
-	if let Some(dht_put_success_rate) = fetch_stats.dht_put_success_rate {
-		metrics
-			.record(MetricValue::DHTPutSuccess(dht_put_success_rate))
-			.await?;
-	}
-
-	if let Some(dht_put_duration) = fetch_stats.dht_put_duration {
-		metrics
-			.record(MetricValue::DHTPutDuration(dht_put_duration))
-			.await?;
-	}
-
 	if positions.len() > fetched.len() {
 		error!(block_number, "Failed to fetch {} cells", unfetched.len());
 		return Ok(None);
@@ -240,7 +228,8 @@ pub async fn process_block(
 		.context("Failed to store block header in DB")?;
 
 	let mut rpc_fetched: Vec<Cell> = vec![];
-	let mut begin = Instant::now();
+
+	// Fat client partition upload logic
 	if let Some(partition) = &cfg.block_matrix_partition {
 		let positions: Vec<Position> = dimensions
 			.iter_extended_partition_positions(partition)
@@ -253,6 +242,7 @@ pub async fn process_block(
 			partition.fraction
 		);
 
+		let begin = Instant::now();
 		let rpc_cells = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
 		for batch in rpc_cells
 			// TODO: Filter already fetched cells since they are verified and in DHT
@@ -284,83 +274,40 @@ pub async fn process_block(
 				rpc_fetched.extend(partition_fetched_filtered.clone());
 			}
 		}
-
-		let begin = Instant::now();
+		let rpc_call_duration = begin.elapsed();
+		let rpc_fetched_len = rpc_fetched.len();
+		info!(
+			block_number,
+			"partition_rpc_retrieve_time_elapsed" = ?rpc_call_duration,
+			"partition_rpc_cells_fetched" = rpc_fetched_len,
+			"Partition cells received from RPC",
+		);
+		metrics
+			.record(MetricValue::RPCCallDuration(
+				rpc_call_duration.as_secs_f64(),
+			))
+			.await?;
 
 		let rpc_fetched_data_cells = rpc_fetched
 			.iter()
 			.filter(|cell| !cell.position.is_extended())
 			.collect::<Vec<_>>();
 		let rpc_fetched_data_rows = data::rows(dimensions, &rpc_fetched_data_cells);
-		let rows_len = rpc_fetched_data_rows.len();
 
-		let dht_insert_rows_success_rate = light_client
+		if let Err(e) = light_client
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
-			.await;
-		let success_rate: f64 = dht_insert_rows_success_rate.into();
-		let time_elapsed = begin.elapsed();
-
-		info!(
-			block_number,
-			"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
-		);
-
-		metrics
-			.record(MetricValue::DHTPutRowsSuccess(success_rate))
-			.await?;
-
-		info!(
-			block_number,
-			"partition_dht_rows_insert_time_elapsed" = ?time_elapsed,
-			"{rows_len} rows inserted into DHT"
-		);
-
-		metrics
-			.record(MetricValue::DHTPutRowsDuration(time_elapsed.as_secs_f64()))
-			.await?;
+			.await
+		{
+			debug!("Error inserting rows into DHT: {e}");
+		}
 	}
 
-	let partition_time_elapsed = begin.elapsed();
-	let rpc_fetched_len = rpc_fetched.len();
-	info!(
-		block_number,
-		"partition_retrieve_time_elapsed" = ?partition_time_elapsed,
-		"partition_cells_fetched" = rpc_fetched_len,
-		"Partition cells received",
-	);
-	metrics
-		.record(MetricValue::RPCCallDuration(
-			partition_time_elapsed.as_secs_f64(),
-		))
-		.await?;
-
-	begin = Instant::now();
-
-	let dht_insert_success_rate = light_client
+	if let Err(e) = light_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await;
-
-	info!(
-		block_number,
-		"DHT PUT operation success rate: {}", dht_insert_success_rate
-	);
-
-	metrics
-		.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))
-		.await?;
-
-	let dht_put_time_elapsed = begin.elapsed();
-	info!(
-		block_number,
-		elapsed = ?dht_put_time_elapsed,
-		"{rpc_fetched_len} cells inserted into DHT",
-	);
-
-	metrics
-		.record(MetricValue::DHTPutDuration(
-			dht_put_time_elapsed.as_secs_f64(),
-		))
-		.await?;
+		.await
+	{
+		debug!("Error inserting cells into DHT: {e}");
+	}
 
 	light_client
 		.shrink_kademlia_map()
@@ -607,7 +554,6 @@ mod tests {
 					fetched.len(),
 					Duration::from_secs(0),
 					None,
-					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
@@ -623,10 +569,10 @@ mod tests {
 			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_insert_cells_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
@@ -752,7 +698,6 @@ mod tests {
 					fetched.len(),
 					Duration::from_secs(0),
 					None,
-					None,
 				);
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
@@ -765,10 +710,10 @@ mod tests {
 			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_insert_cells_into_dht()
-			.returning(|_, _| Box::pin(async move { 1f32 }));
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));

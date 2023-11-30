@@ -25,19 +25,10 @@ use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 use event_loop::EventLoop;
 
-// DHTPutSuccess enum is used to signal back and then
-// count the successful DHT Put operations.
-// Used for single or batch operations.
-#[derive(Clone, Debug, PartialEq)]
-pub enum DHTPutSuccess {
-	Batch(usize),
-	Single,
-}
-
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
+	PutRecord,
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
@@ -45,6 +36,8 @@ pub struct EventLoopEntries<'a> {
 	swarm: &'a mut Swarm<Behaviour>,
 	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	/// <block_num, (total_cells, result_cell_counter, time_stat)>
+	active_blocks: &'a mut HashMap<u32, (usize, usize, u64)>,
 }
 
 impl<'a> EventLoopEntries<'a> {
@@ -52,11 +45,13 @@ impl<'a> EventLoopEntries<'a> {
 		swarm: &'a mut Swarm<Behaviour>,
 		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 		pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+		active_blocks: &'a mut HashMap<u32, (usize, usize, u64)>,
 	) -> Self {
 		Self {
 			swarm,
 			pending_kad_queries,
 			pending_swarm_events,
+			active_blocks,
 		}
 	}
 
@@ -111,7 +106,6 @@ pub fn init(
 	cfg: LibP2PConfig,
 	dht_parallelization_limit: usize,
 	ttl: u64,
-	put_batch_size: usize,
 	is_fat_client: bool,
 	id_keys: libp2p::identity::Keypair,
 ) -> Result<(Client, EventLoop)> {
@@ -202,12 +196,7 @@ pub fn init(
 	let (command_sender, command_receiver) = mpsc::channel(10000);
 
 	Ok((
-		Client::new(
-			command_sender,
-			dht_parallelization_limit,
-			ttl,
-			put_batch_size,
-		),
+		Client::new(command_sender, dht_parallelization_limit, ttl),
 		EventLoop::new(
 			swarm,
 			command_receiver,

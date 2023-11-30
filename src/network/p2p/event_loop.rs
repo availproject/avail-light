@@ -4,7 +4,7 @@ use libp2p::{
 	autonat::{self, NatStatus},
 	dcutr,
 	identify::{self, Info},
-	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult},
+	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult, RecordKey},
 	mdns,
 	multiaddr::Protocol,
 	swarm::{
@@ -14,16 +14,17 @@ use libp2p::{
 	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
 };
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
+
+use crate::telemetry::{MetricValue, Metrics};
 
 use super::{
-	Behaviour, BehaviourEvent, CommandReceiver, DHTPutSuccess, EventLoopEntries, QueryChannel,
-	SendableCommand,
+	Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries, QueryChannel, SendableCommand,
 };
 
 // RelayState keeps track of all things relay related
@@ -74,6 +75,32 @@ pub struct EventLoop {
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
+	/// Blocks we monitor for PUT success rate
+	/// <block_num, (total_cells, result_cell_counter, time_stat)>
+	active_blocks: HashMap<u32, (usize, usize, u64)>,
+}
+
+#[derive(PartialEq, Debug)]
+enum DHTKey {
+	Cell(u32, u32, u32),
+	Row(u32, u32),
+}
+
+impl TryFrom<RecordKey> for DHTKey {
+	type Error = anyhow::Error;
+
+	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
+		match *String::from_utf8(key.to_vec())?
+			.split(':')
+			.map(str::parse::<u32>)
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.as_slice()
+		{
+			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
+			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
+			_ => Err(anyhow::anyhow!("Invalid DHT key")),
+		}
+	}
 }
 
 impl EventLoop {
@@ -101,13 +128,14 @@ impl EventLoop {
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 			kad_remove_local_record,
+			active_blocks: Default::default(),
 		}
 	}
 
-	pub async fn run(mut self) {
+	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
+				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the network event loop.
@@ -118,8 +146,12 @@ impl EventLoop {
 		}
 	}
 
-	#[tracing::instrument(level = "trace", skip(self))]
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
+	#[tracing::instrument(level = "trace", skip(self, metrics))]
+	async fn handle_event(
+		&mut self,
+		event: SwarmEvent<BehaviourEvent>,
+		metrics: Arc<impl Metrics>,
+	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
@@ -161,7 +193,9 @@ impl EventLoop {
 							}
 						}
 					},
-					kad::Event::OutboundQueryProgressed { id, result, .. } => match result {
+					kad::Event::OutboundQueryProgressed {
+						id, result, stats, ..
+					} => match result {
 						QueryResult::GetRecord(result) => match result {
 							Ok(GetRecordOk::FoundRecord(record)) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
@@ -179,23 +213,72 @@ impl EventLoop {
 							},
 							_ => (),
 						},
-						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecordBatch(success_tx)) =
-								self.pending_kad_queries.remove(&id)
+						QueryResult::PutRecord(Err(error)) => {
+							_ = self.pending_kad_queries.remove(&id);
+							trace!("Unable to put record: {error}");
+						},
+
+						QueryResult::PutRecord(Ok(record)) => {
+							if self.pending_kad_queries.remove(&id).is_none() {
+								return;
+							};
+
+							let block_num = match record.key.clone().try_into() {
+								Ok(DHTKey::Cell(block_num, _, _)) => block_num,
+								Ok(DHTKey::Row(block_num, _)) => block_num,
+								Err(error) => {
+									warn!("Unable to cast Kademlia key to DHT key: {error}");
+									return;
+								},
+							};
+
+							let previous_block_num = block_num - 1;
+
+							// If the new block record is arrived, and previous block is still in the map,
+							// we take that as the cut-off point for previous blocks records delivery
+							if let Some(&(total_records, record_counter, time_stat)) = self
+								.active_blocks
+								.get(&block_num)
+								.and_then(|_| self.active_blocks.get(&previous_block_num))
 							{
-								if let Ok(record) = result {
-									if self.kad_remove_local_record {
-										// Remove local records for fat clients (memory optimization)
-										debug!("Pruning local records on fat client");
-										self.swarm
-											.behaviour_mut()
-											.kademlia
-											.remove_record(&record.key);
-									}
-									// signal back that this PUT request was a success,
-									// so it can be accounted for
-									_ = success_tx.send(DHTPutSuccess::Single).await;
-								}
+								info!("Number of confirmed uploaded records from the prev. block {previous_block_num} sent {record_counter}/{total_records}. Duration: {time_stat}");
+								let success_rate = record_counter as f64 / total_records as f64;
+
+								_ = metrics
+									.record(MetricValue::DHTPutSuccess(success_rate))
+									.await;
+
+								_ = metrics
+									.record(MetricValue::DHTPutDuration(time_stat as f64))
+									.await;
+
+								self.active_blocks.remove(&previous_block_num);
+							};
+
+							// Get record counter data for current block
+							// This value has already been added during the PUT operation
+							if let Some((_, record_counter, time_stat)) =
+								self.active_blocks.get_mut(&block_num)
+							{
+								// Increment the record counter for current block
+								*record_counter += 1;
+								*time_stat = stats
+									.duration()
+									.as_ref()
+									.map(Duration::as_secs)
+									.unwrap_or_default();
+							} else {
+								// If we're still receving data from one of the previous blocks, log it here
+								trace!("{block_num}: not in active blocks list anymore. ");
+							}
+
+							if self.kad_remove_local_record {
+								// Remove local records for fat clients (memory optimization)
+								debug!("Pruning local records on fat client");
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.remove_record(&record.key);
 							}
 						},
 						QueryResult::Bootstrap(result) => match result {
@@ -234,7 +317,7 @@ impl EventLoop {
 						peer_id,
 						info: Info { listen_addrs, .. },
 					} => {
-						debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
 						self.establish_relay_circuit(peer_id);
 
 						// only interested in addresses with actual Multiaddresses
@@ -429,6 +512,7 @@ impl EventLoop {
 			&mut self.swarm,
 			&mut self.pending_kad_queries,
 			&mut self.pending_kad_routing,
+			&mut self.active_blocks,
 		)) {
 			command.abort(anyhow!(err));
 		}
@@ -489,5 +573,26 @@ impl EventLoop {
 				);
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::network::p2p::event_loop::DHTKey;
+	use libp2p::kad::RecordKey;
+
+	#[test]
+	fn dht_key_parse_record_key() {
+		let row_key: DHTKey = RecordKey::new(&"1:2").try_into().unwrap();
+		assert_eq!(row_key, DHTKey::Row(1, 2));
+
+		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
+		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
+
+		let result: anyhow::Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
+		result.unwrap_err();
+
+		let result: anyhow::Result<DHTKey> = RecordKey::new(&"123").try_into();
+		result.unwrap_err();
 	}
 }

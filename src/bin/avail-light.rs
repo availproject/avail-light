@@ -138,14 +138,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(&cfg).into(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
-		cfg.put_batch_size,
 		cfg.is_fat_client(),
 		id_keys,
 	)
 	.context("Failed to init Network Service")?;
 
 	// spawn the P2P Network task for Event Loop run in the background
-	tokio::spawn(p2p_event_loop.run());
+	tokio::spawn(p2p_event_loop.run(ot_metrics.clone()));
 
 	// Start listening on provided port
 	let port = cfg.port;

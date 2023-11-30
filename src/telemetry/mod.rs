@@ -19,8 +19,6 @@ pub enum MetricValue {
 	RPCCallDuration(f64),
 	DHTPutDuration(f64),
 	DHTPutSuccess(f64),
-	DHTPutRowsDuration(f64),
-	DHTPutRowsSuccess(f64),
 	KadRoutingPeerNum(usize),
 	HealthCheck(),
 	BlockProcessingDelay(f64),

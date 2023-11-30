@@ -197,8 +197,6 @@ query_proof_rpc_parallel_tasks = 8
 max_cells_per_rpc = 30
 # Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 dht_parallelization_limit = 20
-# Number of records to be put in DHT simultaneously (default: 100)
-put_batch_size = 100
 # Number of seconds to postpone block processing after the block finalized message arrives. (default: 0).
 block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
