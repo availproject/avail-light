@@ -178,19 +178,15 @@ struct PutKadRecord {
 // `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
 impl Command for PutKadRecord {
 	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let total_cell_count = self.records.len();
-
-		let cells_to_track = self.cells_to_track;
+		let (block_number, total_cells) = self.cells_to_track;
 		// `block_entry` is in format (total_cells, result_cell_counter, time_stat)
-		if let Some(block_entry) = entries.active_blocks.get_mut(&cells_to_track.0) {
+		entries
+			.active_blocks
+			.entry(block_number)
 			// Increase the total cell count we monitor if the block entry already exists
-			block_entry.0 += total_cell_count;
-		} else {
+			.and_modify(|(total_cells, _, _)| *total_cells += self.records.len())
 			// Initiate counting for the new block if the block doesn't exist
-			entries
-				.active_blocks
-				.insert(self.cells_to_track.0, (self.cells_to_track.1, 0, 0));
-		}
+			.or_insert((total_cells, 0, 0));
 
 		for record in self.records.clone() {
 			let query_id = entries
