@@ -225,11 +225,7 @@ impl EventLoop {
 
 							let block_num = match record.key.clone().try_into() {
 								Ok(DHTKey::Cell(block_num, _, _)) => block_num,
-								Ok(DHTKey::Row(_, _)) => {
-									// Skipping in case its a row key.
-									// TODO: Do we have to remove record from kademlia in this case?
-									return;
-								},
+								Ok(DHTKey::Row(block_num, _)) => block_num,
 								Err(error) => {
 									warn!("Unable to cast Kademlia key to DHT key: {error}");
 									return;
@@ -238,15 +234,15 @@ impl EventLoop {
 
 							let previous_block_num = block_num - 1;
 
-							// If the first new block cell just arrived, and previous block is not removed
-							// We take that as the cut-off point for previous blocks cell delivery
-							if let Some(&(total_cells, cell_counter, time_stat)) = self
+							// If the new block record is arrived, and previous block is still in the map,
+							// we take that as the cut-off point for previous blocks records delivery
+							if let Some(&(total_records, record_counter, time_stat)) = self
 								.active_blocks
 								.get(&block_num)
 								.and_then(|_| self.active_blocks.get(&previous_block_num))
 							{
-								info!("Number of confirmed uploaded cells from the prev. block {previous_block_num} sent {cell_counter}/{total_cells}. Duration: {time_stat}");
-								let success_rate = cell_counter as f64 / total_cells as f64;
+								info!("Number of confirmed uploaded records from the prev. block {previous_block_num} sent {record_counter}/{total_records}. Duration: {time_stat}");
+								let success_rate = record_counter as f64 / total_records as f64;
 
 								_ = metrics
 									.record(MetricValue::DHTPutSuccess(success_rate))
@@ -259,13 +255,13 @@ impl EventLoop {
 								self.active_blocks.remove(&previous_block_num);
 							};
 
-							// Get cell counter data for current block
+							// Get record counter data for current block
 							// This value has already been added during the PUT operation
-							if let Some((_, cell_counter, time_stat)) =
+							if let Some((_, record_counter, time_stat)) =
 								self.active_blocks.get_mut(&block_num)
 							{
-								// Increment the cell counter for current block
-								*cell_counter += 1;
+								// Increment the record counter for current block
+								*record_counter += 1;
 								*time_stat = stats
 									.duration()
 									.as_ref()
