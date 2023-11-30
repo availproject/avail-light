@@ -28,7 +28,7 @@ use event_loop::EventLoop;
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecord(),
+	PutRecord,
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 

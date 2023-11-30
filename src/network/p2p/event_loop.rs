@@ -4,7 +4,7 @@ use libp2p::{
 	autonat::{self, NatStatus},
 	dcutr,
 	identify::{self, Info},
-	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult},
+	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult, RecordKey},
 	mdns,
 	multiaddr::Protocol,
 	swarm::{
@@ -78,6 +78,29 @@ pub struct EventLoop {
 	/// Blocks we monitor for PUT success rate
 	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: HashMap<u32, (usize, usize, u64)>,
+}
+
+#[derive(PartialEq, Debug)]
+enum DHTKey {
+	Cell(u32, u32, u32),
+	Row(u32, u32),
+}
+
+impl TryFrom<RecordKey> for DHTKey {
+	type Error = anyhow::Error;
+
+	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
+		match *String::from_utf8(key.to_vec())?
+			.split(':')
+			.map(str::parse::<u32>)
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.as_slice()
+		{
+			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
+			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
+			_ => Err(anyhow::anyhow!("Invalid DHT key")),
+		}
+	}
 }
 
 impl EventLoop {
@@ -190,93 +213,71 @@ impl EventLoop {
 							},
 							_ => (),
 						},
-						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecord()) =
-								self.pending_kad_queries.remove(&id)
+						QueryResult::PutRecord(Err(error)) => {
+							_ = self.pending_kad_queries.remove(&id);
+							trace!("Unable to put record: {error}");
+						},
+
+						QueryResult::PutRecord(Ok(record)) => {
+							if self.pending_kad_queries.remove(&id).is_none() {
+								return;
+							};
+
+							let block_num = match record.key.clone().try_into() {
+								Ok(DHTKey::Cell(block_num, _, _)) => block_num,
+								Ok(DHTKey::Row(block_num, _)) => block_num,
+								Err(error) => {
+									warn!("Unable to cast Kademlia key to DHT key: {error}");
+									return;
+								},
+							};
+
+							let previous_block_num = block_num - 1;
+
+							// If the new block record is arrived, and previous block is still in the map,
+							// we take that as the cut-off point for previous blocks records delivery
+							if let Some(&(total_records, record_counter, time_stat)) = self
+								.active_blocks
+								.get(&block_num)
+								.and_then(|_| self.active_blocks.get(&previous_block_num))
 							{
-								if let Ok(record) = result {
-									// Extract key from the record
-									let kad_key = match String::from_utf8(record.key.to_vec()) {
-										Ok(key) => key,
-										Err(_) => {
-											warn!("Unable to cast Kademlia key to UTF-8");
-											return;
-										},
-									};
+								info!("Number of confirmed uploaded records from the prev. block {previous_block_num} sent {record_counter}/{total_records}. Duration: {time_stat}");
+								let success_rate = record_counter as f64 / total_records as f64;
 
-									// "block_num:row:column" format
-									let record_key_parts: Result<Vec<u32>, _> = kad_key
-										.split(':')
-										.map(|part| part.parse::<u32>())
-										.collect();
+								_ = metrics
+									.record(MetricValue::DHTPutSuccess(success_rate))
+									.await;
 
-									match record_key_parts {
-										Ok(parts) => {
-											let current_block_num = parts[0];
-											// Get cell counter data for previos block
-											let prev_block_cell_counter_data = self
-												.active_blocks
-												.get(&(current_block_num - 1))
-												.cloned();
+								_ = metrics
+									.record(MetricValue::DHTPutDuration(time_stat as f64))
+									.await;
 
-											// Get cell counter data for current block
-											// This value has already been added during the PUT operation
-											if let Some(cell_counter_data) = self
-												.active_blocks
-												.clone()
-												.get_mut(&current_block_num)
-											{
-												let mut timing_stats: u64 = 0;
+								self.active_blocks.remove(&previous_block_num);
+							};
 
-												if let Some(timing) = stats.duration() {
-													timing_stats = timing.as_secs();
-												}
-												// Current blocks cell counter = 0 means the first new block cell just arrived
-												// We take that as the cut-off point for previous blocks cell delivery
-												if cell_counter_data.1 == 0 {
-													if let Some(val) = prev_block_cell_counter_data
-													{
-														info!("Number of comfirmed uploaded cells from the prev. block {} sent {}/{}. Duration: {}", current_block_num - 1, val.1, val.0, val.2);
-														_ = metrics
-															.record(MetricValue::DHTPutSuccess(
-																val.1 as f64 / val.0 as f64,
-															))
-															.await;
+							// Get record counter data for current block
+							// This value has already been added during the PUT operation
+							if let Some((_, record_counter, time_stat)) =
+								self.active_blocks.get_mut(&block_num)
+							{
+								// Increment the record counter for current block
+								*record_counter += 1;
+								*time_stat = stats
+									.duration()
+									.as_ref()
+									.map(Duration::as_secs)
+									.unwrap_or_default();
+							} else {
+								debug!("No data for block {block_num} found in active blocks list");
+							}
 
-														_ = metrics
-															.record(MetricValue::DHTPutDuration(
-																val.2 as f64,
-															))
-															.await;
-
-														// Remove previous block from the list
-														self.active_blocks
-															.remove(&(current_block_num - 1));
-													}
-												}
-												// Increment the cell counter for current block
-												cell_counter_data.1 += 1;
-												cell_counter_data.2 = timing_stats;
-											} else {
-												debug!(
-													"No data for block {current_block_num} found in active blocks list"
-												);
-											}
-										},
-										_ => debug!(
-											"Unable to extract block number from Kademlia key"
-										),
-									}
-
-									if self.kad_remove_local_record {
-										// Remove local records for fat clients (memory optimization)
-										debug!("Pruning local records on fat client");
-										self.swarm
-											.behaviour_mut()
-											.kademlia
-											.remove_record(&record.key);
-									}
-								}
+							if self.kad_remove_local_record {
+								// Remove local records for fat clients (memory optimization)
+								debug!("Pruning local records on fat client");
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.remove_record(&record.key);
 							}
 						},
 						QueryResult::Bootstrap(result) => match result {
@@ -571,5 +572,26 @@ impl EventLoop {
 				);
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::network::p2p::event_loop::DHTKey;
+	use libp2p::kad::RecordKey;
+
+	#[test]
+	fn dht_key_parse_record_key() {
+		let row_key: DHTKey = RecordKey::new(&"1:2").try_into().unwrap();
+		assert_eq!(row_key, DHTKey::Row(1, 2));
+
+		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
+		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
+
+		let result: anyhow::Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
+		result.unwrap_err();
+
+		let result: anyhow::Result<DHTKey> = RecordKey::new(&"123").try_into();
+		result.unwrap_err();
 	}
 }

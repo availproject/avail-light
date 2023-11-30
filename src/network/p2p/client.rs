@@ -171,26 +171,20 @@ impl Command for GetKadRecord {
 struct PutKadRecord {
 	records: Vec<Record>,
 	quorum: Quorum,
-	/// (block_number, total_cell_count)
-	cells_to_track: (u32, usize),
+	block_num: u32,
 }
 
 // `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
 impl Command for PutKadRecord {
 	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let total_cell_count = self.records.len();
-
-		let cells_to_track = self.cells_to_track;
 		// `block_entry` is in format (total_cells, result_cell_counter, time_stat)
-		if let Some(block_entry) = entries.active_blocks.get_mut(&cells_to_track.0) {
+		entries
+			.active_blocks
+			.entry(self.block_num)
 			// Increase the total cell count we monitor if the block entry already exists
-			block_entry.0 += total_cell_count;
-		} else {
+			.and_modify(|(total_cells, _, _)| *total_cells += self.records.len())
 			// Initiate counting for the new block if the block doesn't exist
-			entries
-				.active_blocks
-				.insert(self.cells_to_track.0, (self.cells_to_track.1, 0, 0));
-		}
+			.or_insert((self.records.len(), 0, 0));
 
 		for record in self.records.clone() {
 			let query_id = entries
@@ -198,7 +192,7 @@ impl Command for PutKadRecord {
 				.kademlia
 				.put_record(record, self.quorum)
 				.expect("Unable to perform Kademlia PUT operation.");
-			entries.insert_query(query_id, QueryChannel::PutRecord());
+			entries.insert_query(query_id, QueryChannel::PutRecord);
 		}
 		Ok(())
 	}
@@ -503,13 +497,11 @@ impl Client {
 		quorum: Quorum,
 		block_num: u32,
 	) -> Result<()> {
-		let block_size = records.len();
-
 		self.command_sender
 			.send(Box::new(PutKadRecord {
 				records,
 				quorum,
-				cells_to_track: (block_num, block_size),
+				block_num,
 			}))
 			.await
 			.context("receiver should not be dropped")
