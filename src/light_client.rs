@@ -36,7 +36,7 @@ use std::{
 	time::Instant,
 };
 use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
@@ -298,7 +298,7 @@ pub async fn process_block(
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
 			.await
 		{
-			warn!("Error inserting rows into DHT: {e}");
+			debug!("Error inserting rows into DHT: {e}");
 		}
 	}
 
@@ -306,7 +306,7 @@ pub async fn process_block(
 		.insert_cells_into_dht(block_number, rpc_fetched)
 		.await
 	{
-		warn!("Error inserting cells into DHT: {e}");
+		debug!("Error inserting cells into DHT: {e}");
 	}
 
 	light_client

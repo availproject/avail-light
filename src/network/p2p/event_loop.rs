@@ -268,7 +268,8 @@ impl EventLoop {
 									.map(Duration::as_secs)
 									.unwrap_or_default();
 							} else {
-								debug!("No data for block {block_num} found in active blocks list");
+								// If we're still receving data from one of the previous blocks, log it here
+								trace!("{block_num}: not in active blocks list anymore. ");
 							}
 
 							if self.kad_remove_local_record {
@@ -316,7 +317,7 @@ impl EventLoop {
 						peer_id,
 						info: Info { listen_addrs, .. },
 					} => {
-						debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
 						self.establish_relay_circuit(peer_id);
 
 						// only interested in addresses with actual Multiaddresses
