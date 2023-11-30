@@ -214,7 +214,7 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(Err(error)) => {
-							warn!("Unable to put record: {error}");
+							trace!("Unable to put record: {error}");
 						},
 
 						QueryResult::PutRecord(Ok(record)) => {
