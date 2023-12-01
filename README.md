@@ -64,6 +64,12 @@ You can also specify a configuration file to supplement the default configuratio
 ./avail-light --config config.yaml --network goldberg
 ```
 
+In case when location of the identity file is not the directory in which is the light client started, use `--identity` option:
+
+```sh
+./avail-light --config config.yaml --identity '../custom.toml'  --network goldberg
+```
+
 ### Local development
 
 For local development, a couple of prerequisites have to be met.
@@ -121,6 +127,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
   - `goldberg`: Goldberg Testnet
   - `local`: Local development
 - `--config`: Location of the configuration file
+- `--identity`: Location of the identity file
 - `--appId`: The `appID` parameter for the application client
 - `--port`: LibP2P listener port
 - `--verbosity`: Log level. Possible values are:
@@ -138,7 +145,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 
 ## Identity
 
-In the Avail network, a light client's identity can be configured using the `identity.toml` file. If not specified, a secret seed phrase will be generated and stored in the identity file when the light client starts. To use an existing seed phrase, set the `avail_secret_seed_phrase` entry in the `identity.toml` file. Seed phrase will be used to derive Sr25519 key pair for signing.
+In the Avail network, a light client's identity can be configured using the `identity.toml` file. If not specified, a secret seed phrase will be generated and stored in the identity file when the light client starts. To use an existing seed phrase, set the `avail_secret_seed_phrase` entry in the `identity.toml` file. Seed phrase will be used to derive Sr25519 key pair for signing. Location of the identity file can be specified using `--identity` option.
 
 ## Configuration reference
 

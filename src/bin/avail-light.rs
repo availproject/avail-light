@@ -89,7 +89,8 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	}
 
 	let identity_cfg =
-		IdentityConfig::load_or_init("identity.toml", opts.avail_passphrase.as_deref())?;
+		IdentityConfig::load_or_init(&opts.identity, opts.avail_passphrase.as_deref())?;
+	info!("Identity loaded from {}", &opts.identity);
 
 	let client_role = if cfg.is_fat_client() {
 		info!("Fat client mode");

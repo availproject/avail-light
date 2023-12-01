@@ -37,6 +37,9 @@ pub struct CliOpts {
 	/// Path to the yaml configuration file
 	#[arg(short, long, value_name = "FILE")]
 	pub config: Option<String>,
+	/// Path to the toml identity file
+	#[arg(short, long, value_name = "FILE", default_value = "identity.toml")]
+	pub identity: String,
 	/// AppID for application client
 	#[arg(long, value_name = "appId")]
 	pub app_id: Option<u32>,
