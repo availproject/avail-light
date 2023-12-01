@@ -184,7 +184,7 @@ impl Client for DHTWithRPCFallbackClient {
 			.insert_cells_into_dht(block_number, rpc_fetched.clone())
 			.await
 		{
-			warn!("Error inserting cells into DHT: {error}");
+			debug!("Error inserting cells into DHT: {error}");
 		}
 
 		let stats = FetchStats::new(
