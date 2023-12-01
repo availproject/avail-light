@@ -30,10 +30,7 @@ use tokio::sync::{
 use tracing::Subscriber;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::EnvFilter;
-use tracing_subscriber::{
-	fmt::format::{self},
-	FmtSubscriber,
-};
+use tracing_subscriber::{fmt::format, FmtSubscriber};
 
 #[cfg(feature = "network-analysis")]
 use avail_light::network::p2p::analyzer;
