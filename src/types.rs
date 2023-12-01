@@ -2,13 +2,15 @@
 
 use crate::network::rpc::Node as RpcNode;
 use crate::utils::{extract_app_lookup, extract_kate};
-use anyhow::anyhow;
-use anyhow::{Context, Result};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use bip39::{Language, Mnemonic, MnemonicType};
 use clap::Parser;
 use codec::{Decode, Encode};
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
+};
 use kate_recovery::{
 	commitments,
 	matrix::{Dimensions, Partition},
@@ -79,11 +81,11 @@ pub struct BlockVerified {
 }
 
 impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
-	type Error = anyhow::Error;
+	type Error = Report;
 	fn try_from((header, confidence): (DaHeader, Option<f64>)) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 		let enc_lookup = extract_app_lookup(&header.extension)
-			.map_err(|e| anyhow!("Invalid DataLookup: {}", e))?
+			.map_err(|e| eyre!("Invalid DataLookup: {}", e))?
 			.encode();
 		let lookup = DataLookup::decode(&mut enc_lookup.as_slice())?;
 		let (rows, cols, _, commitment) = extract_kate(&header.extension);
@@ -91,7 +93,7 @@ impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
 		Ok(BlockVerified {
 			header_hash: hash,
 			block_num: header.number,
-			dimensions: Dimensions::new(rows, cols).context("Invalid dimensions")?,
+			dimensions: Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?,
 			lookup,
 			commitments: commitments::from_slice(&commitment)?,
 			confidence,
@@ -116,13 +118,13 @@ impl KademliaMode {
 }
 
 impl TryFrom<String> for KademliaMode {
-	type Error = anyhow::Error;
+	type Error = color_eyre::Report;
 
 	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
 		match value.to_lowercase().as_str() {
 			"client" => Ok(KademliaMode::Client),
 			"server" => Ok(KademliaMode::Server),
-			_ => Err(anyhow!(
+			_ => Err(eyre!(
 				"Wrong Kademlia mode. Expecting 'client' or 'server'."
 			)),
 		}
@@ -193,11 +195,11 @@ pub mod block_matrix_partition_format {
 pub struct CompactMultiaddress((PeerId, Multiaddr));
 
 impl TryFrom<String> for CompactMultiaddress {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
 		let Some((_, peer_id)) = value.rsplit_once('/') else {
-			return Err(anyhow!("Invalid multiaddress string"));
+			return Err(eyre!("Invalid multiaddress string"));
 		};
 		let peer_id = PeerId::from_str(peer_id)?;
 		let multiaddr = Multiaddr::from_str(&value)?;
@@ -675,10 +677,9 @@ impl RuntimeConfig {
 
 	pub fn load_runtime_config(&mut self, opts: &CliOpts) -> Result<()> {
 		if let Some(config_path) = &opts.config {
-			fs::metadata(config_path)
-				.map_err(|_| anyhow!("Provided config file doesn't exist."))?;
+			fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
 			let cfg: RuntimeConfig = confy::load_path(config_path)
-				.context(format!("Failed to load configuration from {}", config_path))?;
+				.wrap_err(format!("Failed to load configuration from {}", config_path))?;
 			*self = cfg;
 		}
 
@@ -686,9 +687,9 @@ impl RuntimeConfig {
 		if let Some(network) = &opts.network {
 			let bootstrap: (PeerId, Multiaddr) = (
 				PeerId::from_str(network.peer_id())
-					.context("unable to parse default bootstrap peerID")?,
+					.wrap_err("unable to parse default bootstrap peerID")?,
 				Multiaddr::from_str(network.multiaddr())
-					.context("unable to parse default bootstrap multi-address")?,
+					.wrap_err("unable to parse default bootstrap multi-address")?,
 			);
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];

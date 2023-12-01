@@ -15,7 +15,7 @@ use crate::{
 	network::rpc::{self},
 	types::{RuntimeConfig, State},
 };
-use anyhow::Context;
+use color_eyre::eyre::WrapErr;
 use rocksdb::DB;
 use std::{
 	net::SocketAddr,
@@ -73,7 +73,7 @@ impl Server {
 		let routes = health_route().or(v1_api).or(v2_api).with(cors);
 
 		let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
-			.context("Unable to parse host address from config")
+			.wrap_err("Unable to parse host address from config")
 			.unwrap();
 		info!("RPC running on http://{host}:{port}");
 		warp::serve(routes).run(addr).await;

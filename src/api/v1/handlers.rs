@@ -5,13 +5,13 @@ use crate::{
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
-use anyhow::{Context, Result};
 use avail_subxt::{
 	api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
 	primitives::AppUncheckedExtrinsic,
 };
 use base64::{engine::general_purpose, Engine};
 use codec::Decode;
+use color_eyre::{eyre::WrapErr, Result};
 use num::{BigUint, FromPrimitive};
 use rocksdb::DB;
 use std::sync::{Arc, Mutex};
@@ -114,7 +114,7 @@ pub fn appdata(
 					.enumerate()
 					.map(|(i, raw)| {
 						<_ as Decode>::decode(&mut &raw[..])
-							.context(format!("Couldn't decode AvailExtrinsic num {i}"))
+							.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
 					})
 					.collect::<Result<Vec<_>>>()
 			})

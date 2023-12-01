@@ -6,7 +6,7 @@ use crate::{
 	api::v2::types::{Error, Sender},
 	types::{RuntimeConfig, State},
 };
-use anyhow::Context;
+use color_eyre::{eyre::WrapErr, Result};
 use futures::{FutureExt, StreamExt};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -40,14 +40,14 @@ pub async fn connect(
 		}
 	}));
 
-	fn send<T: Serialize>(sender: Sender, message: T) -> anyhow::Result<()> {
+	fn send<T: Serialize>(sender: Sender, message: T) -> Result<()> {
 		let ws_message = serde_json::to_string(&message)
 			.map(ws::Message::text)
-			.context("Failed to serialize message")?;
+			.wrap_err("Failed to serialize message")?;
 
 		sender
 			.send(Ok(ws_message))
-			.context("Failed to send message")
+			.wrap_err("Failed to send message")
 	}
 
 	while let Some(result) = web_socket_receiver.next().await {

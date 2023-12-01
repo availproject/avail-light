@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use color_eyre::{eyre::WrapErr, Report, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat, dcutr, identify, identity,
@@ -77,8 +77,8 @@ impl<'a> EventLoopEntries<'a> {
 }
 
 pub trait Command {
-	fn run(&mut self, entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error>;
-	fn abort(&mut self, error: anyhow::Error);
+	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report>;
+	fn abort(&mut self, error: Report);
 }
 
 type SendableCommand = Box<dyn Command + Send + Sync>;
@@ -215,15 +215,15 @@ pub fn keypair(cfg: LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)>
 		Some(SecretKey::Seed { seed }) => {
 			let seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
 			identity::Keypair::ed25519_from_bytes(seed_digest)
-				.context("error generating secret key from seed")?
+				.wrap_err("error generating secret key from seed")?
 		},
 		// Import secret key if provided
 		Some(SecretKey::Key { key }) => {
 			let mut decoded_key = [0u8; 32];
 			hex::decode_to_slice(key.into_bytes(), &mut decoded_key)
-				.context("error decoding secret key from config")?;
+				.wrap_err("error decoding secret key from config")?;
 			identity::Keypair::ed25519_from_bytes(decoded_key)
-				.context("error importing secret key")?
+				.wrap_err("error importing secret key")?
 		},
 		// If neither seed nor secret key provided, generate secret key from random seed
 		None => identity::Keypair::generate_ed25519(),

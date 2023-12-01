@@ -1,4 +1,4 @@
-use anyhow::Result;
+use color_eyre::Result;
 use pcap::{Active, Capture, ConnectionStatus, Device};
 use std::{
 	sync::{

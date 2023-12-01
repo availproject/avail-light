@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
 use async_trait::async_trait;
+use color_eyre::{eyre::WrapErr, Result};
 use dusk_plonk::prelude::PublicParameters;
 use kate_recovery::{
 	config,

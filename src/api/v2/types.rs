@@ -1,10 +1,13 @@
-use anyhow::{anyhow, Context};
 use avail_subxt::api::runtime_types::{
 	avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
 	bounded_collections::bounded_vec::BoundedVec,
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::Encode;
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
+};
 use derive_more::From;
 use hyper::{http, StatusCode};
 use kate_recovery::{com::AppData, commitments, config, matrix::Partition};
@@ -317,7 +320,7 @@ impl Reply for Block {
 }
 
 impl TryFrom<avail_subxt::primitives::Header> for HeaderMessage {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(header: avail_subxt::primitives::Header) -> Result<Self, Self::Error> {
 		let header: Header = header.try_into()?;
@@ -393,9 +396,9 @@ struct Extension {
 }
 
 impl TryFrom<avail_subxt::primitives::Header> for Header {
-	type Error = anyhow::Error;
+	type Error = Report;
 
-	fn try_from(header: avail_subxt::primitives::Header) -> anyhow::Result<Self> {
+	fn try_from(header: avail_subxt::primitives::Header) -> Result<Self> {
 		Ok(Header {
 			hash: Encode::using_encoded(&header, blake2_256).into(),
 			parent_hash: header.parent_hash,
@@ -408,7 +411,7 @@ impl TryFrom<avail_subxt::primitives::Header> for Header {
 }
 
 impl TryFrom<HeaderExtension> for Extension {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: HeaderExtension) -> Result<Self, Self::Error> {
 		match value {
@@ -445,7 +448,7 @@ impl TryFrom<HeaderExtension> for Extension {
 }
 
 impl TryFrom<RpcEvent> for PublishMessage {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: RpcEvent) -> Result<Self, Self::Error> {
 		match value {
@@ -465,7 +468,7 @@ pub struct ConfidenceMessage {
 }
 
 impl TryFrom<BlockVerified> for PublishMessage {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: BlockVerified) -> Result<Self, Self::Error> {
 		Ok(PublishMessage::ConfidenceAchieved(ConfidenceMessage {
@@ -480,14 +483,14 @@ impl TryFrom<BlockVerified> for PublishMessage {
 pub struct FieldsQueryParameter(pub HashSet<DataField>);
 
 impl TryFrom<String> for FieldsQueryParameter {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: String) -> Result<Self, Self::Error> {
 		value
 			.split(',')
 			.map(|part| format!(r#""{part}""#))
-			.map(|part| serde_json::from_str(&part).context("Cannot deserialize field"))
-			.collect::<anyhow::Result<HashSet<_>>>()
+			.map(|part| serde_json::from_str(&part).wrap_err("Cannot deserialize field"))
+			.collect::<Result<HashSet<_>>>()
 			.map(FieldsQueryParameter)
 	}
 }
@@ -524,7 +527,7 @@ pub struct DataTransaction {
 }
 
 impl TryFrom<Vec<u8>> for DataTransaction {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Ok(DataTransaction {
@@ -548,13 +551,13 @@ pub fn filter_fields(data_transactions: &mut [DataTransaction], fields: &HashSet
 }
 
 impl TryFrom<(u32, AppData)> for PublishMessage {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from((block_number, app_data): (u32, AppData)) -> Result<Self, Self::Error> {
 		let data_transactions = app_data
 			.into_iter()
 			.map(TryFrom::try_from)
-			.collect::<anyhow::Result<Vec<_>>>()?;
+			.collect::<Result<Vec<_>>>()?;
 		Ok(PublishMessage::DataVerified(DataMessage {
 			block_number,
 			data_transactions,
@@ -583,11 +586,11 @@ impl PublishMessage {
 }
 
 impl TryFrom<PublishMessage> for Message {
-	type Error = anyhow::Error;
+	type Error = Report;
 	fn try_from(value: PublishMessage) -> Result<Self, Self::Error> {
 		serde_json::to_string(&value)
 			.map(ws::Message::text)
-			.context("Cannot serialize publish message")
+			.wrap_err("Cannot serialize publish message")
 	}
 }
 
@@ -621,10 +624,10 @@ impl WsClient {
 pub struct WsClients(pub Arc<RwLock<HashMap<String, WsClient>>>);
 
 impl WsClients {
-	pub async fn set_sender(&self, subscription_id: &str, sender: Sender) -> anyhow::Result<()> {
+	pub async fn set_sender(&self, subscription_id: &str, sender: Sender) -> Result<()> {
 		let mut clients = self.0.write().await;
 		let Some(client) = clients.get_mut(subscription_id) else {
-			return Err(anyhow!("Client is not subscribed"));
+			return Err(eyre!("Client is not subscribed"));
 		};
 		client.sender = Some(sender);
 		Ok(())
@@ -639,11 +642,7 @@ impl WsClients {
 		clients.insert(subscription_id.to_string(), WsClient::new(subscription));
 	}
 
-	pub async fn publish(
-		&self,
-		topic: &Topic,
-		message: PublishMessage,
-	) -> anyhow::Result<Vec<anyhow::Result<()>>> {
+	pub async fn publish(&self, topic: &Topic, message: PublishMessage) -> Result<Vec<Result<()>>> {
 		let clients = self.0.read().await;
 		Ok(clients
 			.iter()
@@ -654,9 +653,9 @@ impl WsClients {
 				message.apply_filter(data_fields);
 				message
 					.try_into()
-					.context("Cannot convert to ws message")
+					.wrap_err("Cannot convert to ws message")
 					.and_then(|message: warp::ws::Message| {
-						sender.send(Ok(message)).context("Send failed")
+						sender.send(Ok(message)).wrap_err("Send failed")
 					})
 			})
 			.collect::<Vec<_>>())
@@ -711,10 +710,10 @@ impl<T> Response<T> {
 }
 
 impl TryFrom<ws::Message> for Request {
-	type Error = anyhow::Error;
+	type Error = Report;
 
 	fn try_from(value: ws::Message) -> Result<Self, Self::Error> {
-		serde_json::from_slice(value.as_bytes()).context("Cannot parse json")
+		serde_json::from_slice(value.as_bytes()).wrap_err("Cannot parse json")
 	}
 }
 
@@ -731,7 +730,7 @@ pub struct Error {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub request_id: Option<Uuid>,
 	#[serde(skip)]
-	pub cause: Option<anyhow::Error>,
+	pub cause: Option<Report>,
 	pub error_code: ErrorCode,
 	pub message: String,
 }
@@ -739,7 +738,7 @@ pub struct Error {
 impl Error {
 	fn new(
 		request_id: Option<Uuid>,
-		cause: Option<anyhow::Error>,
+		cause: Option<Report>,
 		error_code: ErrorCode,
 		message: &str,
 	) -> Self {
@@ -755,7 +754,7 @@ impl Error {
 		Self::new(None, None, ErrorCode::NotFound, "Not Found")
 	}
 
-	pub fn internal_server_error(cause: anyhow::Error) -> Self {
+	pub fn internal_server_error(cause: Report) -> Self {
 		Self::new(
 			None,
 			Some(cause),

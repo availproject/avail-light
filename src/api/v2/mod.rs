@@ -1,13 +1,3 @@
-use self::{
-	handlers::{handle_rejection, log_internal_server_error},
-	types::{DataQuery, PublishMessage, Version, WsClients},
-};
-use crate::{
-	api::v2::types::Topic,
-	data::{Database, RocksDB},
-	network::rpc::Client,
-	types::{IdentityConfig, RuntimeConfig, State},
-};
 use avail_subxt::AvailConfig;
 use sp_core::sr25519::Pair;
 use std::{
@@ -19,6 +9,18 @@ use subxt::tx::PairSigner;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
+
+use self::{
+	handlers::{handle_rejection, log_internal_server_error},
+	types::{DataQuery, PublishMessage, Version, WsClients},
+};
+
+use crate::{
+	api::v2::types::Topic,
+	data::{Database, RocksDB},
+	network::rpc::Client,
+	types::{IdentityConfig, RuntimeConfig, State},
+};
 
 mod handlers;
 mod transactions;
@@ -604,7 +606,7 @@ mod tests {
 
 	#[async_trait]
 	impl transactions::Submit for MockSubmitter {
-		async fn submit(&self, _: Transaction) -> anyhow::Result<SubmitResponse> {
+		async fn submit(&self, _: Transaction) -> color_eyre::Result<SubmitResponse> {
 			Ok(SubmitResponse {
 				block_number: 0,
 				block_hash: H256::random(),
@@ -622,15 +624,15 @@ mod tests {
 	}
 
 	impl Database for MockDatabase {
-		fn get_confidence(&self, _: u32) -> anyhow::Result<Option<u32>> {
+		fn get_confidence(&self, _: u32) -> color_eyre::Result<Option<u32>> {
 			Ok(self.confidence)
 		}
 
-		fn get_header(&self, _: u32) -> anyhow::Result<Option<DaHeader>> {
+		fn get_header(&self, _: u32) -> color_eyre::Result<Option<DaHeader>> {
 			Ok(self.header.clone())
 		}
 
-		fn get_data(&self, _app_id: u32, _: u32) -> anyhow::Result<Option<AppData>> {
+		fn get_data(&self, _app_id: u32, _: u32) -> color_eyre::Result<Option<AppData>> {
 			Ok(self.app_data.clone())
 		}
 	}

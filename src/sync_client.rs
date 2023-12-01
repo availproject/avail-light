@@ -27,10 +27,14 @@ use crate::{
 	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
 	utils::{calculate_confidence, extract_app_lookup, extract_kate},
 };
-use anyhow::{Context, Result};
+
 use async_trait::async_trait;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::Encode;
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Result,
+};
 use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
 use rocksdb::DB;
@@ -64,7 +68,7 @@ pub fn new(db: Arc<DB>, rpc_client: RpcClient) -> impl SyncClient {
 impl SyncClient for SyncClientImpl {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		if let Some(header) = get_block_header_from_db(self.db.clone(), block_number)
-			.context("Failed to get block header from the DB")?
+			.wrap_err("Failed to get block header from the DB")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			return Ok((header, hash));
@@ -74,26 +78,26 @@ impl SyncClient for SyncClientImpl {
 			.rpc_client
 			.get_header_by_block_number(block_number)
 			.await
-			.with_context(|| format!("Failed to get block {block_number} by block number"))
+			.wrap_err_with(|| format!("Failed to get block {:#?} by block number", block_number))
 		{
 			Ok(value) => value,
 			Err(error) => return Err(error),
 		};
 
 		store_block_header_in_db(self.db.clone(), block_number, &header)
-			.context("Failed to store block header in DB")?;
+			.wrap_err("Failed to store block header in DB")?;
 
 		Ok((header, hash))
 	}
 
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool> {
 		is_confidence_in_db(self.db.clone(), block_number)
-			.context("Failed to check if confidence is in DB")
+			.wrap_err("Failed to check if confidence is in DB")
 	}
 
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)
-			.context("Failed to store confidence in DB")
+			.wrap_err("Failed to store confidence in DB")
 	}
 }
 
@@ -114,7 +118,7 @@ async fn process_block(
 	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
 
 	let (rows, cols, _, commitment) = extract_kate(&header.extension);
-	let dimensions = Dimensions::new(rows, cols).context("Invalid dimensions")?;
+	let dimensions = Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
 
 	let commitments = commitments::from_slice(&commitment)?;
 
@@ -140,11 +144,11 @@ async fn process_block(
 	// write confidence factor into on-disk database
 	sync_client
 		.store_confidence_in_db(fetched.len().try_into()?, block_number)
-		.context("Failed to store confidence in DB")?;
+		.wrap_err("Failed to store confidence in DB")?;
 
 	let confidence = Some(calculate_confidence(fetched.len() as u32));
 	let client_msg =
-		BlockVerified::try_from((header, confidence)).context("converting to message failed")?;
+		BlockVerified::try_from((header, confidence)).wrap_err("converting to message failed")?;
 
 	if let Some(ref channel) = block_verified_sender {
 		if let Err(error) = channel.send(client_msg) {

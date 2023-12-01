@@ -1,4 +1,3 @@
-use anyhow::Context;
 use avail_core::{
 	data_lookup::compact::{CompactDataLookup, DataLookupItem},
 	data_lookup::Error as DataLookupError,
@@ -19,14 +18,15 @@ use avail_subxt::{
 	utils::H256,
 };
 use codec::Decode;
+use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 
-pub fn decode_app_data(data: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
+pub fn decode_app_data(data: &[u8]) -> Result<Option<Vec<u8>>> {
 	let extrisic: AppUncheckedExtrinsic =
-		<_ as Decode>::decode(&mut &data[..]).context("Couldn't decode AvailExtrinsic")?;
+		<_ as Decode>::decode(&mut &data[..]).wrap_err("Couldn't decode AvailExtrinsic")?;
 
 	match extrisic.function {
 		RuntimeCall::DataAvailability(Call::submit_data { data, .. }) => Ok(Some(data.0)),
