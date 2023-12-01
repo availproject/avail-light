@@ -87,7 +87,7 @@ enum DHTKey {
 }
 
 impl TryFrom<RecordKey> for DHTKey {
-	type Error = anyhow::Error;
+	type Error = color_eyre::Report;
 
 	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
 		match *String::from_utf8(key.to_vec())?
@@ -98,7 +98,7 @@ impl TryFrom<RecordKey> for DHTKey {
 		{
 			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
 			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
-			_ => Err(anyhow::anyhow!("Invalid DHT key")),
+			_ => Err(eyre!("Invalid DHT key")),
 		}
 	}
 }
@@ -579,6 +579,7 @@ impl EventLoop {
 #[cfg(test)]
 mod tests {
 	use crate::network::p2p::event_loop::DHTKey;
+	use color_eyre::Result;
 	use libp2p::kad::RecordKey;
 
 	#[test]
@@ -589,10 +590,10 @@ mod tests {
 		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
 		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
 
-		let result: anyhow::Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
-		result.unwrap_err();
+		let result: Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
+		_ = result.unwrap_err();
 
-		let result: anyhow::Result<DHTKey> = RecordKey::new(&"123").try_into();
-		result.unwrap_err();
+		let result: Result<DHTKey> = RecordKey::new(&"123").try_into();
+		_ = result.unwrap_err();
 	}
 }
