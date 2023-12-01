@@ -43,6 +43,7 @@ impl<T: Clone, F: Future> Future for WithCancel<T, F> {
 		// if future is still `Pending`, check if the shutdown signal has been given
 		let shutdown = Pin::new(&mut this.signal).poll(cx);
 		match shutdown {
+			// shutdown signal happened, send back the reason
 			Poll::Ready(reason) => {
 				this.future = Err(reason.clone());
 				Poll::Ready(Err(reason))
