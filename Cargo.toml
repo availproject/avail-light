@@ -74,7 +74,6 @@ opentelemetry = "0.20.0"
 opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] }
 opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
-strip-ansi-escapes = "0.2.0"
 
 [features]
 network-analysis = []
