@@ -1,4 +1,4 @@
-//! Light client for data availability sampling and verification.
+//! Fat client for data availability sampling and verification.
 //!
 //! Sampling and verification are prerequisites for application client, so [`run`] function should be on main thread and exit in case of failures.
 //!
@@ -22,63 +22,76 @@ use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Report, Result};
-use kate_recovery::{commitments, matrix::Dimensions};
+use futures::future::join_all;
+use kate_recovery::{
+	data,
+	matrix::{Dimensions, Partition, Position},
+};
+use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
 use rocksdb::DB;
 use sp_core::blake2_256;
-use std::{
-	sync::{Arc, Mutex},
-	time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
-	data::{store_block_header_in_db, store_confidence_in_db},
+	data::store_block_header_in_db,
 	network::{
-		self,
 		p2p::Client as P2pClient,
-		rpc::{self, Event},
+		rpc::{Client as RpcClient, Event},
 	},
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, BlockVerified, LightClientConfig, OptionBlockRange, State},
-	utils::{calculate_confidence, extract_kate},
+	types::{BlockVerified, FatClientConfig},
+	utils::extract_kate,
 };
 
 #[async_trait]
 #[automock]
-pub trait LightClient {
+pub trait FatClient {
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
+	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn shrink_kademlia_map(&self) -> Result<()>;
 	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)>;
 	async fn count_dht_entries(&self) -> Result<usize>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
-struct LightClientImpl {
+struct FatClientImpl {
 	db: Arc<DB>,
 	p2p_client: P2pClient,
+	rpc_client: RpcClient,
 }
 
-pub fn new(db: Arc<DB>, p2p_client: P2pClient) -> impl LightClient {
-	LightClientImpl { db, p2p_client }
+pub fn new(db: Arc<DB>, p2p_client: P2pClient, rpc_client: RpcClient) -> impl FatClient {
+	FatClientImpl {
+		db,
+		p2p_client,
+		rpc_client,
+	}
 }
 
 #[async_trait]
-impl LightClient for LightClientImpl {
+impl FatClient for FatClientImpl {
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
+		self.p2p_client.insert_cells_into_dht(block, cells).await
+	}
 	async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.p2p_client.shrink_kademlia_map().await
+	}
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()> {
+		self.p2p_client.insert_rows_into_dht(block, rows).await
+	}
+	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
+		self.rpc_client.request_kate_proof(hash, positions).await
 	}
 	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
 		self.p2p_client.get_multiaddress_and_ip().await
 	}
 	async fn count_dht_entries(&self) -> Result<usize> {
 		self.p2p_client.count_dht_entries().await
-	}
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
-		store_confidence_in_db(self.db.clone(), block_number, count)
-			.wrap_err("Failed to store confidence in DB")
 	}
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
 		store_block_header_in_db(self.db.clone(), block_number, header)
@@ -87,14 +100,13 @@ impl LightClient for LightClientImpl {
 }
 
 pub async fn process_block(
-	light_client: &impl LightClient,
-	network_client: &impl network::Client,
+	fat_client: &impl FatClient,
 	metrics: &Arc<impl Metrics>,
-	cfg: &LightClientConfig,
+	cfg: &FatClientConfig,
 	header: &Header,
 	received_at: Instant,
-	state: Arc<Mutex<State>>,
-) -> Result<Option<f64>> {
+	partition: Partition,
+) -> Result<()> {
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
@@ -108,90 +120,19 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let (rows, cols, _, commitment) = extract_kate(&header.extension);
+	let (rows, cols, _, _) = extract_kate(&header.extension);
 	let Some(dimensions) = Dimensions::new(rows, cols) else {
 		info!(
 			block_number,
 			"Skipping block with invalid dimensions {rows}x{cols}",
 		);
-		return Ok(None);
+		return Ok(());
 	};
 
 	if dimensions.cols().get() <= 2 {
 		error!(block_number, "more than 2 columns is required");
-		return Ok(None);
+		return Ok(());
 	}
-
-	let commitments = commitments::from_slice(&commitment)?;
-	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-	let positions = rpc::generate_random_cells(dimensions, cell_count);
-	info!(
-		block_number,
-		"cells_requested" = positions.len(),
-		"Random cells generated: {}",
-		positions.len()
-	);
-
-	let (fetched, unfetched, fetch_stats) = network_client
-		.fetch_verified(
-			block_number,
-			header_hash,
-			dimensions,
-			&commitments,
-			&positions,
-		)
-		.await?;
-
-	metrics
-		.record(MetricValue::DHTFetched(fetch_stats.dht_fetched))
-		.await?;
-
-	metrics
-		.record(MetricValue::DHTFetchedPercentage(
-			fetch_stats.dht_fetched_percentage,
-		))
-		.await?;
-
-	metrics
-		.record(MetricValue::DHTFetchDuration(
-			fetch_stats.dht_fetch_duration,
-		))
-		.await?;
-
-	if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
-		metrics
-			.record(MetricValue::NodeRPCFetched(rpc_fetched))
-			.await?;
-	}
-
-	if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
-		metrics
-			.record(MetricValue::NodeRPCFetchDuration(rpc_fetch_duration))
-			.await?;
-	}
-
-	if positions.len() > fetched.len() {
-		error!(block_number, "Failed to fetch {} cells", unfetched.len());
-		return Ok(None);
-	}
-
-	// write confidence factor into on-disk database
-	light_client
-		.store_confidence_in_db(fetched.len() as u32, block_number)
-		.wrap_err("Failed to store confidence in DB")?;
-
-	state.lock().unwrap().confidence_achieved.set(block_number);
-
-	let confidence = calculate_confidence(fetched.len() as u32);
-	info!(
-		block_number,
-		"confidence" = confidence,
-		"Confidence factor: {}",
-		confidence
-	);
-	metrics
-		.record(MetricValue::BlockConfidence(confidence))
-		.await?;
 
 	// push latest mined block's header into column family specified
 	// for keeping block headers, to be used
@@ -201,22 +142,100 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	light_client
+	fat_client
 		.store_block_header_in_db(header, block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
-	light_client
+	let mut rpc_fetched: Vec<Cell> = vec![];
+
+	// Fat client partition upload logic
+	let positions: Vec<Position> = dimensions
+		.iter_extended_partition_positions(&partition)
+		.collect();
+	info!(
+		block_number,
+		"partition_cells_requested" = positions.len(),
+		"Fetching partition ({}/{}) from RPC",
+		partition.number,
+		partition.fraction
+	);
+
+	let begin = Instant::now();
+	let rpc_cells = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
+	for batch in rpc_cells
+		// TODO: Filter already fetched cells since they are verified and in DHT
+		.chunks(cfg.query_proof_rpc_parallel_tasks)
+		.map(|e| {
+			join_all(
+				e.iter()
+					.map(|n| fat_client.get_kate_proof(header_hash, n))
+					.collect::<Vec<_>>(),
+			)
+		}) {
+		for partition_fetched in batch
+			.await
+			.into_iter()
+			.enumerate()
+			.map(|(i, e)| e.wrap_err(format!("Failed to fetch cells from node RPC at batch {i}")))
+			.collect::<Vec<_>>()
+		{
+			let partition_fetched_filtered = partition_fetched?
+				.into_iter()
+				.filter(|cell| {
+					!rpc_fetched
+						.iter()
+						.any(move |rpc_cell| rpc_cell.position.eq(&cell.position))
+				})
+				.collect::<Vec<_>>();
+			rpc_fetched.extend(partition_fetched_filtered.clone());
+		}
+	}
+	let rpc_call_duration = begin.elapsed();
+	let rpc_fetched_len = rpc_fetched.len();
+	info!(
+		block_number,
+		"partition_rpc_retrieve_time_elapsed" = ?rpc_call_duration,
+		"partition_rpc_cells_fetched" = rpc_fetched_len,
+		"Partition cells received from RPC",
+	);
+	metrics
+		.record(MetricValue::RPCCallDuration(
+			rpc_call_duration.as_secs_f64(),
+		))
+		.await?;
+
+	let rpc_fetched_data_cells = rpc_fetched
+		.iter()
+		.filter(|cell| !cell.position.is_extended())
+		.collect::<Vec<_>>();
+	let rpc_fetched_data_rows = data::rows(dimensions, &rpc_fetched_data_cells);
+
+	if let Err(e) = fat_client
+		.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
+		.await
+	{
+		debug!("Error inserting rows into DHT: {e}");
+	}
+
+	if let Err(e) = fat_client
+		.insert_cells_into_dht(block_number, rpc_fetched)
+		.await
+	{
+		debug!("Error inserting cells into DHT: {e}");
+	}
+
+	fat_client
 		.shrink_kademlia_map()
 		.await
 		.wrap_err("Unable to perform Kademlia map shrink")?;
 
 	// dump what we have on the current p2p network
-	if let Ok((multiaddr, ip)) = light_client.get_multiaddress_and_ip().await {
+	if let Ok((multiaddr, ip)) = fat_client.get_multiaddress_and_ip().await {
 		// set Multiaddress
 		metrics.set_multiaddress(multiaddr).await;
 		metrics.set_ip(ip).await;
 	}
-	if let Ok(counted_peers) = light_client.count_dht_entries().await {
+	if let Ok(counted_peers) = fat_client.count_dht_entries().await {
 		metrics
 			.record(MetricValue::KadRoutingPeerNum(counted_peers))
 			.await?
@@ -224,33 +243,31 @@ pub async fn process_block(
 
 	metrics.record(MetricValue::HealthCheck()).await?;
 
-	Ok(Some(confidence))
+	Ok(())
 }
 
 pub struct Channels {
-	pub block_sender: Option<broadcast::Sender<BlockVerified>>,
 	pub rpc_event_receiver: broadcast::Receiver<Event>,
 	pub error_sender: Sender<Report>,
 }
 
-/// Runs light client.
+/// Runs fat client.
 ///
 /// # Arguments
 ///
-/// * `light_client` - Light client implementation
-/// * `cfg` - Light client configuration
+/// * `fat_client` - Fat client implementation
+/// * `cfg` - Fat client configuration
 /// * `block_tx` - Channel used to send header of verified block
 /// * `registry` - Prometheus metrics registry
 /// * `state` - Processed blocks state
 pub async fn run(
-	light_client: impl LightClient,
-	network_client: impl network::Client,
-	cfg: LightClientConfig,
+	fat_client: impl FatClient,
+	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,
-	state: Arc<Mutex<State>>,
 	mut channels: Channels,
+	partition: Partition,
 ) {
-	info!("Starting light client...");
+	info!("Starting fat client...");
 
 	loop {
 		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
@@ -277,47 +294,20 @@ pub async fn run(
 			tokio::time::sleep(seconds).await;
 		}
 
-		let process_block_result = process_block(
-			&light_client,
-			&network_client,
-			&metrics,
-			&cfg,
-			&header,
-			received_at,
-			state.clone(),
-		)
-		.await;
-		let confidence = match process_block_result {
-			Ok(confidence) => confidence,
-			Err(error) => {
-				error!("Cannot process block: {error}");
-				if let Err(error) = channels.error_sender.send(error).await {
-					error!("Cannot send error message: {error}");
-				}
-				return;
-			},
-		};
-
-		let Ok(client_msg) = types::BlockVerified::try_from((header, confidence)) else {
-			error!("Cannot create message from header");
-			continue;
-		};
-
-		// notify dht-based application client
-		// that newly mined block has been received
-		if let Some(ref channel) = channels.block_sender {
-			if let Err(error) = channel.send(client_msg) {
-				error!("Cannot send block verified message: {error}");
-				continue;
+		if let Err(error) =
+			process_block(&fat_client, &metrics, &cfg, &header, received_at, partition).await
+		{
+			error!("Cannot process block: {error}");
+			if let Err(error) = channels.error_sender.send(error).await {
+				error!("Cannot send error message: {error}");
 			}
-		}
+			return;
+		};
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use std::time::Duration;
-
 	use super::*;
 	use crate::{
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
@@ -333,7 +323,6 @@ mod tests {
 		config::substrate::Digest,
 	};
 	use hex_literal::hex;
-	use kate_recovery::{data::Cell, matrix::Position};
 	use test_case::test_case;
 
 	#[test_case(99.9 => 10)]
@@ -350,17 +339,12 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
-		let mut mock_client = MockLightClient::new();
-		let mut mock_network_client = network::MockClient::new();
-		let cfg = LightClientConfig::from(&RuntimeConfig::default());
-		let cells_fetched: Vec<Cell> = vec![];
-		let cells_unfetched = [
-			Position { row: 1, col: 3 },
-			Position { row: 0, col: 0 },
-			Position { row: 1, col: 2 },
-			Position { row: 0, col: 1 },
-		]
-		.to_vec();
+		let mut mock_client = MockFatClient::new();
+		let cfg = FatClientConfig::from(&RuntimeConfig::default());
+		let partition = Partition {
+			number: 1,
+			fraction: 1,
+		};
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
 				.into(),
@@ -396,27 +380,63 @@ mod tests {
 				},
 			}),
 		};
-		let state = Arc::new(Mutex::new(State::default()));
 		let recv = Instant::now();
-		mock_network_client
-			.expect_fetch_verified()
-			.returning(move |_, _, _, _, positions| {
-				let fetched = cells_fetched.clone();
-				let unfetched = cells_unfetched.clone();
-				let stats = network::FetchStats::new(
-					positions.len(),
-					fetched.len(),
-					Duration::from_secs(0),
-					None,
-				);
-				Box::pin(async move { Ok((fetched, unfetched, stats)) })
-			});
-		mock_client
-			.expect_store_confidence_in_db()
-			.returning(|_, _| Ok(()));
+		let kate_proof = [
+			Cell {
+				position: Position { row: 0, col: 2 },
+				content: [
+					183, 215, 10, 175, 218, 48, 236, 18, 30, 163, 215, 125, 205, 130, 176, 227,
+					133, 157, 194, 35, 153, 144, 141, 7, 208, 133, 170, 79, 27, 176, 202, 22, 111,
+					63, 107, 147, 93, 44, 82, 137, 78, 32, 161, 175, 214, 152, 125, 50, 247, 52,
+					138, 161, 52, 83, 193, 255, 17, 235, 98, 10, 88, 241, 25, 186, 3, 174, 139,
+					200, 128, 117, 255, 213, 200, 4, 46, 244, 219, 5, 131, 0,
+				],
+			},
+			Cell {
+				position: Position { row: 1, col: 1 },
+				content: [
+					172, 213, 85, 167, 89, 247, 11, 125, 149, 170, 217, 222, 86, 157, 11, 20, 154,
+					21, 173, 247, 193, 99, 189, 7, 225, 80, 156, 94, 83, 213, 217, 185, 113, 187,
+					112, 20, 170, 120, 50, 171, 52, 178, 209, 244, 158, 24, 129, 236, 83, 4, 110,
+					41, 9, 29, 26, 180, 156, 219, 69, 155, 148, 49, 78, 25, 165, 147, 150, 253,
+					251, 174, 49, 215, 191, 142, 169, 70, 17, 86, 218, 0,
+				],
+			},
+			Cell {
+				position: Position { row: 0, col: 3 },
+				content: [
+					132, 180, 92, 81, 128, 83, 245, 59, 206, 224, 200, 137, 236, 113, 109, 216,
+					161, 248, 236, 252, 252, 22, 140, 107, 203, 161, 33, 18, 100, 189, 157, 58, 7,
+					183, 146, 75, 57, 220, 84, 106, 203, 33, 142, 10, 130, 99, 90, 38, 85, 166,
+					211, 97, 111, 105, 21, 241, 123, 211, 193, 6, 254, 125, 169, 108, 252, 85, 49,
+					31, 54, 53, 79, 196, 5, 122, 206, 127, 226, 224, 70, 0,
+				],
+			},
+			Cell {
+				position: Position { row: 1, col: 3 },
+				content: [
+					132, 180, 92, 81, 128, 83, 245, 59, 206, 224, 200, 137, 236, 113, 109, 216,
+					161, 248, 236, 252, 252, 22, 140, 107, 203, 161, 33, 18, 100, 189, 157, 58, 7,
+					183, 146, 75, 57, 220, 84, 106, 203, 33, 142, 10, 130, 99, 90, 38, 85, 166,
+					211, 97, 111, 105, 21, 241, 123, 211, 193, 6, 254, 125, 169, 108, 252, 85, 49,
+					31, 54, 53, 79, 196, 5, 122, 206, 127, 226, 224, 70, 0,
+				],
+			},
+		]
+		.to_vec();
+		mock_client.expect_get_kate_proof().returning(move |_, _| {
+			let kate_proof = kate_proof.clone();
+			Box::pin(async move { Ok(kate_proof) })
+		});
 		mock_client
 			.expect_store_block_header_in_db()
 			.returning(|_, _| Ok(()));
+		mock_client
+			.expect_insert_rows_into_dht()
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_insert_cells_into_dht()
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
@@ -434,12 +454,11 @@ mod tests {
 		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
-			&mock_network_client,
 			&Arc::new(mock_metrics),
 			&cfg,
 			&header,
 			recv,
-			state,
+			partition,
 		)
 		.await
 		.unwrap();

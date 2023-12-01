@@ -359,15 +359,8 @@ pub struct Delay(pub Option<Duration>);
 
 /// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
-	pub full_nodes_ws: Vec<String>,
 	pub confidence: f64,
-	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
-	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Delay,
-	pub block_matrix_partition: Option<Partition>,
-	pub max_cells_per_rpc: usize,
-	pub ttl: u64,
 }
 
 impl Delay {
@@ -385,6 +378,32 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			.map(|v| Duration::from_secs(v.into()));
 
 		LightClientConfig {
+			confidence: val.confidence,
+			block_processing_delay: Delay(block_processing_delay),
+		}
+	}
+}
+
+/// Fat client configuration (see [RuntimeConfig] for details)
+pub struct FatClientConfig {
+	pub full_nodes_ws: Vec<String>,
+	pub confidence: f64,
+	pub disable_rpc: bool,
+	pub dht_parallelization_limit: usize,
+	pub query_proof_rpc_parallel_tasks: usize,
+	pub block_processing_delay: Delay,
+	pub block_matrix_partition: Option<Partition>,
+	pub max_cells_per_rpc: usize,
+	pub ttl: u64,
+}
+
+impl From<&RuntimeConfig> for FatClientConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		let block_processing_delay = val
+			.block_processing_delay
+			.map(|v| Duration::from_secs(v.into()));
+
+		FatClientConfig {
 			full_nodes_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
