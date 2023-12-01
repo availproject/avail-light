@@ -483,33 +483,32 @@ impl EventLoop {
 
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occured
-							match &error {
-								// If we're getting a WrongPeerId error, remove the peer from the routing table and replace it with obtained one
-								// This action will trigger a routing table update if successful
-								libp2p::swarm::DialError::WrongPeerId { obtained, endpoint } => {
-									if let Some(peer) =
-										self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
-									{
-										let removed_peer_id = peer.node.key.preimage();
-										debug!("Removed peer: {removed_peer_id} from the routing table");
+							if let libp2p::swarm::DialError::WrongPeerId { obtained, endpoint } =
+								&error
+							{
+								if let Some(peer) =
+									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
+								{
+									let removed_peer_id = peer.node.key.preimage();
+									debug!(
+										"Removed peer: {removed_peer_id} from the routing table"
+									);
 
-										match self.swarm.behaviour_mut().kademlia.add_address(
-											obtained,
-											endpoint.get_remote_address().clone(),
-										) {
-											kad::RoutingUpdate::Success => {
-												debug!("RoutingUpdate::Success for {obtained}");
-											},
-											kad::RoutingUpdate::Pending => {
-												debug!("RoutingUpdate::Pending for {obtained}");
-											},
-											kad::RoutingUpdate::Failed => {
-												debug!("RoutingUpdate::Failed for {obtained}");
-											},
-										}
+									match self.swarm.behaviour_mut().kademlia.add_address(
+										obtained,
+										endpoint.get_remote_address().clone(),
+									) {
+										kad::RoutingUpdate::Success => {
+											debug!("RoutingUpdate::Success for {obtained}");
+										},
+										kad::RoutingUpdate::Pending => {
+											debug!("RoutingUpdate::Pending for {obtained}");
+										},
+										kad::RoutingUpdate::Failed => {
+											debug!("RoutingUpdate::Failed for {obtained}");
+										},
 									}
-								},
-								_ => {},
+								}
 							}
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 								_ = ch.send(Err(error.into()));
