@@ -494,7 +494,7 @@ impl EventLoop {
 										debug!("Removed peer: {removed_peer_id} from the routing table");
 
 										match self.swarm.behaviour_mut().kademlia.add_address(
-											&obtained,
+											obtained,
 											endpoint.get_remote_address().clone(),
 										) {
 											kad::RoutingUpdate::Success => {
