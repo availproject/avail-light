@@ -256,7 +256,7 @@ HTTP/1.1 404 Not found
 
 ## Errors
 
-In case of an error, endpoints will return a response with `500 Internal Server Error` status code, and descriptive error message:
+In case of an error, endpoints will return a response with `500 Internal Server Error` status code, and a descriptive error message:
 
 ```yaml
 HTTP/1.1 500 Internal Server Error
