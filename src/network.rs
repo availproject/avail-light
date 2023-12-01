@@ -179,14 +179,13 @@ impl Client for DHTWithRPCFallbackClient {
 			)
 			.await?;
 
-		self.p2p_client
+		if let Err(error) = self
+			.p2p_client
 			.insert_cells_into_dht(block_number, rpc_fetched.clone())
 			.await
-			.map_err(|e| {
-				warn!("Error inserting cells into DHT: {e}");
-				e
-			})
-			.ok();
+		{
+			warn!("Error inserting cells into DHT: {error}");
+		}
 
 		let stats = FetchStats::new(
 			positions.len(),
