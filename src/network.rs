@@ -10,7 +10,7 @@ use mockall::automock;
 use sp_core::H256;
 use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
-use tracing::{info, warn};
+use tracing::{debug, info};
 
 use crate::proof;
 
@@ -184,7 +184,7 @@ impl Client for DHTWithRPCFallbackClient {
 			.insert_cells_into_dht(block_number, rpc_fetched.clone())
 			.await
 		{
-			warn!("Error inserting cells into DHT: {error}");
+			debug!("Error inserting cells into DHT: {error}");
 		}
 
 		let stats = FetchStats::new(
