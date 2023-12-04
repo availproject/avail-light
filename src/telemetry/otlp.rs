@@ -61,7 +61,10 @@ impl Metrics {
 			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
 			#[cfg(feature = "crawl")]
-			KeyValue::new("crawl_block_delay", self.crawl_block_delay.to_string()),
+			KeyValue::new(
+				"crawl_block_delay",
+				self.attributes.crawl_block_delay.to_string(),
+			),
 		]
 	}
 
