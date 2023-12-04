@@ -2,6 +2,7 @@
 
 use avail_core::AppId;
 use avail_light::network;
+use avail_light::telemetry::otlp::MetricAttributes;
 use avail_light::types::IdentityConfig;
 use avail_light::{api, data, network::rpc, telemetry};
 use avail_light::{
@@ -23,6 +24,7 @@ use std::{
 	path::Path,
 	sync::{Arc, Mutex},
 };
+use tokio::sync::RwLock;
 use tokio::sync::{
 	broadcast,
 	mpsc::{channel, Sender},
@@ -121,17 +123,42 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 
 	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
+	let metric_attribues = MetricAttributes {
+		role: client_role.into(),
+		peer_id,
+		ip: RwLock::new("".to_string()),
+		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update,
+		origin: cfg.origin.clone(),
+		avail_address: identity_cfg.avail_address.clone(),
+		operating_mode: cfg.operation_mode.to_string(),
+		replication_factor: cfg.replication_factor as i64,
+		query_timeout: cfg.query_timeout as i64,
+		block_processing_delay: cfg
+			.block_processing_delay
+			.map(|val| val as i64)
+			.unwrap_or(0),
+		confidence_treshold: cfg.confidence as i64,
+		partition_size: cfg
+			.block_matrix_partition
+			.map(|_| {
+				format!(
+					"{}/{}",
+					cfg.block_matrix_partition
+						.expect("partition doesn't exist")
+						.number,
+					cfg.block_matrix_partition
+						.expect("partition doesn't exist")
+						.fraction
+				)
+			})
+			.unwrap_or("n/a".to_string()),
+		#[cfg(feature = "crawl")]
+		crawl_block_delay: cfg.crawl.crawl_block_delay,
+	};
+
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(
-			cfg.ot_collector_endpoint.clone(),
-			peer_id,
-			client_role.into(),
-			cfg.origin.clone(),
-			identity_cfg.avail_address.clone(),
-			#[cfg(feature = "crawl")]
-			cfg.crawl.crawl_block_delay,
-		)
-		.wrap_err("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), metric_attribues)
+			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
 	// raise new P2P Network Client and Event Loop

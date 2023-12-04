@@ -6,37 +6,65 @@ use opentelemetry_api::{
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::RwLock;
 
-const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 8 } else { 7 };
+use super::MetricCounter;
+
+const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 14 } else { 13 };
 
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	session_block_counter: Counter<u64>,
-	peer_id: String,
-	multiaddress: RwLock<String>,
-	ip: RwLock<String>,
-	role: String,
-	origin: String,
-	avail_address: String,
+	counters: HashMap<String, Counter<u64>>,
+	attributes: MetricAttributes,
+}
+
+#[derive(Debug)]
+pub struct MetricAttributes {
+	pub role: String,
+	pub peer_id: String,
+	pub ip: RwLock<String>,
+	pub multiaddress: RwLock<String>,
+	pub origin: String,
+	pub avail_address: String,
+	pub operating_mode: String,
+	pub replication_factor: i64,
+	pub query_timeout: i64,
+	pub block_processing_delay: i64,
+	pub confidence_treshold: i64,
+	pub partition_size: String,
 	#[cfg(feature = "crawl")]
-	crawl_block_delay: u64,
+	pub crawl_block_delay: u64,
 }
 
 impl Metrics {
 	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		[
 			KeyValue::new("version", clap::crate_version!()),
-			KeyValue::new("role", self.role.clone()),
-			KeyValue::new("origin", self.origin.clone()),
-			KeyValue::new("peerID", self.peer_id.clone()),
-			KeyValue::new("multiaddress", self.multiaddress.read().await.clone()),
-			KeyValue::new("ip", self.ip.read().await.clone()),
-			KeyValue::new("avail_address", self.avail_address.clone()),
+			KeyValue::new("role", self.attributes.role.clone()),
+			KeyValue::new("origin", self.attributes.origin.clone()),
+			KeyValue::new("peerID", self.attributes.peer_id.clone()),
+			KeyValue::new(
+				"multiaddress",
+				self.attributes.multiaddress.read().await.clone(),
+			),
+			KeyValue::new("ip", self.attributes.ip.read().await.clone()),
+			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
+			KeyValue::new("replication_factor", self.attributes.replication_factor),
+			KeyValue::new("query_timeout", self.attributes.query_timeout),
+			KeyValue::new(
+				"block_processing_delay",
+				self.attributes.block_processing_delay,
+			),
+			KeyValue::new("confidence_treshold", self.attributes.confidence_treshold),
+			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
+			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
 			#[cfg(feature = "crawl")]
-			KeyValue::new("crawl_block_delay", self.crawl_block_delay.to_string()),
+			KeyValue::new(
+				"crawl_block_delay",
+				self.attributes.crawl_block_delay.to_string(),
+			),
 		]
 	}
 
@@ -61,12 +89,12 @@ impl Metrics {
 	}
 
 	async fn set_multiaddress(&self, multiaddr: String) {
-		let mut m = self.multiaddress.write().await;
+		let mut m = self.attributes.multiaddress.write().await;
 		*m = multiaddr;
 	}
 
 	async fn set_ip(&self, ip: String) {
-		let mut i = self.ip.write().await;
+		let mut i = self.attributes.ip.write().await;
 		*i = ip;
 	}
 }
@@ -74,11 +102,7 @@ impl Metrics {
 #[async_trait]
 impl super::Metrics for Metrics {
 	async fn count(&self, counter: super::MetricCounter) {
-		match counter {
-			super::MetricCounter::SessionBlock => {
-				self.session_block_counter.add(1, &self.attributes().await);
-			},
-		}
+		__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
 	}
 
 	async fn record(&self, value: super::MetricValue) -> Result<()> {
@@ -144,14 +168,7 @@ impl super::Metrics for Metrics {
 	}
 }
 
-pub fn initialize(
-	endpoint: String,
-	peer_id: String,
-	role: String,
-	origin: String,
-	avail_address: String,
-	#[cfg(feature = "crawl")] crawl_block_delay: u64,
-) -> Result<Metrics> {
+pub fn initialize(endpoint: String, attributes: MetricAttributes) -> Result<Metrics> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),
@@ -171,18 +188,10 @@ pub fn initialize(
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	// TODO - move to a separate func once there's more than 1 counter
-	let session_block_counter = meter.u64_counter("session_block_counter").init();
+	let initialized_counters = MetricCounter::init_counters(meter.clone());
 	Ok(Metrics {
 		meter,
-		session_block_counter,
-		peer_id,
-		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update
-		ip: RwLock::new("".to_string()),
-		role,
-		origin,
-		avail_address,
-		#[cfg(feature = "crawl")]
-		crawl_block_delay,
+		attributes,
+		counters: initialized_counters,
 	})
 }

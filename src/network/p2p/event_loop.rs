@@ -21,7 +21,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use crate::telemetry::{MetricValue, Metrics};
+use crate::telemetry::{MetricCounter, MetricValue, Metrics};
 
 use super::{
 	Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries, QueryChannel, SendableCommand,
@@ -176,9 +176,12 @@ impl EventLoop {
 					kad::Event::PendingRoutablePeer { peer, address } => {
 						trace!("Pending routablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
-					kad::Event::InboundRequest { request } => {
-						trace!("Inbound request: {:?}", request);
-						if let InboundRequest::PutRecord { source, record, .. } = request {
+					kad::Event::InboundRequest { request } => match request {
+						InboundRequest::GetRecord { .. } => {
+							metrics.count(MetricCounter::IncomingGetRecord).await;
+						},
+						InboundRequest::PutRecord { source, record, .. } => {
+							metrics.count(MetricCounter::IncomingPutRecord).await;
 							match record {
 								Some(rec) => {
 									let key = &rec.key;
@@ -191,7 +194,8 @@ impl EventLoop {
 									return;
 								},
 							}
-						}
+						},
+						_ => {},
 					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
@@ -451,35 +455,21 @@ impl EventLoop {
 							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 						}
 					},
-					SwarmEvent::IncomingConnection {
-						local_addr,
-						send_back_addr,
-						..
-					} => {
-						trace!("Incoming connection from address: {send_back_addr:?}. Local address: {local_addr:?}");
+					SwarmEvent::IncomingConnection { .. } => {
+						metrics.count(MetricCounter::IncomingConnection).await;
 					},
-					SwarmEvent::IncomingConnectionError {
-						local_addr,
-						send_back_addr,
-						error,
-						..
-					} => {
-						trace!("Incoming connection error from address: {send_back_addr:?}. Local address: {local_addr:?}. Error: {error:?}.")
+					SwarmEvent::IncomingConnectionError { .. } => {
+						metrics.count(MetricCounter::IncomingConnectionError).await;
 					},
-					SwarmEvent::ConnectionEstablished {
-						peer_id,
-						endpoint,
-						established_in,
-						..
-					} => {
-						trace!("Connection established to: {peer_id:?} via: {endpoint:?} in {established_in:?}. ");
+					SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+						metrics.count(MetricCounter::ConnectionEstablished).await;
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 							_ = ch.send(Ok(()));
 						}
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-						trace!("Outgoing connection error: {error:?}");
+						metrics.count(MetricCounter::OutgoingConnectionError).await;
 
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occured

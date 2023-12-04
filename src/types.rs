@@ -20,6 +20,7 @@ use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::crypto::Ss58Codec;
 use sp_core::{blake2_256, bytes, ed25519};
+use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::num::NonZeroUsize;
 use std::ops::Range;
@@ -116,6 +117,15 @@ impl KademliaMode {
 		match self {
 			KademliaMode::Client => KadMode::Client,
 			KademliaMode::Server => KadMode::Server,
+		}
+	}
+}
+
+impl Display for KademliaMode {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		match self {
+			KademliaMode::Client => write!(f, "client"),
+			KademliaMode::Server => write!(f, "server"),
 		}
 	}
 }
