@@ -51,19 +51,13 @@ impl Metrics {
 			),
 			KeyValue::new("ip", self.attributes.ip.read().await.clone()),
 			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
-			KeyValue::new(
-				"replication_factor",
-				self.attributes.replication_factor.clone(),
-			),
-			KeyValue::new("query_timeout", self.attributes.query_timeout.clone()),
+			KeyValue::new("replication_factor", self.attributes.replication_factor),
+			KeyValue::new("query_timeout", self.attributes.query_timeout),
 			KeyValue::new(
 				"block_processing_delay",
-				self.attributes.block_processing_delay.clone(),
+				self.attributes.block_processing_delay,
 			),
-			KeyValue::new(
-				"confidence_treshold",
-				self.attributes.confidence_treshold.clone(),
-			),
+			KeyValue::new("confidence_treshold", self.attributes.confidence_treshold),
 			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
 			#[cfg(feature = "crawl")]

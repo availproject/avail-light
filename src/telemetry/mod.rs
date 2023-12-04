@@ -37,7 +37,7 @@ impl Display for MetricCounter {
 impl MetricCounter {
 	fn init_counters(meter: Meter) -> HashMap<String, Counter<u64>> {
 		let mut counter_map: HashMap<String, Counter<u64>> = Default::default();
-		for counter in vec![
+		for counter in [
 			MetricCounter::SessionBlock,
 			MetricCounter::OutgoingConnectionError,
 			MetricCounter::IncomingConnectionError,
