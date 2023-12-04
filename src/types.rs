@@ -1,6 +1,6 @@
 //! Shared light client structs and enums.
 
-use crate::network::rpc::Node as RpcNode;
+use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -26,6 +26,8 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
+use tokio::sync::broadcast;
+use tokio::sync::mpsc::Sender;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -81,6 +83,12 @@ pub struct BlockVerified {
 	pub lookup: DataLookup,
 	pub commitments: Vec<[u8; 48]>,
 	pub confidence: Option<f64>,
+}
+
+pub struct ClientChannels {
+	pub block_sender: broadcast::Sender<BlockVerified>,
+	pub rpc_event_receiver: broadcast::Receiver<Event>,
+	pub error_sender: Sender<Report>,
 }
 
 impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
@@ -522,6 +530,7 @@ pub struct SyncClientConfig {
 	pub disable_rpc: bool,
 	pub dht_parallelization_limit: usize,
 	pub ttl: u64,
+	pub is_last_step: bool,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -531,6 +540,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
 			ttl: val.kad_record_ttl,
+			is_last_step: val.app_id.is_none(),
 		}
 	}
 }

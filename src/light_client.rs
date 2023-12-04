@@ -16,12 +16,11 @@
 //!
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
-//! In case partition is configured, block partition is fetched and inserted into DHT.
 
 use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
-use color_eyre::{eyre::WrapErr, Report, Result};
+use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
 use rocksdb::DB;
@@ -30,27 +29,22 @@ use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use tokio::sync::{broadcast, mpsc::Sender};
 use tracing::{error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
 	network::{
 		self,
-		p2p::Client as P2pClient,
 		rpc::{self, Event},
 	},
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, BlockVerified, LightClientConfig, OptionBlockRange, State},
+	types::{self, ClientChannels, LightClientConfig, OptionBlockRange, State},
 	utils::{calculate_confidence, extract_kate},
 };
 
 #[async_trait]
 #[automock]
 pub trait LightClient {
-	async fn shrink_kademlia_map(&self) -> Result<()>;
-	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)>;
-	async fn count_dht_entries(&self) -> Result<usize>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
@@ -58,24 +52,14 @@ pub trait LightClient {
 #[derive(Clone)]
 struct LightClientImpl {
 	db: Arc<DB>,
-	p2p_client: P2pClient,
 }
 
-pub fn new(db: Arc<DB>, p2p_client: P2pClient) -> impl LightClient {
-	LightClientImpl { db, p2p_client }
+pub fn new(db: Arc<DB>) -> impl LightClient {
+	LightClientImpl { db }
 }
 
 #[async_trait]
 impl LightClient for LightClientImpl {
-	async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.p2p_client.shrink_kademlia_map().await
-	}
-	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
-		self.p2p_client.get_multiaddress_and_ip().await
-	}
-	async fn count_dht_entries(&self) -> Result<usize> {
-		self.p2p_client.count_dht_entries().await
-	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)
 			.wrap_err("Failed to store confidence in DB")
@@ -205,32 +189,7 @@ pub async fn process_block(
 		.store_block_header_in_db(header, block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
-	light_client
-		.shrink_kademlia_map()
-		.await
-		.wrap_err("Unable to perform Kademlia map shrink")?;
-
-	// dump what we have on the current p2p network
-	if let Ok((multiaddr, ip)) = light_client.get_multiaddress_and_ip().await {
-		// set Multiaddress
-		metrics.set_multiaddress(multiaddr).await;
-		metrics.set_ip(ip).await;
-	}
-	if let Ok(counted_peers) = light_client.count_dht_entries().await {
-		metrics
-			.record(MetricValue::KadRoutingPeerNum(counted_peers))
-			.await?
-	}
-
-	metrics.record(MetricValue::HealthCheck()).await?;
-
 	Ok(Some(confidence))
-}
-
-pub struct Channels {
-	pub block_sender: Option<broadcast::Sender<BlockVerified>>,
-	pub rpc_event_receiver: broadcast::Receiver<Event>,
-	pub error_sender: Sender<Report>,
 }
 
 /// Runs light client.
@@ -239,16 +198,16 @@ pub struct Channels {
 ///
 /// * `light_client` - Light client implementation
 /// * `cfg` - Light client configuration
-/// * `block_tx` - Channel used to send header of verified block
-/// * `registry` - Prometheus metrics registry
+/// * `metrics` - Metrics registry
 /// * `state` - Processed blocks state
+/// * `channels` - Communitaction channels
 pub async fn run(
 	light_client: impl LightClient,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,
 	state: Arc<Mutex<State>>,
-	mut channels: Channels,
+	mut channels: ClientChannels,
 ) {
 	info!("Starting light client...");
 
@@ -305,11 +264,9 @@ pub async fn run(
 
 		// notify dht-based application client
 		// that newly mined block has been received
-		if let Some(ref channel) = channels.block_sender {
-			if let Err(error) = channel.send(client_msg) {
-				error!("Cannot send block verified message: {error}");
-				continue;
-			}
+		if let Err(error) = channels.block_sender.send(client_msg) {
+			error!("Cannot send block verified message: {error}");
+			continue;
 		}
 	}
 }
@@ -417,15 +374,6 @@ mod tests {
 		mock_client
 			.expect_store_block_header_in_db()
 			.returning(|_, _| Ok(()));
-		mock_client
-			.expect_shrink_kademlia_map()
-			.returning(|| Box::pin(async move { Ok(()) }));
-		mock_client.expect_get_multiaddress_and_ip().returning(|| {
-			Box::pin(async move { Ok(("multiaddress".to_string(), "ip".to_string())) })
-		});
-		mock_client
-			.expect_count_dht_entries()
-			.returning(|| Box::pin(async move { Ok(1) }));
 
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());

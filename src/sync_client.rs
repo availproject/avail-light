@@ -107,7 +107,7 @@ async fn process_block(
 	header: DaHeader,
 	header_hash: H256,
 	cfg: &SyncClientConfig,
-	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
+	block_verified_sender: broadcast::Sender<BlockVerified>,
 ) -> Result<()> {
 	let block_number = header.number;
 	let begin = Instant::now();
@@ -150,10 +150,8 @@ async fn process_block(
 	let client_msg =
 		BlockVerified::try_from((header, confidence)).wrap_err("converting to message failed")?;
 
-	if let Some(ref channel) = block_verified_sender {
-		if let Err(error) = channel.send(client_msg) {
-			error!("Cannot send block verified message: {error}");
-		}
+	if let Err(error) = block_verified_sender.send(client_msg) {
+		error!("Cannot send block verified message: {error}");
 	}
 
 	Ok(())
@@ -172,7 +170,7 @@ pub async fn run(
 	network_client: impl network::Client,
 	cfg: SyncClientConfig,
 	sync_range: Range<u32>,
-	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
+	block_verified_sender: broadcast::Sender<BlockVerified>,
 	state: Arc<Mutex<State>>,
 ) {
 	if sync_range.is_empty() {
@@ -233,7 +231,7 @@ pub async fn run(
 		}
 	}
 
-	if block_verified_sender.is_none() {
+	if cfg.is_last_step {
 		state.lock().unwrap().synced.replace(true);
 	}
 }
@@ -377,7 +375,7 @@ mod tests {
 			header,
 			header_hash,
 			&cfg,
-			Some(block_tx),
+			block_tx,
 		)
 		.await
 		.unwrap();
@@ -463,7 +461,7 @@ mod tests {
 			header,
 			header_hash,
 			&cfg,
-			Some(block_tx),
+			block_tx,
 		)
 		.await
 		.unwrap();

@@ -6,6 +6,7 @@ pub mod crawl_client;
 pub mod data;
 pub mod fat_client;
 pub mod light_client;
+pub mod maintenance;
 pub mod network;
 pub mod proof;
 pub mod sync_client;
