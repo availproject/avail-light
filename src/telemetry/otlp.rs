@@ -6,15 +6,17 @@ use opentelemetry_api::{
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::RwLock;
+
+use super::MetricCounter;
 
 const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 14 } else { 13 };
 
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	session_block_counter: Counter<u64>,
+	counters: HashMap<String, Counter<u64>>,
 	attributes: MetricAttributes,
 }
 
@@ -103,11 +105,7 @@ impl Metrics {
 #[async_trait]
 impl super::Metrics for Metrics {
 	async fn count(&self, counter: super::MetricCounter) {
-		match counter {
-			super::MetricCounter::SessionBlock => {
-				self.session_block_counter.add(1, &self.attributes().await);
-			},
-		}
+		__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
 	}
 
 	async fn record(&self, value: super::MetricValue) -> Result<()> {
@@ -193,11 +191,10 @@ pub fn initialize(endpoint: String, attributes: MetricAttributes) -> Result<Metr
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	// TODO - move to a separate func once there's more than 1 counter
-	let session_block_counter = meter.u64_counter("session_block_counter").init();
+	let initialized_counters = MetricCounter::init_counters(meter.clone());
 	Ok(Metrics {
 		meter,
-		session_block_counter,
 		attributes,
+		counters: initialized_counters,
 	})
 }
