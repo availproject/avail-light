@@ -1,6 +1,6 @@
 //! Shared light client structs and enums.
 
-use crate::network::rpc::Node as RpcNode;
+use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -27,6 +27,8 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
+use tokio::sync::broadcast;
+use tokio::sync::mpsc::Sender;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -82,6 +84,12 @@ pub struct BlockVerified {
 	pub lookup: DataLookup,
 	pub commitments: Vec<[u8; 48]>,
 	pub confidence: Option<f64>,
+}
+
+pub struct ClientChannels {
+	pub block_sender: broadcast::Sender<BlockVerified>,
+	pub rpc_event_receiver: broadcast::Receiver<Event>,
+	pub error_sender: Sender<Report>,
 }
 
 impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
@@ -369,15 +377,8 @@ pub struct Delay(pub Option<Duration>);
 
 /// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
-	pub full_nodes_ws: Vec<String>,
 	pub confidence: f64,
-	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
-	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Delay,
-	pub block_matrix_partition: Option<Partition>,
-	pub max_cells_per_rpc: usize,
-	pub ttl: u64,
 }
 
 impl Delay {
@@ -395,6 +396,32 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			.map(|v| Duration::from_secs(v.into()));
 
 		LightClientConfig {
+			confidence: val.confidence,
+			block_processing_delay: Delay(block_processing_delay),
+		}
+	}
+}
+
+/// Fat client configuration (see [RuntimeConfig] for details)
+pub struct FatClientConfig {
+	pub full_nodes_ws: Vec<String>,
+	pub confidence: f64,
+	pub disable_rpc: bool,
+	pub dht_parallelization_limit: usize,
+	pub query_proof_rpc_parallel_tasks: usize,
+	pub block_processing_delay: Delay,
+	pub block_matrix_partition: Option<Partition>,
+	pub max_cells_per_rpc: usize,
+	pub ttl: u64,
+}
+
+impl From<&RuntimeConfig> for FatClientConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		let block_processing_delay = val
+			.block_processing_delay
+			.map(|v| Duration::from_secs(v.into()));
+
+		FatClientConfig {
 			full_nodes_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
@@ -513,6 +540,7 @@ pub struct SyncClientConfig {
 	pub disable_rpc: bool,
 	pub dht_parallelization_limit: usize,
 	pub ttl: u64,
+	pub is_last_step: bool,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -522,6 +550,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
 			ttl: val.kad_record_ttl,
+			is_last_step: val.app_id.is_none(),
 		}
 	}
 }
