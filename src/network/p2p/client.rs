@@ -65,6 +65,15 @@ impl DHTRow {
 	}
 }
 
+#[derive(Debug)]
+pub struct BlockStat {
+	pub initial_count: usize,
+	pub remaining_counter: usize,
+	pub success_counter: usize,
+	pub error_counter: usize,
+	pub time_stat: u64,
+}
+
 struct StartListening {
 	addr: Multiaddr,
 	response_sender: Option<oneshot::Sender<Result<()>>>,
@@ -185,9 +194,16 @@ impl Command for PutKadRecord {
 			.active_blocks
 			.entry(self.block_num)
 			// Increase the total cell count we monitor if the block entry already exists
-			.and_modify(|(total_cells, _, _)| *total_cells += self.records.len())
+			.and_modify(|block| block.remaining_counter += self.records.len())
 			// Initiate counting for the new block if the block doesn't exist
-			.or_insert((self.records.len(), 0, 0));
+			// .or_insert((self.records.len(), 0, 0));
+			.or_insert(BlockStat {
+				initial_count: self.records.len(),
+				remaining_counter: self.records.len(),
+				success_counter: 0,
+				error_counter: 0,
+				time_stat: 0,
+			});
 
 		for record in self.records.clone() {
 			let query_id = entries
