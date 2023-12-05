@@ -9,6 +9,7 @@ pub mod light_client;
 pub mod maintenance;
 pub mod network;
 pub mod proof;
+pub mod shutdown;
 pub mod sync_client;
 pub mod sync_finality;
 pub mod telemetry;
