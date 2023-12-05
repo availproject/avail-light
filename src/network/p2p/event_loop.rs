@@ -580,10 +580,10 @@ impl EventLoop {
 				.unwrap_or_default();
 
 			if block.remaining_counter == 0 {
-				let success_rate = block.error_counter as f64 / block.initial_count as f64;
+				let success_rate = block.error_counter as f64 / block.total_count as f64;
 				info!(
 					"Cell upload success rate for block {block_num}: {}/{}. Duration: {}",
-					block.success_counter, block.initial_count, block.time_stat
+					block.success_counter, block.total_count, block.time_stat
 				);
 				_ = metrics
 					.record(MetricValue::DHTPutSuccess(success_rate))

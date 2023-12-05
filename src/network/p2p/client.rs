@@ -67,11 +67,18 @@ impl DHTRow {
 
 #[derive(Debug)]
 pub struct BlockStat {
-	pub initial_count: usize,
+	pub total_count: usize,
 	pub remaining_counter: usize,
 	pub success_counter: usize,
 	pub error_counter: usize,
 	pub time_stat: u64,
+}
+
+impl BlockStat {
+	pub fn increase_block_stat_counters(&mut self, cell_number: usize) {
+		self.total_count += cell_number;
+		self.remaining_counter += cell_number;
+	}
 }
 
 struct StartListening {
@@ -189,16 +196,14 @@ struct PutKadRecord {
 // `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
 impl Command for PutKadRecord {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		// `block_entry` is in format (total_cells, result_cell_counter, time_stat)
 		entries
 			.active_blocks
 			.entry(self.block_num)
 			// Increase the total cell count we monitor if the block entry already exists
-			.and_modify(|block| block.remaining_counter += self.records.len())
+			.and_modify(|block| block.increase_block_stat_counters(self.records.len()))
 			// Initiate counting for the new block if the block doesn't exist
-			// .or_insert((self.records.len(), 0, 0));
 			.or_insert(BlockStat {
-				initial_count: self.records.len(),
+				total_count: self.records.len(),
 				remaining_counter: self.records.len(),
 				success_counter: 0,
 				error_counter: 0,
