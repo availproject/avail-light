@@ -25,6 +25,8 @@ use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 use event_loop::EventLoop;
 
+use self::client::BlockStat;
+
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
@@ -37,7 +39,7 @@ pub struct EventLoopEntries<'a> {
 	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	/// <block_num, (total_cells, result_cell_counter, time_stat)>
-	active_blocks: &'a mut HashMap<u32, (usize, usize, u64)>,
+	active_blocks: &'a mut HashMap<u32, BlockStat>,
 }
 
 impl<'a> EventLoopEntries<'a> {
@@ -45,7 +47,7 @@ impl<'a> EventLoopEntries<'a> {
 		swarm: &'a mut Swarm<Behaviour>,
 		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
 		pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
-		active_blocks: &'a mut HashMap<u32, (usize, usize, u64)>,
+		active_blocks: &'a mut HashMap<u32, BlockStat>,
 	) -> Self {
 		Self {
 			swarm,
