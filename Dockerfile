@@ -24,6 +24,7 @@ RUN cp /app/target/$BUILD_PROFILE/avail-light /app/avail-light
 
 FROM ubuntu as run
 WORKDIR /app
+RUN apt-get update && apt-get install -y ca-certificates
 
 COPY --from=builder /app/config.yaml /app/config.yaml
 COPY --from=builder /app/avail-light /usr/local/bin
