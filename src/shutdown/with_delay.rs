@@ -6,8 +6,8 @@ use std::{
 
 use super::DelayToken;
 
-/// This future defers shutdown completion until its execution finishes,
-/// or until itself is dropped.
+/// This wrapper for a future delays the completion of shutdown until the execution of the wrapped future
+/// completes or until the wrapped future is dropped.
 pub struct WithDelay<T: Clone, F> {
 	pub delay_token: Option<DelayToken<T>>,
 	pub future: F,

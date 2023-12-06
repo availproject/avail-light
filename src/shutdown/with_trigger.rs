@@ -6,6 +6,8 @@ use std::{
 
 use super::TriggerToken;
 
+/// A future wrapper that triggers a shutdown upon completion of the wrapped future,
+/// or when the wrapped future is explicitly dropped.
 pub struct WithTrigger<T: Clone, F> {
 	pub trigger_token: Option<TriggerToken<T>>,
 	pub future: F,

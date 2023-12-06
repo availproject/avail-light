@@ -119,6 +119,7 @@ impl<T: Clone> Controller<T> {
 		Ok(self.delay_token()?.with_future(future))
 	}
 
+	/// Wraps a future to trigger a shutdown when the future completes or when it is dropped.
 	pub fn with_trigger<F: Future>(&self, reason: T, future: F) -> WithTrigger<T, F> {
 		self.trigger_token(reason).with_future(future)
 	}
@@ -130,7 +131,7 @@ impl<T: Clone> Controller<T> {
 	///
 	/// If the shutdown has already completed, this function returns an error.
 	///
-	/// Consider using [`Self::with_delay()`] to delay the shutdown until a future completes.
+	/// Consider using [`Self::with_future()`] to delay the shutdown until a future completes.
 	pub fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
 		let mut inner = self.inner.lock().unwrap();
 		if inner.delay_tokens == 0 {
@@ -145,6 +146,14 @@ impl<T: Clone> Controller<T> {
 		})
 	}
 
+	/// Produces a token that triggers a shutdown upon being dropped.
+	///
+	/// Dropping a [`TriggerToken`] automatically initiates a shutdown process.
+	/// This behaviour applies universally to all tokens of this type.
+	/// For instance, cloning this token five times and dropping one of them will trigger a shutdown.
+	///
+	/// Additionally, [`Self::with_future()`] allows for wrapping a future, which will ensure that a
+	/// shutdown is triggered either upon the future's completion of if it dropped prematurely.
 	fn trigger_token(&self, reason: T) -> TriggerToken<T> {
 		TriggerToken {
 			reason: Arc::new(Mutex::new(Some(reason))),
@@ -260,12 +269,26 @@ impl<T: Clone> Drop for DelayToken<T> {
 }
 
 #[derive(Clone)]
+/// This token initiates a graceful shutdown upon being dropped.
+///
+/// It guarantees thread safety.
+///
+/// Dropping any cloned tokens triggers the shutdown process,
+/// regardless of the existence of other clones.
 pub struct TriggerToken<T: Clone> {
 	reason: Arc<Mutex<Option<T>>>,
 	inner: Arc<Mutex<ControllerInner<T>>>,
 }
 
 impl<T: Clone> TriggerToken<T> {
+	/// Safely wraps a future, ensuring a controlled shutdown upon completion
+	/// or when dropped.
+	///
+	/// By consuming the [`TriggerToken`] within this wrapper, it prevents accidental
+	/// token dropping that could prematurely trigger a shutdown while a future is being
+	/// processed.
+	///
+	/// To retain the token for further use, consider making a clone before using wrap function.
 	pub fn with_future<F: Future>(self, future: F) -> WithTrigger<T, F> {
 		WithTrigger {
 			trigger_token: Some(self),
@@ -273,6 +296,7 @@ impl<T: Clone> TriggerToken<T> {
 		}
 	}
 
+	/// Discard the token without invoking its drop behavior.
 	pub fn forget(self) {
 		std::mem::forget(self)
 	}
