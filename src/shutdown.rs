@@ -6,12 +6,16 @@ use std::{
 	task::Waker,
 };
 
-use self::{completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay};
+use self::{
+	completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay,
+	with_trigger::WithTrigger,
+};
 
 mod completed;
 mod signal;
 mod with_cancel;
 mod with_delay;
+mod with_trigger;
 
 #[derive(Clone)]
 /// Shutdown controller for graceful shutdowns in async code.
@@ -115,6 +119,10 @@ impl<T: Clone> Controller<T> {
 		Ok(self.delay_token()?.with_future(future))
 	}
 
+	pub fn with_trigger<F: Future>(&self, reason: T, future: F) -> WithTrigger<T, F> {
+		self.trigger_token(reason).with_future(future)
+	}
+
 	/// Produces a token that delays the shutdown as long as it exists.
 	///
 	/// The [`Controller`] instance manages all created tokens, ensuring thread-safe operations.
@@ -123,7 +131,7 @@ impl<T: Clone> Controller<T> {
 	/// If the shutdown has already completed, this function returns an error.
 	///
 	/// Consider using [`Self::with_delay()`] to delay the shutdown until a future completes.
-	fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
+	pub fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
 		let mut inner = self.inner.lock().unwrap();
 		if inner.delay_tokens == 0 {
 			if let Some(reason) = &inner.reason {
@@ -135,6 +143,13 @@ impl<T: Clone> Controller<T> {
 		Ok(DelayToken {
 			inner: self.inner.clone(),
 		})
+	}
+
+	fn trigger_token(&self, reason: T) -> TriggerToken<T> {
+		TriggerToken {
+			reason: Arc::new(Mutex::new(Some(reason))),
+			inner: self.inner.clone(),
+		}
 	}
 }
 
@@ -241,6 +256,34 @@ impl<T: Clone> Clone for DelayToken<T> {
 impl<T: Clone> Drop for DelayToken<T> {
 	fn drop(&mut self) {
 		self.inner.lock().unwrap().decrement_delay_tokens();
+	}
+}
+
+#[derive(Clone)]
+pub struct TriggerToken<T: Clone> {
+	reason: Arc<Mutex<Option<T>>>,
+	inner: Arc<Mutex<ControllerInner<T>>>,
+}
+
+impl<T: Clone> TriggerToken<T> {
+	pub fn with_future<F: Future>(self, future: F) -> WithTrigger<T, F> {
+		WithTrigger {
+			trigger_token: Some(self),
+			future,
+		}
+	}
+
+	pub fn forget(self) {
+		std::mem::forget(self)
+	}
+}
+
+impl<T: Clone> Drop for TriggerToken<T> {
+	fn drop(&mut self) {
+		let mut inner = self.inner.lock().unwrap();
+		if let Some(reason) = self.reason.lock().unwrap().take() {
+			_ = inner.shutdown(reason);
+		}
 	}
 }
 
@@ -540,5 +583,19 @@ mod tests {
 				panic!("Expected Ok(Ok(val)) result");
 			}
 		})
+	}
+
+	#[test]
+	fn shutdown_with_token() {
+		// complete a shutdown by dropping a token
+		test_runtime(async {
+			let shutdown = Controller::new();
+
+			let token = shutdown.trigger_token("stop! hammer time");
+			drop(token);
+
+			assert!(shutdown.triggered_shutdown().await == "stop! hammer time");
+			assert!(shutdown.completed_shutdown().await == "stop! hammer time");
+		});
 	}
 }
