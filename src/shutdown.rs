@@ -598,4 +598,17 @@ mod tests {
 			assert!(shutdown.completed_shutdown().await == "stop! hammer time");
 		});
 	}
+
+	#[test]
+	fn shutdown_with_trigger_on_ready_future() {
+		// trigger the shutdown with a instantly ready future
+		test_runtime(async {
+			let shutdown = Controller::new();
+
+			tokio::spawn(shutdown.with_trigger("you shall not pass", future::ready(())));
+
+			assert!(shutdown.triggered_shutdown().await == "you shall not pass");
+			assert!(shutdown.completed_shutdown().await == "you shall not pass");
+		});
+	}
 }
