@@ -400,7 +400,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	Ok(())
 }
 
-fn install_panic_hooks() -> Result<()> {
+fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 	// initialize color-eyre hooks
 	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
 		.panic_section(format!(
@@ -414,6 +414,21 @@ fn install_panic_hooks() -> Result<()> {
 	eyre_hook.install()?;
 
 	std::panic::set_hook(Box::new(move |panic_info| {
+		let shutdown = shutdown.clone();
+		task::block_on(async move {
+			let shutdown_msg =
+				match shutdown.trigger_shutdown("panic occurred, shuting down".to_string()) {
+					Ok(_) => {
+						"Panic shutdown triggered with success, awaiting completion...".to_string()
+					},
+					Err(err) => format!("Shutdown has already started, reason: {}", err.reason),
+				};
+
+			eprintln!("{shutdown_msg}");
+			shutdown.completed_shutdown().await;
+			println!("Shutdown completed.");
+		});
+
 		let msg = format!("{}", panic_hook.panic_report(panic_info));
 		#[cfg(not(debug_assertions))]
 		{
@@ -451,7 +466,8 @@ fn install_panic_hooks() -> Result<()> {
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
-	install_panic_hooks()?;
+	let shutdown = Controller::new();
+	install_panic_hooks(shutdown.clone())?;
 
 	let (error_sender, mut error_receiver) = channel::<Report>(1);
 
