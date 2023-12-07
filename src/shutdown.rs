@@ -154,7 +154,7 @@ impl<T: Clone> Controller<T> {
 	///
 	/// Additionally, [`Self::with_future()`] allows for wrapping a future, which will ensure that a
 	/// shutdown is triggered either upon the future's completion of if it dropped prematurely.
-	fn trigger_token(&self, reason: T) -> TriggerToken<T> {
+	pub fn trigger_token(&self, reason: T) -> TriggerToken<T> {
 		TriggerToken {
 			reason: Arc::new(Mutex::new(Some(reason))),
 			inner: self.inner.clone(),

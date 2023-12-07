@@ -8,6 +8,7 @@ use super::DelayToken;
 
 /// This wrapper for a future delays the completion of shutdown until the execution of the wrapped future
 /// completes or until the wrapped future is dropped.
+#[must_use = "futures stay idle unless you await them"]
 pub struct WithDelay<T: Clone, F> {
 	pub delay_token: Option<DelayToken<T>>,
 	pub future: F,

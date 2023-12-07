@@ -8,6 +8,7 @@ use super::TriggerToken;
 
 /// A future wrapper that triggers a shutdown upon completion of the wrapped future,
 /// or when the wrapped future is explicitly dropped.
+#[must_use = "futures stay idle unless you await them"]
 pub struct WithTrigger<T: Clone, F> {
 	pub trigger_token: Option<TriggerToken<T>>,
 	pub future: F,

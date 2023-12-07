@@ -13,6 +13,7 @@ use super::signal::Signal;
 ///
 /// However, if the shutdown occurs before the wrapped future completes,
 /// the original future is terminated, and the shutdown reason is returned as `Err(reason)`
+#[must_use = "futures stay idle unless you await them"]
 pub struct WithCancel<T: Clone, F> {
 	pub signal: Signal<T>,
 	pub future: Result<F, T>,
