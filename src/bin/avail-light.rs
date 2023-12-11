@@ -2,14 +2,16 @@
 
 use async_std::task;
 use avail_core::AppId;
-use avail_light::network;
-use avail_light::shutdown::Controller;
-use avail_light::telemetry::otlp::MetricAttributes;
-use avail_light::types::IdentityConfig;
-use avail_light::{api, data, network::rpc, telemetry};
 use avail_light::{
+	api,
 	consts::EXPECTED_NETWORK_VERSION,
+	data,
 	network::p2p,
+	network::{self, rpc},
+	shutdown::Controller,
+	telemetry,
+	telemetry::otlp::MetricAttributes,
+	types::IdentityConfig,
 	types::{CliOpts, RuntimeConfig, State},
 };
 use clap::Parser;
@@ -20,23 +22,19 @@ use color_eyre::{
 use futures::TryFutureExt;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
-use std::time::Duration;
 use std::{
 	fs,
 	net::Ipv4Addr,
 	path::Path,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::RwLock;
 use tokio::sync::{
 	broadcast,
 	mpsc::{channel, Sender},
+	RwLock,
 };
-use tokio::time::sleep;
-use tracing::Subscriber;
-use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::{fmt::format, FmtSubscriber};
+use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level, Subscriber};
+use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
 #[cfg(feature = "network-analysis")]
 use avail_light::network::p2p::analyzer;
