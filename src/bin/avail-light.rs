@@ -1,7 +1,9 @@
 #![doc = include_str!("../../README.md")]
 
+use async_std::task;
 use avail_core::AppId;
 use avail_light::network;
+use avail_light::shutdown::Controller;
 use avail_light::telemetry::otlp::MetricAttributes;
 use avail_light::types::IdentityConfig;
 use avail_light::{api, data, network::rpc, telemetry};
@@ -18,6 +20,7 @@ use color_eyre::{
 use futures::TryFutureExt;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
+use std::time::Duration;
 use std::{
 	fs,
 	net::Ipv4Addr,
@@ -29,6 +32,7 @@ use tokio::sync::{
 	broadcast,
 	mpsc::{channel, Sender},
 };
+use tokio::time::sleep;
 use tracing::Subscriber;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::EnvFilter;
@@ -519,15 +523,23 @@ pub async fn main() -> Result<()> {
 
 	if let Err(error) = run(error_sender).await {
 		error!("{error:#}");
-		return Err(error);
+		return Err(error.wrap_err("Starting Light Client failed"));
 	};
 
-	let error = match error_receiver.recv().await {
-		Some(error) => error,
-		None => eyre!("Failed to receive error message"),
-	};
+	tokio::spawn({
+		let shutdown = shutdown.clone();
+		async move {
+			let report = match error_receiver.recv().await {
+				Some(report) => report,
+				None => eyre!("Failed to receive error messages"),
+			};
+			_ = shutdown.trigger_shutdown(report.to_string());
+		}
+	});
 
-	// We are not logging error here since expectation is
+	let reason = shutdown.completed_shutdown().await;
+
+	// we are not logging error here since expectation is
 	// to log terminating condition before sending message to this channel
-	Err(error)
+	Err(eyre!(reason).wrap_err("Running Light Client encountered an error"))
 }
