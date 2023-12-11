@@ -464,10 +464,56 @@ fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 	Ok(())
 }
 
+/// This utility function returns a [`Future`] that completes upon
+/// receiving each of the default termination signals.
+///
+/// On Unix-based systems, these signals are Ctrl-C (SIGINT) or SIGTERM,
+/// and on Windows, they are Ctrl-C, Ctrl-Close, Ctrl-Shutdown.
+async fn user_signal() {
+	let ctrl_c = tokio::signal::ctrl_c();
+	#[cfg(all(unix, not(windows)))]
+	{
+		let sig = async {
+			let mut os_sig =
+				tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+			os_sig.recv().await;
+			std::io::Result::Ok(())
+		};
+
+		tokio::select! {
+			_ = ctrl_c => {},
+			_ = sig => {}
+		}
+	}
+
+	#[cfg(all(not(unix), windows))]
+	{
+		let ctrl_close = async {
+			let mut sig = tokio::signal::windows::ctrl_close()?;
+			sig.recv().await;
+			std::io::Result::Ok(())
+		};
+		let ctrl_shutdown = async {
+			let mut sig = tokio::signal::windows::ctrl_shutdown()?;
+			sig.recv().await;
+			std::io::Result::Ok(())
+		};
+		tokio::select! {
+			_ = ctrl_c => {},
+			_ = ctrl_close => {},
+			_ = ctrl_shutdown => {},
+		}
+	}
+}
+
 #[tokio::main]
 pub async fn main() -> Result<()> {
 	let shutdown = Controller::new();
+	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
+
+	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
+	tokio::spawn(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
 
 	let (error_sender, mut error_receiver) = channel::<Report>(1);
 
