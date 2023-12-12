@@ -45,6 +45,7 @@ hyper = { version = "0.14.23", features = ["full", "http1"] }
 itertools = "0.10.5"
 libc = "0.2.150"
 libp2p = { version = "0.53.1", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde"] }
+libp2p-allow-block-list = "0.3.0"
 mockall = "0.11.3"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 num = "0.4.0"

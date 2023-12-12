@@ -1,3 +1,4 @@
+use allow_block_list::BlockedPeers;
 use color_eyre::{eyre::WrapErr, Report, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
@@ -5,7 +6,7 @@ use libp2p::{
 	kad::{self, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
+	tcp, upnp, yamux, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
 use std::collections::HashMap;
@@ -21,11 +22,15 @@ mod client;
 mod event_loop;
 mod kad_mem_store;
 
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::{
+	network::p2p::event_loop::IdentityData,
+	types::{LibP2PConfig, SecretKey},
+};
 pub use client::Client;
 use event_loop::EventLoop;
 
 use self::client::BlockStat;
+use libp2p_allow_block_list as allow_block_list;
 
 #[derive(Debug)]
 pub enum QueryChannel {
@@ -99,6 +104,7 @@ pub struct Behaviour {
 	relay_client: relay::client::Behaviour,
 	dcutr: dcutr::Behaviour,
 	upnp: upnp::tokio::Behaviour,
+	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
 }
 
 // Init function initializes all needed needed configs for the functioning
@@ -117,6 +123,11 @@ pub fn init(
 		local_peer_id,
 		id_keys.public()
 	);
+
+	// Use identify protocol_version as Kademlia protocol name
+	let kademlia_protocol_name =
+		StreamProtocol::try_from_owned(cfg.identify.protocol_version.clone())
+			.expect("Invalid Kademlia protocol name");
 
 	// build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
@@ -153,11 +164,13 @@ pub fn init(
 					max_peers: cfg.kademlia.caching_max_peers,
 				})
 				.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
-				.set_record_filtering(kad::StoreInserts::FilterBoth);
+				.set_record_filtering(kad::StoreInserts::FilterBoth)
+				.set_protocol_names(vec![kademlia_protocol_name]);
 
 			// create Identify Protocol Config
-			let identify_cfg = identify::Config::new(cfg.identify.protocol_version, key.public())
-				.with_agent_version(cfg.identify.agent_version);
+			let identify_cfg =
+				identify::Config::new(cfg.identify.protocol_version.clone(), key.public())
+					.with_agent_version(cfg.identify.agent_version.clone());
 
 			// create AutoNAT Client Config
 			let autonat_cfg = autonat::Config {
@@ -182,6 +195,7 @@ pub fn init(
 				auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
 				mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
 				upnp: upnp::tokio::Behaviour::default(),
+				blocked_peers: allow_block_list::Behaviour::default(),
 			})
 		})?
 		.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
@@ -205,6 +219,10 @@ pub fn init(
 			cfg.relays,
 			cfg.bootstrap_interval,
 			is_fat_client,
+			IdentityData {
+				agent_version: cfg.identify.agent_version,
+				protocol_version: cfg.identify.protocol_version.clone(),
+			},
 		),
 	))
 }
