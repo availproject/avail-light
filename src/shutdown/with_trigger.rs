@@ -21,12 +21,14 @@ impl<T: Clone, F: Future> Future for WithTrigger<T, F> {
 		// TODO: check `pin_utils` to avoid writing unsafe code when pinning to stack
 		// Unsafe is used, since `std::future::Futures` are required to be `Unpin`
 		unsafe {
-			// requirements from `F` are never violated, if we are
-			// not moving the `future`
+			// if we are not moving the `future`,
+			// requirements from `F` are never violated
 			let this = self.get_unchecked_mut();
+			// check the inner future
 			match Pin::new_unchecked(&mut this.future).poll(cx) {
 				Poll::Pending => Poll::Pending,
 				Poll::Ready(val) => {
+					// once ready, drop the token to trigger the shutdown
 					this.trigger_token = None;
 					Poll::Ready(val)
 				},

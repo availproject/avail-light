@@ -29,9 +29,11 @@ impl<T: Clone, F: Future> Future for WithDelay<T, F> {
 			// requirements from `F` are never violated, if we are
 			// not moving the `future`
 			let this = self.get_unchecked_mut();
+			// check the inner future
 			match Pin::new_unchecked(&mut this.future).poll(cx) {
 				Poll::Pending => Poll::Pending,
 				Poll::Ready(val) => {
+					// once ready, drop the token so the shutdown is not delayed any more
 					this.delay_token = None;
 					Poll::Ready(val)
 				},
