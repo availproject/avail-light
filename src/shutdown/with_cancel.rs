@@ -24,8 +24,8 @@ impl<T: Clone, F: Future> Future for WithCancel<T, F> {
 
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
 		// TODO: check `pin_utils` to avoid writing unsafe code when pinning to stack
-		// requirements from `F` are never violated, if we are
-		// not moving the `future`
+		// if we are not moving the `future`,
+		// requirements from `F` are never violated
 		let this = unsafe { self.get_unchecked_mut() };
 
 		// also here, we're never moving those futures
@@ -35,21 +35,22 @@ impl<T: Clone, F: Future> Future for WithCancel<T, F> {
 			Ok(future) => {
 				// TODO: check `pin_utils` to avoid writing unsafe code when pinning to stack
 				let future = unsafe { Pin::new_unchecked(future) };
-				if let Poll::Ready(val) = future.poll(cx) {
-					return Poll::Ready(Ok(val));
+				// poll the wrapped future, check for it's progress
+				match future.poll(cx) {
+					Poll::Ready(val) => Poll::Ready(Ok(val)),
+					Poll::Pending => {
+						// if the wrapped future is still in the `Pending` state,
+						// check whether a shutdown signal has been initiated in the meantime
+						if let Poll::Ready(reason) = Pin::new(&mut this.signal).poll(cx) {
+							this.future = Err(reason.clone());
+							// shutdown signal happened, send back the reason
+							return Poll::Ready(Err(reason));
+						}
+						// future is still pending
+						Poll::Pending
+					},
 				}
 			},
-		}
-
-		// if future is still `Pending`, check if the shutdown signal has been given
-		let shutdown = Pin::new(&mut this.signal).poll(cx);
-		match shutdown {
-			// shutdown signal happened, send back the reason
-			Poll::Ready(reason) => {
-				this.future = Err(reason.clone());
-				Poll::Ready(Err(reason))
-			},
-			Poll::Pending => Poll::Pending,
 		}
 	}
 }
