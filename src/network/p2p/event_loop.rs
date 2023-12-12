@@ -279,32 +279,6 @@ impl EventLoop {
 						info: Info { listen_addrs, .. },
 					} => {
 						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
-						self.establish_relay_circuit(peer_id);
-
-						// only interested in addresses with actual Multiaddresses
-						// ones that contains the 'p2p' tag
-						listen_addrs
-							.into_iter()
-							.filter(|a| a.to_string().contains(Protocol::P2p(peer_id).tag()))
-							.for_each(|a| {
-								self.swarm
-									.behaviour_mut()
-									.kademlia
-									.add_address(&peer_id, a.clone());
-
-								// if address contains relay circuit tag,
-								// dial that address for immediate Direct Connection Upgrade
-								if *self.swarm.local_peer_id() != peer_id
-									&& a.to_string().contains(Protocol::P2pCircuit.tag())
-								{
-									_ = self.swarm.dial(
-										DialOpts::peer_id(peer_id)
-											.condition(PeerCondition::Disconnected)
-											.addresses(vec![a.with(Protocol::P2pCircuit)])
-											.build(),
-									);
-								}
-							});
 					},
 					identify::Event::Sent { peer_id } => {
 						trace!("Identity Sent event to: {peer_id:?}");
@@ -424,6 +398,7 @@ impl EventLoop {
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 							_ = ch.send(Ok(()));
 						}
+						self.establish_relay_circuit(peer_id);
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
 						metrics.count(MetricCounter::OutgoingConnectionError).await;
