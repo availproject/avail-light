@@ -270,9 +270,9 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
+		shutdown: shutdown.clone(),
 	};
-
-	tokio::task::spawn(server.run());
+	tokio::task::spawn(server.bind());
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
 
