@@ -21,7 +21,10 @@ mod client;
 mod event_loop;
 mod kad_mem_store;
 
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::{
+	shutdown::Controller,
+	types::{LibP2PConfig, SecretKey},
+};
 pub use client::Client;
 use event_loop::EventLoop;
 
@@ -110,6 +113,7 @@ pub fn init(
 	ttl: u64,
 	is_fat_client: bool,
 	id_keys: libp2p::identity::Keypair,
+	shutdown: Controller<String>,
 ) -> Result<(Client, EventLoop)> {
 	let local_peer_id = PeerId::from(id_keys.public());
 	info!(
@@ -205,6 +209,7 @@ pub fn init(
 			cfg.relays,
 			cfg.bootstrap_interval,
 			is_fat_client,
+			shutdown,
 		),
 	))
 }

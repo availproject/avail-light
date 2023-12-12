@@ -76,7 +76,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-async fn run(error_sender: Sender<Report>) -> Result<()> {
+async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Result<()> {
 	let opts = CliOpts::parse();
 
 	let mut cfg: RuntimeConfig = RuntimeConfig::default();
@@ -125,7 +125,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 
 	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
-	let metric_attribues = MetricAttributes {
+	let metric_attributes = MetricAttributes {
 		role: client_role.into(),
 		peer_id,
 		ip: RwLock::new("".to_string()),
@@ -159,7 +159,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), metric_attribues)
+		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), metric_attributes)
 			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
@@ -170,6 +170,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 		cfg.kad_record_ttl,
 		cfg.is_fat_client(),
 		id_keys,
+		shutdown.clone(),
 	)
 	.wrap_err("Failed to init Network Service")?;
 
@@ -519,7 +520,7 @@ pub async fn main() -> Result<()> {
 
 	let (error_sender, mut error_receiver) = channel::<Report>(1);
 
-	if let Err(error) = run(error_sender).await {
+	if let Err(error) = run(error_sender, shutdown.clone()).await {
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};

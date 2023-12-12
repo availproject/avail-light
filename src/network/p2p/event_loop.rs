@@ -23,7 +23,10 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use crate::telemetry::{MetricCounter, MetricValue, Metrics};
+use crate::{
+	shutdown::{Controller, DelayToken},
+	telemetry::{MetricCounter, MetricValue, Metrics},
+};
 
 use super::{
 	client::BlockStat, Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries, QueryChannel,
@@ -81,6 +84,7 @@ pub struct EventLoop {
 	/// Blocks we monitor for PUT success rate
 	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: HashMap<u32, BlockStat>,
+	shutdown: Controller<String>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -113,6 +117,7 @@ impl EventLoop {
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
+		shutdown: Controller<String>,
 	) -> Self {
 		Self {
 			swarm,
@@ -132,10 +137,16 @@ impl EventLoop {
 			},
 			kad_remove_local_record,
 			active_blocks: Default::default(),
+			shutdown,
 		}
 	}
 
 	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
+		// shutdown will wait as long as this token is not dropped
+		let delay_token = self
+			.shutdown
+			.delay_token()
+			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
@@ -145,8 +156,24 @@ impl EventLoop {
 					None => return,
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
+				// if the shutdown was triggered,
+				// break the loop immediately, proceed to the cleanup phase
+				_ = self.shutdown.triggered_shutdown() => { break; }
 			}
 		}
+		self.shutdown_cleanup(delay_token);
+	}
+
+	fn shutdown_cleanup(&mut self, delay_token: DelayToken<String>) {
+		info!("Shuting down P2P Event Loop. Please wait...");
+		let connected_peers: Vec<PeerId> = self.swarm.connected_peers().cloned().collect();
+		// close all active connections with other peers
+		for peer in connected_peers {
+			_ = self.swarm.disconnect_peer_id(peer);
+		}
+		info!("P2P Event Loop shutdown complete.");
+		// allow shutdown to continue
+		drop(delay_token);
 	}
 
 	#[tracing::instrument(level = "trace", skip(self, metrics))]
