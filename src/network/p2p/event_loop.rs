@@ -69,6 +69,12 @@ struct BootstrapState {
 	timer: Interval,
 }
 
+// Identity strings used for peer filtering
+pub struct IdentityData {
+	pub agent_version: String,
+	pub protocol_version: String,
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: CommandReceiver,
@@ -79,8 +85,8 @@ pub struct EventLoop {
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
 	/// Blocks we monitor for PUT success rate
-	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: HashMap<u32, BlockStat>,
+	identity_data: IdentityData,
 }
 
 #[derive(PartialEq, Debug)]
@@ -113,6 +119,7 @@ impl EventLoop {
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
+		identity_data: IdentityData,
 	) -> Self {
 		Self {
 			swarm,
@@ -132,6 +139,7 @@ impl EventLoop {
 			},
 			kad_remove_local_record,
 			active_blocks: Default::default(),
+			identity_data,
 		}
 	}
 
@@ -276,9 +284,22 @@ impl EventLoop {
 				match event {
 					identify::Event::Received {
 						peer_id,
-						info: Info { listen_addrs, .. },
+						info:
+							Info {
+								listen_addrs,
+								agent_version,
+								protocol_version,
+								..
+							},
 					} => {
 						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						if agent_version != self.identity_data.agent_version
+							&& protocol_version != self.identity_data.protocol_version
+						{
+							trace!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
+							self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
+						}
 					},
 					identify::Event::Sent { peer_id } => {
 						trace!("Identity Sent event to: {peer_id:?}");
