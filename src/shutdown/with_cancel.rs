@@ -30,7 +30,7 @@ impl<T: Clone, F: Future> Future for WithCancel<T, F> {
 
 		// also here, we're never moving those futures
 		match &mut this.future {
-			Err(err) => return Poll::Ready(Err(err.clone())),
+			Err(err) => Poll::Ready(Err(err.clone())),
 			// we do drop it, but that is fine
 			Ok(future) => {
 				// TODO: check `pin_utils` to avoid writing unsafe code when pinning to stack
