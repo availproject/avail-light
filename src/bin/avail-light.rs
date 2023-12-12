@@ -19,7 +19,6 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use futures::TryFutureExt;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use std::{
@@ -221,7 +220,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 	});
 
 	#[cfg(feature = "network-analysis")]
-	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
+	tokio::task::spawn(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
 
 	let pp = Arc::new(kate_recovery::couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
@@ -278,7 +277,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 
 	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
 		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		tokio::task::spawn(avail_light::app_client::run(
+		tokio::task::spawn(shutdown.with_cancel(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
 			p2p_client.clone(),
@@ -290,39 +289,39 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 			sync_range.clone(),
 			data_tx,
 			error_sender.clone(),
-		));
+		)));
 		data_rx
 	});
 
-	tokio::task::spawn(api::v2::publish(
+	tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
 		api::v2::types::Topic::HeaderVerified,
 		publish_rpc_event_receiver,
 		ws_clients.clone(),
-	));
+	)));
 
-	tokio::task::spawn(api::v2::publish(
+	tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
 		api::v2::types::Topic::ConfidenceAchieved,
 		block_tx.subscribe(),
 		ws_clients.clone(),
-	));
+	)));
 
 	if let Some(data_rx) = data_rx {
-		tokio::task::spawn(api::v2::publish(
+		tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
 			api::v2::types::Topic::DataVerified,
 			data_rx,
 			ws_clients,
-		));
+		)));
 	}
 
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
-		tokio::task::spawn(avail_light::crawl_client::run(
+		tokio::task::spawn(shutdown.with_cancel(avail_light::crawl_client::run(
 			crawler_rpc_event_receiver,
 			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
-		));
+		)));
 	}
 
 	let sync_client = avail_light::sync_client::new(db.clone(), rpc_client.clone());
@@ -336,24 +335,24 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 
 	if cfg.sync_start_block.is_some() {
 		state.lock().unwrap().synced.replace(false);
-		tokio::task::spawn(avail_light::sync_client::run(
+		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_client::run(
 			sync_client,
 			sync_network_client,
 			(&cfg).into(),
 			sync_range,
 			block_tx.clone(),
 			state.clone(),
-		));
+		)));
 	}
 
 	if cfg.sync_finality_enable {
 		let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
-		tokio::task::spawn(avail_light::sync_finality::run(
+		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_finality::run(
 			sync_finality,
 			error_sender.clone(),
 			state.clone(),
 			block_header.clone(),
-		));
+		)));
 	} else {
 		let mut s = state
 			.lock()
@@ -362,12 +361,12 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 		s.finality_synced = true;
 	}
 
-	tokio::task::spawn(avail_light::maintenance::run(
+	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
 		error_sender.clone(),
-	));
+	)));
 
 	let channels = avail_light::types::ClientChannels {
 		block_sender: block_tx,
@@ -379,26 +378,26 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 		let fat_client =
 			avail_light::fat_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
 
-		tokio::task::spawn(avail_light::fat_client::run(
+		tokio::task::spawn(shutdown.with_cancel(avail_light::fat_client::run(
 			fat_client,
 			(&cfg).into(),
 			ot_metrics.clone(),
 			channels,
 			partition,
-		));
+		)));
 	} else {
 		let light_client = avail_light::light_client::new(db.clone());
 
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
-		tokio::task::spawn(avail_light::light_client::run(
+		tokio::task::spawn(shutdown.with_cancel(avail_light::light_client::run(
 			light_client,
 			light_network_client,
 			(&cfg).into(),
 			ot_metrics,
 			state.clone(),
 			channels,
-		));
+		)));
 	}
 
 	Ok(())
