@@ -239,7 +239,9 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
-	let rpc_event_loop_handle = tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
+	// and shut it down, without delays
+	let rpc_event_loop_handle =
+		tokio::spawn(shutdown.with_cancel(rpc_event_loop.run(EXPECTED_NETWORK_VERSION)));
 
 	info!("Waiting for first finalized header...");
 	let block_header = rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 60)
@@ -250,7 +252,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 			let Ok(Err(event_loop_error)) = rpc_event_loop_handle.await else {
 				return Err(err);
 			};
-			Err(event_loop_error.wrap_err(err))
+			Err(eyre!(event_loop_error).wrap_err(err))
 		})
 		.await?;
 
