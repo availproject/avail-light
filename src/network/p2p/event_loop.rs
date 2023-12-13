@@ -299,6 +299,13 @@ impl EventLoop {
 							trace!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 							self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
+						} else {
+							for addr in listen_addrs {
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.add_address(&peer_id, addr);
+							}
 						}
 					},
 					identify::Event::Sent { peer_id } => {
