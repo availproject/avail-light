@@ -445,7 +445,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown(1).is_ok());
 			controller.triggered_shutdown().await;
-			assert!(controller.is_shutdown_completed() == false);
+			assert!(!controller.is_shutdown_completed());
 
 			tokio::spawn(async move {
 				sleep(Duration::from_millis(10)).await;
@@ -489,7 +489,7 @@ mod tests {
 			let t = tokio::spawn({
 				let controller = controller.clone();
 				async move {
-					assert!(controller.completed_shutdown().await == "i'm bored".to_string());
+					assert!(controller.completed_shutdown().await == "i'm bored");
 				}
 			});
 
@@ -551,7 +551,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown("oi").is_ok());
 			if let Ok(Err(reason)) = task.await {
-				assert!(reason == "oi".to_string());
+				assert!(reason == "oi");
 			} else {
 				panic!("Expected `Err(reason)` error");
 			}
@@ -568,7 +568,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown("oi").is_ok());
 			if let Ok(Err(reason)) = task.await {
-				assert!(reason == "oi".to_string());
+				assert!(reason == "oi");
 			} else {
 				panic!("Expected `Err(reason)` error");
 			}
@@ -583,7 +583,7 @@ mod tests {
 			let task = tokio::spawn(controller.with_cancel(future::ready("born ready")));
 
 			if let Ok(Ok(val)) = task.await {
-				assert!(val == "born ready".to_string())
+				assert!(val == "born ready")
 			} else {
 				panic!("Expected Ok(Ok(val)) result");
 			}
@@ -592,17 +592,17 @@ mod tests {
 
 	#[test]
 	fn future_with_cancel_completes_after_sleep() {
-		// spawn a task with a `Poll::Ready` future and check if it completes with no triggered shutdowns
-		// after a short sleep
+		// spawn a task with a `Poll::Ready` future
+		// and after a short sleep check if it completes with no triggered shutdowns
 		test_runtime(async {
 			let controller = Controller::<()>::new();
 			let task = tokio::spawn(controller.with_cancel(async {
 				sleep(Duration::from_millis(10)).await;
-				"I have heard the summons".to_string()
+				"I have heard the summons"
 			}));
 
 			if let Ok(Ok(val)) = task.await {
-				assert!(val == "I have heard the summons".to_string())
+				assert!(val == "I have heard the summons")
 			} else {
 				panic!("Expected Ok(Ok(val)) result");
 			}
