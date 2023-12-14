@@ -26,8 +26,8 @@ impl<T: Clone, F: Future> Future for WithDelay<T, F> {
 
 		// Unsafe is used, since `std::future::Futures` are required to be `Unpin`
 		unsafe {
-			// requirements from `F` are never violated, if we are
-			// not moving the `future`
+			// if we are not moving the `future`,
+			// requirements from `F` are never violated
 			let this = self.get_unchecked_mut();
 			// check the inner future
 			match Pin::new_unchecked(&mut this.future).poll(cx) {
