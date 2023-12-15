@@ -230,8 +230,10 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	let (rpc_client, rpc_events, rpc_event_loop) =
 		rpc::init(db.clone(), state.clone(), &cfg.full_node_ws);
 
+	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
+	let client_rpc_event_receiver = rpc_events.subscribe();
 	#[cfg(feature = "crawl")]
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
@@ -367,7 +369,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 
 	let channels = avail_light::types::ClientChannels {
 		block_sender: block_tx,
-		rpc_event_receiver: rpc_events.subscribe(),
+		rpc_event_receiver: client_rpc_event_receiver,
 		error_sender: error_sender.clone(),
 	};
 
