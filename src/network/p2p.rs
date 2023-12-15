@@ -24,7 +24,7 @@ mod kad_mem_store;
 
 use crate::{
 	network::p2p::event_loop::IdentityData,
-	types::{LibP2PConfig, SecretKey},
+	types::{KademliaMode, LibP2PConfig, SecretKey},
 };
 pub use client::Client;
 use event_loop::EventLoop;
@@ -202,6 +202,11 @@ pub fn init(
 		.build();
 
 	if is_fat_client {
+		swarm
+			.behaviour_mut()
+			.kademlia
+			.set_mode(Some(KademliaMode::Server.to_kad_mode()));
+	} else {
 		swarm
 			.behaviour_mut()
 			.kademlia
