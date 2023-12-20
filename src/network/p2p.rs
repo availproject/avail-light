@@ -201,17 +201,13 @@ pub fn init(
 		.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
 		.build();
 
-	if is_fat_client {
-		swarm
-			.behaviour_mut()
-			.kademlia
-			.set_mode(Some(KademliaMode::Server.to_kad_mode()));
+	let kad_mode = if is_fat_client {
+		KademliaMode::Server.into()
 	} else {
-		swarm
-			.behaviour_mut()
-			.kademlia
-			.set_mode(Some(cfg.kademlia_mode.to_kad_mode()));
-	}
+		cfg.kademlia_mode.into()
+	};
+
+	swarm.behaviour_mut().kademlia.set_mode(Some(kad_mode));
 
 	// create sender channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(10000);

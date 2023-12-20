@@ -120,9 +120,9 @@ pub enum KademliaMode {
 	Server,
 }
 
-impl KademliaMode {
-	pub fn to_kad_mode(self) -> KadMode {
-		match self {
+impl From<KademliaMode> for KadMode {
+	fn from(value: KademliaMode) -> Self {
+		match value {
 			KademliaMode::Client => KadMode::Client,
 			KademliaMode::Server => KadMode::Server,
 		}
