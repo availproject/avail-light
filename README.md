@@ -187,16 +187,14 @@ autonat_retry_interval = 10
 autonat_refresh_interval = 30
 # AutoNat on init delay before starting the first probe. (default: 5 sec)
 autonat_boot_delay = 10
-# Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
-identify_protocol = "/avail_kad/id/1.0.0"
-# Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
-identify_agent = "avail-light-client/rust-client"
 # Vector of Light Client bootstrap nodes, used to bootstrap the DHT (mandatory field).
 bootstraps = ["/ip4/13.51.79.255/tcp/39000/p2p/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
 # Vector of Relay nodes, which are used for hole punching
 relays = ["/ip4/13.49.44.246/tcp/39111/12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b"]
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
+# Genesis hash of the network you are connecting to. The genesis hash will be checked upon connecting to the node(s) and will also be used to identify you on the p2p network. If you wish to skip the check for development purposes, entering DEV{suffix} instead will skip the check and create a separate p2p network with that identifier.
+genesis_hash = "DEV123"
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 app_id = 0
 # Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).

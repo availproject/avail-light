@@ -35,6 +35,8 @@ const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
 pub const DEV_FLAG_GENHASH: &str = "DEV";
+pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
+pub const IDENTITY_AGENT: &str = "avail-light-client/rust-client";
 
 #[derive(Parser)]
 #[command(version)]
@@ -281,10 +283,6 @@ pub struct RuntimeConfig {
 	pub autonat_refresh_interval: u64,
 	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
 	pub autonat_boot_delay: u64,
-	/// Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
-	pub identify_protocol: String,
-	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
-	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
@@ -533,10 +531,10 @@ impl From<&RuntimeConfig> for IdentifyConfig {
 		let mut genhash_short = val.genesis_hash.trim_start_matches("0x").to_string();
 		genhash_short.truncate(6);
 		Self {
-			agent_version: val.identify_agent.clone(),
+			agent_version: IDENTITY_AGENT.to_string(),
 			protocol_version: format!(
 				"{id}-{gen_hash}",
-				id = val.identify_protocol,
+				id = IDENTITY_PROTOCOL,
 				gen_hash = genhash_short
 			),
 		}
@@ -593,8 +591,6 @@ impl Default for RuntimeConfig {
 			autonat_retry_interval: 20,
 			autonat_throttle: 1,
 			autonat_boot_delay: 5,
-			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
-			identify_agent: "avail-light-client/rust-client".to_string(),
 			bootstraps: vec![],
 			bootstrap_period: 3600,
 			relays: Vec::new(),
