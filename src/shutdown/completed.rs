@@ -23,21 +23,16 @@ impl<T: Clone> Future for Completed<T> {
 	type Output = T;
 
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-		let pinned_this = self.as_ref();
-		let mut inner = pinned_this.inner.lock().unwrap();
+		let mutex_inner = &self.as_ref().inner;
+		let mut inner = mutex_inner.lock().unwrap();
 		// this future is done only when all tokens have been dropped
-		if inner.delay_tokens == 0 {
-			// and when there is a reason for the shutdown
-			if let Some(reason) = inner.reason.clone() {
-				Poll::Ready(reason)
-			} else {
-				// always clone waker, so we don't end-up with staled ones
-				inner.on_shutdown_complete.push(cx.waker().clone());
-				Poll::Pending
-			}
-		} else {
-			inner.on_shutdown_complete.push(cx.waker().clone());
-			Poll::Pending
+		// and when there is a reason for the shutdown
+		if let (0, Some(reason)) = (inner.delay_tokens, inner.reason.as_ref()) {
+			return Poll::Ready(reason.clone());
 		}
+
+		// always clone waker, so we don't end-up with staled ones
+		inner.on_shutdown_complete.push(cx.waker().clone());
+		Poll::Pending
 	}
 }

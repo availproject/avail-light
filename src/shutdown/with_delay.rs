@@ -28,16 +28,18 @@ impl<T: Clone, F: Future> Future for WithDelay<T, F> {
 		unsafe {
 			// if we are not moving the `future`,
 			// requirements from `F` are never violated
-			let this = self.get_unchecked_mut();
-			// check the inner future
-			match Pin::new_unchecked(&mut this.future).poll(cx) {
-				Poll::Pending => Poll::Pending,
-				Poll::Ready(val) => {
-					// once ready, drop the token so the shutdown is not delayed any more
-					this.delay_token = None;
-					Poll::Ready(val)
-				},
+			let WithDelay {
+				delay_token,
+				future,
+			} = self.get_unchecked_mut();
+			// poll the wrapped future
+			let poll_result = Pin::new_unchecked(future).poll(cx);
+			if poll_result.is_ready() {
+				// once ready, drop the token so the shutdown is not delayed any more
+				delay_token.take();
 			}
+			// otherwise, return pending
+			poll_result
 		}
 	}
 }
