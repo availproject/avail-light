@@ -72,6 +72,12 @@ struct BootstrapState {
 	timer: Interval,
 }
 
+// Identity strings used for peer filtering
+pub struct IdentityData {
+	pub agent_version: String,
+	pub protocol_version: String,
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: CommandReceiver,
@@ -82,9 +88,9 @@ pub struct EventLoop {
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
 	/// Blocks we monitor for PUT success rate
-	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
+	identity_data: IdentityData,
 }
 
 #[derive(PartialEq, Debug)]
@@ -118,6 +124,7 @@ impl EventLoop {
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
 		shutdown: Controller<String>,
+		identity_data: IdentityData,
 	) -> Self {
 		Self {
 			swarm,
@@ -138,6 +145,7 @@ impl EventLoop {
 			kad_remove_local_record,
 			active_blocks: Default::default(),
 			shutdown,
+			identity_data,
 		}
 	}
 
@@ -303,35 +311,29 @@ impl EventLoop {
 				match event {
 					identify::Event::Received {
 						peer_id,
-						info: Info { listen_addrs, .. },
+						info:
+							Info {
+								listen_addrs,
+								agent_version,
+								protocol_version,
+								..
+							},
 					} => {
 						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
-						self.establish_relay_circuit(peer_id);
-
-						// only interested in addresses with actual Multiaddresses
-						// ones that contains the 'p2p' tag
-						listen_addrs
-							.into_iter()
-							.filter(|a| a.to_string().contains(Protocol::P2p(peer_id).tag()))
-							.for_each(|a| {
+						if agent_version != self.identity_data.agent_version
+							&& protocol_version != self.identity_data.protocol_version
+						{
+							trace!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
+							self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
+						} else {
+							for addr in listen_addrs {
 								self.swarm
 									.behaviour_mut()
 									.kademlia
-									.add_address(&peer_id, a.clone());
-
-								// if address contains relay circuit tag,
-								// dial that address for immediate Direct Connection Upgrade
-								if *self.swarm.local_peer_id() != peer_id
-									&& a.to_string().contains(Protocol::P2pCircuit.tag())
-								{
-									_ = self.swarm.dial(
-										DialOpts::peer_id(peer_id)
-											.condition(PeerCondition::Disconnected)
-											.addresses(vec![a.with(Protocol::P2pCircuit)])
-											.build(),
-									);
-								}
-							});
+									.add_address(&peer_id, addr);
+							}
+						}
 					},
 					identify::Event::Sent { peer_id } => {
 						trace!("Identity Sent event to: {peer_id:?}");
@@ -451,37 +453,19 @@ impl EventLoop {
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 							_ = ch.send(Ok(()));
 						}
+						self.establish_relay_circuit(peer_id);
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
 						metrics.count(MetricCounter::OutgoingConnectionError).await;
 
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occured
-							if let libp2p::swarm::DialError::WrongPeerId { obtained, endpoint } =
-								&error
-							{
+							if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
 								if let Some(peer) =
 									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
 								{
 									let removed_peer_id = peer.node.key.preimage();
-									debug!(
-										"Removed peer: {removed_peer_id} from the routing table"
-									);
-
-									match self.swarm.behaviour_mut().kademlia.add_address(
-										obtained,
-										endpoint.get_remote_address().clone(),
-									) {
-										kad::RoutingUpdate::Success => {
-											debug!("RoutingUpdate::Success for {obtained}");
-										},
-										kad::RoutingUpdate::Pending => {
-											debug!("RoutingUpdate::Pending for {obtained}");
-										},
-										kad::RoutingUpdate::Failed => {
-											debug!("RoutingUpdate::Failed for {obtained}");
-										},
-									}
+									debug!("Removed peer {removed_peer_id} from the routing table");
 								}
 							}
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {

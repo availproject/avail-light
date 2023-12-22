@@ -686,6 +686,7 @@ dependencies = [
  "kate-recovery",
  "libc",
  "libp2p",
+ "libp2p-allow-block-list",
  "mockall",
  "multihash 0.14.0",
  "num",

@@ -178,29 +178,15 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 
 	// Start listening on provided port
 	let port = cfg.port;
-
-	// always listen on UDP to prioritize QUIC
 	p2p_client
 		.start_listening(
 			Multiaddr::empty()
 				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Udp(port))
-				.with(Protocol::QuicV1),
-		)
-		.await
-		.wrap_err("Listening on UDP not to fail.")?;
-	info!("Listening for QUIC on port: {port}");
-
-	let tcp_port = port + 1;
-	p2p_client
-		.start_listening(
-			Multiaddr::empty()
-				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Tcp(tcp_port)),
+				.with(Protocol::Tcp(port)),
 		)
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("Listening for TCP on port: {tcp_port}");
+	info!("TCP listener started on port {port}");
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -229,11 +215,17 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let state = Arc::new(Mutex::new(State::default()));
-	let (rpc_client, rpc_events, rpc_event_loop) =
-		rpc::init(db.clone(), state.clone(), &cfg.full_node_ws);
+	let (rpc_client, rpc_events, rpc_event_loop) = rpc::init(
+		db.clone(),
+		state.clone(),
+		&cfg.full_node_ws,
+		&cfg.genesis_hash,
+	);
 
+	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
+	let client_rpc_event_receiver = rpc_events.subscribe();
 	#[cfg(feature = "crawl")]
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
@@ -370,7 +362,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 
 	let channels = avail_light::types::ClientChannels {
 		block_sender: block_tx,
-		rpc_event_receiver: rpc_events.subscribe(),
+		rpc_event_receiver: client_rpc_event_receiver,
 		error_sender: error_sender.clone(),
 	};
 

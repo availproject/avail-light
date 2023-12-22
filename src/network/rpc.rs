@@ -205,6 +205,7 @@ pub fn init(
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
+	genesis_hash: &str,
 ) -> (Client, broadcast::Sender<Event>, EventLoop) {
 	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
@@ -214,7 +215,14 @@ pub fn init(
 	(
 		Client::new(command_sender),
 		event_sender.clone(),
-		EventLoop::new(db, state, Nodes::new(nodes), command_receiver, event_sender),
+		EventLoop::new(
+			db,
+			state,
+			Nodes::new(nodes),
+			command_receiver,
+			event_sender,
+			genesis_hash,
+		),
 	)
 }
 

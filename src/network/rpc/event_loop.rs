@@ -12,6 +12,7 @@ use futures::Stream;
 use rocksdb::DB;
 use sp_core::{
 	blake2_256,
+	bytes::from_hex,
 	ed25519::{self, Public},
 	Pair,
 };
@@ -25,14 +26,14 @@ use subxt::{
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use super::{CommandReceiver, ExpectedVersion, Node, Nodes, SendableCommand};
 use crate::{
-	data::{self, store_finality_sync_checkpoint},
+	data::store_finality_sync_checkpoint,
 	types::{
 		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RuntimeVersion,
-		SignerMessage, State,
+		SignerMessage, State, DEV_FLAG_GENHASH,
 	},
 	utils::filter_auth_set_changes,
 };
@@ -72,6 +73,7 @@ pub struct EventLoop {
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	block_data: BlockData,
+	genesis_hash: String,
 }
 
 impl EventLoop {
@@ -81,9 +83,11 @@ impl EventLoop {
 		nodes: Nodes,
 		command_receiver: CommandReceiver,
 		event_sender: Sender<Event>,
+		genesis_hash: &str,
 	) -> EventLoop {
 		Self {
 			subxt_client: None,
+			genesis_hash: genesis_hash.to_string(),
 			command_receiver,
 			event_sender,
 			nodes,
@@ -492,16 +496,23 @@ impl EventLoop {
 		self.state.lock().unwrap().connected_node = node.clone();
 
 		info!("Genesis hash: {:?}", node.genesis_hash);
-		if let Some(stored_genesis_hash) = data::get_genesis_hash(self.db.clone())? {
-			if !node.genesis_hash.eq(&stored_genesis_hash) {
+		if let Some(cfg_genhash) = from_hex(&self.genesis_hash)
+			.ok()
+			.and_then(|e| TryInto::<[u8; 32]>::try_into(e).ok().map(H256::from))
+		{
+			if !node.genesis_hash.eq(&cfg_genhash) {
 				Err(eyre!(
-					"Genesis hash doesn't match the stored one! Clear the db or change nodes.",
+					"Genesis hash doesn't match the configured one! Change the config or the node url ({}).", node.host
 				))?
 			}
+		} else if self.genesis_hash.starts_with(DEV_FLAG_GENHASH) {
+			warn!("Genesis hash configured for development ({}), skipping the genesis hash check entirely.", self.genesis_hash);
 		} else {
-			info!("No genesis hash is found in the db, storing the new hash now.");
-			data::store_genesis_hash(self.db.clone(), node.genesis_hash)?;
-		}
+			Err(eyre!(
+				"Genesis hash invalid, badly configured or missing (\"{}\").",
+				self.genesis_hash
+			))?
+		};
 
 		Ok(())
 	}

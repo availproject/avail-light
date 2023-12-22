@@ -34,6 +34,10 @@ const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
+pub const DEV_FLAG_GENHASH: &str = "DEV";
+pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
+pub const IDENTITY_AGENT: &str = "avail-light-client/rust-client";
+
 #[derive(Parser)]
 #[command(version)]
 pub struct CliOpts {
@@ -120,9 +124,9 @@ pub enum KademliaMode {
 	Server,
 }
 
-impl KademliaMode {
-	pub fn to_kad_mode(self) -> KadMode {
-		match self {
+impl From<KademliaMode> for KadMode {
+	fn from(value: KademliaMode) -> Self {
+		match value {
 			KademliaMode::Client => KadMode::Client,
 			KademliaMode::Server => KadMode::Server,
 		}
@@ -279,10 +283,6 @@ pub struct RuntimeConfig {
 	pub autonat_refresh_interval: u64,
 	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
 	pub autonat_boot_delay: u64,
-	/// Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
-	pub identify_protocol: String,
-	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
-	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
@@ -292,6 +292,8 @@ pub struct RuntimeConfig {
 	pub relays: Vec<MultiaddrConfig>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
+	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
+	pub genesis_hash: String,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
@@ -526,9 +528,15 @@ pub struct IdentifyConfig {
 
 impl From<&RuntimeConfig> for IdentifyConfig {
 	fn from(val: &RuntimeConfig) -> Self {
+		let mut genhash_short = val.genesis_hash.trim_start_matches("0x").to_string();
+		genhash_short.truncate(6);
 		Self {
-			agent_version: val.identify_agent.clone(),
-			protocol_version: val.identify_protocol.clone(),
+			agent_version: IDENTITY_AGENT.to_string(),
+			protocol_version: format!(
+				"{id}-{gen_hash}",
+				id = IDENTITY_PROTOCOL,
+				gen_hash = genhash_short
+			),
 		}
 	}
 }
@@ -583,12 +591,11 @@ impl Default for RuntimeConfig {
 			autonat_retry_interval: 20,
 			autonat_throttle: 1,
 			autonat_boot_delay: 5,
-			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
-			identify_agent: "avail-light-client/rust-client".to_string(),
 			bootstraps: vec![],
 			bootstrap_period: 3600,
 			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
+			genesis_hash: "DEV".to_owned(),
 			app_id: None,
 			confidence: 99.9,
 			avail_path: "avail_path".to_owned(),
@@ -672,6 +679,13 @@ impl Network {
 			Network::Goldberg => "http://otel.lightclient.goldberg.avail.tools:4317",
 		}
 	}
+
+	fn genesis_hash(&self) -> &str {
+		match self {
+			Network::Local => "DEV",
+			Network::Goldberg => "6f09966420b2608d1947ccfb0f2a362450d1fc7fd902c29b67c906eaa965a7ae",
+		}
+	}
 }
 
 #[derive(Clone)]
@@ -736,6 +750,7 @@ impl RuntimeConfig {
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 			self.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
+			self.genesis_hash = network.genesis_hash().to_string();
 		}
 
 		if let Some(loglvl) = &opts.verbosity {
