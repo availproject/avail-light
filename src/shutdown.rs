@@ -6,12 +6,16 @@ use std::{
 	task::Waker,
 };
 
-use self::{completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay};
+use self::{
+	completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay,
+	with_trigger::WithTrigger,
+};
 
 mod completed;
 mod signal;
 mod with_cancel;
 mod with_delay;
+mod with_trigger;
 
 #[derive(Clone)]
 /// Shutdown controller for graceful shutdowns in async code.
@@ -115,6 +119,11 @@ impl<T: Clone> Controller<T> {
 		Ok(self.delay_token()?.with_future(future))
 	}
 
+	/// Wraps a future to trigger a shutdown when the future completes or when it is dropped.
+	pub fn with_trigger<F: Future>(&self, reason: T, future: F) -> WithTrigger<T, F> {
+		self.trigger_token(reason).with_future(future)
+	}
+
 	/// Produces a token that delays the shutdown as long as it exists.
 	///
 	/// The [`Controller`] instance manages all created tokens, ensuring thread-safe operations.
@@ -122,8 +131,8 @@ impl<T: Clone> Controller<T> {
 	///
 	/// If the shutdown has already completed, this function returns an error.
 	///
-	/// Consider using [`Self::with_delay()`] to delay the shutdown until a future completes.
-	fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
+	/// Consider using [`Self::with_future()`] to delay the shutdown until a future completes.
+	pub fn delay_token(&self) -> Result<DelayToken<T>, ShutdownHasCompleted<T>> {
 		let mut inner = self.inner.lock().unwrap();
 		if inner.delay_tokens == 0 {
 			if let Some(reason) = &inner.reason {
@@ -135,6 +144,21 @@ impl<T: Clone> Controller<T> {
 		Ok(DelayToken {
 			inner: self.inner.clone(),
 		})
+	}
+
+	/// Produces a token that triggers a shutdown upon being dropped.
+	///
+	/// Dropping a [`TriggerToken`] automatically initiates a shutdown process.
+	/// This behaviour applies universally to all tokens of this type.
+	/// For instance, cloning this token five times and dropping one of them will trigger a shutdown.
+	///
+	/// Additionally, [`Self::with_future()`] allows for wrapping a future, which will ensure that a
+	/// shutdown is triggered either upon the future's completion of if it dropped prematurely.
+	pub fn trigger_token(&self, reason: T) -> TriggerToken<T> {
+		TriggerToken {
+			reason: Arc::new(Mutex::new(Some(reason))),
+			inner: self.inner.clone(),
+		}
 	}
 }
 
@@ -241,6 +265,49 @@ impl<T: Clone> Clone for DelayToken<T> {
 impl<T: Clone> Drop for DelayToken<T> {
 	fn drop(&mut self) {
 		self.inner.lock().unwrap().decrement_delay_tokens();
+	}
+}
+
+#[derive(Clone)]
+/// This token initiates a graceful shutdown upon being dropped.
+///
+/// It guarantees thread safety.
+///
+/// Dropping any cloned tokens triggers the shutdown process,
+/// regardless of the existence of other clones.
+pub struct TriggerToken<T: Clone> {
+	reason: Arc<Mutex<Option<T>>>,
+	inner: Arc<Mutex<ControllerInner<T>>>,
+}
+
+impl<T: Clone> TriggerToken<T> {
+	/// Safely wraps a future, ensuring a controlled shutdown upon completion
+	/// or when dropped.
+	///
+	/// By consuming the [`TriggerToken`] within this wrapper, it prevents accidental
+	/// token dropping that could prematurely trigger a shutdown while a future is being
+	/// processed.
+	///
+	/// To retain the token for further use, consider making a clone before using wrap function.
+	pub fn with_future<F: Future>(self, future: F) -> WithTrigger<T, F> {
+		WithTrigger {
+			trigger_token: Some(self),
+			future,
+		}
+	}
+
+	/// Discard the token without invoking its drop behavior.
+	pub fn forget(self) {
+		std::mem::forget(self)
+	}
+}
+
+impl<T: Clone> Drop for TriggerToken<T> {
+	fn drop(&mut self) {
+		let mut inner = self.inner.lock().unwrap();
+		if let Some(reason) = self.reason.lock().unwrap().take() {
+			_ = inner.shutdown(reason);
+		}
 	}
 }
 
@@ -378,7 +445,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown(1).is_ok());
 			controller.triggered_shutdown().await;
-			assert!(controller.is_shutdown_completed() == false);
+			assert!(!controller.is_shutdown_completed());
 
 			tokio::spawn(async move {
 				sleep(Duration::from_millis(10)).await;
@@ -422,7 +489,7 @@ mod tests {
 			let t = tokio::spawn({
 				let controller = controller.clone();
 				async move {
-					assert!(controller.completed_shutdown().await == "i'm bored".to_string());
+					assert!(controller.completed_shutdown().await == "i'm bored");
 				}
 			});
 
@@ -484,7 +551,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown("oi").is_ok());
 			if let Ok(Err(reason)) = task.await {
-				assert!(reason == "oi".to_string());
+				assert!(reason == "oi");
 			} else {
 				panic!("Expected `Err(reason)` error");
 			}
@@ -501,7 +568,7 @@ mod tests {
 
 			assert!(controller.trigger_shutdown("oi").is_ok());
 			if let Ok(Err(reason)) = task.await {
-				assert!(reason == "oi".to_string());
+				assert!(reason == "oi");
 			} else {
 				panic!("Expected `Err(reason)` error");
 			}
@@ -516,7 +583,7 @@ mod tests {
 			let task = tokio::spawn(controller.with_cancel(future::ready("born ready")));
 
 			if let Ok(Ok(val)) = task.await {
-				assert!(val == "born ready".to_string())
+				assert!(val == "born ready")
 			} else {
 				panic!("Expected Ok(Ok(val)) result");
 			}
@@ -525,20 +592,47 @@ mod tests {
 
 	#[test]
 	fn future_with_cancel_completes_after_sleep() {
-		// spawn a task with a `Poll::Ready` future and check if it completes with no triggered shutdowns
-		// after a short sleep
+		// spawn a task with a `Poll::Ready` future
+		// and after a short sleep check if it completes with no triggered shutdowns
 		test_runtime(async {
 			let controller = Controller::<()>::new();
 			let task = tokio::spawn(controller.with_cancel(async {
 				sleep(Duration::from_millis(10)).await;
-				"I have heard the summons".to_string()
+				"I have heard the summons"
 			}));
 
 			if let Ok(Ok(val)) = task.await {
-				assert!(val == "I have heard the summons".to_string())
+				assert!(val == "I have heard the summons")
 			} else {
 				panic!("Expected Ok(Ok(val)) result");
 			}
 		})
+	}
+
+	#[test]
+	fn shutdown_with_token() {
+		// complete a shutdown by dropping a token
+		test_runtime(async {
+			let shutdown = Controller::new();
+
+			let token = shutdown.trigger_token("stop! hammer time");
+			drop(token);
+
+			assert!(shutdown.triggered_shutdown().await == "stop! hammer time");
+			assert!(shutdown.completed_shutdown().await == "stop! hammer time");
+		});
+	}
+
+	#[test]
+	fn shutdown_with_trigger_on_ready_future() {
+		// trigger the shutdown with a instantly ready future
+		test_runtime(async {
+			let shutdown = Controller::new();
+
+			tokio::spawn(shutdown.with_trigger("you shall not pass", future::ready(())));
+
+			assert!(shutdown.triggered_shutdown().await == "you shall not pass");
+			assert!(shutdown.completed_shutdown().await == "you shall not pass");
+		});
 	}
 }

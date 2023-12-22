@@ -24,6 +24,7 @@ mod kad_mem_store;
 
 use crate::{
 	network::p2p::event_loop::IdentityData,
+	shutdown::Controller,
 	types::{KademliaMode, LibP2PConfig, SecretKey},
 };
 pub use client::Client;
@@ -116,6 +117,7 @@ pub fn init(
 	ttl: u64,
 	is_fat_client: bool,
 	id_keys: libp2p::identity::Keypair,
+	shutdown: Controller<String>,
 ) -> Result<(Client, EventLoop)> {
 	let local_peer_id = PeerId::from(id_keys.public());
 	info!(
@@ -220,6 +222,7 @@ pub fn init(
 			cfg.relays,
 			cfg.bootstrap_interval,
 			is_fat_client,
+			shutdown,
 			IdentityData {
 				agent_version: cfg.identify.agent_version,
 				protocol_version: cfg.identify.protocol_version.clone(),

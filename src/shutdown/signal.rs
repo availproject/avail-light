@@ -34,13 +34,14 @@ impl<T: Clone> Future for Signal<T> {
 	type Output = T;
 
 	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-		let this = self.as_ref();
-		let mut inner = this.inner.lock().unwrap();
+		let mutex_inner = &self.as_ref().inner;
+		let mut inner = mutex_inner.lock().unwrap();
+
 		if let Some(reason) = inner.reason.clone() {
-			Poll::Ready(reason)
-		} else {
-			inner.on_shutdown_trigger.push(cx.waker().clone());
-			Poll::Pending
+			return Poll::Ready(reason);
 		}
+
+		inner.on_shutdown_trigger.push(cx.waker().clone());
+		Poll::Pending
 	}
 }

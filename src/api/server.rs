@@ -9,6 +9,7 @@
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use crate::api::v2;
+use crate::shutdown::Controller;
 use crate::types::IdentityConfig;
 use crate::{
 	api::v1,
@@ -16,6 +17,7 @@ use crate::{
 	types::{RuntimeConfig, State},
 };
 use color_eyre::eyre::WrapErr;
+use futures::{Future, FutureExt};
 use rocksdb::DB;
 use std::{
 	net::SocketAddr,
@@ -34,6 +36,7 @@ pub struct Server {
 	pub network_version: String,
 	pub node_client: rpc::Client,
 	pub ws_clients: v2::types::WsClients,
+	pub shutdown: Controller<String>,
 }
 
 fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
@@ -44,8 +47,8 @@ fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> 
 }
 
 impl Server {
-	/// Runs HTTP server
-	pub async fn run(self) {
+	/// Creates a HTTP server that needs to be spawned into a runtime
+	pub async fn bind(self) -> impl Future<Output = ()> {
 		let RuntimeConfig {
 			http_server_host: host,
 			http_server_port: port,
@@ -76,6 +79,10 @@ impl Server {
 			.wrap_err("Unable to parse host address from config")
 			.unwrap();
 		info!("RPC running on http://{host}:{port}");
-		warp::serve(routes).run(addr).await;
+		// warp graceful shutdown expects a signal that is [`Future<Output = ()>`]
+		let shutdown_signal = self.shutdown.triggered_shutdown().map(|_| ());
+		let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, shutdown_signal);
+
+		server
 	}
 }
