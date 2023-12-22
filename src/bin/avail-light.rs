@@ -123,7 +123,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 
 	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
-	let metric_attribues = MetricAttributes {
+	let metric_attributes = MetricAttributes {
 		role: client_role.into(),
 		peer_id,
 		ip: RwLock::new("".to_string()),
@@ -157,7 +157,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), metric_attribues)
+		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), metric_attributes)
 			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
