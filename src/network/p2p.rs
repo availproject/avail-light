@@ -23,8 +23,8 @@ mod event_loop;
 mod kad_mem_store;
 
 use crate::{
-	shutdown::Controller,
 	network::p2p::event_loop::IdentityData,
+	shutdown::Controller,
 	types::{KademliaMode, LibP2PConfig, SecretKey},
 };
 pub use client::Client;
