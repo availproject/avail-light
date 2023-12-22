@@ -16,7 +16,7 @@ use libp2p::{
 	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
@@ -26,6 +26,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
 	shutdown::{Controller, DelayToken},
 	telemetry::{MetricCounter, MetricValue, Metrics},
+	types::{AgentVersion, IdentifyConfig, KademliaMode},
 };
 
 use super::{
@@ -72,12 +73,6 @@ struct BootstrapState {
 	timer: Interval,
 }
 
-// Identity strings used for peer filtering
-pub struct IdentityData {
-	pub agent_version: String,
-	pub protocol_version: String,
-}
-
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: CommandReceiver,
@@ -90,7 +85,8 @@ pub struct EventLoop {
 	/// Blocks we monitor for PUT success rate
 	active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
-	identity_data: IdentityData,
+	// Used for checking protocol version
+	identity_data: IdentifyConfig,
 }
 
 #[derive(PartialEq, Debug)]
@@ -124,7 +120,7 @@ impl EventLoop {
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
 		shutdown: Controller<String>,
-		identity_data: IdentityData,
+		identity_data: IdentifyConfig,
 	) -> Self {
 		Self {
 			swarm,
@@ -235,6 +231,10 @@ impl EventLoop {
 						},
 						_ => {},
 					},
+					kad::Event::ModeChanged { new_mode } => {
+						trace!("Kademlia mode changed: {new_mode:?}");
+						// TODO: dynamic change of identify protocols Kad mode
+					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
 					} => match result {
@@ -304,29 +304,40 @@ impl EventLoop {
 						},
 						_ => {},
 					},
-					_ => {},
 				}
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
-				match event {
-					identify::Event::Received {
-						peer_id,
-						info:
-							Info {
-								listen_addrs,
-								agent_version,
-								protocol_version,
-								..
-							},
-					} => {
-						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
-						if agent_version != self.identity_data.agent_version
-							&& protocol_version != self.identity_data.protocol_version
+			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => match event {
+				identify::Event::Received {
+					peer_id,
+					info:
+						Info {
+							listen_addrs,
+							agent_version,
+							protocol_version,
+							..
+						},
+				} => {
+					trace!(
+						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
+					);
+					let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
+						Ok(agent) => agent,
+						Err(e) => {
+							info!("Error parsing incoming agent version: {e}");
+							return;
+						},
+					};
+					if protocol_version != self.identity_data.protocol_version {
+						// Block and remove non-Avail peers
+						debug!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
+						self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
+					} else {
+						// Add peer to routing table only if it's in Kademlia server mode
+						if incoming_peer_agent_version.kademlia_mode
+							== KademliaMode::Server.to_string()
 						{
-							trace!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
-							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-							self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
-						} else {
+							trace!("Adding peer {peer_id} to routing table.");
 							for addr in listen_addrs {
 								self.swarm
 									.behaviour_mut()
@@ -334,17 +345,17 @@ impl EventLoop {
 									.add_address(&peer_id, addr);
 							}
 						}
-					},
-					identify::Event::Sent { peer_id } => {
-						trace!("Identity Sent event to: {peer_id:?}");
-					},
-					identify::Event::Pushed { peer_id, .. } => {
-						trace!("Identify Pushed event. PeerId: {peer_id:?}");
-					},
-					identify::Event::Error { peer_id, error } => {
-						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
-					},
-				}
+					}
+				},
+				identify::Event::Sent { peer_id } => {
+					trace!("Identity Sent event to: {peer_id:?}");
+				},
+				identify::Event::Pushed { peer_id, .. } => {
+					trace!("Identify Pushed event. PeerId: {peer_id:?}");
+				},
+				identify::Event::Error { peer_id, error } => {
+					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+				},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
 				mdns::Event::Discovered(addrs_list) => {
