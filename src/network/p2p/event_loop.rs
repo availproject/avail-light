@@ -323,16 +323,11 @@ impl EventLoop {
 					let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
 						Ok(agent) => agent,
 						Err(e) => {
-							info!("Error parsing incoming agent version: {e}");
+							debug!("Error parsing incoming agent version: {e}");
 							return;
 						},
 					};
-					if protocol_version != self.identity_data.protocol_version {
-						// Block and remove non-Avail peers
-						debug!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
-						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-						self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
-					} else {
+					if protocol_version == self.identity_data.protocol_version {
 						// Add peer to routing table only if it's in Kademlia server mode
 						if incoming_peer_agent_version.kademlia_mode
 							== KademliaMode::Server.to_string()
@@ -345,6 +340,11 @@ impl EventLoop {
 									.add_address(&peer_id, addr);
 							}
 						}
+					} else {
+						// Block and remove non-Avail peers
+						debug!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
+						self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
 					}
 				},
 				identify::Event::Sent { peer_id } => {

@@ -524,12 +524,14 @@ impl From<&RuntimeConfig> for AutoNATConfig {
 
 pub struct IdentifyConfig {
 	pub agent_version: AgentVersion,
+	/// Contains Avail genesis hash
 	pub protocol_version: String,
 }
 
 pub struct AgentVersion {
 	pub base_version: String,
 	pub client_type: String,
+	// Kademlie client or server mode
 	pub kademlia_mode: String,
 }
 
