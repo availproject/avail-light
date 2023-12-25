@@ -48,7 +48,7 @@ fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> 
 
 impl Server {
 	/// Creates a HTTP server that needs to be spawned into a runtime
-	pub async fn bind(self) -> impl Future<Output = ()> {
+	pub fn bind(self) -> impl Future<Output = ()> {
 		let RuntimeConfig {
 			http_server_host: host,
 			http_server_port: port,
