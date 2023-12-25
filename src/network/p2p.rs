@@ -23,7 +23,6 @@ mod event_loop;
 mod kad_mem_store;
 
 use crate::{
-	network::p2p::event_loop::IdentityData,
 	shutdown::Controller,
 	types::{KademliaMode, LibP2PConfig, SecretKey},
 };
@@ -172,7 +171,7 @@ pub fn init(
 			// create Identify Protocol Config
 			let identify_cfg =
 				identify::Config::new(cfg.identify.protocol_version.clone(), key.public())
-					.with_agent_version(cfg.identify.agent_version.clone());
+					.with_agent_version(cfg.identify.agent_version.to_string());
 
 			// create AutoNAT Client Config
 			let autonat_cfg = autonat::Config {
@@ -209,6 +208,11 @@ pub fn init(
 		cfg.kademlia_mode.into()
 	};
 
+	// Setting the mode this way disables automatic mode changes.
+	//
+	// Because the identify protocol doesn't allow us to change
+	// agent data on the fly, we're forced to use static Kad modes
+	// instead of relying on dynamic changes
 	swarm.behaviour_mut().kademlia.set_mode(Some(kad_mode));
 
 	// create sender channel for Event Loop Commands
@@ -223,10 +227,7 @@ pub fn init(
 			cfg.bootstrap_interval,
 			is_fat_client,
 			shutdown,
-			IdentityData {
-				agent_version: cfg.identify.agent_version,
-				protocol_version: cfg.identify.protocol_version.clone(),
-			},
+			cfg.identify,
 		),
 	))
 }

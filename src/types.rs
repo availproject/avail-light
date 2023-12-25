@@ -36,7 +36,8 @@ pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
 pub const DEV_FLAG_GENHASH: &str = "DEV";
 pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
-pub const IDENTITY_AGENT: &str = "avail-light-client/rust-client";
+pub const IDENTITY_AGENT_BASE: &str = "avail-light-client";
+pub const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
 #[derive(Parser)]
 #[command(version)]
@@ -117,7 +118,7 @@ impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(try_from = "String")]
 pub enum KademliaMode {
 	Client,
@@ -522,16 +523,65 @@ impl From<&RuntimeConfig> for AutoNATConfig {
 }
 
 pub struct IdentifyConfig {
-	pub agent_version: String,
+	pub agent_version: AgentVersion,
+	/// Contains Avail genesis hash
 	pub protocol_version: String,
+}
+
+pub struct AgentVersion {
+	pub base_version: String,
+	pub client_type: String,
+	// Kademlie client or server mode
+	pub kademlia_mode: String,
+}
+
+impl fmt::Display for AgentVersion {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(
+			f,
+			"{}/{}/{}",
+			self.base_version, self.client_type, self.kademlia_mode
+		)
+	}
+}
+
+impl FromStr for AgentVersion {
+	type Err = String;
+
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+		let parts: Vec<&str> = s.split('/').collect();
+		if parts.len() != 3 {
+			return Err("Failed to parse agent version".to_owned());
+		}
+
+		Ok(AgentVersion {
+			base_version: parts[0].to_string(),
+			client_type: parts[1].to_string(),
+			kademlia_mode: parts[2].to_string(),
+		})
+	}
 }
 
 impl From<&RuntimeConfig> for IdentifyConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		let mut genhash_short = val.genesis_hash.trim_start_matches("0x").to_string();
 		genhash_short.truncate(6);
+
+		let kademlia_mode = if val.is_fat_client() {
+			// Fat client is implicitly server mode
+			KademliaMode::Server.to_string()
+		} else {
+			val.operation_mode.to_string()
+		};
+
+		let agent_version = AgentVersion {
+			base_version: IDENTITY_AGENT_BASE.to_string(),
+			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
+			kademlia_mode,
+		};
+
 		Self {
-			agent_version: IDENTITY_AGENT.to_string(),
+			agent_version,
 			protocol_version: format!(
 				"{id}-{gen_hash}",
 				id = IDENTITY_PROTOCOL,
@@ -626,7 +676,7 @@ impl Default for RuntimeConfig {
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: "external".to_string(),
-			operation_mode: KademliaMode::Server,
+			operation_mode: KademliaMode::Client,
 		}
 	}
 }
