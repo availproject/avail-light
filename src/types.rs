@@ -709,10 +709,8 @@ impl Network {
 
 	fn multiaddr(&self) -> &str {
 		match self {
-			Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
-			Network::Goldberg => {
-				"/dns/bootnode.1.lightclient.goldberg.avail.tools/udp/37000/quic-v1"
-			},
+			Network::Local => "/ip4/127.0.0.1/tcp/39000",
+			Network::Goldberg => "/dns/bootnode.1.lightclient.goldberg.avail.tools/tcp/37000",
 		}
 	}
 
