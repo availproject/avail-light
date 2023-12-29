@@ -113,7 +113,6 @@ impl Command for StartListening {
 struct AddAddress {
 	peer_id: PeerId,
 	peer_addr: Multiaddr,
-	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
 impl Command for AddAddress {
@@ -123,19 +122,10 @@ impl Command for AddAddress {
 			.kademlia
 			.add_address(&self.peer_id, self.peer_addr.clone());
 
-		// insert response channel into Swarm Events pending map
-		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
 		Ok(())
 	}
 
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("AddAddress receiver dropped");
-	}
+	fn abort(&mut self, _error: Report) {}
 }
 
 struct Bootstrap {
@@ -452,14 +442,10 @@ impl Client {
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		self.execute_sync(|response_sender| {
-			Box::new(AddAddress {
-				peer_id,
-				peer_addr,
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		self.command_sender
+			.send(Box::new(AddAddress { peer_id, peer_addr }))
+			.await
+			.context("failed to add address to the routing table")
 	}
 
 	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {

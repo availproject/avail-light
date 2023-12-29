@@ -76,8 +76,9 @@ struct BootstrapState {
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: CommandReceiver,
+	// Tracking Kademlia events
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
-	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	// Tracking swarm events (i.e. peer dialing)
 	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
@@ -126,7 +127,6 @@ impl EventLoop {
 			swarm,
 			command_receiver,
 			pending_kad_queries: Default::default(),
-			pending_kad_routing: Default::default(),
 			pending_swarm_events: Default::default(),
 			relay: RelayState {
 				id: PeerId::random(),
@@ -197,9 +197,6 @@ impl EventLoop {
 						..
 					} => {
 						trace!("Routing updated. Peer: {peer:?}. is_new_peer: {is_new_peer:?}. Addresses: {addresses:#?}. Old peer: {old_peer:#?}");
-						if let Some(ch) = self.pending_kad_routing.remove(&peer) {
-							_ = ch.send(Ok(()));
-						}
 					},
 					kad::Event::RoutablePeer { peer, address } => {
 						trace!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
@@ -507,7 +504,7 @@ impl EventLoop {
 		if let Err(err) = command.run(EventLoopEntries::new(
 			&mut self.swarm,
 			&mut self.pending_kad_queries,
-			&mut self.pending_kad_routing,
+			&mut self.pending_swarm_events,
 			&mut self.active_blocks,
 		)) {
 			command.abort(eyre!(err));
