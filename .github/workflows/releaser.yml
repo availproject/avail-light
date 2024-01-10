@@ -156,6 +156,6 @@ jobs:
           file: ./Dockerfile.release
           platforms: linux/amd64, linux/arm64
           push: true
-          tags: availj/avail:goldberg-${{ steps.prepare.outputs.tag_name }}
+          tags: availj/avail-light:goldberg-${{ steps.prepare.outputs.tag_name }}
           build-args: |
             AVAIL_TAG=${{ steps.prepare.outputs.tag_name }}
