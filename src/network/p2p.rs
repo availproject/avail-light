@@ -89,8 +89,8 @@ pub trait Command {
 }
 
 type SendableCommand = Box<dyn Command + Send + Sync>;
-type CommandSender = mpsc::Sender<SendableCommand>;
-type CommandReceiver = mpsc::Receiver<SendableCommand>;
+type CommandSender = mpsc::UnboundedSender<SendableCommand>;
+type CommandReceiver = mpsc::UnboundedReceiver<SendableCommand>;
 
 // Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]
@@ -216,7 +216,7 @@ pub fn init(
 	swarm.behaviour_mut().kademlia.set_mode(Some(kad_mode));
 
 	// create sender channel for Event Loop Commands
-	let (command_sender, command_receiver) = mpsc::channel(10000);
+	let (command_sender, command_receiver) = mpsc::unbounded_channel();
 
 	Ok((
 		Client::new(command_sender, dht_parallelization_limit, ttl),
