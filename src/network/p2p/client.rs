@@ -424,7 +424,6 @@ impl Client {
 		let command = command_with_sender(response_sender);
 		self.command_sender
 			.send(command)
-			.await
 			.wrap_err("receiver should not be dropped")?;
 		response_receiver
 			.await
@@ -444,7 +443,6 @@ impl Client {
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
 		self.command_sender
 			.send(Box::new(AddAddress { peer_id, peer_addr }))
-			.await
 			.context("failed to add address to the routing table")
 	}
 
@@ -513,7 +511,6 @@ impl Client {
 				quorum,
 				block_num,
 			}))
-			.await
 			.context("receiver should not be dropped")
 	}
 
