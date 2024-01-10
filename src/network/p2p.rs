@@ -24,7 +24,7 @@ mod kad_mem_store;
 
 use crate::{
 	shutdown::Controller,
-	types::{KademliaMode, LibP2PConfig, SecretKey},
+	types::{LibP2PConfig, SecretKey},
 };
 pub use client::Client;
 use event_loop::EventLoop;
@@ -202,11 +202,7 @@ pub fn init(
 		.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
 		.build();
 
-	let kad_mode = if is_fat_client {
-		KademliaMode::Server.into()
-	} else {
-		cfg.kademlia_mode.into()
-	};
+	let kad_mode = cfg.kademlia_mode.into();
 
 	// Setting the mode this way disables automatic mode changes.
 	//
