@@ -1,0 +1,23 @@
+FROM rust as builder
+
+WORKDIR /app
+
+ARG BUILD_PROFILE=release
+ENV BUILD_PROFILE $BUILD_PROFILE
+
+RUN apt-get update && apt-get -y upgrade && apt-get install -y cmake libclang-dev
+
+COPY . .
+
+RUN cargo build --profile $BUILD_PROFILE --locked --bin avail-light
+
+RUN cp /app/target/$BUILD_PROFILE/avail-light /app/avail-light
+
+FROM ubuntu as run
+WORKDIR /app
+RUN apt-get update && apt-get install -y ca-certificates
+
+COPY --from=builder /app/avail-light /usr/local/bin
+
+EXPOSE 7000 37000
+CMD ["/usr/local/bin/avail-light", "-n", "goldberg"]
