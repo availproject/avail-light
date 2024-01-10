@@ -121,3 +121,41 @@ jobs:
              tag: ${{ steps.prepare.outputs.tag_name }}
              overwrite: true
              file_glob: true
+
+  # build avail image and publish to dockerhub
+  docker_release_goldberg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Prepare
+        id: prepare
+        run: |
+            TAG=${GITHUB_REF#refs/tags/}
+            echo ::set-output name=tag_name::${TAG}
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push images
+        uses: docker/build-push-action@v3
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: .
+          file: ./Dockerfile.release
+          platforms: linux/amd64, linux/arm64
+          push: true
+          tags: availj/avail:goldberg-${{ steps.prepare.outputs.tag_name }}
+          build-args: |
+            AVAIL_TAG=${{ steps.prepare.outputs.tag_name }}
