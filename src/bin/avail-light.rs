@@ -231,9 +231,10 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
-	tokio::spawn(shutdown.with_cancel(rpc_event_loop.run(EXPECTED_NETWORK_VERSION)));
+	let rpc_event_loop_handle =
+		tokio::spawn(shutdown.with_cancel(rpc_event_loop.run(EXPECTED_NETWORK_VERSION)));
 
-	info!("Waiting for first finalized header...");
+	info!("Waiting for first finalized header... MIRKO!");
 	let block_header = match shutdown
 		.with_cancel(rpc::wait_for_finalized_header(
 			first_header_rpc_event_receiver,
@@ -241,9 +242,25 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 		))
 		.await
 	{
-		Ok(Err(report)) => return Err(report),
+		Ok(Err(report)) => {
+			if !rpc_event_loop_handle.is_finished() {
+				return Err(report);
+			}
+			let Ok(Ok(Err(event_loop_error))) = rpc_event_loop_handle.await else {
+				return Err(report);
+			};
+			return Err(eyre!(event_loop_error));
+		},
 		Ok(Ok(num)) => num,
-		Err(shutdown_reason) => return Err(eyre!(shutdown_reason)),
+		Err(shutdown_reason) => {
+			if !rpc_event_loop_handle.is_finished() {
+				return Err(eyre!(shutdown_reason));
+			}
+			let Ok(Ok(Err(event_loop_error))) = rpc_event_loop_handle.await else {
+				return Err(eyre!(shutdown_reason));
+			};
+			return Err(eyre!(event_loop_error));
+		},
 	};
 
 	state.lock().unwrap().latest = block_header.number;
