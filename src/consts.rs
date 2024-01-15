@@ -16,6 +16,6 @@ pub const STATE_CF: &str = "avail_light_state_cf";
 
 /// Expected network version
 pub const EXPECTED_NETWORK_VERSION: ExpectedVersion = ExpectedVersion {
-	version: "1.8",
+	version: "1.9",
 	spec_name: "data-avail",
 };

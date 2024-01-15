@@ -234,7 +234,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 	let rpc_event_loop_handle =
 		tokio::spawn(shutdown.with_cancel(rpc_event_loop.run(EXPECTED_NETWORK_VERSION)));
 
-	info!("Waiting for first finalized header... MIRKO!");
+	info!("Waiting for first finalized header...");
 	let block_header = match shutdown
 		.with_cancel(rpc::wait_for_finalized_header(
 			first_header_rpc_event_receiver,
