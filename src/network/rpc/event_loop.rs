@@ -110,7 +110,7 @@ impl EventLoop {
 		// shuffle passed Nodes and start try to connect the first one
 		let mut node = self.reset_nodes()?;
 
-		let client: OnlineClient<AvailConfig> = build_client(&node.host, false)
+		let (client, _) = build_client(&node.host, false)
 			.await
 			.map_err(|e| eyre!(e))?;
 
