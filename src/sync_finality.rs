@@ -2,7 +2,7 @@ use avail_subxt::primitives::Header;
 use codec::Encode;
 use color_eyre::{
 	eyre::{bail, eyre, Context},
-	Report, Result,
+	Result,
 };
 use futures::future::join_all;
 use rocksdb::DB;
@@ -12,7 +12,6 @@ use sp_core::{
 	twox_128, Pair, H256,
 };
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
 
 use crate::{
@@ -20,6 +19,7 @@ use crate::{
 		get_finality_sync_checkpoint, store_block_header_in_db, store_finality_sync_checkpoint,
 	},
 	network::rpc::{self, WrappedProof},
+	shutdown::Controller,
 	types::{FinalitySyncCheckpoint, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
@@ -108,15 +108,13 @@ async fn get_valset_at_genesis(
 
 pub async fn run(
 	sync_finality_impl: impl SyncFinality,
-	error_sender: Sender<Report>,
+	shutdown: Controller<String>,
 	state: Arc<Mutex<State>>,
 	from_header: Header,
 ) {
-	if let Err(err) = sync_finality(sync_finality_impl, state, from_header).await {
-		error!("Cannot sync finality {err}");
-		if let Err(error) = error_sender.send(err).await {
-			error!("Cannot send error message: {error}");
-		}
+	if let Err(error) = sync_finality(sync_finality_impl, state, from_header).await {
+		error!("Cannot sync finality {error}");
+		let _ = shutdown.trigger_shutdown(format!("Cannot sync finality {error:#}"));
 	};
 }
 

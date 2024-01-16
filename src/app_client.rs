@@ -17,7 +17,7 @@ use avail_subxt::utils::H256;
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
-	Report, Result,
+	Result,
 };
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
@@ -39,13 +39,14 @@ use std::{
 	ops::Range,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::{broadcast, mpsc::Sender};
+use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::store_encoded_data_in_db,
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
+	shutdown::Controller,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
@@ -441,7 +442,7 @@ pub async fn run(
 	state: Arc<Mutex<State>>,
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
-	error_sender: Sender<Report>,
+	shutdown: Controller<String>,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -465,9 +466,7 @@ pub async fn run(
 			Ok(block) => block,
 			Err(error) => {
 				error!("Cannot receive message: {error}");
-				if let Err(error) = error_sender.send(error.into()).await {
-					error!("Cannot send error message: {error}");
-				}
+				let _ = shutdown.trigger_shutdown(format!("Cannot receive message: {error:#}"));
 				return;
 			},
 		};
@@ -496,18 +495,15 @@ pub async fn run(
 			Ok(data) => data,
 			Err(error) => {
 				error!(block_number, "Cannot process block: {error}");
-				if let Err(error) = error_sender.send(error).await {
-					error!("Cannot send error message: {error}");
-				}
+				let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
 				return;
 			},
 		};
 		set_data_verified_state(state.clone(), &sync_range, block_number);
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
-			if let Err(error) = error_sender.send(error.into()).await {
-				error!("Cannot send error message: {error}");
-			}
+			let _ =
+				shutdown.trigger_shutdown(format!("Cannot send data verified message: {error:#}"));
 			return;
 		}
 		debug!(block_number, "Block processed");

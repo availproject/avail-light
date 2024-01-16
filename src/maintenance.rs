@@ -1,10 +1,11 @@
-use color_eyre::{eyre::WrapErr, Report, Result};
+use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{debug, error, info};
+use tokio::sync::broadcast;
+use tracing::{debug, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
+	shutdown::Controller,
 	telemetry::{MetricValue, Metrics},
 	types::BlockVerified,
 };
@@ -38,8 +39,8 @@ pub async fn run(
 	p2p_client: P2pClient,
 	metrics: Arc<impl Metrics>,
 	mut block_receiver: broadcast::Receiver<BlockVerified>,
-	error_sender: Sender<Report>,
-) -> ! {
+	shutdown: Controller<String>,
+) {
 	info!("Starting maintenance...");
 
 	loop {
@@ -49,9 +50,8 @@ pub async fn run(
 		};
 
 		if let Err(error) = result {
-			if let Err(error) = error_sender.send(error).await {
-				error!("Cannot send error message: {error}");
-			}
+			let _ = shutdown.trigger_shutdown(format!("{error:#}"));
+			break;
 		}
 	}
 }

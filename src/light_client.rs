@@ -37,6 +37,7 @@ use crate::{
 		self,
 		rpc::{self, Event},
 	},
+	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, ClientChannels, LightClientConfig, OptionBlockRange, State},
 	utils::{calculate_confidence, extract_kate},
@@ -201,6 +202,7 @@ pub async fn process_block(
 /// * `metrics` - Metrics registry
 /// * `state` - Processed blocks state
 /// * `channels` - Communitaction channels
+/// * `shutdown` - Shutdown controller
 pub async fn run(
 	light_client: impl LightClient,
 	network_client: impl network::Client,
@@ -208,6 +210,7 @@ pub async fn run(
 	metrics: Arc<impl Metrics>,
 	state: Arc<Mutex<State>>,
 	mut channels: ClientChannels,
+	shutdown: Controller<String>,
 ) {
 	info!("Starting light client...");
 
@@ -250,9 +253,7 @@ pub async fn run(
 			Ok(confidence) => confidence,
 			Err(error) => {
 				error!("Cannot process block: {error}");
-				if let Err(error) = channels.error_sender.send(error).await {
-					error!("Cannot send error message: {error}");
-				}
+				let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
 				return;
 			},
 		};
