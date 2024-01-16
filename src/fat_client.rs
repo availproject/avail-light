@@ -31,6 +31,7 @@ use crate::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
 	},
+	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{BlockVerified, ClientChannels, FatClientConfig},
 	utils::extract_kate,
@@ -202,12 +203,14 @@ pub async fn process_block(
 /// * `metrics` -  Metrics registry
 /// * `channels` - Communitaction channels
 /// * `partition` - Assigned fat client partition
+/// * `shutdown` - Shutdown controller
 pub async fn run(
 	fat_client: impl FatClient,
 	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	partition: Partition,
+	shutdown: Controller<String>,
 ) {
 	info!("Starting fat client...");
 
@@ -240,9 +243,7 @@ pub async fn run(
 			process_block(&fat_client, &metrics, &cfg, &header, received_at, partition).await
 		{
 			error!("Cannot process block: {error}");
-			if let Err(error) = channels.error_sender.send(error).await {
-				error!("Cannot send error message: {error}");
-			}
+			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
 			return;
 		};
 

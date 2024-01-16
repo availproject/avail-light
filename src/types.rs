@@ -28,7 +28,6 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 use tokio::sync::broadcast;
-use tokio::sync::mpsc::Sender;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -94,7 +93,6 @@ pub struct BlockVerified {
 pub struct ClientChannels {
 	pub block_sender: broadcast::Sender<BlockVerified>,
 	pub rpc_event_receiver: broadcast::Receiver<Event>,
-	pub error_sender: Sender<Report>,
 }
 
 impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {

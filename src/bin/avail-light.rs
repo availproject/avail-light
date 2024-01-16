@@ -17,7 +17,7 @@ use avail_light::{
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
-	Report, Result,
+	Result,
 };
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
@@ -27,11 +27,7 @@ use std::{
 	path::Path,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::{
-	broadcast,
-	mpsc::{channel, Sender},
-	RwLock,
-};
+use tokio::sync::{broadcast, RwLock};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
@@ -75,7 +71,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Result<()> {
+async fn run(shutdown: Controller<String>) -> Result<()> {
 	let opts = CliOpts::parse();
 
 	let mut cfg: RuntimeConfig = RuntimeConfig::default();
@@ -200,7 +196,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 				info!("Bootstrap done.");
 			},
 			Err(e) => {
-				warn!("Bootstrap process: {e:?}.");
+				error!("Bootstrap process: {e:?}.");
 			},
 		}
 	});
@@ -297,7 +293,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 			state.clone(),
 			sync_range.clone(),
 			data_tx,
-			error_sender.clone(),
+			shutdown.clone(),
 		)));
 		data_rx
 	});
@@ -358,7 +354,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 		let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
 		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_finality::run(
 			sync_finality,
-			error_sender.clone(),
+			shutdown.clone(),
 			state.clone(),
 			block_header.clone(),
 		)));
@@ -374,13 +370,12 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
-		error_sender.clone(),
+		shutdown.clone(),
 	)));
 
 	let channels = avail_light::types::ClientChannels {
 		block_sender: block_tx,
 		rpc_event_receiver: client_rpc_event_receiver,
-		error_sender: error_sender.clone(),
 	};
 
 	if let Some(partition) = cfg.block_matrix_partition {
@@ -393,6 +388,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 			ot_metrics.clone(),
 			channels,
 			partition,
+			shutdown.clone(),
 		)));
 	} else {
 		let light_client = avail_light::light_client::new(db.clone());
@@ -406,6 +402,7 @@ async fn run(error_sender: Sender<Report>, shutdown: Controller<String>) -> Resu
 			ot_metrics,
 			state.clone(),
 			channels,
+			shutdown.clone(),
 		)));
 	}
 
@@ -527,23 +524,10 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	tokio::spawn(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
 
-	let (error_sender, mut error_receiver) = channel::<Report>(1);
-
-	if let Err(error) = run(error_sender, shutdown.clone()).await {
+	if let Err(error) = run(shutdown.clone()).await {
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};
-
-	tokio::spawn({
-		let shutdown = shutdown.clone();
-		async move {
-			let report = match error_receiver.recv().await {
-				Some(report) => report,
-				None => eyre!("Failed to receive error messages"),
-			};
-			_ = shutdown.trigger_shutdown(report.to_string());
-		}
-	});
 
 	let reason = shutdown.completed_shutdown().await;
 
