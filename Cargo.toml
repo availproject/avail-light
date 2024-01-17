@@ -40,7 +40,6 @@ confy = "0.4.0"
 derive_more = { version = "0.99.17", features = ["from"] }
 futures = { version = "0.3.15", default-features = false, features = ["std", "async-await"] }
 hex = "0.4"
-human-panic = { version = "1.2.2", features = ["color"] }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 itertools = "0.10.5"
 libc = "0.2.150"
