@@ -412,10 +412,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 	// initialize color-eyre hooks
 	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
-		.panic_section(format!(
-			"This is bug. Please, consider reporting it to us at {}",
-			env!("CARGO_PKG_REPOSITORY")
-		))
 		.display_location_section(true)
 		.display_env_section(true)
 		.into_hooks();
@@ -443,18 +439,6 @@ fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 		{
 			// prints color-eyre stack to stderr in production builds
 			eprintln!("{}", msg);
-			use human_panic::{handle_dump, print_msg, Metadata};
-			let meta = Metadata {
-				version: env!("CARGO_PKG_VERSION").into(),
-				name: env!("CARGO_PKG_NAME").into(),
-				authors: env!("CARGO_PKG_AUTHORS").into(),
-				homepage: env!("CARGO_PKG_HOMEPAGE").into(),
-			};
-
-			let file_path = handle_dump(&meta, panic_info);
-			// prints human-panic message
-			print_msg(file_path, &meta)
-				.expect("human-panic: printing error message to console failed");
 		}
 		error!("Error: {}", strip_ansi_escapes::strip_str(msg));
 
