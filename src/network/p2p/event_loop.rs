@@ -82,7 +82,7 @@ pub struct EventLoop {
 	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
-	kad_remove_local_record: bool,
+	is_fat_client: bool,
 	/// Blocks we monitor for PUT success rate
 	active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
@@ -119,7 +119,7 @@ impl EventLoop {
 		command_receiver: CommandReceiver,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
-		kad_remove_local_record: bool,
+		is_fat_client: bool,
 		shutdown: Controller<String>,
 		identity_data: IdentifyConfig,
 	) -> Self {
@@ -138,7 +138,7 @@ impl EventLoop {
 				is_startup_done: false,
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
-			kad_remove_local_record,
+			is_fat_client,
 			active_blocks: Default::default(),
 			shutdown,
 			identity_data,
@@ -399,8 +399,11 @@ impl EventLoop {
 					// if so, create reservation request with relay
 					if new == NatStatus::Private || old == NatStatus::Private {
 						info!("Autonat says we're still private.");
-						// select a relay, try to dial it
-						self.select_and_dial_relay();
+						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
+						if !self.is_fat_client {
+							// select a relay, try to dial it
+							self.select_and_dial_relay();
+						}
 					};
 				},
 			},
@@ -613,7 +616,7 @@ impl EventLoop {
 					.await;
 			}
 
-			if self.kad_remove_local_record {
+			if self.is_fat_client {
 				// Remove local records for fat clients (memory optimization)
 				debug!("Pruning local records on fat client");
 				self.swarm.behaviour_mut().kademlia.remove_record(&key);
