@@ -135,7 +135,7 @@ pub fn init(
 	let mut swarm = SwarmBuilder::with_existing_identity(id_keys)
 		.with_tokio()
 		.with_tcp(
-			tcp::Config::default().port_reuse(true).nodelay(true),
+			tcp::Config::default().port_reuse(false).nodelay(false),
 			noise::Config::new,
 			yamux::Config::default,
 		)?
