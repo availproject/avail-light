@@ -1,4 +1,4 @@
-FROM rust as builder
+FROM rust:1-slim-buster as builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN cargo build --profile $BUILD_PROFILE --locked --bin avail-light
 
 RUN cp /app/target/$BUILD_PROFILE/avail-light /app/avail-light
 
-FROM ubuntu as run
+FROM rust:1-slim-buster as run
 WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates
 
