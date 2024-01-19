@@ -10,7 +10,7 @@ on:
 jobs:
 
   binary_linux_amd64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
          - uses: actions/checkout@v2
          - name: install cargo deps and build avail
@@ -30,7 +30,7 @@ jobs:
              path: target/maxperf/avail-light-linux-amd64.tar.gz
              
   binary_linux_aarch64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
          - uses: actions/checkout@v2
          - name: install cargo deps and build avail
@@ -93,7 +93,7 @@ jobs:
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
   binary_publish:
     needs: [binary_linux_amd64, binary_linux_aarch64, binary_apple_arm64, binary_apple_x86_64]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
          - uses: actions/download-artifact@v2
            with:
@@ -124,7 +124,7 @@ jobs:
 
   # build avail image and publish to dockerhub
   docker_release_goldberg:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
