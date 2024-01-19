@@ -1,6 +1,5 @@
 #![doc = include_str!("../../README.md")]
 
-use async_std::task;
 use avail_core::AppId;
 use avail_light::{
 	api,
@@ -170,7 +169,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	.wrap_err("Failed to init Network Service")?;
 
 	// spawn the P2P Network task for Event Loop run in the background
-	tokio::spawn(p2p_event_loop.run(ot_metrics.clone()));
+	tokio::spawn(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
 
 	// Start listening on provided port
 	let port = cfg.port;
@@ -186,7 +185,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
-	tokio::spawn(async move {
+	tokio::spawn(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let bs_result = p2p_clone
 			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
@@ -199,7 +198,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 				error!("Bootstrap process: {e:?}.");
 			},
 		}
-	});
+	}));
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
@@ -276,7 +275,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
 	};
-	tokio::task::spawn(server.bind());
+	tokio::task::spawn(shutdown.with_cancel(server.bind()));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
 
@@ -415,31 +414,15 @@ fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 		.display_location_section(true)
 		.display_env_section(true)
 		.into_hooks();
+
 	// install hook as global handler
 	eyre_hook.install()?;
 
 	std::panic::set_hook(Box::new(move |panic_info| {
-		let shutdown = shutdown.clone();
-		task::block_on(async move {
-			let shutdown_msg =
-				match shutdown.trigger_shutdown("panic occurred, shuting down".to_string()) {
-					Ok(_) => {
-						"Panic shutdown triggered with success, awaiting completion...".to_string()
-					},
-					Err(err) => format!("Shutdown has already started, reason: {}", err.reason),
-				};
-
-			eprintln!("{shutdown_msg}");
-			shutdown.completed_shutdown().await;
-			println!("Shutdown completed.");
-		});
+		// trigger shutdown to stop other tasks if panic occurrs
+		let _ = shutdown.trigger_shutdown("Panic occurred, shuting down".to_string());
 
 		let msg = format!("{}", panic_hook.panic_report(panic_info));
-		#[cfg(not(debug_assertions))]
-		{
-			// prints color-eyre stack to stderr in production builds
-			eprintln!("{}", msg);
-		}
 		error!("Error: {}", strip_ansi_escapes::strip_str(msg));
 
 		#[cfg(debug_assertions)]
@@ -451,8 +434,6 @@ fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 				.verbosity(better_panic::Verbosity::Medium)
 				.create_panic_handler()(panic_info);
 		}
-
-		std::process::exit(libc::EXIT_FAILURE);
 	}));
 	Ok(())
 }
@@ -502,6 +483,7 @@ async fn user_signal() {
 #[tokio::main]
 pub async fn main() -> Result<()> {
 	let shutdown = Controller::new();
+
 	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
 

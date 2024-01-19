@@ -101,10 +101,8 @@ inherits = "release"
 debug = true
 
 [profile.dev]
-panic = "abort"
 
 [profile.release]
-panic = "abort"
 incremental = false
 
 [profile.maxperf]

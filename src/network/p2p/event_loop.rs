@@ -24,7 +24,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-	shutdown::{Controller, DelayToken},
+	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{AgentVersion, IdentifyConfig, KademliaMode},
 };
@@ -113,6 +113,18 @@ impl TryFrom<RecordKey> for DHTKey {
 	}
 }
 
+impl Drop for EventLoop {
+	fn drop(&mut self) {
+		info!("Shuting down P2P Event Loop. Please wait...");
+		let connected_peers: Vec<PeerId> = self.swarm.connected_peers().cloned().collect();
+		// close all active connections with other peers
+		for peer in connected_peers {
+			_ = self.swarm.disconnect_peer_id(peer);
+		}
+		info!("P2P Event Loop shutdown complete.");
+	}
+}
+
 impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
@@ -147,7 +159,7 @@ impl EventLoop {
 
 	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
 		// shutdown will wait as long as this token is not dropped
-		let delay_token = self
+		let _delay_token = self
 			.shutdown
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
@@ -165,19 +177,6 @@ impl EventLoop {
 				_ = self.shutdown.triggered_shutdown() => { break; }
 			}
 		}
-		self.shutdown_cleanup(delay_token);
-	}
-
-	fn shutdown_cleanup(&mut self, delay_token: DelayToken<String>) {
-		info!("Shuting down P2P Event Loop. Please wait...");
-		let connected_peers: Vec<PeerId> = self.swarm.connected_peers().cloned().collect();
-		// close all active connections with other peers
-		for peer in connected_peers {
-			_ = self.swarm.disconnect_peer_id(peer);
-		}
-		info!("P2P Event Loop shutdown complete.");
-		// allow shutdown to continue
-		drop(delay_token);
 	}
 
 	#[tracing::instrument(level = "trace", skip(self, metrics))]
