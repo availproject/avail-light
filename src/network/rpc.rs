@@ -206,6 +206,7 @@ pub fn init(
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
+	expected_version: ExpectedVersion<'static>,
 ) -> (Client, broadcast::Sender<Event>, EventLoop) {
 	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
@@ -222,6 +223,7 @@ pub fn init(
 			command_receiver,
 			event_sender,
 			genesis_hash,
+			expected_version,
 		),
 	)
 }

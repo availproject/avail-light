@@ -29,8 +29,14 @@ async fn main() -> Result<()> {
 	let db = data::init_db(&command_args.avail_path)?;
 	let state = Arc::new(Mutex::new(State::default()));
 
-	let (rpc_client, _, event_loop) = rpc::init(db, state, &[command_args.url], "DEV");
-	tokio::spawn(event_loop.run(EXPECTED_NETWORK_VERSION));
+	let (rpc_client, _, event_loop) = rpc::init(
+		db,
+		state,
+		&[command_args.url],
+		"DEV",
+		EXPECTED_NETWORK_VERSION,
+	);
+	tokio::spawn(event_loop.run());
 
 	let mut correct: bool = true;
 

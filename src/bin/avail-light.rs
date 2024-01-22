@@ -215,6 +215,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		state.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
+		EXPECTED_NETWORK_VERSION,
 	);
 
 	// Subscribing to RPC events before first event is published
@@ -226,8 +227,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
-	let rpc_event_loop_handle =
-		tokio::spawn(shutdown.with_cancel(rpc_event_loop.run(EXPECTED_NETWORK_VERSION)));
+	let rpc_event_loop_handle = tokio::spawn(shutdown.with_cancel(rpc_event_loop.run()));
 
 	info!("Waiting for first finalized header...");
 	let block_header = match shutdown

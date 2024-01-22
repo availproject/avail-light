@@ -74,6 +74,7 @@ pub struct EventLoop {
 	state: Arc<Mutex<State>>,
 	block_data: BlockData,
 	genesis_hash: String,
+	expected_version: ExpectedVersion<'static>,
 }
 
 impl EventLoop {
@@ -84,6 +85,7 @@ impl EventLoop {
 		command_receiver: CommandReceiver,
 		event_sender: Sender<Event>,
 		genesis_hash: &str,
+		expected_version: ExpectedVersion<'static>,
 	) -> EventLoop {
 		Self {
 			subxt_client: None,
@@ -103,10 +105,11 @@ impl EventLoop {
 				next_valset: None,
 				last_finalized_block_header: None,
 			},
+			expected_version,
 		}
 	}
 
-	async fn create_subxt_client(&mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
+	async fn create_subxt_client(&mut self) -> Result<()> {
 		// shuffle passed Nodes and start try to connect the first one
 		let mut node = self.reset_nodes()?;
 
@@ -135,8 +138,11 @@ impl EventLoop {
 			system_version, runtime_version.spec_name, runtime_version.spec_version
 		);
 
-		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			return Err(eyre!("Expected {expected_version}, found {version}"));
+		if !self
+			.expected_version
+			.matches(&system_version, &runtime_version.spec_name)
+		{
+			return Err(eyre!("Expected {}, found {version}", self.expected_version));
 		}
 
 		info!(
@@ -208,9 +214,9 @@ impl EventLoop {
 		Ok(())
 	}
 
-	pub async fn run(mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
+	pub async fn run(mut self) -> Result<()> {
 		// try and create Subxt Client
-		self.create_subxt_client(expected_version).await?;
+		self.create_subxt_client().await?;
 		// try to create RPC Subscription Stream
 		let mut subscriptions_stream = self.stream_subscriptions().await?;
 		// try to get latest Finalized Block Data and set values
