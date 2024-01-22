@@ -123,15 +123,6 @@ impl EventLoop {
 			.rpc()
 			.request("state_getRuntimeVersion", RpcParams::new())
 			.await?;
-		// client was built successfully, keep it
-		self.set_subxt_client(client);
-
-		node.with_spec_version(runtime_version.spec_version)
-			.with_system_version(system_version.clone())
-			.with_genesis_hash(genesis_hash);
-		// connecting to the selected node was a success,
-		// put it in the state, for all to use
-		self.store_node_data(node.clone())?;
 
 		let version = format!(
 			"v/{}/{}/{}",
@@ -144,6 +135,16 @@ impl EventLoop {
 		{
 			return Err(eyre!("Expected {}, found {version}", self.expected_version));
 		}
+
+		// client was built successfully, keep it
+		self.set_subxt_client(client);
+
+		node.with_spec_version(runtime_version.spec_version)
+			.with_system_version(system_version.clone())
+			.with_genesis_hash(genesis_hash);
+		// connecting to the selected node was a success,
+		// put it in the state, for all to use
+		self.store_node_data(node.clone())?;
 
 		info!(
 			"Connection established to the Node: {:?} <{version}>",
