@@ -22,7 +22,7 @@ use sp_core::crypto::Ss58Codec;
 use sp_core::{blake2_256, bytes, ed25519};
 use std::fmt::{self, Display, Formatter};
 use std::fs;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU8, NonZeroUsize};
 use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -346,6 +346,10 @@ pub struct RuntimeConfig {
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
 	pub connection_idle_timeout: u64,
+	pub max_negotiating_inbound_streams: usize,
+	pub task_command_buffer_size: usize,
+	pub per_connection_event_buffer_size: usize,
+	pub dial_concurrency_factor: u8,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub query_timeout: u32,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
@@ -445,7 +449,10 @@ pub struct LibP2PConfig {
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
 	pub connection_idle_timeout: Duration,
-	pub kademlia_mode: KademliaMode,
+	pub max_negotiating_inbound_streams: usize,
+	pub task_command_buffer_size: NonZeroUsize,
+	pub per_connection_event_buffer_size: usize,
+	pub dial_concurrency_factor: NonZeroU8,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -459,7 +466,12 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout),
-			kademlia_mode: val.operation_mode,
+			max_negotiating_inbound_streams: val.max_negotiating_inbound_streams,
+			task_command_buffer_size: std::num::NonZeroUsize::new(val.task_command_buffer_size)
+				.expect("Invalid task command buffer size"),
+			per_connection_event_buffer_size: val.per_connection_event_buffer_size,
+			dial_concurrency_factor: std::num::NonZeroU8::new(val.dial_concurrency_factor)
+				.expect("Invalid dial concurrency factor"),
 		}
 	}
 }
@@ -477,6 +489,7 @@ pub struct KademliaConfig {
 	pub max_kad_record_number: usize,
 	pub max_kad_record_size: usize,
 	pub max_kad_provided_keys: usize,
+	pub kademlia_mode: KademliaMode,
 }
 
 impl From<&RuntimeConfig> for KademliaConfig {
@@ -495,6 +508,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 			max_kad_record_number: val.max_kad_record_number as usize,
 			max_kad_record_size: val.max_kad_record_size as usize,
 			max_kad_provided_keys: val.max_kad_provided_keys as usize,
+			kademlia_mode: val.operation_mode,
 		}
 	}
 }
@@ -664,6 +678,10 @@ impl Default for RuntimeConfig {
 			publication_interval: 12 * 60 * 60,
 			replication_interval: 3 * 60 * 60,
 			connection_idle_timeout: 30,
+			max_negotiating_inbound_streams: 128,
+			task_command_buffer_size: 32,
+			per_connection_event_buffer_size: 7,
+			dial_concurrency_factor: 8,
 			query_timeout: 10,
 			query_parallelism: 3,
 			caching_max_peers: 1,
