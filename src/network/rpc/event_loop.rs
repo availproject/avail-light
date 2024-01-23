@@ -18,7 +18,7 @@ use sp_core::{
 };
 use std::{
 	sync::{Arc, Mutex},
-	time::Instant,
+	time::{Duration, Instant},
 };
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
@@ -65,7 +65,10 @@ struct BlockData {
 	last_finalized_block_header: Option<Header>,
 }
 
-pub struct EventLoop {
+pub struct EventLoop<T>
+where
+	T: Iterator<Item = Duration>,
+{
 	subxt_client: Option<avail::Client>,
 	command_receiver: CommandReceiver,
 	event_sender: Sender<Event>,
@@ -75,9 +78,13 @@ pub struct EventLoop {
 	block_data: BlockData,
 	genesis_hash: String,
 	expected_version: ExpectedVersion<'static>,
+	retry_strategy: T,
 }
 
-impl EventLoop {
+impl<T> EventLoop<T>
+where
+	T: Iterator<Item = Duration>,
+{
 	pub fn new(
 		db: Arc<DB>,
 		state: Arc<Mutex<State>>,
@@ -86,7 +93,8 @@ impl EventLoop {
 		event_sender: Sender<Event>,
 		genesis_hash: &str,
 		expected_version: ExpectedVersion<'static>,
-	) -> EventLoop {
+		retry_strategy: T,
+	) -> Self {
 		Self {
 			subxt_client: None,
 			genesis_hash: genesis_hash.to_string(),
@@ -106,6 +114,7 @@ impl EventLoop {
 				last_finalized_block_header: None,
 			},
 			expected_version,
+			retry_strategy,
 		}
 	}
 

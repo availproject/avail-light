@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header, utils::H256};
+use chrono::format::Item;
 use codec::Decode;
 use color_eyre::{eyre::eyre, Report, Result};
 use kate_recovery::matrix::{Dimensions, Position};
@@ -11,6 +12,7 @@ use std::{
 	collections::HashSet,
 	fmt::Display,
 	sync::{Arc, Mutex},
+	time::Duration,
 };
 use tokio::{
 	sync::{broadcast, mpsc},
@@ -201,13 +203,14 @@ impl Display for ExpectedVersion<'_> {
 	}
 }
 
-pub fn init(
+pub fn init<T: Iterator<Item = Duration>>(
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	expected_version: ExpectedVersion<'static>,
-) -> (Client, broadcast::Sender<Event>, EventLoop) {
+	retry_strategy: T,
+) -> (Client, broadcast::Sender<Event>, EventLoop<T>) {
 	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
 	// create output channel for RPC Subscription Events
@@ -224,6 +227,7 @@ pub fn init(
 			event_sender,
 			genesis_hash,
 			expected_version,
+			retry_strategy,
 		),
 	)
 }
