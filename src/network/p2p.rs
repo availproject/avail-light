@@ -199,10 +199,16 @@ pub fn init(
 				blocked_peers: allow_block_list::Behaviour::default(),
 			})
 		})?
-		.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
+		.with_swarm_config(|c| {
+			c.with_idle_connection_timeout(cfg.connection_idle_timeout)
+				.with_max_negotiating_inbound_streams(cfg.max_negotiating_inbound_streams)
+				.with_notify_handler_buffer_size(cfg.task_command_buffer_size)
+				.with_dial_concurrency_factor(cfg.dial_concurrency_factor)
+				.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
+		})
 		.build();
 
-	let kad_mode = cfg.kademlia_mode.into();
+	let kad_mode = cfg.kademlia.kademlia_mode.into();
 
 	// Setting the mode this way disables automatic mode changes.
 	//
