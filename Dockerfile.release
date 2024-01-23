@@ -2,7 +2,7 @@ FROM rust:1-slim-buster as builder
 
 WORKDIR /app
 
-ARG BUILD_PROFILE=release
+ARG BUILD_PROFILE=maxperf
 ENV BUILD_PROFILE $BUILD_PROFILE
 
 RUN apt-get update && apt-get -y upgrade && apt-get install -y cmake libclang-dev
