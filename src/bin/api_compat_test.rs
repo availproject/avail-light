@@ -1,13 +1,12 @@
 use avail_light::{
 	data,
 	network::rpc::{self, ExpectedVersion},
-	types::State,
+	types::{ExponentialConfig, RetryConfig, State},
 };
 use clap::Parser;
 use color_eyre::Result;
 use kate_recovery::matrix::Position;
 use std::sync::{Arc, Mutex};
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
 
 #[derive(Parser)]
 struct CommandArgs {
@@ -29,9 +28,11 @@ async fn main() -> Result<()> {
 	println!("Using Path: {}", command_args.avail_path);
 	let db = data::init_db(&command_args.avail_path)?;
 	let state = Arc::new(Mutex::new(State::default()));
-	let retry_strategy = ExponentialBackoff::from_millis(10)
-		.map(jitter) // add jitter to delays
-		.take(3); // limit to 3 retries
+	let retry_cfg = RetryConfig::Exponential(ExponentialConfig {
+		base: 10,
+		max_delay: 4000,
+		retries: 4,
+	});
 
 	let (rpc_client, _, event_loop) = rpc::init(
 		db,
@@ -39,7 +40,7 @@ async fn main() -> Result<()> {
 		&[command_args.url],
 		"DEV",
 		EXPECTED_NETWORK_VERSION,
-		retry_strategy,
+		retry_cfg,
 	);
 	tokio::spawn(event_loop.run());
 

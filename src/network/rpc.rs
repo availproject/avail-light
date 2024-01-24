@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header, utils::H256};
-use chrono::format::Item;
 use codec::Decode;
 use color_eyre::{eyre::eyre, Report, Result};
 use kate_recovery::matrix::{Dimensions, Position};
@@ -12,7 +11,6 @@ use std::{
 	collections::HashSet,
 	fmt::Display,
 	sync::{Arc, Mutex},
-	time::Duration,
 };
 use tokio::{
 	sync::{broadcast, mpsc},
@@ -23,7 +21,7 @@ use tracing::{debug, info};
 use crate::{
 	consts::EXPECTED_NETWORK_VERSION,
 	network::rpc,
-	types::{GrandpaJustification, State},
+	types::{GrandpaJustification, RetryConfig, State},
 };
 
 mod client;
@@ -203,14 +201,14 @@ impl Display for ExpectedVersion<'_> {
 	}
 }
 
-pub fn init<T: Iterator<Item = Duration>>(
+pub fn init(
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	expected_version: ExpectedVersion<'static>,
-	retry_strategy: T,
-) -> (Client, broadcast::Sender<Event>, EventLoop<T>) {
+	retry_config: RetryConfig,
+) -> (Client, broadcast::Sender<Event>, EventLoop) {
 	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
 	// create output channel for RPC Subscription Events
@@ -227,7 +225,7 @@ pub fn init<T: Iterator<Item = Duration>>(
 			event_sender,
 			genesis_hash,
 			expected_version,
-			retry_strategy,
+			retry_config,
 		),
 	)
 }

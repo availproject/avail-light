@@ -257,8 +257,32 @@ pub enum SecretKey {
 	Key { key: String },
 }
 
-/// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum RetryConfig {
+	#[serde(rename = "exponential")]
+	Exponential(ExponentialConfig),
+
+	#[serde(rename = "fibonacci")]
+	Fibonacci(FibonacciConfig),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExponentialConfig {
+	pub base: u64,
+	pub max_delay: u64,
+	pub retries: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FibonacciConfig {
+	pub base: u64,
+	pub max_delay: u64,
+	pub retries: usize,
+}
+
+/// Representation of a configuration used by this project.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct RuntimeConfig {
 	/// Light client HTTP server host name (default: 127.0.0.1).
@@ -363,6 +387,7 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
+	pub retry_config: RetryConfig,
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
 	pub crawl: crate::crawl_client::CrawlConfig,
@@ -529,7 +554,7 @@ pub struct IdentifyConfig {
 pub struct AgentVersion {
 	pub base_version: String,
 	pub client_type: String,
-	// Kademlie client or server mode
+	// Kademlia client or server mode
 	pub kademlia_mode: String,
 }
 
@@ -675,6 +700,11 @@ impl Default for RuntimeConfig {
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: "external".to_string(),
 			operation_mode: KademliaMode::Client,
+			retry_config: RetryConfig::Exponential(ExponentialConfig {
+				base: 10,
+				max_delay: 4000,
+				retries: 4,
+			}),
 		}
 	}
 }

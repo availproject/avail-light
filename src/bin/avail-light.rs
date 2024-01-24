@@ -27,7 +27,6 @@ use std::{
 	sync::{Arc, Mutex},
 };
 use tokio::sync::{broadcast, RwLock};
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
@@ -211,16 +210,13 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let state = Arc::new(Mutex::new(State::default()));
-	let retry_strategy = ExponentialBackoff::from_millis(10)
-		.map(jitter) // add jitter to delays
-		.take(3); // limit to 3 retries
 	let (rpc_client, rpc_events, rpc_event_loop) = rpc::init(
 		db.clone(),
 		state.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
 		EXPECTED_NETWORK_VERSION,
-		retry_strategy,
+		cfg.retry_config.clone(),
 	);
 
 	// Subscribing to RPC events before first event is published

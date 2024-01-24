@@ -18,7 +18,7 @@ use sp_core::{
 };
 use std::{
 	sync::{Arc, Mutex},
-	time::{Duration, Instant},
+	time::Instant,
 };
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
@@ -32,8 +32,8 @@ use super::{CommandReceiver, ExpectedVersion, Node, Nodes, SendableCommand};
 use crate::{
 	data::store_finality_sync_checkpoint,
 	types::{
-		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RuntimeVersion,
-		SignerMessage, State, DEV_FLAG_GENHASH,
+		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RetryConfig,
+		RuntimeVersion, SignerMessage, State, DEV_FLAG_GENHASH,
 	},
 	utils::filter_auth_set_changes,
 };
@@ -65,10 +65,7 @@ struct BlockData {
 	last_finalized_block_header: Option<Header>,
 }
 
-pub struct EventLoop<T>
-where
-	T: Iterator<Item = Duration>,
-{
+pub struct EventLoop {
 	subxt_client: Option<avail::Client>,
 	command_receiver: CommandReceiver,
 	event_sender: Sender<Event>,
@@ -78,13 +75,10 @@ where
 	block_data: BlockData,
 	genesis_hash: String,
 	expected_version: ExpectedVersion<'static>,
-	retry_strategy: T,
+	retry_config: RetryConfig,
 }
 
-impl<T> EventLoop<T>
-where
-	T: Iterator<Item = Duration>,
-{
+impl EventLoop {
 	pub fn new(
 		db: Arc<DB>,
 		state: Arc<Mutex<State>>,
@@ -93,7 +87,7 @@ where
 		event_sender: Sender<Event>,
 		genesis_hash: &str,
 		expected_version: ExpectedVersion<'static>,
-		retry_strategy: T,
+		retry_config: RetryConfig,
 	) -> Self {
 		Self {
 			subxt_client: None,
@@ -114,7 +108,7 @@ where
 				last_finalized_block_header: None,
 			},
 			expected_version,
-			retry_strategy,
+			retry_config,
 		}
 	}
 
