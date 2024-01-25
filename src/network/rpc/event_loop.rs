@@ -115,41 +115,37 @@ impl EventLoop {
 		// shuffle available Nodes list
 		self.nodes.reset();
 		// start connecting nodes from the config list
-		for mut node in self.nodes.clone() {
+		for Node { host, .. } in self.nodes.clone() {
 			// retry connecting node with configured strategy
 			let retry_strategy = self.retry_config.clone().into_iter();
 			let res = Retry::spawn(retry_strategy, || async {
-				create_subxt_client(node.host.clone()).await
+				create_subxt_client(host.clone()).await
 			})
 			.await;
 
 			match res {
 				Err(error) => {
-					warn!(%error, "Failed to connect the Node on: {}. Retrying with {:#?} strategy failed. Skipping to another", node.host, self.retry_config)
+					warn!(%error, "Failed to connect the Node on: {}. Retrying with {:#?} strategy failed. Skipping to another", host, self.retry_config)
 				},
-				Ok((client, node_variant)) => {
-					if !node_variant.matches(expected.system_version, expected.spec_name) {
+				Ok((client, node)) => {
+					if !node.matches(expected.system_version, expected.spec_name) {
 						warn!(
 							"Expected Node system version:{}, found: {}. Skipping to another node.",
 							expected.system_version,
-							node_variant.system_version.clone(),
+							node.system_version.clone(),
 						);
 						continue;
 					}
 
 					// client was built successfully, keep it
 					self.set_subxt_client(client);
-
-					node.with_spec_version(node_variant.spec_version)
-						.with_system_version(node_variant.system_version.clone())
-						.with_genesis_hash(node_variant.genesis_hash);
 					// connecting to the selected node was a success,
 					// put it in the state, for all to use
 					self.store_node_data(node.clone())?;
 
 					info!(
 						"Connection established to the Node: {:?} <{:?}>",
-						node.host, node_variant.system_version
+						node.host, node.system_version
 					);
 
 					return Ok(());
