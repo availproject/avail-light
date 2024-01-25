@@ -4,6 +4,7 @@ use libp2p::{
 	autonat::{self, NatStatus},
 	dcutr,
 	identify::{self, Info},
+	identity::Keypair,
 	kad::{
 		self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult, QueryStats, RecordKey,
 	},
@@ -24,14 +25,15 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
+	network::p2p::kad_mem_store::MemoryStore,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{AgentVersion, IdentifyConfig, KademliaMode},
+	types::{AgentVersion, IdentifyConfig, KademliaMode, LibP2PConfig},
 };
 
 use super::{
-	client::BlockStat, Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries, QueryChannel,
-	SendableCommand,
+	build_swarm, client::BlockStat, Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries,
+	QueryChannel, SendableCommand,
 };
 
 // RelayState keeps track of all things relay related
@@ -75,7 +77,6 @@ struct BootstrapState {
 
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
-	command_receiver: CommandReceiver,
 	// Tracking Kademlia events
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
@@ -113,38 +114,29 @@ impl TryFrom<RecordKey> for DHTKey {
 	}
 }
 
-impl Drop for EventLoop {
-	fn drop(&mut self) {
-		info!("Shuting down P2P Event Loop. Please wait...");
-		let connected_peers: Vec<PeerId> = self.swarm.connected_peers().cloned().collect();
-		// close all active connections with other peers
-		for peer in connected_peers {
-			_ = self.swarm.disconnect_peer_id(peer);
-		}
-		info!("P2P Event Loop shutdown complete.");
-	}
-}
-
 impl EventLoop {
 	pub fn new(
-		swarm: Swarm<Behaviour>,
-		command_receiver: CommandReceiver,
-		relay_nodes: Vec<(PeerId, Multiaddr)>,
-		bootstrap_interval: Duration,
+		cfg: LibP2PConfig,
+		id_keys: &Keypair,
 		is_fat_client: bool,
 		shutdown: Controller<String>,
-		identity_data: IdentifyConfig,
 	) -> Self {
+		let bootstrap_interval = cfg.bootstrap_interval;
+		let kad_mode = cfg.kademlia.kademlia_mode.into();
+		let peer_id = id_keys.public().to_peer_id();
+		let store = MemoryStore::with_config(peer_id, (&cfg).into());
+
+		let swarm = build_swarm(&cfg, id_keys, kad_mode, store).expect("Swarm can be built");
+
 		Self {
 			swarm,
-			command_receiver,
 			pending_kad_queries: Default::default(),
 			pending_swarm_events: Default::default(),
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
 				is_circuit_established: false,
-				nodes: relay_nodes,
+				nodes: cfg.relays,
 			},
 			bootstrap: BootstrapState {
 				is_startup_done: false,
@@ -153,29 +145,40 @@ impl EventLoop {
 			is_fat_client,
 			active_blocks: Default::default(),
 			shutdown,
-			identity_data,
+			identity_data: cfg.identify,
 		}
 	}
 
-	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
+	pub async fn run(mut self, metrics: Arc<impl Metrics>, mut command_receiver: CommandReceiver) {
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
+
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
-				command = self.command_receiver.recv() => match command {
+				command = command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the network event loop.
-					None => return,
+					None => break,
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
-				_ = self.shutdown.triggered_shutdown() => { break; }
+				_ = self.shutdown.triggered_shutdown() => break
 			}
+		}
+		self.disconnect_peers();
+		info!("Exiting event loop...");
+	}
+
+	fn disconnect_peers(&mut self) {
+		let connected_peers: Vec<PeerId> = self.swarm.connected_peers().cloned().collect();
+		// close all active connections with other peers
+		for peer in connected_peers {
+			_ = self.swarm.disconnect_peer_id(peer);
 		}
 	}
 

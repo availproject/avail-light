@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 
+use crate::network::p2p::MemoryStoreConfig;
 use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
@@ -472,7 +473,6 @@ pub struct FatClientConfig {
 	pub block_processing_delay: Delay,
 	pub block_matrix_partition: Option<Partition>,
 	pub max_cells_per_rpc: usize,
-	pub ttl: u64,
 }
 
 impl From<&RuntimeConfig> for FatClientConfig {
@@ -490,11 +490,11 @@ impl From<&RuntimeConfig> for FatClientConfig {
 			block_processing_delay: Delay(block_processing_delay),
 			block_matrix_partition: val.block_matrix_partition,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
-			ttl: val.kad_record_ttl,
 		}
 	}
 }
 
+#[derive(Clone)]
 pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
 	pub port: u16,
@@ -508,6 +508,42 @@ pub struct LibP2PConfig {
 	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
+}
+
+impl From<&LibP2PConfig> for libp2p::kad::Config {
+	fn from(cfg: &LibP2PConfig) -> Self {
+		// Use identify protocol_version as Kademlia protocol name
+		let kademlia_protocol_name =
+			libp2p::StreamProtocol::try_from_owned(cfg.identify.protocol_version.clone())
+				.expect("Invalid Kademlia protocol name");
+
+		// create Kademlia Config
+		let mut kad_cfg = libp2p::kad::Config::default();
+		kad_cfg
+			.set_publication_interval(cfg.kademlia.publication_interval)
+			.set_replication_interval(cfg.kademlia.record_replication_interval)
+			.set_replication_factor(cfg.kademlia.record_replication_factor)
+			.set_query_timeout(cfg.kademlia.query_timeout)
+			.set_parallelism(cfg.kademlia.query_parallelism)
+			.set_caching(libp2p::kad::Caching::Enabled {
+				max_peers: cfg.kademlia.caching_max_peers,
+			})
+			.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
+			.set_record_filtering(libp2p::kad::StoreInserts::FilterBoth)
+			.set_protocol_names(vec![kademlia_protocol_name]);
+		kad_cfg
+	}
+}
+
+impl From<&LibP2PConfig> for MemoryStoreConfig {
+	fn from(cfg: &LibP2PConfig) -> Self {
+		MemoryStoreConfig {
+			max_records: cfg.kademlia.max_kad_record_number, // ~2hrs
+			max_value_bytes: cfg.kademlia.max_kad_record_size + 1,
+			max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs
+			max_provided_keys: cfg.kademlia.max_kad_provided_keys,
+		}
+	}
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -532,8 +568,8 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 }
 
 /// Kademlia configuration (see [RuntimeConfig] for details)
+#[derive(Clone)]
 pub struct KademliaConfig {
-	pub record_ttl: u64,
 	pub record_replication_factor: NonZeroUsize,
 	pub record_replication_interval: Option<Duration>,
 	pub publication_interval: Option<Duration>,
@@ -550,7 +586,6 @@ pub struct KademliaConfig {
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		Self {
-			record_ttl: val.kad_record_ttl,
 			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
 				.expect("Invalid replication factor"),
 			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
@@ -569,6 +604,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 }
 
 /// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
+#[derive(Clone)]
 pub struct AutoNATConfig {
 	pub retry_interval: Duration,
 	pub refresh_interval: Duration,
@@ -589,12 +625,14 @@ impl From<&RuntimeConfig> for AutoNATConfig {
 	}
 }
 
+#[derive(Clone)]
 pub struct IdentifyConfig {
 	pub agent_version: AgentVersion,
 	/// Contains Avail genesis hash
 	pub protocol_version: String,
 }
 
+#[derive(Clone)]
 pub struct AgentVersion {
 	pub base_version: String,
 	pub client_type: String,
@@ -664,7 +702,6 @@ pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub dht_parallelization_limit: usize,
-	pub ttl: u64,
 	pub is_last_step: bool,
 }
 
@@ -674,7 +711,6 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
-			ttl: val.kad_record_ttl,
 			is_last_step: val.app_id.is_none(),
 		}
 	}
