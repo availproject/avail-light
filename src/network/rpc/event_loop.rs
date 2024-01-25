@@ -241,7 +241,7 @@ impl EventLoop {
 
 	pub async fn run(mut self) -> Result<()> {
 		// try and create Subxt Client
-		self.connect_node().await?;
+		self.connect_node(ExpectedNodeVariant::new()).await?;
 		// try to create RPC Subscription Stream
 		let mut subscriptions_stream = self.stream_subscriptions().await?;
 		// try to get latest Finalized Block Data and set values
