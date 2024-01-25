@@ -111,7 +111,7 @@ impl EventLoop {
 		}
 	}
 
-	async fn connect_node(&mut self) -> Result<()> {
+	async fn connect_node(&mut self, expected: ExpectedNodeVariant) -> Result<()> {
 		// shuffle available Nodes list
 		self.nodes.reset();
 		// start connecting nodes from the config list
@@ -128,10 +128,10 @@ impl EventLoop {
 					warn!(%error, "Failed to connect the Node on: {}. Retrying with {:#?} strategy failed. Skipping to another", node.host, self.retry_config)
 				},
 				Ok((client, node_variant)) => {
-					if !node_variant.matches(EXPECTED_SYSTEM_VERSION, EXPECTED_SPEC_NAME) {
-						return Err(eyre!(
-							"Expected {}, found {}",
-							EXPECTED_SYSTEM_VERSION,
+					if !node_variant.matches(expected.system_version, expected.spec_name) {
+						warn!(
+							"Expected Node system version:{}, found: {}. Skipping to another node.",
+							expected.system_version,
 							node_variant.system_version.clone(),
 						));
 					}
