@@ -111,7 +111,7 @@ impl EventLoop {
 		}
 	}
 
-	async fn connect_node(&mut self) -> Result<Node> {
+	async fn connect_node(&mut self) -> Result<()> {
 		// shuffle available Nodes list
 		self.nodes.reset();
 		// start connecting nodes from the list
@@ -151,7 +151,7 @@ impl EventLoop {
 						node.host, node_variant.system_version
 					);
 
-					return Ok(node_variant);
+					return Ok(());
 				},
 			}
 		}
