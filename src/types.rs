@@ -28,6 +28,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 use tokio::sync::broadcast;
+use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -265,6 +266,28 @@ pub enum RetryConfig {
 
 	#[serde(rename = "fibonacci")]
 	Fibonacci(FibonacciConfig),
+}
+
+impl IntoIterator for RetryConfig {
+	type Item = Duration;
+	type IntoIter = Box<dyn Iterator<Item = Duration> + Send>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		match self {
+			RetryConfig::Exponential(config) => Box::new(
+				ExponentialBackoff::from_millis(config.base)
+					.max_delay(Duration::from_millis(config.max_delay))
+					.map(jitter)
+					.take(config.retries),
+			),
+			RetryConfig::Fibonacci(config) => Box::new(
+				FibonacciBackoff::from_millis(config.base)
+					.max_delay(Duration::from_millis(config.max_delay))
+					.map(jitter)
+					.take(config.retries),
+			),
+		}
+	}
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
