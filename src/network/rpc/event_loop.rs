@@ -31,7 +31,7 @@ use tracing::{debug, info, trace, warn};
 
 use super::{CommandReceiver, Node, Nodes, SendableCommand};
 use crate::{
-	consts::{EXPECTED_SPEC_NAME, EXPECTED_SYSTEM_VERSION},
+	consts::ExpectedNodeVariant,
 	data::store_finality_sync_checkpoint,
 	types::{
 		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RetryConfig,
