@@ -111,7 +111,7 @@ impl Node {
 	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
 	/// NOTE: Runtime compatibility check is currently not implemented.
 	pub fn matches(&self, expected_system_version: &str, expected_spec_name: &str) -> bool {
-		expected_system_version.starts_with(&self.system_version)
+		self.system_version.starts_with(expected_system_version)
 			&& self.spec_name == expected_spec_name
 	}
 
