@@ -130,8 +130,13 @@ impl Node {
 		self
 	}
 
-	pub fn with_system_version(&mut self, system_version: String) -> &mut Self {
-		self.system_version = system_version;
+	pub fn with_spec_name(&mut self, spec_name: &str) -> &mut Self {
+		self.spec_name = spec_name.to_string();
+		self
+	}
+
+	pub fn with_system_version(&mut self, system_version: &str) -> &mut Self {
+		self.system_version = system_version.to_string();
 		self
 	}
 
@@ -146,7 +151,7 @@ impl Default for Node {
 		Self {
 			host: "{host}".to_string(),
 			system_version: "{system_version}".to_string(),
-			spec_name: "{spec_name}".to_string(),
+			spec_name: "data-avail".to_string(),
 			spec_version: 0,
 			genesis_hash: H256::default(),
 		}
