@@ -25,11 +25,13 @@ use subxt::{
 	rpc_params, OnlineClient,
 };
 use tokio::sync::broadcast::Sender;
+use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, trace, warn};
 
-use super::{CommandReceiver, ExpectedVersion, Node, Nodes, SendableCommand};
+use super::{CommandReceiver, Node, Nodes, SendableCommand};
 use crate::{
+	consts::{EXPECTED_SPEC_NAME, EXPECTED_SYSTEM_VERSION},
 	data::store_finality_sync_checkpoint,
 	types::{
 		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RetryConfig,
@@ -74,7 +76,6 @@ pub struct EventLoop {
 	state: Arc<Mutex<State>>,
 	block_data: BlockData,
 	genesis_hash: String,
-	expected_version: ExpectedVersion<'static>,
 	retry_config: RetryConfig,
 }
 
@@ -86,7 +87,6 @@ impl EventLoop {
 		command_receiver: CommandReceiver,
 		event_sender: Sender<Event>,
 		genesis_hash: &str,
-		expected_version: ExpectedVersion<'static>,
 		retry_config: RetryConfig,
 	) -> Self {
 		Self {
@@ -107,54 +107,56 @@ impl EventLoop {
 				next_valset: None,
 				last_finalized_block_header: None,
 			},
-			expected_version,
 			retry_config,
 		}
 	}
 
-	async fn create_subxt_client(&mut self) -> Result<()> {
-		// shuffle passed Nodes and start try to connect the first one
-		let mut node = self.reset_nodes()?;
+	async fn connect_node(&mut self) -> Result<Node> {
+		// shuffle available Nodes list
+		self.nodes.reset();
+		// start connecting nodes from the list
+		for mut node in self.nodes.clone() {
+			// retry connecting node with configured strategy
+			let retry_strategy = self.retry_config.clone().into_iter();
+			let res = Retry::spawn(retry_strategy, || async {
+				create_subxt_client(node.host.clone()).await
+			})
+			.await;
 
-		let (client, _) = build_client(&node.host, false)
-			.await
-			.map_err(|e| eyre!(e))?;
+			match res {
+				Err(error) => {
+					warn!(%error, "Failed to connect the Node on: {}. Retrying with {:#?} strategy failed. Skipping to another", node.host, self.retry_config)
+				},
+				Ok((client, node_variant)) => {
+					if !node_variant.matches(EXPECTED_SYSTEM_VERSION, EXPECTED_SPEC_NAME) {
+						return Err(eyre!(
+							"Expected {}, found {}",
+							EXPECTED_SYSTEM_VERSION,
+							node_variant.system_version.clone(),
+						));
+					}
 
-		let genesis_hash = client.genesis_hash();
-		let system_version = client.rpc().system_version().await?;
-		let runtime_version: RuntimeVersion = client
-			.rpc()
-			.request("state_getRuntimeVersion", RpcParams::new())
-			.await?;
+					// client was built successfully, keep it
+					self.set_subxt_client(client);
 
-		let version = format!(
-			"v/{}/{}/{}",
-			system_version, runtime_version.spec_name, runtime_version.spec_version
-		);
+					node.with_spec_version(node_variant.spec_version)
+						.with_system_version(node_variant.system_version.clone())
+						.with_genesis_hash(node_variant.genesis_hash);
+					// connecting to the selected node was a success,
+					// put it in the state, for all to use
+					self.store_node_data(node.clone())?;
 
-		if !self
-			.expected_version
-			.matches(&system_version, &runtime_version.spec_name)
-		{
-			return Err(eyre!("Expected {}, found {version}", self.expected_version));
+					info!(
+						"Connection established to the Node: {:?} <{:?}>",
+						node.host, node_variant.system_version
+					);
+
+					return Ok(node_variant);
+				},
+			}
 		}
 
-		// client was built successfully, keep it
-		self.set_subxt_client(client);
-
-		node.with_spec_version(runtime_version.spec_version)
-			.with_system_version(system_version.clone())
-			.with_genesis_hash(genesis_hash);
-		// connecting to the selected node was a success,
-		// put it in the state, for all to use
-		self.store_node_data(node.clone())?;
-
-		info!(
-			"Connection established to the Node: {:?} <{version}>",
-			node.host
-		);
-
-		Ok(())
+		Err(eyre!("Could not connect any working or matching nodes"))
 	}
 
 	fn unpack_client(&self) -> Result<&OnlineClient<AvailConfig>> {
@@ -167,22 +169,33 @@ impl EventLoop {
 
 	async fn stream_subscriptions(&mut self) -> Result<impl Stream<Item = Subscription>> {
 		let client = self.unpack_client()?;
-		// create Header subscription
-		let header_subscription = client.rpc().subscribe_finalized_block_headers().await?;
+
+		// create Header subscription with Retries
+		let header_subscription = Retry::spawn(self.retry_config.clone().into_iter(), || async {
+			client.rpc().subscribe_finalized_block_headers().await
+		})
+		.await?;
+
 		// map Header subscription to the same type for merging
 		let header_subscription = header_subscription.filter_map(|s| match s {
 			Ok(h) => Some(Subscription::Header(h)),
 			Err(_) => None,
 		});
-		// create Justification subscription
-		let justification_subscription = client
-			.rpc()
-			.subscribe(
-				"grandpa_subscribeJustifications",
-				rpc_params![],
-				"grandpa_unsubscribeJustifications",
-			)
+
+		// create Justification subscription with Retries
+		let justification_subscription =
+			Retry::spawn(self.retry_config.clone().into_iter(), || async {
+				client
+					.rpc()
+					.subscribe(
+						"grandpa_subscribeJustifications",
+						rpc_params![],
+						"grandpa_unsubscribeJustifications",
+					)
+					.await
+			})
 			.await?;
+
 		// map Justification subscription to the same type for merging
 		let justification_subscription = justification_subscription.filter_map(|s| match s {
 			Ok(g) => Some(Subscription::Justification(g)),
@@ -193,14 +206,18 @@ impl EventLoop {
 	}
 
 	async fn gather_block_data(&mut self) -> Result<()> {
-		// get the Hash of the Finalized Head
-		let last_finalized_block_hash = self.get_chain_head_hash().await?;
+		// get the Hash of the Finalized Head [with Retries]
+		let last_finalized_block_hash =
+			Retry::spawn(self.retry_config.clone().into_iter(), || async {
+				self.get_chain_head_hash().await
+			})
+			.await?;
 
 		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime.
 		let validator_set = self
 			.get_validator_set_by_hash(last_finalized_block_hash)
 			.await?;
-		// fetch the set ID from storage at current height
+		// fetch the set ID from storage at current height [Offline Client; no need for Retries]
 		let set_id = self.fetch_set_id_at(last_finalized_block_hash).await?;
 		// set Current Valset
 		debug!("Current set: {:?}", (validator_set.clone(), set_id));
@@ -209,9 +226,12 @@ impl EventLoop {
 			validator_set,
 		};
 
-		// get last (implicitly trusted) Finalized Block Number
+		// get last (implicitly trusted) Finalized Block Number [with Retries]
 		let last_finalized_block_header =
-			self.get_header_by_hash(last_finalized_block_hash).await?;
+			Retry::spawn(self.retry_config.clone().into_iter(), || async {
+				self.get_header_by_hash(last_finalized_block_hash).await
+			})
+			.await?;
 		// set Last Finalized Block Header
 		self.block_data.last_finalized_block_header = Some(last_finalized_block_header);
 
@@ -220,7 +240,7 @@ impl EventLoop {
 
 	pub async fn run(mut self) -> Result<()> {
 		// try and create Subxt Client
-		self.create_subxt_client().await?;
+		self.connect_node().await?;
 		// try to create RPC Subscription Stream
 		let mut subscriptions_stream = self.stream_subscriptions().await?;
 		// try to get latest Finalized Block Data and set values
@@ -489,15 +509,6 @@ impl EventLoop {
 		self.get_header_by_hash(hash).await.map(|e| (e, hash))
 	}
 
-	fn reset_nodes(&mut self) -> Result<Node> {
-		let node = self
-			.nodes
-			.reset()
-			.ok_or_else(|| eyre!("RPC WS Nodes list must not be empty"))?;
-
-		Ok(node)
-	}
-
 	fn set_subxt_client(&mut self, client: avail::Client) {
 		self.subxt_client.replace(client);
 	}
@@ -526,6 +537,29 @@ impl EventLoop {
 
 		Ok(())
 	}
+}
+
+async fn create_subxt_client(host: String) -> Result<(avail::Client, Node)> {
+	let (client, _) = build_client(host.clone(), false)
+		.await
+		.map_err(|e| eyre!(e))?;
+
+	let genesis_hash = client.genesis_hash();
+	let system_version = client.rpc().system_version().await?;
+	let runtime_version: RuntimeVersion = client
+		.rpc()
+		.request("state_getRuntimeVersion", RpcParams::new())
+		.await?;
+
+	let variant = Node::new(
+		host,
+		system_version,
+		runtime_version.spec_name,
+		runtime_version.spec_version,
+		genesis_hash,
+	);
+
+	Ok((client, variant))
 }
 
 fn is_signed_by_supermajority(num_signatures: usize, validator_set_size: usize) -> bool {
