@@ -233,7 +233,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	let block_header = match shutdown
 		.with_cancel(rpc::wait_for_finalized_header(
 			first_header_rpc_event_receiver,
-			60,
+			360,
 		))
 		.await
 	{
