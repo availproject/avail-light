@@ -166,18 +166,6 @@ pub struct Nodes {
 }
 
 impl Nodes {
-	pub fn next(&mut self) -> Option<Node> {
-		// we have exhausted all nodes from the list
-		// this is the last one
-		if self.current_index == self.list.len() {
-			None
-		} else {
-			// increment current index
-			self.current_index += 1;
-			self.get_current()
-		}
-	}
-
 	pub fn get_current(&self) -> Option<Node> {
 		let node = &self.list[self.current_index];
 		Some(node.clone())
