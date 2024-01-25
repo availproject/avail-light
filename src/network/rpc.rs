@@ -19,7 +19,6 @@ use tokio::{
 use tracing::{debug, info};
 
 use crate::{
-	consts::EXPECTED_NETWORK_VERSION,
 	network::rpc,
 	types::{GrandpaJustification, RetryConfig, State},
 };
@@ -79,21 +78,49 @@ impl<'de> Deserialize<'de> for WrappedProof {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Node {
 	pub host: String,
 	pub system_version: String,
+	pub spec_name: String,
 	pub spec_version: u32,
 	pub genesis_hash: H256,
 }
 
 impl Node {
+	pub fn new(
+		host: String,
+		system_version: String,
+		spec_name: String,
+		spec_version: u32,
+		genesis_hash: H256,
+	) -> Self {
+		Self {
+			host,
+			system_version,
+			spec_name,
+			spec_version,
+			genesis_hash,
+		}
+	}
+
+	/// Checks if expected version matches network version.
+	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
+	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
+	/// Specification name is checked for exact match.
+	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
+	/// NOTE: Runtime compatibility check is currently not implemented.
+	pub fn matches(&self, expected_system_version: &str, expected_spec_name: &str) -> bool {
+		expected_system_version.starts_with(&self.system_version)
+			&& self.spec_name == expected_spec_name
+	}
+
 	pub fn network(&self) -> String {
 		format!(
 			"{host}/{system_version}/{spec_name}/{spec_version}",
 			host = self.host,
 			system_version = self.system_version,
-			spec_name = EXPECTED_NETWORK_VERSION.spec_name,
+			spec_name = self.spec_name,
 			spec_version = self.spec_version,
 		)
 	}
@@ -119,22 +146,30 @@ impl Default for Node {
 		Self {
 			host: "{host}".to_string(),
 			system_version: "{system_version}".to_string(),
+			spec_name: "{spec_name}".to_string(),
 			spec_version: 0,
 			genesis_hash: H256::default(),
 		}
 	}
 }
 
+impl Display for Node {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "v{}/{}", self.system_version, self.spec_name)
+	}
+}
+
+#[derive(Clone)]
 pub struct Nodes {
 	list: Vec<Node>,
 	current_index: usize,
 }
 
 impl Nodes {
-	pub fn next_node(&mut self) -> Option<Node> {
+	pub fn next(&mut self) -> Option<Node> {
 		// we have exhausted all nodes from the list
 		// this is the last one
-		if self.current_index == self.list.len() - 1 {
+		if self.current_index == self.list.len() {
 			None
 		} else {
 			// increment current index
@@ -154,6 +189,7 @@ impl Nodes {
 			list: candidates
 				.iter()
 				.map(|s| Node {
+					spec_name: Default::default(),
 					genesis_hash: Default::default(),
 					spec_version: Default::default(),
 					system_version: Default::default(),
@@ -168,36 +204,27 @@ impl Nodes {
 		self.list.shuffle(&mut thread_rng());
 	}
 
-	fn reset(&mut self) -> Option<Node> {
+	fn reset(&mut self) {
 		// shuffle the available list of nodes
 		self.shuffle();
 		// set the current index to the first one
 		self.current_index = 0;
-		self.get_current()
 	}
 }
 
-#[derive(Debug)]
-pub struct ExpectedVersion<'a> {
-	pub version: &'a str,
-	pub spec_name: &'a str,
-}
+impl Iterator for Nodes {
+	type Item = Node;
 
-impl ExpectedVersion<'_> {
-	/// Checks if expected version matches network version.
-	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
-	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
-	/// Specification name is checked for exact match.
-	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
-	/// NOTE: Runtime compatibility check is currently not implemented.
-	pub fn matches(&self, node_version: &str, spec_name: &str) -> bool {
-		node_version.starts_with(self.version) && self.spec_name == spec_name
-	}
-}
-
-impl Display for ExpectedVersion<'_> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "v{}/{}", self.version, self.spec_name)
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.current_index == self.list.len() {
+			// reset the iterator when it reaches the end
+			self.reset();
+			None
+		} else {
+			let node = self.get_current();
+			self.current_index += 1;
+			node
+		}
 	}
 }
 
@@ -206,7 +233,6 @@ pub fn init(
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
-	expected_version: ExpectedVersion<'static>,
 	retry_config: RetryConfig,
 ) -> (Client, broadcast::Sender<Event>, EventLoop) {
 	// create channel for Event Loop Commands
@@ -224,7 +250,6 @@ pub fn init(
 			command_receiver,
 			event_sender,
 			genesis_hash,
-			expected_version,
 			retry_config,
 		),
 	)
