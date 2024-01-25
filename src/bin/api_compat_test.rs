@@ -1,7 +1,7 @@
 use avail_light::{
 	data,
-	network::rpc::{self, ExpectedVersion},
-	types::State,
+	network::rpc::{self},
+	types::{ExponentialConfig, RetryConfig, State},
 };
 use clap::Parser;
 use color_eyre::Result;
@@ -16,11 +16,6 @@ struct CommandArgs {
 	avail_path: String,
 }
 
-const EXPECTED_NETWORK_VERSION: ExpectedVersion = ExpectedVersion {
-	version: "1.7",
-	spec_name: "data-avail",
-};
-
 #[tokio::main]
 async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
@@ -28,9 +23,14 @@ async fn main() -> Result<()> {
 	println!("Using Path: {}", command_args.avail_path);
 	let db = data::init_db(&command_args.avail_path)?;
 	let state = Arc::new(Mutex::new(State::default()));
+	let retry_cfg = RetryConfig::Exponential(ExponentialConfig {
+		base: 10,
+		max_delay: 4000,
+		retries: 4,
+	});
 
-	let (rpc_client, _, event_loop) = rpc::init(db, state, &[command_args.url], "DEV");
-	tokio::spawn(event_loop.run(EXPECTED_NETWORK_VERSION));
+	let (rpc_client, _, event_loop) = rpc::init(db, state, &[command_args.url], "DEV", retry_cfg);
+	tokio::spawn(event_loop.run());
 
 	let mut correct: bool = true;
 
