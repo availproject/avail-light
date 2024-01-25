@@ -3,7 +3,7 @@
 use avail_core::AppId;
 use avail_light::{
 	api,
-	consts::EXPECTED_NETWORK_VERSION,
+	consts::EXPECTED_SYSTEM_VERSION,
 	data,
 	network::p2p,
 	network::{self, rpc},
@@ -215,7 +215,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		state.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
-		EXPECTED_NETWORK_VERSION,
 		cfg.retry_config.clone(),
 	);
 
@@ -271,7 +270,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		identity_cfg,
 		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
-		network_version: EXPECTED_NETWORK_VERSION.to_string(),
+		network_version: EXPECTED_SYSTEM_VERSION.to_string(),
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
