@@ -10,8 +10,7 @@ use avail_light::{
 	shutdown::Controller,
 	telemetry,
 	telemetry::otlp::MetricAttributes,
-	types::IdentityConfig,
-	types::{CliOpts, RuntimeConfig, State},
+	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
 };
 use clap::Parser;
 use color_eyre::{
@@ -26,7 +25,7 @@ use std::{
 	path::Path,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
@@ -117,7 +116,8 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let db = data::init_db(&cfg.avail_path).wrap_err("Cannot initialize database")?;
 
-	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
+	let cfg_libp2p: LibP2PConfig = (&cfg).into();
+	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;
 
 	let metric_attributes = MetricAttributes {
 		role: client_role.into(),
@@ -157,19 +157,21 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	// raise new P2P Network Client and Event Loop
-	let (p2p_client, p2p_event_loop) = p2p::init(
-		(&cfg).into(),
+	// Create sender channel for P2P event loop commands
+	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
+
+	let p2p_event_loop =
+		p2p::EventLoop::new(cfg_libp2p, &id_keys, cfg.is_fat_client(), shutdown.clone());
+
+	tokio::spawn(
+		shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone(), p2p_event_loop_receiver)),
+	);
+
+	let p2p_client = p2p::Client::new(
+		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
-		cfg.is_fat_client(),
-		id_keys,
-		shutdown.clone(),
-	)
-	.wrap_err("Failed to init Network Service")?;
-
-	// spawn the P2P Network task for Event Loop run in the background
-	tokio::spawn(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
+	);
 
 	// Start listening on provided port
 	let port = cfg.port;
