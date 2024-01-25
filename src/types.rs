@@ -726,7 +726,7 @@ impl Default for RuntimeConfig {
 			retry_config: RetryConfig::Exponential(ExponentialConfig {
 				base: 10,
 				max_delay: 4000,
-				retries: 4,
+				retries: 3,
 			}),
 		}
 	}
