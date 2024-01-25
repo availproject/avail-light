@@ -61,6 +61,7 @@ strip-ansi-escapes = "0.2.0"
 threadpool = "1.8.1"
 tiny-bip39 = "1.0.0"
 tokio = { version = "1.35", features = ["full"] }
+tokio-retry = "0.3"
 tokio-stream = { version = "0.1.14", features = ["sync"] }
 tokio-util = "0.7.10"
 tracing = "0.1.35"
@@ -68,7 +69,6 @@ tracing-subscriber = { version = "0.3.15", features = ["json", "env-filter"] }
 uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
 void = "1.0.2"
 warp = "0.3.6"
-tokio-retry = "0.3"
 
 # OpenTelemetry
 opentelemetry = "0.20.0"
