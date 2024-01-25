@@ -114,7 +114,7 @@ impl EventLoop {
 	async fn connect_node(&mut self) -> Result<()> {
 		// shuffle available Nodes list
 		self.nodes.reset();
-		// start connecting nodes from the list
+		// start connecting nodes from the config list
 		for mut node in self.nodes.clone() {
 			// retry connecting node with configured strategy
 			let retry_strategy = self.retry_config.clone().into_iter();
