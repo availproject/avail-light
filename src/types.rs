@@ -410,6 +410,13 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
+	/// Set the configuration based on which the retries will be orchestrated, max duration between retries and number of tries.
+	/// (default:
+	/// exponential:
+	///     base: 10,
+	///     max_delay: 4000,
+	///     retries: 4,
+	/// )
 	pub retry_config: RetryConfig,
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
