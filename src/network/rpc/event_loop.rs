@@ -133,7 +133,8 @@ impl EventLoop {
 							"Expected Node system version:{}, found: {}. Skipping to another node.",
 							expected.system_version,
 							node_variant.system_version.clone(),
-						));
+						);
+						continue;
 					}
 
 					// client was built successfully, keep it
