@@ -157,6 +157,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 
 - `--version`: Light Client version
 - `--clean`: Remove previous state dir set in `avail_path` config parameter
+- `--finality_sync_enable`: Enable finality sync
 
 ## Identity
 
@@ -179,13 +180,13 @@ secret_key = { seed={seed} }
 port = 37000
 # Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 autonat_only_global_ips = false
-# AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+# AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1s)
 autonat_throttle = 2
-# Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
-autonat_retry_interval = 10
-# Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
-autonat_refresh_interval = 30
-# AutoNat on init delay before starting the first probe. (default: 5 sec)
+# Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 20s)
+autonat_retry_interval = 20
+# Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 360s)
+autonat_refresh_interval = 360
+# AutoNat on init delay before starting the first probe. (default: 5s)
 autonat_boot_delay = 10
 # Vector of Light Client bootstrap nodes, used to bootstrap the DHT (mandatory field).
 bootstraps = ["/ip4/13.51.79.255/tcp/39000/p2p/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
@@ -197,8 +198,8 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 genesis_hash = "DEV123"
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 app_id = 0
-# Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
-confidence = 92.0
+# Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 99.9).
+confidence = 99.9
 # File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
 # OpenTelemetry Collector endpoint (default: `http://127.0.0.1:4317`)
@@ -222,8 +223,8 @@ block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 sync_start_block = 0
 # Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the 
-# starting block at the point the LC is started and is only checked for new blocks. (default: true)
-sync_finality_enable = true
+# starting block at the point the LC is started and is only checked for new blocks. (default: false)
+sync_finality_enable = false
 # Time-to-live for DHT entries in seconds (default: 24h).
 # Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far below this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
@@ -236,13 +237,13 @@ publication_interval = 43200
 # Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
 # This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
 replication_interval = 10800
-# The replication factor determines to how many closest peers a record is replicated. (default: 20).
-replication_factor = 20
+# The replication factor determines to how many closest peers a record is replicated. (default: 5).
+replication_factor = 5
 # Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 # NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
 connection_idle_timeout = 30
-# Sets the timeout for a single Kademlia query. (default: 60s).
-query_timeout = 60
+# Sets the timeout for a single Kademlia query. (default: 10s).
+query_timeout = 10
 # Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
 query_parallelism = 3
 # Sets the Kademlia caching strategy to use for successful lookups. If set to 0, caching is disabled. (default: 1).
