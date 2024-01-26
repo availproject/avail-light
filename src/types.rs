@@ -57,6 +57,9 @@ pub struct CliOpts {
 	/// Run a clean light client, deleting existing avail_path folder
 	#[arg(long)]
 	pub clean: bool,
+	/// Enable finality sync
+	#[arg(short, long, value_name = "finality_sync_enable")]
+	pub finality_sync_enable: bool,
 	/// P2P port
 	#[arg(short, long)]
 	pub port: Option<u16>,
@@ -722,10 +725,10 @@ impl Default for RuntimeConfig {
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
-			block_processing_delay: Some(10),
+			block_processing_delay: Some(15),
 			block_matrix_partition: None,
 			sync_start_block: None,
-			sync_finality_enable: true,
+			sync_finality_enable: false,
 			max_cells_per_rpc: Some(30),
 			kad_record_ttl: 24 * 60 * 60,
 			threshold: 5000,
@@ -884,7 +887,7 @@ impl RuntimeConfig {
 		if let Some(port) = opts.port {
 			self.port = port;
 		}
-
+		self.sync_finality_enable = opts.finality_sync_enable;
 		self.app_id = opts.app_id.or(self.app_id);
 
 		Ok(())
