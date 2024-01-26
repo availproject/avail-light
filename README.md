@@ -251,11 +251,9 @@ caching_max_peers = 1
 # Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
 disjoint_query_paths = false
 # The maximum number of records. (default: 2400000).
-# The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
-# (256x512) * 3 * 60
-max_kad_record_number = 2400000,
+max_kad_record_number = 2400000
 # The maximum size of record values, in bytes. (default: 8192).
-max_kad_record_size = 8192,
+max_kad_record_size = 8192
 # The maximum number of provider records for which the local node is the provider. (default: 1024).
 max_kad_provided_keys = 1024
 ```
