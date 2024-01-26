@@ -43,12 +43,12 @@ jobs:
             env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --profile maxperf --target=aarch64-unknown-linux-gnu -p avail-light           
             mv target/aarch64-unknown-linux-gnu/maxperf/avail-light target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-aarch64
             pushd target/aarch64-unknown-linux-gnu/maxperf/
-            tar czf avail-light-linux-aarch64.tar.gz avail-light-linux-aarch64
+            tar czf avail-light-linux-arm64.tar.gz avail-light-linux-aarch64
             popd
          - uses: actions/upload-artifact@v2
            with:
-             name: avail-light-linux-aarch64-binary
-             path: target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-aarch64.tar.gz
+             name: avail-light-linux-arm64-binary
+             path: target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-arm64.tar.gz
 
   binary_apple_arm64:
     runs-on: macos-latest
@@ -100,7 +100,7 @@ jobs:
              name: avail-light-linux-amd64-binary
          - uses: actions/download-artifact@v2
            with:
-             name: avail-light-linux-aarch64-binary
+             name: avail-light-linux-arm64-binary
          - uses: actions/download-artifact@v2
            with:
              name: avail-light-apple-arm64-binary
@@ -123,7 +123,8 @@ jobs:
              file_glob: true
 
   # build avail image and publish to dockerhub
-  docker_release_goldberg:
+  docker_build_push:
+    needs: [binary_publish]
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout
@@ -156,6 +157,6 @@ jobs:
           file: ./Dockerfile.release
           platforms: linux/amd64, linux/arm64
           push: true
-          tags: availj/avail-light:goldberg-${{ steps.prepare.outputs.tag_name }}
+          tags: availj/avail-light:${{ steps.prepare.outputs.tag_name }}
           build-args: |
             AVAIL_TAG=${{ steps.prepare.outputs.tag_name }}
