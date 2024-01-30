@@ -167,13 +167,12 @@ impl Display for Node {
 #[derive(Clone)]
 pub struct Nodes {
 	list: Vec<Node>,
-	current_index: usize,
+	current_host: String,
 }
 
 impl Nodes {
-	pub fn get_current(&self) -> Option<Node> {
-		let node = &self.list[self.current_index];
-		Some(node.clone())
+	pub fn set_current_host(&mut self, host: String) {
+		self.current_host = host;
 	}
 
 	pub fn new(nodes: &[String]) -> Self {
@@ -189,19 +188,25 @@ impl Nodes {
 					host: s.to_string(),
 				})
 				.collect(),
-			current_index: 0,
+			current_host: Default::default(),
 		}
 	}
 
-	fn shuffle(&mut self) {
-		self.list.shuffle(&mut thread_rng());
-	}
-
-	fn reset(&mut self) {
-		// shuffle the available list of nodes
-		self.shuffle();
-		// set the current index to the first one
-		self.current_index = 0;
+	/// Shuffles the list of available Nodes, excluding the host used for the current Subxt client creation.
+	///
+	/// This method returns a new shuffled list of Nodes from the original list, excluding the Node
+	/// associated with the current Subxt client host.
+	/// The purpose of this exclusion is to prevent accidentally reconnecting to the same host in case of errors.
+	/// If there's a need to switch to a different host, the shuffled list provides a randomized order of available Nodes.
+	fn shuffle(&self) -> Vec<Node> {
+		let mut list: Vec<Node> = self
+			.list
+			.iter()
+			.cloned()
+			.filter(|Node { host, .. }| host != &self.current_host)
+			.collect();
+		list.shuffle(&mut thread_rng());
+		list
 	}
 
 	pub fn iter(&self) -> NodesIterator {

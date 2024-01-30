@@ -113,9 +113,8 @@ impl EventLoop {
 
 	async fn connect_node(&mut self, expected: ExpectedNodeVariant) -> Result<()> {
 		// shuffle available Nodes list
-		self.nodes.reset();
 		// start connecting nodes from the config list
-		for Node { host, .. } in self.nodes.clone() {
+		for Node { host, .. } in self.nodes.shuffle() {
 			// retry connecting node with configured strategy
 			let retry_strategy = self.retry_config.clone().into_iter();
 			let res = Retry::spawn(retry_strategy, || async {
@@ -531,7 +530,9 @@ impl EventLoop {
 		self.subxt_client.replace(client);
 	}
 
-	fn store_node_data(&self, node: Node) -> Result<()> {
+	fn store_node_data(&mut self, node: Node) -> Result<()> {
+		// set the current host, so we can shuffle nodes properly, if needed
+		self.nodes.set_current_host(node.clone().host);
 		self.state.lock().unwrap().connected_node = node.clone();
 
 		info!("Genesis hash: {:?}", node.genesis_hash);
