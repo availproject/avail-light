@@ -203,21 +203,27 @@ impl Nodes {
 		// set the current index to the first one
 		self.current_index = 0;
 	}
+
+	pub fn iter(&self) -> NodesIterator {
+		NodesIterator {
+			nodes: self,
+			current_index: 0,
+		}
+	}
 }
 
-impl Iterator for Nodes {
-	type Item = Node;
+pub struct NodesIterator<'a> {
+	nodes: &'a Nodes,
+	current_index: usize,
+}
+
+impl<'a> Iterator for NodesIterator<'a> {
+	type Item = &'a Node;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		if self.current_index == self.list.len() {
-			// reset the iterator when it reaches the end
-			self.reset();
-			None
-		} else {
-			let node = self.get_current();
-			self.current_index += 1;
-			node
-		}
+		let res = self.nodes.list.get(self.current_index);
+		self.current_index += 1;
+		res
 	}
 }
 
