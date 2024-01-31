@@ -150,12 +150,19 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	// Create sender channel for P2P event loop commands
 	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
 
-	let p2p_event_loop =
-		p2p::EventLoop::new(cfg_libp2p, &id_keys, cfg.is_fat_client(), shutdown.clone());
-
-	tokio::spawn(
-		shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone(), p2p_event_loop_receiver)),
+	let p2p_event_loop = p2p::EventLoop::new(
+		cfg_libp2p.clone(),
+		&id_keys,
+		cfg.is_fat_client(),
+		shutdown.clone(),
 	);
+
+	tokio::spawn(shutdown.with_cancel(p2p_event_loop.run(
+		cfg_libp2p,
+		id_keys,
+		ot_metrics.clone(),
+		p2p_event_loop_receiver,
+	)));
 
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,

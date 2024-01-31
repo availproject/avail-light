@@ -335,8 +335,10 @@ pub struct RuntimeConfig {
 	pub autonat_boot_delay: u64,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
-	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
+	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 3600 sec)
 	pub bootstrap_period: u64,
+	/// Defines a period of time in which periodic swarm restarts will be repeated. (default: 3600 sec)
+	pub restart_period: u64,
 	pub operation_mode: KademliaMode,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
@@ -506,6 +508,7 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
+	pub restart_interval: Duration,
 	pub connection_idle_timeout: Duration,
 	pub max_negotiating_inbound_streams: usize,
 	pub task_command_buffer_size: NonZeroUsize,
@@ -559,6 +562,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
+			restart_interval: Duration::from_secs(val.restart_period),
 			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout),
 			max_negotiating_inbound_streams: val.max_negotiating_inbound_streams,
 			task_command_buffer_size: std::num::NonZeroUsize::new(val.task_command_buffer_size)
@@ -749,6 +753,7 @@ impl Default for RuntimeConfig {
 			autonat_boot_delay: 5,
 			bootstraps: vec![],
 			bootstrap_period: 3600,
+			restart_period: 3600,
 			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			genesis_hash: "DEV".to_owned(),

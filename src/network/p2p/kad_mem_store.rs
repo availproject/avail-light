@@ -28,6 +28,7 @@ use std::iter;
 use tracing::trace;
 
 /// In-memory implementation of a `RecordStore`.
+#[derive(Clone)]
 pub struct MemoryStore {
 	/// The identity of the peer owning the store.
 	local_key: KBucketKey<PeerId>,

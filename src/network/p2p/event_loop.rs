@@ -83,6 +83,7 @@ pub struct EventLoop {
 	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
+	restart_timer: Interval,
 	is_fat_client: bool,
 	/// Blocks we monitor for PUT success rate
 	active_blocks: HashMap<u32, BlockStat>,
@@ -122,6 +123,7 @@ impl EventLoop {
 		shutdown: Controller<String>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_interval;
+		let restart_interval = cfg.restart_interval;
 		let kad_mode = cfg.kademlia.kademlia_mode.into();
 		let peer_id = id_keys.public().to_peer_id();
 		let store = MemoryStore::with_config(peer_id, (&cfg).into());
@@ -142,6 +144,7 @@ impl EventLoop {
 				is_startup_done: false,
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
+			restart_timer: interval_at(Instant::now() + restart_interval, restart_interval),
 			is_fat_client,
 			active_blocks: Default::default(),
 			shutdown,
@@ -149,28 +152,43 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(mut self, metrics: Arc<impl Metrics>, mut command_receiver: CommandReceiver) {
+	pub async fn run(
+		mut self,
+		cfg: LibP2PConfig,
+		id_keys: Keypair,
+		metrics: Arc<impl Metrics>,
+		mut command_receiver: CommandReceiver,
+	) {
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
 
-		loop {
-			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
-				command = command_receiver.recv() => match command {
-					Some(c) => self.handle_command(c).await,
-					// Command channel closed, thus shutting down the network event loop.
-					None => break,
-				},
-				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
-				// if the shutdown was triggered,
-				// break the loop immediately, proceed to the cleanup phase
-				_ = self.shutdown.triggered_shutdown() => break
+		'event: loop {
+			'restart: loop {
+				tokio::select! {
+					event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
+					command = command_receiver.recv() => match command {
+						Some(c) => self.handle_command(c).await,
+						// Command channel closed, thus shutting down the network event loop.
+						None => break 'event,
+					},
+					_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
+					_ = self.restart_timer.tick() => break 'restart,
+					// if the shutdown was triggered,
+					// break the loop immediately, proceed to the cleanup phase
+					_ = self.shutdown.triggered_shutdown() => break 'event
+				}
 			}
+			info!("Restarting event loop...");
+			self.disconnect_peers();
+			let store = self.swarm.behaviour_mut().kademlia.store_mut().clone();
+			let kad_mode = cfg.kademlia.kademlia_mode.into();
+			self.swarm = build_swarm(&cfg, &id_keys, kad_mode, store).expect("Swarm can be built");
+			self.handle_periodic_bootstraps();
+			info!("Restart finished");
 		}
-		self.disconnect_peers();
 		info!("Exiting event loop...");
 	}
 
