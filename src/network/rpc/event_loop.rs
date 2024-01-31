@@ -17,6 +17,7 @@ use sp_core::{
 	Pair,
 };
 use std::{
+	pin::Pin,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
@@ -48,6 +49,8 @@ pub enum Event {
 	},
 }
 
+type SubscriptionStream = Pin<Box<dyn Stream<Item = Subscription>>>;
+
 enum Subscription {
 	Header(Header),
 	Justification(GrandpaJustification),
@@ -77,6 +80,7 @@ pub struct EventLoop {
 	block_data: BlockData,
 	genesis_hash: String,
 	retry_config: RetryConfig,
+	subscriptions: Option<SubscriptionStream>,
 }
 
 impl EventLoop {
@@ -108,10 +112,11 @@ impl EventLoop {
 				last_finalized_block_header: None,
 			},
 			retry_config,
+			subscriptions: None,
 		}
 	}
 
-	async fn connect_node(&mut self, expected: ExpectedNodeVariant) -> Result<()> {
+	async fn create_client(&mut self, expected: ExpectedNodeVariant) -> Result<()> {
 		// shuffle available Nodes list
 		// start connecting nodes from the config list
 		for Node { host, .. } in self.nodes.shuffle() {
@@ -163,7 +168,7 @@ impl EventLoop {
 		Ok(c)
 	}
 
-	async fn stream_subscriptions(&mut self) -> Result<impl Stream<Item = Subscription>> {
+	async fn stream_subscriptions(&mut self) -> Result<()> {
 		let client = self.unpack_client()?;
 
 		// create Header subscription with Retries
@@ -196,8 +201,11 @@ impl EventLoop {
 			Ok(g) => Some(Subscription::Justification(g)),
 			Err(_) => None,
 		});
+		self.subscriptions = Some(Box::pin(
+			header_subscription.merge(justification_subscription),
+		));
 
-		Ok(header_subscription.merge(justification_subscription))
+		Ok(())
 	}
 
 	async fn gather_block_data(&mut self) -> Result<()> {
@@ -231,17 +239,27 @@ impl EventLoop {
 		Ok(())
 	}
 
-	pub async fn run(mut self) -> Result<()> {
+	async fn connect_node_and_subscribe(&mut self) -> Result<()> {
 		// try and create Subxt Client
-		self.connect_node(ExpectedNodeVariant::new()).await?;
+		self.create_client(ExpectedNodeVariant::new()).await?;
 		// try to create RPC Subscription Stream
-		let mut subscriptions_stream = self.stream_subscriptions().await?;
+		self.stream_subscriptions().await?;
 		// try to get latest Finalized Block Data and set values
 		self.gather_block_data().await?;
 
+		Ok(())
+	}
+
+	pub async fn run(mut self) -> Result<()> {
+		self.connect_node_and_subscribe().await?;
+		let mut subscription_stream = self
+			.subscriptions
+			.take()
+			.expect("Subscriptions should be set.");
+
 		loop {
 			tokio::select! {
-				subscription = subscriptions_stream.next() => self.handle_subscription_stream(subscription.expect("RPC Subscription stream should be infinite")).await,
+				subscription = subscription_stream.next() => self.handle_subscription_stream(subscription.expect("RPC Subscription stream should be infinite")).await,
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the RPC Event Loop
