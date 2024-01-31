@@ -272,24 +272,21 @@ pub enum RetryConfig {
 	Fibonacci(FibonacciConfig),
 }
 
-impl IntoIterator for RetryConfig {
-	type Item = Duration;
-	type IntoIter = std::vec::IntoIter<Self::Item>;
-
-	fn into_iter(self) -> Self::IntoIter {
+impl RetryConfig {
+	pub fn iter(&self) -> Box<dyn Iterator<Item = Duration>> {
 		match self {
-			RetryConfig::Exponential(config) => ExponentialBackoff::from_millis(config.base)
-				.max_delay(Duration::from_millis(config.max_delay))
-				.map(jitter)
-				.take(config.retries)
-				.collect::<Vec<Duration>>()
-				.into_iter(),
-			RetryConfig::Fibonacci(config) => FibonacciBackoff::from_millis(config.base)
-				.max_delay(Duration::from_millis(config.max_delay))
-				.map(jitter)
-				.take(config.retries)
-				.collect::<Vec<Duration>>()
-				.into_iter(),
+			RetryConfig::Exponential(config) => Box::new(
+				ExponentialBackoff::from_millis(config.base)
+					.max_delay(Duration::from_millis(config.max_delay))
+					.map(jitter)
+					.take(config.retries),
+			),
+			RetryConfig::Fibonacci(config) => Box::new(
+				FibonacciBackoff::from_millis(config.base)
+					.max_delay(Duration::from_millis(config.max_delay))
+					.map(jitter)
+					.take(config.retries),
+			),
 		}
 	}
 }

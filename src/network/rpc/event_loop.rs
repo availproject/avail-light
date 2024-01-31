@@ -116,7 +116,7 @@ impl EventLoop {
 		// start connecting nodes from the config list
 		for Node { host, .. } in self.nodes.shuffle() {
 			// retry connecting node with configured strategy
-			let retry_strategy = self.retry_config.clone().into_iter();
+			let retry_strategy = self.retry_config.clone().iter();
 			let res = Retry::spawn(retry_strategy, || async {
 				create_subxt_client(host.clone()).await
 			})
@@ -167,7 +167,7 @@ impl EventLoop {
 		let client = self.unpack_client()?;
 
 		// create Header subscription with Retries
-		let header_subscription = Retry::spawn(self.retry_config.clone().into_iter(), || async {
+		let header_subscription = Retry::spawn(self.retry_config.iter(), || async {
 			client.rpc().subscribe_finalized_block_headers().await
 		})
 		.await?;
@@ -179,18 +179,17 @@ impl EventLoop {
 		});
 
 		// create Justification subscription with Retries
-		let justification_subscription =
-			Retry::spawn(self.retry_config.clone().into_iter(), || async {
-				client
-					.rpc()
-					.subscribe(
-						"grandpa_subscribeJustifications",
-						rpc_params![],
-						"grandpa_unsubscribeJustifications",
-					)
-					.await
-			})
-			.await?;
+		let justification_subscription = Retry::spawn(self.retry_config.iter(), || async {
+			client
+				.rpc()
+				.subscribe(
+					"grandpa_subscribeJustifications",
+					rpc_params![],
+					"grandpa_unsubscribeJustifications",
+				)
+				.await
+		})
+		.await?;
 
 		// map Justification subscription to the same type for merging
 		let justification_subscription = justification_subscription.filter_map(|s| match s {
@@ -203,11 +202,10 @@ impl EventLoop {
 
 	async fn gather_block_data(&mut self) -> Result<()> {
 		// get the Hash of the Finalized Head [with Retries]
-		let last_finalized_block_hash =
-			Retry::spawn(self.retry_config.clone().into_iter(), || async {
-				self.get_chain_head_hash().await
-			})
-			.await?;
+		let last_finalized_block_hash = Retry::spawn(self.retry_config.iter(), || async {
+			self.get_chain_head_hash().await
+		})
+		.await?;
 
 		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime.
 		let validator_set = self
@@ -223,11 +221,10 @@ impl EventLoop {
 		};
 
 		// get last (implicitly trusted) Finalized Block Number [with Retries]
-		let last_finalized_block_header =
-			Retry::spawn(self.retry_config.clone().into_iter(), || async {
-				self.get_header_by_hash(last_finalized_block_hash).await
-			})
-			.await?;
+		let last_finalized_block_header = Retry::spawn(self.retry_config.iter(), || async {
+			self.get_header_by_hash(last_finalized_block_hash).await
+		})
+		.await?;
 		// set Last Finalized Block Header
 		self.block_data.last_finalized_block_header = Some(last_finalized_block_header);
 
