@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 use super::MetricCounter;
 
-const ATTRIBUTE_NUMBER: usize = if cfg!(feature = "crawl") { 14 } else { 13 };
+const ATTRIBUTE_NUMBER: usize = 9;
 
 #[derive(Debug)]
 pub struct Metrics {
@@ -29,13 +29,7 @@ pub struct MetricAttributes {
 	pub origin: String,
 	pub avail_address: String,
 	pub operating_mode: String,
-	pub replication_factor: i64,
-	pub query_timeout: i64,
-	pub block_processing_delay: i64,
-	pub confidence_treshold: i64,
 	pub partition_size: String,
-	#[cfg(feature = "crawl")]
-	pub crawl_block_delay: u64,
 }
 
 impl Metrics {
@@ -51,20 +45,8 @@ impl Metrics {
 			),
 			KeyValue::new("ip", self.attributes.ip.read().await.clone()),
 			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
-			KeyValue::new("replication_factor", self.attributes.replication_factor),
-			KeyValue::new("query_timeout", self.attributes.query_timeout),
-			KeyValue::new(
-				"block_processing_delay",
-				self.attributes.block_processing_delay,
-			),
-			KeyValue::new("confidence_treshold", self.attributes.confidence_treshold),
 			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
-			#[cfg(feature = "crawl")]
-			KeyValue::new(
-				"crawl_block_delay",
-				self.attributes.crawl_block_delay.to_string(),
-			),
 		]
 	}
 
@@ -128,6 +110,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::BlockConfidence(number) => {
 				self.record_f64("block_confidence", number).await?;
 			},
+			super::MetricValue::BlockConfidenceTreshold(number) => {
+				self.record_f64("block_confidence_treshold", number).await?;
+			},
 			super::MetricValue::RPCCallDuration(number) => {
 				self.record_f64("rpc_call_duration", number).await?;
 			},
@@ -147,6 +132,12 @@ impl super::Metrics for Metrics {
 			super::MetricValue::BlockProcessingDelay(number) => {
 				self.record_f64("block_processing_delay", number).await?;
 			},
+			super::MetricValue::ReplicationFactor(number) => {
+				self.record_f64("replication_factor", number as f64).await?;
+			},
+			super::MetricValue::QueryTimeout(number) => {
+				self.record_f64("query_timeout", number as f64).await?;
+			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
 				self.record_f64("crawl_cells_success_rate", number).await?;
@@ -154,6 +145,10 @@ impl super::Metrics for Metrics {
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlRowsSuccessRate(number) => {
 				self.record_f64("crawl_rows_success_rate", number).await?;
+			},
+			#[cfg(feature = "crawl")]
+			super::MetricValue::CrawlBlockDelay(number) => {
+				self.record_f64("crawl_block_delay", number).await?;
 			},
 		};
 		Ok(())
