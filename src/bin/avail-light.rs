@@ -5,11 +5,10 @@ use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data,
-	network::p2p,
-	network::{self, rpc},
+	maintenance::StaticConfigParams,
+	network::{self, p2p, rpc},
 	shutdown::Controller,
-	telemetry,
-	telemetry::otlp::MetricAttributes,
+	telemetry::{self, otlp::MetricAttributes},
 	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
 };
 use clap::Parser;
@@ -127,13 +126,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_address.clone(),
 		operating_mode: cfg.operation_mode.to_string(),
-		replication_factor: cfg.replication_factor as i64,
-		query_timeout: cfg.query_timeout as i64,
-		block_processing_delay: cfg
-			.block_processing_delay
-			.map(|val| val as i64)
-			.unwrap_or(0),
-		confidence_treshold: cfg.confidence as i64,
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|_| {
@@ -148,8 +140,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 				)
 			})
 			.unwrap_or("n/a".to_string()),
-		#[cfg(feature = "crawl")]
-		crawl_block_delay: cfg.crawl.crawl_block_delay,
 	};
 
 	let ot_metrics = Arc::new(
@@ -367,10 +357,17 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		s.finality_synced = true;
 	}
 
+	let static_config_params = StaticConfigParams {
+		block_confidence_treshold: cfg.confidence,
+		replication_factor: cfg.replication_factor,
+		query_timeout: cfg.query_timeout,
+	};
+
 	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
+		static_config_params,
 		shutdown.clone(),
 	)));
 

@@ -76,6 +76,9 @@ pub async fn run(
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
+			let _ = metrics
+				.record(MetricValue::CrawlBlockDelay(seconds.as_secs() as f64))
+				.await;
 		}
 		let block_number = block.block_num;
 		info!(block_number, "Crawling block...");

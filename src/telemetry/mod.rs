@@ -63,16 +63,21 @@ pub enum MetricValue {
 	NodeRPCFetched(f64),
 	NodeRPCFetchDuration(f64),
 	BlockConfidence(f64),
+	BlockConfidenceTreshold(f64),
 	RPCCallDuration(f64),
 	DHTPutDuration(f64),
 	DHTPutSuccess(f64),
 	KadRoutingPeerNum(usize),
 	HealthCheck(),
 	BlockProcessingDelay(f64),
+	ReplicationFactor(u16),
+	QueryTimeout(u32),
 	#[cfg(feature = "crawl")]
 	CrawlCellsSuccessRate(f64),
 	#[cfg(feature = "crawl")]
 	CrawlRowsSuccessRate(f64),
+	#[cfg(feature = "crawl")]
+	CrawlBlockDelay(f64),
 }
 
 #[automock]
