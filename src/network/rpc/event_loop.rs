@@ -340,11 +340,32 @@ impl EventLoop {
 					.precommits
 					.iter()
 					.map(|precommit| {
-						let is_ok = <ed25519::Pair as Pair>::verify(
+						let mut is_ok = <ed25519::Pair as Pair>::verify(
 							&precommit.signature,
 							&signed_message,
 							&precommit.id,
 						);
+						if !is_ok {
+							warn!("Signature verification fails with default set_id {}, trying alternatives.", valset.set_id);
+							for set_id_m in (valset.set_id - 10)..(valset.set_id + 10) {
+								let s_m = Encode::encode(&(
+									&SignerMessage::PrecommitMessage(
+										justification.commit.precommits[0].clone().precommit,
+									),
+									&justification.round,
+									&set_id_m,
+								));
+								is_ok = <ed25519::Pair as Pair>::verify(
+									&precommit.signature,
+									&s_m,
+									&precommit.id,
+								);
+								if is_ok {
+									info!("Signature match with set_id={set_id_m}");
+									break;
+								}
+							}
+						}
 						is_ok.then(|| precommit.clone().id).ok_or_else(|| {
 							eyre!(
 								"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",

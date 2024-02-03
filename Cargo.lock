@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light"
-version = "1.7.5"
+version = "1.7.6"
 dependencies = [
  "async-std",
  "async-trait",
