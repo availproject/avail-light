@@ -7,12 +7,11 @@ use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rocksdb::DB;
 use serde::{de, Deserialize};
-use sp_core::{bytes::from_hex, ed25519::Public};
+use sp_core::bytes::from_hex;
 use std::{
 	collections::HashSet,
 	fmt::Display,
 	sync::{Arc, Mutex},
-	time::Instant,
 };
 use subxt::{rpc::RpcParams, rpc_params};
 use tokio::{
@@ -235,17 +234,16 @@ impl RpcClient {
 		})
 		.await?;
 
-		let rpc_client = Self {
+		// update global state with the currently connected Node
+		state.lock().unwrap().connected_node = node;
+
+		Ok(Self {
 			subxt_client: Arc::new(RwLock::new(client)),
+			state,
 			genesis_hash: genesis_hash.to_string(),
 			nodes,
-			state,
 			retry_config,
-		};
-		// update state with the connected Node
-		rpc_client.state.lock().unwrap().connected_node = node;
-
-		Ok(rpc_client)
+		})
 	}
 
 	async fn connect_nodes_until_success<T, Fun, Fut>(
@@ -428,8 +426,7 @@ pub async fn init(
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
 
-	let rpc_client =
-		RpcClient::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
+	let rpc_client = RpcClient::new(state, Nodes::new(nodes), genesis_hash, retry_config).await?;
 
 	Ok((
 		Client::new(command_sender),
