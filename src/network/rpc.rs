@@ -253,7 +253,7 @@ impl RpcClient {
 		mut predicate: Fun,
 	) -> Result<(avail::Client, Node, T)>
 	where
-		Fun: FnMut(avail::Client) -> Fut + Copy,
+		Fun: FnMut(avail::Client) -> Fut,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		// go through the provided list of Nodes to try and find and appropriate one,
@@ -354,15 +354,17 @@ impl RpcClient {
 
 	async fn with_retries<F, Fut, T>(&self, mut predicate: F) -> Result<T>
 	where
-		F: FnMut(avail::Client) -> Fut + Copy,
+		F: FnMut(avail::Client) -> Fut,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
-		if let Ok(result) = Retry::spawn(self.retry_config.iter(), || async move {
-			predicate(self.current_client().await).await
-		})
-		.await
-		{
+		let mut test = move || async move {
+			let client = self.current_client().await;
+			let res = predicate(client).await?;
+			Ok::<T, Report>(res)
+		};
+
+		if let Ok(result) = Retry::spawn(self.retry_config.iter(), test).await {
 			// this was successful, return early
 			return Ok(result);
 		}
@@ -374,7 +376,7 @@ impl RpcClient {
 			nodes,
 			ExpectedNodeVariant::new(),
 			&state.connected_node.genesis_hash,
-			predicate,
+			move |client| predicate(client).map_err(Report::from),
 		)
 		.await?;
 
@@ -426,12 +428,13 @@ pub async fn init(
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
 
-	let rpc_client = RpcClient::new(state, Nodes::new(nodes), genesis_hash, retry_config).await?;
+	let rpc_client =
+		RpcClient::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
 
 	Ok((
 		Client::new(command_sender),
 		event_sender.clone(),
-		EventLoop::new(rpc_client, db, command_receiver, event_sender).await?,
+		EventLoop::new(rpc_client, state, db, command_receiver, event_sender).await?,
 	))
 }
 
