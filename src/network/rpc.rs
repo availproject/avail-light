@@ -1,26 +1,32 @@
 use async_trait::async_trait;
-use avail_subxt::{avail, primitives::Header, utils::H256};
+use avail_subxt::{avail, build_client, primitives::Header, utils::H256};
 use codec::Decode;
 use color_eyre::{eyre::eyre, Report, Result};
+use futures::{Stream, TryFutureExt, TryStreamExt};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rocksdb::DB;
 use serde::{de, Deserialize};
-use sp_core::bytes::from_hex;
+use sp_core::{bytes::from_hex, ed25519::Public};
 use std::{
 	collections::HashSet,
 	fmt::Display,
 	sync::{Arc, Mutex},
+	time::Instant,
 };
+use subxt::{rpc::RpcParams, rpc_params};
 use tokio::{
-	sync::{broadcast, mpsc},
+	sync::{broadcast, mpsc, RwLock},
 	time::{self, timeout},
 };
-use tracing::{debug, info};
+use tokio_retry::Retry;
+use tokio_stream::StreamExt;
+use tracing::{debug, info, warn};
 
 use crate::{
+	consts::ExpectedNodeVariant,
 	network::rpc,
-	types::{GrandpaJustification, RetryConfig, State},
+	types::{GrandpaJustification, RetryConfig, RuntimeVersion, State, DEV_FLAG_GENHASH},
 };
 
 mod client;
@@ -84,7 +90,7 @@ pub struct Node {
 	pub system_version: String,
 	pub spec_name: String,
 	pub spec_version: u32,
-	pub genesis_hash: H256,
+	pub genesis_hash: String,
 }
 
 impl Node {
@@ -93,26 +99,15 @@ impl Node {
 		system_version: String,
 		spec_name: String,
 		spec_version: u32,
-		genesis_hash: H256,
+		genesis_hash: &str,
 	) -> Self {
 		Self {
 			host,
 			system_version,
 			spec_name,
 			spec_version,
-			genesis_hash,
+			genesis_hash: genesis_hash.to_string(),
 		}
-	}
-
-	/// Checks if expected version matches network version.
-	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
-	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
-	/// Specification name is checked for exact match.
-	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
-	/// NOTE: Runtime compatibility check is currently not implemented.
-	pub fn matches(&self, expected_system_version: &str, expected_spec_name: &str) -> bool {
-		self.system_version.starts_with(expected_system_version)
-			&& self.spec_name == expected_spec_name
 	}
 
 	pub fn network(&self) -> String {
@@ -124,26 +119,6 @@ impl Node {
 			spec_version = self.spec_version,
 		)
 	}
-
-	pub fn with_spec_version(&mut self, spec_version: u32) -> &mut Self {
-		self.spec_version = spec_version;
-		self
-	}
-
-	pub fn with_spec_name(&mut self, spec_name: &str) -> &mut Self {
-		self.spec_name = spec_name.to_string();
-		self
-	}
-
-	pub fn with_system_version(&mut self, system_version: &str) -> &mut Self {
-		self.system_version = system_version.to_string();
-		self
-	}
-
-	pub fn with_genesis_hash(&mut self, genesis_hash: H256) -> &mut Self {
-		self.genesis_hash = genesis_hash;
-		self
-	}
 }
 
 impl Default for Node {
@@ -153,7 +128,7 @@ impl Default for Node {
 			system_version: "{system_version}".to_string(),
 			spec_name: "data-avail".to_string(),
 			spec_version: 0,
-			genesis_hash: H256::default(),
+			genesis_hash: Default::default(),
 		}
 	}
 }
@@ -167,14 +142,9 @@ impl Display for Node {
 #[derive(Clone)]
 pub struct Nodes {
 	list: Vec<Node>,
-	current_host: String,
 }
 
 impl Nodes {
-	pub fn set_current_host(&mut self, host: String) {
-		self.current_host = host;
-	}
-
 	pub fn new(nodes: &[String]) -> Self {
 		let candidates = nodes.to_owned();
 		Self {
@@ -188,7 +158,6 @@ impl Nodes {
 					host: s.to_string(),
 				})
 				.collect(),
-			current_host: Default::default(),
 		}
 	}
 
@@ -198,12 +167,12 @@ impl Nodes {
 	/// associated with the current Subxt client host.
 	/// The purpose of this exclusion is to prevent accidentally reconnecting to the same host in case of errors.
 	/// If there's a need to switch to a different host, the shuffled list provides a randomized order of available Nodes.
-	fn shuffle(&self) -> Vec<Node> {
+	fn shuffle(&self, current_host: String) -> Vec<Node> {
 		let mut list: Vec<Node> = self
 			.list
 			.iter()
 			.cloned()
-			.filter(|Node { host, .. }| host != &self.current_host)
+			.filter(|Node { host, .. }| host != &current_host)
 			.collect();
 		list.shuffle(&mut thread_rng());
 		list
@@ -232,31 +201,241 @@ impl<'a> Iterator for NodesIterator<'a> {
 	}
 }
 
-pub fn init(
+enum Subscription {
+	Header(Header),
+	Justification(GrandpaJustification),
+}
+
+#[derive(Clone)]
+struct RpcClient {
+	subxt_client: Arc<RwLock<avail::Client>>,
+	nodes: Nodes,
+	state: Arc<Mutex<State>>,
+	genesis_hash: String,
+	retry_config: RetryConfig,
+}
+
+impl RpcClient {
+	pub async fn new(
+		state: Arc<Mutex<State>>,
+		nodes: Nodes,
+		genesis_hash: &str,
+		retry_config: RetryConfig,
+	) -> Result<Self> {
+		// try and connect appropriate Node from the provided list
+		// will do retries with the provided Retry Config
+		let (client, node, _) = Retry::spawn(retry_config.iter(), || async {
+			Self::connect_nodes_until_success(
+				nodes.shuffle(Default::default()),
+				ExpectedNodeVariant::new(),
+				genesis_hash,
+				|_| futures::future::ok(()),
+			)
+			.await
+		})
+		.await?;
+
+		let rpc_client = Self {
+			subxt_client: Arc::new(RwLock::new(client)),
+			genesis_hash: genesis_hash.to_string(),
+			nodes,
+			state,
+			retry_config,
+		};
+		// update state with the connected Node
+		rpc_client.state.lock().unwrap().connected_node = node;
+
+		Ok(rpc_client)
+	}
+
+	async fn connect_nodes_until_success<T, Fun, Fut>(
+		nodes: Vec<Node>,
+		expected_node: ExpectedNodeVariant,
+		expected_genesis_hash: &str,
+		mut predicate: Fun,
+	) -> Result<(avail::Client, Node, T)>
+	where
+		Fun: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		// go through the provided list of Nodes to try and find and appropriate one,
+		// after a successful connection, try to execute passed call predicate
+		for Node { host, .. } in nodes.iter() {
+			let result = Self::create_subxt_client(
+				&host,
+				expected_node.clone(),
+				expected_genesis_hash.clone(),
+			)
+			.and_then(|(client, node)| predicate(client.clone()).map_ok(|res| (client, node, res)))
+			.await;
+
+			match result {
+				Err(error) => warn!(host, %error, "Skipping connection with this node"),
+				ok => return ok,
+			}
+		}
+
+		Err(eyre!("Failed to connect any appropriate working node"))
+	}
+
+	async fn create_subxt_client(
+		host: &str,
+		expected_node: ExpectedNodeVariant,
+		expected_genesis_hash: &str,
+	) -> Result<(avail::Client, Node)> {
+		let (client, _) = build_client(host, false).await.map_err(|e| eyre!(e))?;
+
+		// check genesis hash
+		let genesis_hash = client.genesis_hash();
+		info!("Genesis hash: {:?}", genesis_hash);
+		if let Some(cfg_genhash) = from_hex(expected_genesis_hash)
+			.ok()
+			.and_then(|e| TryInto::<[u8; 32]>::try_into(e).ok().map(H256::from))
+		{
+			if !genesis_hash.eq(&cfg_genhash) {
+				Err(eyre!(
+					"Genesis hash doesn't match the configured one! Change the config or the node url ({}).", host
+				))?
+			}
+		} else if expected_genesis_hash.starts_with(DEV_FLAG_GENHASH) {
+			warn!("Genesis hash configured for development ({}), skipping the genesis hash check entirely.", expected_genesis_hash);
+		} else {
+			Err(eyre!(
+				"Genesis hash invalid, badly configured or missing (\"{}\").",
+				expected_genesis_hash
+			))?
+		};
+
+		// check system and runtime versions
+		let system_version = client.rpc().system_version().await?;
+		let runtime_version: RuntimeVersion = client
+			.rpc()
+			.request("state_getRuntimeVersion", RpcParams::new())
+			.await?;
+
+		if !expected_node.matches(&system_version, &runtime_version.spec_name) {
+			return Err(eyre!(
+				"Expected Node system version:{}, found: {}. Skipping to another node.",
+				expected_node.system_version,
+				system_version.clone()
+			));
+		}
+
+		let variant = Node::new(
+			host.to_string(),
+			system_version,
+			runtime_version.spec_name,
+			runtime_version.spec_version,
+			&genesis_hash.to_string(),
+		);
+
+		Ok((client, variant))
+	}
+
+	async fn create_subxt_subscriptions(
+		client: avail::Client,
+	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>> {
+		// create Header subscription
+		let header_subscription = client.rpc().subscribe_finalized_block_headers().await?;
+		// map Header subscription to the same type for later matching
+		let headers = header_subscription.map_ok(|h| Subscription::Header(h));
+
+		let justification_subscription = client
+			.rpc()
+			.subscribe(
+				"grandpa_subscribeJustifications",
+				rpc_params![],
+				"grandpa_unsubscribeJustifications",
+			)
+			.await?;
+		// map Justification subscription to the same type for later matching
+		let justifications = justification_subscription.map_ok(|j| Subscription::Justification(j));
+
+		Ok(headers.merge(justifications))
+	}
+
+	async fn with_retries<F, Fut, T>(&self, mut predicate: F) -> Result<T>
+	where
+		F: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		// try and execute the passed function, use the Retry strategy if needed
+		if let Ok(result) = Retry::spawn(self.retry_config.iter(), || async move {
+			predicate(self.current_client().await).await
+		})
+		.await
+		{
+			// this was successful, return early
+			return Ok(result);
+		}
+
+		// if not, find another Node where this could still be done
+		let mut state = self.state.lock().unwrap();
+		let nodes = self.nodes.shuffle(state.connected_node.host.clone());
+		let (client, node, result) = Self::connect_nodes_until_success(
+			nodes,
+			ExpectedNodeVariant::new(),
+			&state.connected_node.genesis_hash,
+			predicate,
+		)
+		.await?;
+
+		// retries gave results, update currently connected Node and created Client
+		state.connected_node = node;
+		*self.subxt_client.write().await = client;
+
+		Ok(result)
+	}
+
+	async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
+		async_stream::stream! {
+			'outer: loop{
+				let mut stream = match self.with_retries(|client| async move{
+					Self::create_subxt_subscriptions(client).await
+				}).await {
+					Ok(s) => s,
+					Err(err) => {
+						yield Err(err);
+						return;
+					}
+				};
+
+				loop {
+					// no more subscriptions left on stream, we have to return
+					let Some(result) = stream.next().await else { return};
+					// if Error was received, we need to switch to another RPC Client
+					let Ok(item) = result else { continue 'outer};
+					yield Ok(item);
+				}
+			}
+		}
+	}
+
+	async fn current_client(&self) -> avail::Client {
+		self.subxt_client.read().await.clone()
+	}
+}
+
+pub async fn init(
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
-) -> (Client, broadcast::Sender<Event>, EventLoop) {
+) -> Result<(Client, broadcast::Sender<Event>, EventLoop)> {
 	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
 
-	(
+	let rpc_client =
+		RpcClient::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
+
+	Ok((
 		Client::new(command_sender),
 		event_sender.clone(),
-		EventLoop::new(
-			db,
-			state,
-			Nodes::new(nodes),
-			command_receiver,
-			event_sender,
-			genesis_hash,
-			retry_config,
-		),
-	)
+		EventLoop::new(rpc_client, db, command_receiver, event_sender).await?,
+	))
 }
 
 /// Generates random cell positions for sampling
