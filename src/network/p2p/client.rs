@@ -88,7 +88,8 @@ struct StartListening {
 
 impl Command for StartListening {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		_ = entries.swarm().listen_on(self.addr.clone())?;
+		let listener_id = entries.swarm().listen_on(self.addr.clone())?;
+		entries.listeners.push(listener_id);
 
 		// send result back
 		// TODO: consider what to do if this results with None

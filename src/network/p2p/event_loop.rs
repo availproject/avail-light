@@ -2,6 +2,7 @@ use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
+	core::transport::ListenerId,
 	dcutr,
 	identify::{self, Info},
 	identity::Keypair,
@@ -90,6 +91,7 @@ pub struct EventLoop {
 	shutdown: Controller<String>,
 	// Used for checking protocol version
 	identity_data: IdentifyConfig,
+	listeners: Vec<ListenerId>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -149,6 +151,7 @@ impl EventLoop {
 			active_blocks: Default::default(),
 			shutdown,
 			identity_data: cfg.identify,
+			listeners: Vec::new(),
 		}
 	}
 
@@ -183,10 +186,18 @@ impl EventLoop {
 			}
 			info!("Restarting event loop...");
 			self.disconnect_peers();
+			let listeners = self.swarm.listeners().cloned().collect::<Vec<_>>();
+			while let Some(listener_id) = self.listeners.pop() {
+				let _ = self.swarm.remove_listener(listener_id);
+			}
 			let store = self.swarm.behaviour_mut().kademlia.store_mut().clone();
 			let kad_mode = cfg.kademlia.kademlia_mode.into();
 			self.swarm = build_swarm(&cfg, &id_keys, kad_mode, store).expect("Swarm can be built");
 			self.handle_periodic_bootstraps();
+			for listener in listeners {
+				let listener_id = self.swarm.listen_on(listener.clone()).unwrap();
+				self.listeners.push(listener_id);
+			}
 			info!("Restart finished");
 		}
 		info!("Exiting event loop...");
@@ -529,6 +540,7 @@ impl EventLoop {
 			&mut self.pending_kad_queries,
 			&mut self.pending_swarm_events,
 			&mut self.active_blocks,
+			&mut self.listeners,
 		)) {
 			command.abort(eyre!(err));
 		}
