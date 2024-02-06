@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use avail_subxt::{avail, build_client, primitives::Header, utils::H256};
 use codec::Decode;
 use color_eyre::{eyre::eyre, Report, Result};
+use exponential_backoff::Backoff;
 use futures::{Stream, TryFutureExt, TryStreamExt};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -12,11 +13,12 @@ use std::{
 	collections::HashSet,
 	fmt::Display,
 	sync::{Arc, Mutex},
+	time::Duration,
 };
 use subxt::{rpc::RpcParams, rpc_params};
 use tokio::{
 	sync::{broadcast, mpsc, RwLock},
-	time::{self, timeout},
+	time::{self, sleep, timeout},
 };
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
@@ -221,29 +223,39 @@ impl RpcClient {
 		genesis_hash: &str,
 		retry_config: RetryConfig,
 	) -> Result<Self> {
+		let retries = 8;
+		let min = Duration::from_millis(100);
+		let max = Duration::from_secs(10);
+		let backoff = Backoff::new(retries, min, max);
+
 		// try and connect appropriate Node from the provided list
 		// will do retries with the provided Retry Config
-		let (client, node, _) = Retry::spawn(retry_config.iter(), || async {
-			Self::connect_nodes_until_success(
+		for duration in &backoff {
+			match Self::connect_nodes_until_success(
 				nodes.shuffle(Default::default()),
 				ExpectedNodeVariant::new(),
 				genesis_hash,
 				|_| futures::future::ok(()),
 			)
 			.await
-		})
-		.await?;
-
-		// update global state with the currently connected Node
-		state.lock().unwrap().connected_node = node;
-
-		Ok(Self {
-			subxt_client: Arc::new(RwLock::new(client)),
-			state,
-			genesis_hash: genesis_hash.to_string(),
-			nodes,
-			retry_config,
-		})
+			{
+				Ok((client, node, _)) => {
+					// update global state with the currently connected Node
+					state.lock().unwrap().connected_node = node;
+					return Ok(Self {
+						subxt_client: Arc::new(RwLock::new(client)),
+						state,
+						genesis_hash: genesis_hash.to_string(),
+						nodes,
+						retry_config,
+					});
+				},
+				Err(_) => {
+					sleep(duration).await;
+				},
+			}
+		}
+		Err(eyre!("No nodes"))
 	}
 
 	async fn connect_nodes_until_success<T, Fun, Fut>(
@@ -357,16 +369,22 @@ impl RpcClient {
 		F: FnMut(avail::Client) -> Fut,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		// try and execute the passed function, use the Retry strategy if needed
-		let mut test = move || async move {
-			let client = self.current_client().await;
-			let res = predicate(client).await?;
-			Ok::<T, Report>(res)
-		};
+		let retries = 8;
+		let min = Duration::from_millis(100);
+		let max = Duration::from_secs(10);
+		let backoff = Backoff::new(retries, min, max);
 
-		if let Ok(result) = Retry::spawn(self.retry_config.iter(), test).await {
-			// this was successful, return early
-			return Ok(result);
+		// try and execute the passed function, use the Retry strategy if needed
+		for duration in &backoff {
+			match predicate(self.current_client().await).await {
+				// this was successful, return early
+				Ok(result) => {
+					return Ok(result);
+				},
+				Err(_) => {
+					sleep(duration).await;
+				},
+			}
 		}
 
 		// if not, find another Node where this could still be done

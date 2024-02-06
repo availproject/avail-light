@@ -377,10 +377,10 @@ impl EventLoop {
 	async fn handle_command(&self, mut command: SendableCommand) {
 		if let Err(err) = self
 			.rpc_client
-			.with_retries(|client| async move { command.run(&client).await })
+			.with_retries(move |client| async move { command.run(&client).await })
 			.await
 		{
-			command.abort(eyre!(err));
+			// command.abort(eyre!(err));
 		}
 	}
 
