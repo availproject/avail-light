@@ -37,10 +37,13 @@ impl<T: Clone> Future for Signal<T> {
 		let mutex_inner = &self.as_ref().inner;
 		let mut inner = mutex_inner.lock().unwrap();
 
-		if let Some(reason) = inner.reason.clone() {
-			return Poll::Ready(reason);
+		if let Some(reason) = inner.reason.as_ref() {
+			return Poll::Ready(reason.clone());
 		}
 
+		inner
+			.on_shutdown_trigger
+			.retain(|waker| !waker.will_wake(cx.waker()));
 		inner.on_shutdown_trigger.push(cx.waker().clone());
 		Poll::Pending
 	}
