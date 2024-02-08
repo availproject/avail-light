@@ -13,7 +13,7 @@ use sp_core::{
 	bytes::from_hex,
 	ed25519::{self, Public},
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	rpc_params,
@@ -29,35 +29,43 @@ use tracing::{info, warn};
 use super::{Node, Nodes, Subscription, WrappedProof, CELL_WITH_PROOF_SIZE};
 use crate::{
 	consts::ExpectedNodeVariant,
-	types::{RetryConfig, RuntimeVersion, DEV_FLAG_GENHASH},
+	types::{RetryConfig, RuntimeVersion, State, DEV_FLAG_GENHASH},
 };
 
 #[derive(Clone)]
-struct RpcClient {
-	subxt_client: Arc<RwLock<(avail::Client, Node)>>,
+pub struct Client {
+	subxt_client: Arc<RwLock<avail::Client>>,
+	state: Arc<Mutex<State>>,
 	nodes: Nodes,
-	genesis_hash: String,
 	retry_config: RetryConfig,
 }
 
-impl RpcClient {
-	pub async fn new(nodes: Nodes, genesis_hash: &str, retry_config: RetryConfig) -> Result<Self> {
+impl Client {
+	pub async fn new(
+		state: Arc<Mutex<State>>,
+		nodes: Nodes,
+		expected_genesis_hash: &str,
+		retry_config: RetryConfig,
+	) -> Result<Self> {
 		// try and connect appropriate Node from the provided list
 		// will do retries with the provided Retry Config
-		let (client, node, _) = Retry::spawn(retry_config.iter(), || async {
+		let (client, node, _) = Retry::spawn(retry_config.clone(), || async {
 			Self::connect_nodes_until_success(
 				nodes.shuffle(Default::default()),
 				ExpectedNodeVariant::new(),
-				genesis_hash,
+				expected_genesis_hash,
 				|_| futures::future::ok(()),
 			)
 			.await
 		})
 		.await?;
 
+		// update application wide State with the newly connected Node
+		state.lock().unwrap().connected_node = node;
+
 		Ok(Self {
-			subxt_client: Arc::new(RwLock::new((client, node))),
-			genesis_hash: genesis_hash.to_string(),
+			subxt_client: Arc::new(RwLock::new(client)),
+			state,
 			nodes,
 			retry_config,
 		})
@@ -130,15 +138,12 @@ impl RpcClient {
 		// go through the provided list of Nodes to try and find and appropriate one,
 		// after a successful connection, try to execute passed call predicate
 		for Node { host, .. } in nodes.iter() {
-			let result = Self::create_subxt_client(
-				&host,
-				expected_node.clone(),
-				expected_genesis_hash.clone(),
-			)
-			.and_then(move |(client, node)| {
-				predicate(client.clone()).map_ok(|res| (client, node, res))
-			})
-			.await;
+			let result =
+				Self::create_subxt_client(&host, expected_node.clone(), expected_genesis_hash)
+					.and_then(move |(client, node)| {
+						predicate(client.clone()).map_ok(|res| (client, node, res))
+					})
+					.await;
 
 			match result {
 				Err(error) => warn!(host, %error, "Skipping connection with this node"),
@@ -155,7 +160,7 @@ impl RpcClient {
 		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
-		if let Ok(result) = Retry::spawn(self.retry_config.iter(), move || async move {
+		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
 			predicate(self.current_client().await).await
 		})
 		.await
@@ -165,7 +170,7 @@ impl RpcClient {
 		}
 
 		// if not, find another Node where this could still be done
-		let connected_node = self.connected_node().await;
+		let connected_node = self.state.lock().unwrap().connected_node.clone();
 		let nodes = self.nodes.shuffle(connected_node.host);
 		let (client, node, result) = Self::connect_nodes_until_success(
 			nodes,
@@ -176,7 +181,8 @@ impl RpcClient {
 		.await?;
 
 		// retries gave results, update currently connected Node and created Client
-		*self.subxt_client.write().await = (client, node);
+		*self.subxt_client.write().await = client;
+		self.state.lock().unwrap().connected_node = node;
 
 		Ok(result)
 	}
@@ -204,7 +210,7 @@ impl RpcClient {
 		Ok(headers.merge(justifications))
 	}
 
-	async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
+	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
 		async_stream::stream! {
 			'outer: loop{
 				let mut stream = match self.with_retries(|client| async move{
@@ -219,7 +225,7 @@ impl RpcClient {
 
 				loop {
 					// no more subscriptions left on stream, we have to return
-					let Some(result) = stream.next().await else { return};
+					let Some(result) = stream.next().await else { return };
 					// if Error was received, we need to switch to another RPC Client
 					let Ok(item) = result else { continue 'outer};
 					yield Ok(item);
@@ -228,12 +234,8 @@ impl RpcClient {
 		}
 	}
 
-	async fn current_client(&self) -> avail::Client {
-		self.subxt_client.read().await.0.clone()
-	}
-
-	async fn connected_node(&self) -> Node {
-		self.subxt_client.read().await.1.clone()
+	pub async fn current_client(&self) -> avail::Client {
+		self.subxt_client.read().await.clone()
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
