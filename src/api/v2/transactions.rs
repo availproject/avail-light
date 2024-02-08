@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use avail_subxt::{api, primitives::AvailExtrinsicParams, AvailConfig};
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::Result;
 use sp_core::sr25519::Pair;
 use subxt::tx::PairSigner;
 
