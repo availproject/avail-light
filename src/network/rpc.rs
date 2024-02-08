@@ -1,9 +1,7 @@
 use async_trait::async_trait;
-use avail_subxt::{avail, build_client, primitives::Header, utils::H256};
+use avail_subxt::{primitives::Header, utils::H256};
 use codec::Decode;
 use color_eyre::{eyre::eyre, Report, Result};
-use exponential_backoff::Backoff;
-use futures::{Stream, TryFutureExt, TryStreamExt};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rocksdb::DB;
@@ -13,42 +11,39 @@ use std::{
 	collections::HashSet,
 	fmt::Display,
 	sync::{Arc, Mutex},
-	time::Duration,
 };
-use subxt::{rpc::RpcParams, rpc_params};
 use tokio::{
-	sync::{broadcast, mpsc, RwLock},
-	time::{self, sleep, timeout},
+	sync::broadcast,
+	time::{self, timeout},
 };
-use tokio_retry::Retry;
-use tokio_stream::StreamExt;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
-	consts::ExpectedNodeVariant,
 	network::rpc,
-	types::{GrandpaJustification, RetryConfig, RuntimeVersion, State, DEV_FLAG_GENHASH},
+	types::{GrandpaJustification, RetryConfig, State},
 };
 
 mod client;
-mod event_loop;
+mod subscriptions;
 
-pub use client::Client;
-use event_loop::EventLoop;
+use subscriptions::SubscriptionLoop;
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
-pub use event_loop::Event;
+pub use subscriptions::Event;
+
+pub use client::Client;
+
+pub enum Subscription {
+	Header(Header),
+	Justification(GrandpaJustification),
+}
 
 #[async_trait]
 pub trait Command {
-	async fn run(&mut self, client: &avail::Client) -> Result<()>;
-	fn abort(&mut self, error: Report);
+	async fn run(&self, client: Client) -> Result<()>;
+	fn abort(&self, error: Report);
 }
-
-type SendableCommand = Box<dyn Command + Send + Sync>;
-type CommandSender = mpsc::Sender<SendableCommand>;
-type CommandReceiver = mpsc::Receiver<SendableCommand>;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct WrappedJustification(pub GrandpaJustification);
@@ -202,258 +197,21 @@ impl<'a> Iterator for NodesIterator<'a> {
 	}
 }
 
-enum Subscription {
-	Header(Header),
-	Justification(GrandpaJustification),
-}
-
-#[derive(Clone)]
-struct RpcClient {
-	subxt_client: Arc<RwLock<avail::Client>>,
-	nodes: Nodes,
-	state: Arc<Mutex<State>>,
-	genesis_hash: String,
-	retry_config: RetryConfig,
-}
-
-impl RpcClient {
-	pub async fn new(
-		state: Arc<Mutex<State>>,
-		nodes: Nodes,
-		genesis_hash: &str,
-		retry_config: RetryConfig,
-	) -> Result<Self> {
-		let retries = 8;
-		let min = Duration::from_millis(100);
-		let max = Duration::from_secs(10);
-		let backoff = Backoff::new(retries, min, max);
-
-		// try and connect appropriate Node from the provided list
-		// will do retries with the provided Retry Config
-		for duration in &backoff {
-			match Self::connect_nodes_until_success(
-				nodes.shuffle(Default::default()),
-				ExpectedNodeVariant::new(),
-				genesis_hash,
-				|_| futures::future::ok(()),
-			)
-			.await
-			{
-				Ok((client, node, _)) => {
-					// update global state with the currently connected Node
-					state.lock().unwrap().connected_node = node;
-					return Ok(Self {
-						subxt_client: Arc::new(RwLock::new(client)),
-						state,
-						genesis_hash: genesis_hash.to_string(),
-						nodes,
-						retry_config,
-					});
-				},
-				Err(_) => {
-					sleep(duration).await;
-				},
-			}
-		}
-		Err(eyre!("No nodes"))
-	}
-
-	async fn connect_nodes_until_success<T, Fun, Fut>(
-		nodes: Vec<Node>,
-		expected_node: ExpectedNodeVariant,
-		expected_genesis_hash: &str,
-		mut predicate: Fun,
-	) -> Result<(avail::Client, Node, T)>
-	where
-		Fun: FnMut(avail::Client) -> Fut,
-		Fut: std::future::Future<Output = Result<T>>,
-	{
-		// go through the provided list of Nodes to try and find and appropriate one,
-		// after a successful connection, try to execute passed call predicate
-		for Node { host, .. } in nodes.iter() {
-			let result = Self::create_subxt_client(
-				&host,
-				expected_node.clone(),
-				expected_genesis_hash.clone(),
-			)
-			.and_then(|(client, node)| predicate(client.clone()).map_ok(|res| (client, node, res)))
-			.await;
-
-			match result {
-				Err(error) => warn!(host, %error, "Skipping connection with this node"),
-				ok => return ok,
-			}
-		}
-
-		Err(eyre!("Failed to connect any appropriate working node"))
-	}
-
-	async fn create_subxt_client(
-		host: &str,
-		expected_node: ExpectedNodeVariant,
-		expected_genesis_hash: &str,
-	) -> Result<(avail::Client, Node)> {
-		let (client, _) = build_client(host, false).await.map_err(|e| eyre!(e))?;
-
-		// check genesis hash
-		let genesis_hash = client.genesis_hash();
-		info!("Genesis hash: {:?}", genesis_hash);
-		if let Some(cfg_genhash) = from_hex(expected_genesis_hash)
-			.ok()
-			.and_then(|e| TryInto::<[u8; 32]>::try_into(e).ok().map(H256::from))
-		{
-			if !genesis_hash.eq(&cfg_genhash) {
-				Err(eyre!(
-					"Genesis hash doesn't match the configured one! Change the config or the node url ({}).", host
-				))?
-			}
-		} else if expected_genesis_hash.starts_with(DEV_FLAG_GENHASH) {
-			warn!("Genesis hash configured for development ({}), skipping the genesis hash check entirely.", expected_genesis_hash);
-		} else {
-			Err(eyre!(
-				"Genesis hash invalid, badly configured or missing (\"{}\").",
-				expected_genesis_hash
-			))?
-		};
-
-		// check system and runtime versions
-		let system_version = client.rpc().system_version().await?;
-		let runtime_version: RuntimeVersion = client
-			.rpc()
-			.request("state_getRuntimeVersion", RpcParams::new())
-			.await?;
-
-		if !expected_node.matches(&system_version, &runtime_version.spec_name) {
-			return Err(eyre!(
-				"Expected Node system version:{}, found: {}. Skipping to another node.",
-				expected_node.system_version,
-				system_version.clone()
-			));
-		}
-
-		let variant = Node::new(
-			host.to_string(),
-			system_version,
-			runtime_version.spec_name,
-			runtime_version.spec_version,
-			&genesis_hash.to_string(),
-		);
-
-		Ok((client, variant))
-	}
-
-	async fn create_subxt_subscriptions(
-		client: avail::Client,
-	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>> {
-		// create Header subscription
-		let header_subscription = client.rpc().subscribe_finalized_block_headers().await?;
-		// map Header subscription to the same type for later matching
-		let headers = header_subscription.map_ok(|h| Subscription::Header(h));
-
-		let justification_subscription = client
-			.rpc()
-			.subscribe(
-				"grandpa_subscribeJustifications",
-				rpc_params![],
-				"grandpa_unsubscribeJustifications",
-			)
-			.await?;
-		// map Justification subscription to the same type for later matching
-		let justifications = justification_subscription.map_ok(|j| Subscription::Justification(j));
-
-		Ok(headers.merge(justifications))
-	}
-
-	async fn with_retries<F, Fut, T>(&self, mut predicate: F) -> Result<T>
-	where
-		F: FnMut(avail::Client) -> Fut,
-		Fut: std::future::Future<Output = Result<T>>,
-	{
-		let retries = 8;
-		let min = Duration::from_millis(100);
-		let max = Duration::from_secs(10);
-		let backoff = Backoff::new(retries, min, max);
-
-		// try and execute the passed function, use the Retry strategy if needed
-		for duration in &backoff {
-			match predicate(self.current_client().await).await {
-				// this was successful, return early
-				Ok(result) => {
-					return Ok(result);
-				},
-				Err(_) => {
-					sleep(duration).await;
-				},
-			}
-		}
-
-		// if not, find another Node where this could still be done
-		let mut state = self.state.lock().unwrap();
-		let nodes = self.nodes.shuffle(state.connected_node.host.clone());
-		let (client, node, result) = Self::connect_nodes_until_success(
-			nodes,
-			ExpectedNodeVariant::new(),
-			&state.connected_node.genesis_hash,
-			move |client| predicate(client).map_err(Report::from),
-		)
-		.await?;
-
-		// retries gave results, update currently connected Node and created Client
-		state.connected_node = node;
-		*self.subxt_client.write().await = client;
-
-		Ok(result)
-	}
-
-	async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
-		async_stream::stream! {
-			'outer: loop{
-				let mut stream = match self.with_retries(|client| async move{
-					Self::create_subxt_subscriptions(client).await
-				}).await {
-					Ok(s) => s,
-					Err(err) => {
-						yield Err(err);
-						return;
-					}
-				};
-
-				loop {
-					// no more subscriptions left on stream, we have to return
-					let Some(result) = stream.next().await else { return};
-					// if Error was received, we need to switch to another RPC Client
-					let Ok(item) = result else { continue 'outer};
-					yield Ok(item);
-				}
-			}
-		}
-	}
-
-	async fn current_client(&self) -> avail::Client {
-		self.subxt_client.read().await.clone()
-	}
-}
-
 pub async fn init(
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
-) -> Result<(Client, broadcast::Sender<Event>, EventLoop)> {
-	// create channel for Event Loop Commands
-	let (command_sender, command_receiver) = mpsc::channel(1000);
+) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop)> {
+	let rpc_client =
+		Client::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
+	let subscriptions =
+		SubscriptionLoop::new(state, db, rpc_client.clone(), event_sender.clone()).await?;
 
-	let rpc_client =
-		RpcClient::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
-
-	Ok((
-		Client::new(command_sender),
-		event_sender.clone(),
-		EventLoop::new(rpc_client, state, db, command_receiver, event_sender).await?,
-	))
+	Ok((rpc_client, event_sender, subscriptions))
 }
 
 /// Generates random cell positions for sampling

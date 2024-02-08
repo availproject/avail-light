@@ -1,46 +1,24 @@
-use avail_subxt::{
-	api::{self},
-	avail::{self},
-	build_client,
-	primitives::{grandpa::AuthorityId, Header},
-	utils::H256,
-	AvailConfig,
-};
+use avail_subxt::primitives::{grandpa::AuthorityId, Header};
 use codec::Encode;
-use color_eyre::{
-	eyre::{eyre, Report},
-	Result,
-};
-use futures::{Stream, TryFutureExt, TryStreamExt};
+use color_eyre::{eyre::eyre, Result};
 use rocksdb::DB;
 use sp_core::{
 	blake2_256,
-	bytes::from_hex,
 	ed25519::{self, Public},
 	Pair,
 };
 use std::{
-	pin::Pin,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use subxt::{
-	rpc::{types::BlockNumber, RpcParams},
-	rpc_params, OnlineClient,
-};
-use tokio::sync::{broadcast::Sender, RwLock};
-use tokio_retry::Retry;
+use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
-use super::{CommandReceiver, Node, Nodes, RpcClient, SendableCommand};
+use super::{Client, Subscription};
 use crate::{
-	consts::ExpectedNodeVariant,
 	data::store_finality_sync_checkpoint,
-	types::{
-		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RetryConfig,
-		RuntimeVersion, SignerMessage, State, DEV_FLAG_GENHASH,
-	},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -50,13 +28,6 @@ pub enum Event {
 		header: Header,
 		received_at: Instant,
 	},
-}
-
-type SubscriptionStream = Pin<Box<dyn Stream<Item = Subscription>>>;
-
-enum Subscription {
-	Header(Header),
-	Justification(GrandpaJustification),
 }
 
 #[derive(Clone, Debug)]
@@ -73,26 +44,41 @@ struct BlockData {
 	last_finalized_block_header: Option<Header>,
 }
 
-pub struct EventLoop {
-	rpc_client: RpcClient,
-	command_receiver: CommandReceiver,
+pub struct SubscriptionLoop {
+	rpc_client: Client,
 	event_sender: Sender<Event>,
 	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
 	block_data: BlockData,
 }
 
-impl EventLoop {
+impl SubscriptionLoop {
 	pub async fn new(
-		rpc_client: RpcClient,
 		state: Arc<Mutex<State>>,
 		db: Arc<DB>,
-		command_receiver: CommandReceiver,
+		rpc_client: Client,
 		event_sender: Sender<Event>,
 	) -> Result<Self> {
-		let event_loop = Self {
+		// get the Hash of the Finalized Head [with Retries]
+		let last_finalized_block_hash = rpc_client.get_finalized_head_hash().await?;
+
+		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime.
+		let validator_set = rpc_client
+			.get_validator_set_by_hash(last_finalized_block_hash)
+			.await?;
+		// fetch the set ID from storage at current height [Offline Client; no need for Retries]
+		let set_id = rpc_client
+			.fetch_set_id_at(last_finalized_block_hash)
+			.await?;
+		debug!("Current set: {:?}", (validator_set.clone(), set_id));
+
+		// get last (implicitly trusted) Finalized Block Number [with Retries]
+		let last_finalized_block_header = rpc_client
+			.get_header_by_hash(last_finalized_block_hash)
+			.await?;
+
+		Ok(Self {
 			rpc_client,
-			command_receiver,
 			event_sender,
 			state,
 			db,
@@ -100,66 +86,35 @@ impl EventLoop {
 				justifications: Default::default(),
 				unverified_headers: Default::default(),
 				current_valset: ValidatorSet {
-					set_id: Default::default(),
-					validator_set: Default::default(),
+					set_id,
+					validator_set,
 				},
 				next_valset: None,
-				last_finalized_block_header: None,
+				last_finalized_block_header: Some(last_finalized_block_header),
 			},
-		};
-
-		Ok(event_loop)
-	}
-
-	async fn gather_block_data(&mut self) -> Result<()> {
-		// get the Hash of the Finalized Head [with Retries]
-		let last_finalized_block_hash = self.get_chain_head_hash().await?;
-
-		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime.
-		let validator_set = self
-			.get_validator_set_by_hash(last_finalized_block_hash)
-			.await?;
-		// fetch the set ID from storage at current height [Offline Client; no need for Retries]
-		let set_id = self.fetch_set_id_at(last_finalized_block_hash).await?;
-		// set Current Valset
-		debug!("Current set: {:?}", (validator_set.clone(), set_id));
-		self.block_data.current_valset = ValidatorSet {
-			set_id,
-			validator_set,
-		};
-
-		// get last (implicitly trusted) Finalized Block Number [with Retries]
-		let last_finalized_block_header =
-			self.get_header_by_hash(last_finalized_block_hash).await?;
-		// set Last Finalized Block Header
-		self.block_data.last_finalized_block_header = Some(last_finalized_block_header);
-
-		Ok(())
+		})
 	}
 
 	pub async fn run(&mut self) -> Result<()> {
 		// create subscriptions stream
-		// let subscriptions = self.subscriptions_with_retry().await;
-		// futures::pin_mut!(subscriptions);
+		let subscriptions = self.rpc_client.clone().subscription_stream().await;
+		futures::pin_mut!(subscriptions);
 
-		loop {
-			tokio::select! {
-				// subscription = subscriptions.next() => self.handle_subscription_stream(subscription.expect("RPC Subscription stream should be infinite")).await.unwrap(),
-				command = self.command_receiver.recv() => match command {
-					Some(c) => self.handle_command(c).await,
-					// Command channel closed, thus shutting down the RPC Event Loop
-					None => return Err(eyre!("RPC Event Loop shutting down")),
+		while let Some(result) = subscriptions.next().await {
+			match result {
+				Ok(sub) => {
+					self.handle_new_subscription(sub).await;
+					continue;
 				},
-			}
+				Err(err) => return Err(eyre!(err)),
+			};
 		}
+
+		Ok(())
 	}
 
-	async fn handle_subscription_stream(
-		&mut self,
-		subscription: Result<Subscription>,
-	) -> Result<()> {
-		let sub = subscription?;
-		match sub {
+	async fn handle_new_subscription(&mut self, subscription: Subscription) {
+		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
 				self.state.lock().unwrap().latest = header.clone().number;
@@ -210,8 +165,6 @@ impl EventLoop {
 		}
 		// check headers
 		self.verify_and_output_block_headers().await;
-
-		Ok(())
 	}
 
 	async fn verify_and_output_block_headers(&mut self) {
@@ -336,7 +289,12 @@ impl EventLoop {
 							},
 							None => {
 								info!("Fetching header from RPC");
-								let a = self.get_header_by_block_number(bl_num).await.unwrap().0;
+								let a = self
+									.rpc_client
+									.get_header_by_block_number(bl_num)
+									.await
+									.unwrap()
+									.0;
 								(a, Instant::now())
 							},
 						};
@@ -373,83 +331,6 @@ impl EventLoop {
 			}
 		}
 	}
-
-	async fn handle_command(&self, mut command: SendableCommand) {
-		if let Err(err) = self
-			.rpc_client
-			.with_retries(move |client| async move { command.run(&client).await })
-			.await
-		{
-			// command.abort(eyre!(err));
-		}
-	}
-
-	async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-		self.rpc_client
-			.with_retries(|client| async move {
-				client
-					.rpc()
-					.block_hash(Some(BlockNumber::from(block_number)))
-					.await
-					.map_err(Report::from)
-			})
-			.await?
-			.ok_or_else(|| eyre!("Block with number: {block_number} not found"))
-	}
-
-	async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
-		self.rpc_client
-			.with_retries(|client| async move {
-				client
-					.rpc()
-					.header(Some(block_hash))
-					.await
-					.map_err(Report::from)
-			})
-			.await?
-			.ok_or_else(|| eyre!("Block Header with hash: {block_hash:?} not found"))
-	}
-
-	async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
-		// this call is done with the Offline subxt client variant, no need for retries
-		let client = self.rpc_client.current_client().await;
-
-		let valset = client
-			.runtime_api()
-			.at(block_hash)
-			.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
-			.await?;
-
-		Ok(valset.iter().map(|e| e.0).collect())
-	}
-
-	async fn get_chain_head_hash(&self) -> Result<H256> {
-		self.rpc_client
-			.with_retries(|client| async move {
-				client.rpc().finalized_head().await.map_err(Report::from)
-			})
-			.await
-	}
-
-	async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
-		self.rpc_client
-			.with_retries(move |client: OnlineClient<AvailConfig>| async move {
-				let set_id_key = api::storage().grandpa().current_set_id();
-				client
-					.storage()
-					.at(block_hash)
-					.fetch(&set_id_key)
-					.await
-					.map_err(Report::from)
-			})
-			.await?
-			.ok_or_else(|| eyre!("The set_id should exist"))
-	}
-
-	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(Header, H256)> {
-		let hash = self.get_block_hash(block_number).await?;
-		self.get_header_by_hash(hash).await.map(|e| (e, hash))
-	}
 }
 
 fn is_signed_by_supermajority(num_signatures: usize, validator_set_size: usize) -> bool {
@@ -478,7 +359,7 @@ mod tests {
 	#[test_case(66, 100 => false)]
 	#[test_case(67, 100 => true)]
 	fn check_supermajority_condition(num_signatures: usize, validator_set_size: usize) -> bool {
-		use crate::network::rpc::event_loop::is_signed_by_supermajority;
+		use crate::network::rpc::subscriptions::is_signed_by_supermajority;
 		is_signed_by_supermajority(num_signatures, validator_set_size)
 	}
 
