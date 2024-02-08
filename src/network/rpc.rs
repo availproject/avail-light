@@ -166,9 +166,7 @@ impl Nodes {
 	fn shuffle(&self, current_host: String) -> Vec<Node> {
 		let mut list: Vec<Node> = self
 			.list
-			.iter()
-			.cloned()
-			.filter(|Node { host, .. }| host != &current_host)
+			.iter().filter(|&Node { host, .. }| host != &current_host).cloned()
 			.collect();
 		list.shuffle(&mut thread_rng());
 		list

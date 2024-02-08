@@ -139,7 +139,7 @@ impl Client {
 		// after a successful connection, try to execute passed call predicate
 		for Node { host, .. } in nodes.iter() {
 			let result =
-				Self::create_subxt_client(&host, expected_node.clone(), expected_genesis_hash)
+				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
 					.and_then(move |(client, node)| {
 						predicate(client.clone()).map_ok(|res| (client, node, res))
 					})
@@ -194,7 +194,7 @@ impl Client {
 		// create Header subscription
 		let header_subscription = client.rpc().subscribe_finalized_block_headers().await?;
 		// map Header subscription to the same type for later matching
-		let headers = header_subscription.map_ok(|h| Subscription::Header(h));
+		let headers = header_subscription.map_ok(Subscription::Header);
 
 		let justification_subscription = client
 			.rpc()
@@ -205,7 +205,7 @@ impl Client {
 			)
 			.await?;
 		// map Justification subscription to the same type for later matching
-		let justifications = justification_subscription.map_ok(|j| Subscription::Justification(j));
+		let justifications = justification_subscription.map_ok(Subscription::Justification);
 
 		Ok(headers.merge(justifications))
 	}
@@ -456,7 +456,7 @@ impl Client {
 				async move {
 					client
 						.rpc()
-						.storage_keys_paged(&key, count, start_key.as_deref(), hash)
+						.storage_keys_paged(key, count, start_key.as_deref(), hash)
 						.await
 				}
 			})
