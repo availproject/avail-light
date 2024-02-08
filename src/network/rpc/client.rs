@@ -316,7 +316,7 @@ impl Client {
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
 		let mut params = RpcParams::new();
-		params.push(positions.clone())?;
+		params.push(positions)?;
 		params.push(block_hash)?;
 
 		let proofs: Vec<u8> = self
