@@ -95,7 +95,7 @@ impl SubscriptionLoop {
 		})
 	}
 
-	pub async fn run(&mut self) -> Result<()> {
+	pub async fn run(mut self) -> Result<()> {
 		// create subscriptions stream
 		let subscriptions = self.rpc_client.clone().subscription_stream().await;
 		futures::pin_mut!(subscriptions);
