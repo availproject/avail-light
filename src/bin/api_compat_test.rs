@@ -29,8 +29,9 @@ async fn main() -> Result<()> {
 		retries: 4,
 	});
 
-	let (rpc_client, _, event_loop) = rpc::init(db, state, &[command_args.url], "DEV", retry_cfg);
-	tokio::spawn(event_loop.run());
+	let (rpc_client, _, subscriptions) =
+		rpc::init(db, state, &[command_args.url], "DEV", retry_cfg).await?;
+	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;
 
