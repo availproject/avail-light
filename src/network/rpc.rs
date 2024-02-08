@@ -86,7 +86,7 @@ pub struct Node {
 	pub system_version: String,
 	pub spec_name: String,
 	pub spec_version: u32,
-	pub genesis_hash: String,
+	pub genesis_hash: H256,
 }
 
 impl Node {
@@ -95,14 +95,14 @@ impl Node {
 		system_version: String,
 		spec_name: String,
 		spec_version: u32,
-		genesis_hash: &str,
+		genesis_hash: H256,
 	) -> Self {
 		Self {
 			host,
 			system_version,
 			spec_name,
 			spec_version,
-			genesis_hash: genesis_hash.to_string(),
+			genesis_hash,
 		}
 	}
 
@@ -166,7 +166,9 @@ impl Nodes {
 	fn shuffle(&self, current_host: String) -> Vec<Node> {
 		let mut list: Vec<Node> = self
 			.list
-			.iter().filter(|&Node { host, .. }| host != &current_host).cloned()
+			.iter()
+			.filter(|&Node { host, .. }| host != &current_host)
+			.cloned()
 			.collect();
 		list.shuffle(&mut thread_rng());
 		list

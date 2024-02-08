@@ -119,7 +119,7 @@ impl Client {
 			system_version,
 			runtime_version.spec_name,
 			runtime_version.spec_version,
-			&genesis_hash.to_string(),
+			genesis_hash,
 		);
 
 		Ok((client, variant))
@@ -138,12 +138,15 @@ impl Client {
 		// go through the provided list of Nodes to try and find and appropriate one,
 		// after a successful connection, try to execute passed call predicate
 		for Node { host, .. } in nodes.iter() {
-			let result =
-				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
-					.and_then(move |(client, node)| {
-						predicate(client.clone()).map_ok(|res| (client, node, res))
-					})
-					.await;
+			let result = Self::create_subxt_client(
+				host,
+				expected_node.clone(),
+				expected_genesis_hash,
+			)
+			.and_then(move |(client, node)| {
+				predicate(client.clone()).map_ok(|res| (client, node, res))
+			})
+			.await;
 
 			match result {
 				Err(error) => warn!(host, %error, "Skipping connection with this node"),
@@ -175,7 +178,7 @@ impl Client {
 		let (client, node, result) = Self::connect_nodes_until_success(
 			nodes,
 			ExpectedNodeVariant::new(),
-			&connected_node.genesis_hash,
+			&connected_node.genesis_hash.to_string(),
 			move |client| predicate(client).map_err(Report::from),
 		)
 		.await?;
