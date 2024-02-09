@@ -90,6 +90,7 @@ impl DHTWithRPCFallbackClient {
 			commitments,
 			self.pp.clone(),
 		)
+		.await
 		.context("Failed to verify fetched cells")?;
 
 		info!(
@@ -132,6 +133,7 @@ impl DHTWithRPCFallbackClient {
 			commitments,
 			self.pp.clone(),
 		)
+		.await
 		.context("Failed to verify fetched cells")?;
 
 		info!(

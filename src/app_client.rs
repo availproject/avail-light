@@ -284,6 +284,7 @@ async fn fetch_verified(
 
 	let (verified, mut unverified) =
 		proof::verify(block_number, dimensions, &fetched, commitments, pp)
+			.await
 			.wrap_err("Failed to verify fetched cells")?;
 
 	fetched.retain(|cell| verified.contains(&cell.position));

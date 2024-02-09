@@ -1,5 +1,6 @@
 //! Parallelized proof verification
 
+use color_eyre::eyre;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use itertools::{Either, Itertools};
 use kate_recovery::{
@@ -7,46 +8,56 @@ use kate_recovery::{
 	matrix::{Dimensions, Position},
 	proof,
 };
-use std::sync::{mpsc::channel, Arc};
-use tracing::error;
+use std::sync::Arc;
+use tokio::{task::JoinSet, time::Instant};
+use tracing::debug;
+
+async fn verify_proof(
+	public_parameters: Arc<PublicParameters>,
+	dimensions: Dimensions,
+	commitment: [u8; 48],
+	cell: Cell,
+) -> Result<(Position, bool), proof::Error> {
+	proof::verify(&public_parameters, dimensions, &commitment, &cell)
+		.map(|verified| (cell.position, verified))
+}
 
 /// Verifies proofs for given block, cells and commitments
-pub fn verify(
+pub async fn verify(
 	block_num: u32,
 	dimensions: Dimensions,
 	cells: &[Cell],
 	commitments: &[[u8; 48]],
 	public_parameters: Arc<PublicParameters>,
-) -> Result<(Vec<Position>, Vec<Position>), proof::Error> {
-	let cpus = num_cpus::get();
-	let pool = threadpool::ThreadPool::new(cpus);
-	let (tx, rx) = channel::<(Position, Result<bool, proof::Error>)>();
+) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
+	if cells.is_empty() {
+		return Ok((Vec::new(), Vec::new()));
+	};
+
+	let start_time = Instant::now();
+
+	let mut tasks = JoinSet::new();
 
 	for cell in cells {
-		let commitment = commitments[cell.position.row as usize];
-
-		let tx = tx.clone();
-		let cell = cell.clone();
-		let public_parameters = public_parameters.clone();
-
-		pool.execute(move || {
-			let result = proof::verify(&public_parameters, dimensions, &commitment, &cell);
-			if let Err(error) = tx.clone().send((cell.position, result)) {
-				error!(block_num, "Failed to send proof verified message: {error}");
-			}
-		});
+		tasks.spawn(verify_proof(
+			public_parameters.clone(),
+			dimensions,
+			commitments[cell.position.row as usize],
+			cell.clone(),
+		));
 	}
 
-	let (verified, unverified): (Vec<_>, Vec<_>) = rx
-		.iter()
-		.take(cells.len())
-		.map(|(position, result)| result.map(|is_verified| (position, is_verified)))
-		.collect::<Result<Vec<(Position, bool)>, _>>()?
+	let mut results = Vec::with_capacity(cells.len());
+	while let Some(result) = tasks.join_next().await {
+		results.push(result??)
+	}
+
+	debug!(block_num, duration = ?start_time.elapsed(), "Proof verification completed");
+
+	Ok(results
 		.into_iter()
 		.partition_map(|(position, is_verified)| match is_verified {
 			true => Either::Left(position),
 			false => Either::Right(position),
-		});
-
-	Ok((verified, unverified))
+		}))
 }
