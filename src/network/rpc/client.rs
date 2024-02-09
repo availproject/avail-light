@@ -138,15 +138,12 @@ impl Client {
 		// go through the provided list of Nodes to try and find and appropriate one,
 		// after a successful connection, try to execute passed call predicate
 		for Node { host, .. } in nodes.iter() {
-			let result = Self::create_subxt_client(
-				host,
-				expected_node.clone(),
-				expected_genesis_hash,
-			)
-			.and_then(move |(client, node)| {
-				predicate(client.clone()).map_ok(|res| (client, node, res))
-			})
-			.await;
+			let result =
+				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
+					.and_then(move |(client, node)| {
+						predicate(client.clone()).map_ok(|res| (client, node, res))
+					})
+					.await;
 
 			match result {
 				Err(error) => warn!(host, %error, "Skipping connection with this node"),
@@ -399,7 +396,7 @@ impl Client {
 				async move { client.storage().at(block_hash).fetch(&validators_key).await }
 			})
 			.await
-			.map_err(|e| eyre!(e))?;
+			.map_err(Report::from)?;
 
 		Ok(res)
 	}
@@ -410,37 +407,43 @@ impl Client {
 		signer: &PairSigner<AvailConfig, Pair>,
 		other_params: avail_subxt::primitives::AvailExtrinsicParams,
 	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
-		self.with_retries(|client| {
-			let other_params = other_params.clone();
-			async move {
-				client
-					.tx()
-					.sign_and_submit_then_watch(call, signer, other_params)
-					.await?
-					.wait_for_finalized_success()
-					.await
-			}
-		})
-		.await
+		let tx_progress = self
+			.with_retries(|client| {
+				let other_params = other_params.clone();
+				async move {
+					client
+						.tx()
+						.sign_and_submit_then_watch(call, signer, other_params)
+						.await
+				}
+			})
+			.await?;
+
+		tx_progress
+			.wait_for_finalized_success()
+			.await
+			.map_err(Report::from)
 	}
 
 	pub async fn submit_from_bytes_and_wait_for_finalized(
 		&self,
 		tx_bytes: Vec<u8>,
 	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
-		let ext = self
+		let tx_progress = self
 			.with_retries(|client| {
 				let tx_bytes = tx_bytes.clone();
 				async move {
 					SubmittableExtrinsic::from_bytes(client, tx_bytes)
 						.submit_and_watch()
-						.await?
-						.wait_for_finalized_success()
 						.await
 				}
 			})
+			.await?;
+
+		let ext = tx_progress
+			.wait_for_finalized_success()
 			.await
-			.map_err(|e| eyre!(e))?;
+			.map_err(Report::from)?;
 
 		Ok(ext)
 	}
@@ -464,7 +467,7 @@ impl Client {
 				}
 			})
 			.await
-			.map_err(|e| eyre!(e))?;
+			.map_err(Report::from)?;
 
 		Ok(res)
 	}
@@ -489,7 +492,7 @@ impl Client {
 				}
 			})
 			.await
-			.map_err(|e| eyre!(e))?;
+			.map_err(Report::from)?;
 
 		Ok(res)
 	}
