@@ -7,7 +7,7 @@ use avail_subxt::{
 	api::runtime_types::{
 		avail_core::{
 			header::extension::HeaderExtension,
-			header::extension::{v1, v2},
+			header::extension::{v1, v2, v3},
 		},
 		da_control::pallet::Call,
 		da_runtime::RuntimeCall,
@@ -58,6 +58,14 @@ pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<
 			kate.data_root,
 			kate.commitment.clone(),
 		),
+		HeaderExtension::V3(v3::HeaderExtension {
+			commitment: kate, ..
+		}) => (
+			kate.rows,
+			kate.cols,
+			kate.data_root,
+			kate.commitment.clone(),
+		),
 	}
 }
 
@@ -67,6 +75,7 @@ pub(crate) fn extract_app_lookup(
 	let compact = match &extension {
 		HeaderExtension::V1(v1::HeaderExtension { app_lookup, .. }) => app_lookup,
 		HeaderExtension::V2(v2::HeaderExtension { app_lookup, .. }) => app_lookup,
+		HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) => app_lookup,
 	};
 
 	let size = compact.size;

@@ -443,6 +443,21 @@ impl TryFrom<HeaderExtension> for Extension {
 					app_lookup: v2.app_lookup,
 				})
 			},
+
+			HeaderExtension::V3(v3) => {
+				let commitments = commitments::from_slice(&v3.commitment.commitment)?
+					.into_iter()
+					.map(Commitment)
+					.collect::<Vec<_>>();
+
+				Ok(Extension {
+					rows: v3.commitment.rows,
+					cols: v3.commitment.cols,
+					data_root: v3.commitment.data_root,
+					commitments,
+					app_lookup: v3.app_lookup,
+				})
+			},
 		}
 	}
 }

@@ -531,10 +531,10 @@ name = "avail-core"
 version = "0.5.1"
 source = "git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.2#9091f4a7acc730f06e1d64ecfab0ba5441bb2172"
 dependencies = [
- "binary-merkle-tree",
+ "binary-merkle-tree 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "derive_more",
  "ethabi",
- "frame-support",
+ "frame-support 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "hash256-std-hasher",
  "hex",
  "log",
@@ -542,13 +542,13 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-arithmetic",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-runtime-interface",
- "sp-std",
- "sp-trie",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "static_assertions",
  "thiserror-no-std",
  "tiny-keccak",
@@ -557,26 +557,26 @@ dependencies = [
 [[package]]
 name = "avail-core"
 version = "0.5.1"
-source = "git+https://github.com/availproject/avail-core?tag=node-v1.9.0.0#060d552ee0864ab03d0b33264c37c597b0726b03"
+source = "git+https://github.com/availproject/avail-core?branch=goldberg#34c910c175b6b7f18a48aabd1e64c86da5cfbad2"
 dependencies = [
- "binary-merkle-tree",
+ "binary-merkle-tree 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "derive_more",
  "ethabi",
- "frame-support",
+ "frame-support 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "hash256-std-hasher",
  "hex",
  "log",
- "nomad-core 0.1.5 (git+https://github.com/availproject/avail-core?tag=node-v1.9.0.0)",
+ "nomad-core 0.1.5 (git+https://github.com/availproject/avail-core?branch=goldberg)",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-arithmetic",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-runtime-interface",
- "sp-std",
- "sp-trie",
+ "sp-arithmetic 16.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-io 23.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-trie 22.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "static_assertions",
  "thiserror-no-std",
  "tiny-keccak",
@@ -625,7 +625,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec 1.12.0",
- "sp-core",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "strip-ansi-escapes",
  "subxt",
  "test-case",
@@ -646,10 +646,10 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.4.0"
-source = "git+https://github.com/availproject/avail.git?tag=v1.9.0.0#8c101e983fe0c7ecb846641f69e29bfa39076114"
+source = "git+https://github.com/availproject/avail.git?branch=goldberg#17ee7550ffcd5eaae74b6f78667277416ac3d37b"
 dependencies = [
  "anyhow",
- "avail-core 0.5.1 (git+https://github.com/availproject/avail-core?tag=node-v1.9.0.0)",
+ "avail-core 0.5.1 (git+https://github.com/availproject/avail-core?branch=goldberg)",
  "bounded-collections",
  "curve25519-dalek 2.1.3",
  "derive_more",
@@ -662,7 +662,7 @@ dependencies = [
  "schnorrkel",
  "serde",
  "serde-hex",
- "sp-core",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "structopt",
  "subxt",
  "tokio",
@@ -815,6 +815,15 @@ checksum = "6fa9e1d11a268684cbd90ed36370d7577afb6c62d912ddff5c15fc34343e5036"
 dependencies = [
  "backtrace",
  "console",
+]
+
+[[package]]
+name = "binary-merkle-tree"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "hash-db",
+ "log",
 ]
 
 [[package]]
@@ -2454,12 +2463,12 @@ dependencies = [
 [[package]]
 name = "frame-support"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
 dependencies = [
  "bitflags 1.3.2",
  "environmental",
  "frame-metadata 16.0.0",
- "frame-support-procedural",
+ "frame-support-procedural 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "impl-trait-for-tuples",
  "k256 0.13.3",
  "log",
@@ -2469,20 +2478,72 @@ dependencies = [
  "scale-info",
  "serde",
  "smallvec 1.12.0",
- "sp-api",
- "sp-arithmetic",
- "sp-core",
- "sp-core-hashing-proc-macro",
- "sp-debug-derive",
- "sp-inherents",
- "sp-io",
- "sp-runtime",
- "sp-staking",
- "sp-state-machine",
- "sp-std",
- "sp-tracing",
- "sp-weights",
+ "sp-api 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core-hashing-proc-macro 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-inherents 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-io 23.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-staking 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-state-machine 0.28.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-tracing 10.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-weights 20.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "tt-call",
+]
+
+[[package]]
+name = "frame-support"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
+dependencies = [
+ "bitflags 1.3.2",
+ "environmental",
+ "frame-metadata 16.0.0",
+ "frame-support-procedural 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "impl-trait-for-tuples",
+ "k256 0.13.3",
+ "log",
+ "macro_magic",
+ "parity-scale-codec",
+ "paste",
+ "scale-info",
+ "serde",
+ "smallvec 1.12.0",
+ "sp-api 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core-hashing-proc-macro 9.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-inherents 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-staking 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-state-machine 0.28.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-tracing 10.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-weights 20.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "tt-call",
+]
+
+[[package]]
+name = "frame-support-procedural"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "Inflector",
+ "cfg-expr",
+ "derive-syn-parse",
+ "expander",
+ "frame-support-procedural-tools 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "itertools 0.10.5",
+ "macro_magic",
+ "proc-macro-warning",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -2494,7 +2555,7 @@ dependencies = [
  "cfg-expr",
  "derive-syn-parse",
  "expander",
- "frame-support-procedural-tools",
+ "frame-support-procedural-tools 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "itertools 0.10.5",
  "macro_magic",
  "proc-macro-warning",
@@ -2506,10 +2567,32 @@ dependencies = [
 [[package]]
 name = "frame-support-procedural-tools"
 version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "frame-support-procedural-tools-derive 3.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
+]
+
+[[package]]
+name = "frame-support-procedural-tools"
+version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
- "frame-support-procedural-tools-derive",
+ "frame-support-procedural-tools-derive 3.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
+]
+
+[[package]]
+name = "frame-support-procedural-tools-derive"
+version = "3.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -3616,8 +3699,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
- "sp-arithmetic",
- "sp-std",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "static_assertions",
  "thiserror-no-std",
 ]
@@ -4778,27 +4861,27 @@ dependencies = [
  "primitive-types",
  "scale-info",
  "serde",
- "sp-core",
- "sp-runtime",
- "sp-std",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "tiny-keccak",
 ]
 
 [[package]]
 name = "nomad-core"
 version = "0.1.5"
-source = "git+https://github.com/availproject/avail-core?tag=node-v1.9.0.0#060d552ee0864ab03d0b33264c37c597b0726b03"
+source = "git+https://github.com/availproject/avail-core?branch=goldberg#34c910c175b6b7f18a48aabd1e64c86da5cfbad2"
 dependencies = [
  "ethers-core",
  "ethers-signers",
- "nomad-signature 0.1.3 (git+https://github.com/availproject/avail-core?tag=node-v1.9.0.0)",
+ "nomad-signature 0.1.3 (git+https://github.com/availproject/avail-core?branch=goldberg)",
  "parity-scale-codec",
  "primitive-types",
  "scale-info",
  "serde",
- "sp-core",
- "sp-runtime",
- "sp-std",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "tiny-keccak",
 ]
 
@@ -4809,15 +4892,15 @@ source = "git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.
 dependencies = [
  "elliptic-curve 0.12.3",
  "ethers-core",
- "frame-support",
+ "frame-support 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "generic-array 0.14.7",
  "hex",
  "k256 0.11.6",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core",
- "sp-runtime",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror-no-std",
  "tiny-keccak",
 ]
@@ -4825,19 +4908,19 @@ dependencies = [
 [[package]]
 name = "nomad-signature"
 version = "0.1.3"
-source = "git+https://github.com/availproject/avail-core?tag=node-v1.9.0.0#060d552ee0864ab03d0b33264c37c597b0726b03"
+source = "git+https://github.com/availproject/avail-core?branch=goldberg#34c910c175b6b7f18a48aabd1e64c86da5cfbad2"
 dependencies = [
  "elliptic-curve 0.12.3",
  "ethers-core",
- "frame-support",
+ "frame-support 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "generic-array 0.14.7",
  "hex",
  "k256 0.11.6",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core",
- "sp-runtime",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "thiserror-no-std",
  "tiny-keccak",
 ]
@@ -6753,22 +6836,57 @@ dependencies = [
 [[package]]
 name = "sp-api"
 version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "hash-db",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api-proc-macro 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-externalities 0.19.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-metadata-ir 0.1.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-state-machine 0.28.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-trie 22.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-version 22.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror",
+]
+
+[[package]]
+name = "sp-api"
+version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "hash-db",
  "log",
  "parity-scale-codec",
  "scale-info",
- "sp-api-proc-macro",
- "sp-core",
- "sp-externalities",
- "sp-metadata-ir",
- "sp-runtime",
- "sp-state-machine",
- "sp-std",
- "sp-trie",
- "sp-version",
+ "sp-api-proc-macro 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-metadata-ir 0.1.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-state-machine 0.28.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-version 22.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror",
+]
+
+[[package]]
+name = "sp-api-proc-macro"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "Inflector",
+ "blake2",
+ "expander",
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -6788,14 +6906,41 @@ dependencies = [
 [[package]]
 name = "sp-application-crypto"
 version = "23.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-io 23.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+]
+
+[[package]]
+name = "sp-application-crypto"
+version = "23.0.0"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core",
- "sp-io",
- "sp-std",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+]
+
+[[package]]
+name = "sp-arithmetic"
+version = "16.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "integer-sqrt",
+ "num-traits",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "static_assertions",
 ]
 
 [[package]]
@@ -6808,8 +6953,53 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-std",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "static_assertions",
+]
+
+[[package]]
+name = "sp-core"
+version = "21.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "array-bytes",
+ "bitflags 1.3.2",
+ "blake2",
+ "bounded-collections",
+ "bs58 0.4.0",
+ "dyn-clonable",
+ "ed25519-zebra",
+ "futures",
+ "hash-db",
+ "hash256-std-hasher",
+ "impl-serde",
+ "lazy_static",
+ "libsecp256k1",
+ "log",
+ "merlin 2.0.1",
+ "parity-scale-codec",
+ "parking_lot",
+ "paste",
+ "primitive-types",
+ "rand 0.8.5",
+ "regex",
+ "scale-info",
+ "schnorrkel",
+ "secp256k1",
+ "secrecy",
+ "serde",
+ "sp-core-hashing 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-externalities 0.19.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-storage 13.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "ss58-registry",
+ "substrate-bip39",
+ "thiserror",
+ "tiny-bip39",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -6843,18 +7033,31 @@ dependencies = [
  "secp256k1",
  "secrecy",
  "serde",
- "sp-core-hashing",
- "sp-debug-derive",
- "sp-externalities",
- "sp-runtime-interface",
- "sp-std",
- "sp-storage",
+ "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "ss58-registry",
  "substrate-bip39",
  "thiserror",
  "tiny-bip39",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "sp-core-hashing"
+version = "9.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "blake2b_simd",
+ "byteorder",
+ "digest 0.10.7",
+ "sha2 0.10.8",
+ "sha3 0.10.8",
+ "twox-hash",
 ]
 
 [[package]]
@@ -6873,10 +7076,30 @@ dependencies = [
 [[package]]
 name = "sp-core-hashing-proc-macro"
 version = "9.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "quote",
+ "sp-core-hashing 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "syn 2.0.48",
+]
+
+[[package]]
+name = "sp-core-hashing-proc-macro"
+version = "9.0.0"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "quote",
- "sp-core-hashing",
+ "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "syn 2.0.48",
+]
+
+[[package]]
+name = "sp-debug-derive"
+version = "8.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "proc-macro2",
+ "quote",
  "syn 2.0.48",
 ]
 
@@ -6893,12 +7116,37 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.19.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "environmental",
+ "parity-scale-codec",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-storage 13.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+]
+
+[[package]]
+name = "sp-externalities"
+version = "0.19.0"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "environmental",
  "parity-scale-codec",
- "sp-std",
- "sp-storage",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+]
+
+[[package]]
+name = "sp-inherents"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "async-trait",
+ "impl-trait-for-tuples",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror",
 ]
 
 [[package]]
@@ -6910,9 +7158,34 @@ dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
- "sp-runtime",
- "sp-std",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror",
+]
+
+[[package]]
+name = "sp-io"
+version = "23.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "bytes",
+ "ed25519 1.5.3",
+ "ed25519-dalek 1.0.1",
+ "libsecp256k1",
+ "log",
+ "parity-scale-codec",
+ "rustversion",
+ "secp256k1",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-externalities 0.19.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-keystore 0.27.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-state-machine 0.28.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-tracing 10.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-trie 22.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "tracing",
+ "tracing-core",
 ]
 
 [[package]]
@@ -6928,16 +7201,28 @@ dependencies = [
  "parity-scale-codec",
  "rustversion",
  "secp256k1",
- "sp-core",
- "sp-externalities",
- "sp-keystore",
- "sp-runtime-interface",
- "sp-state-machine",
- "sp-std",
- "sp-tracing",
- "sp-trie",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-keystore 0.27.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-state-machine 0.28.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-tracing 10.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "tracing",
  "tracing-core",
+]
+
+[[package]]
+name = "sp-keystore"
+version = "0.27.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "parity-scale-codec",
+ "parking_lot",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-externalities 0.19.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror",
 ]
 
 [[package]]
@@ -6947,9 +7232,20 @@ source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0
 dependencies = [
  "parity-scale-codec",
  "parking_lot",
- "sp-core",
- "sp-externalities",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror",
+]
+
+[[package]]
+name = "sp-metadata-ir"
+version = "0.1.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "frame-metadata 16.0.0",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
 ]
 
 [[package]]
@@ -6960,7 +7256,17 @@ dependencies = [
  "frame-metadata 16.0.0",
  "parity-scale-codec",
  "scale-info",
- "sp-std",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+]
+
+[[package]]
+name = "sp-panic-handler"
+version = "8.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "backtrace",
+ "lazy_static",
+ "regex",
 ]
 
 [[package]]
@@ -6971,6 +7277,28 @@ dependencies = [
  "backtrace",
  "lazy_static",
  "regex",
+]
+
+[[package]]
+name = "sp-runtime"
+version = "24.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "either",
+ "hash256-std-hasher",
+ "impl-trait-for-tuples",
+ "log",
+ "parity-scale-codec",
+ "paste",
+ "rand 0.8.5",
+ "scale-info",
+ "serde",
+ "sp-application-crypto 23.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-io 23.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-weights 20.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
 ]
 
 [[package]]
@@ -6987,12 +7315,30 @@ dependencies = [
  "rand 0.8.5",
  "scale-info",
  "serde",
- "sp-application-crypto",
- "sp-arithmetic",
- "sp-core",
- "sp-io",
- "sp-std",
- "sp-weights",
+ "sp-application-crypto 23.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-weights 20.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+]
+
+[[package]]
+name = "sp-runtime-interface"
+version = "17.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "bytes",
+ "impl-trait-for-tuples",
+ "parity-scale-codec",
+ "primitive-types",
+ "sp-externalities 0.19.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime-interface-proc-macro 11.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-storage 13.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-tracing 10.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-wasm-interface 14.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "static_assertions",
 ]
 
 [[package]]
@@ -7004,13 +7350,25 @@ dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "primitive-types",
- "sp-externalities",
- "sp-runtime-interface-proc-macro",
- "sp-std",
- "sp-storage",
- "sp-tracing",
- "sp-wasm-interface",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime-interface-proc-macro 11.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-tracing 10.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-wasm-interface 14.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "static_assertions",
+]
+
+[[package]]
+name = "sp-runtime-interface-proc-macro"
+version = "11.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "Inflector",
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -7028,15 +7386,50 @@ dependencies = [
 [[package]]
 name = "sp-staking"
 version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "impl-trait-for-tuples",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+]
+
+[[package]]
+name = "sp-staking"
+version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core",
- "sp-runtime",
- "sp-std",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+]
+
+[[package]]
+name = "sp-state-machine"
+version = "0.28.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "hash-db",
+ "log",
+ "parity-scale-codec",
+ "parking_lot",
+ "rand 0.8.5",
+ "smallvec 1.12.0",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-externalities 0.19.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-panic-handler 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-trie 22.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror",
+ "tracing",
+ "trie-db",
 ]
 
 [[package]]
@@ -7050,11 +7443,11 @@ dependencies = [
  "parking_lot",
  "rand 0.8.5",
  "smallvec 1.12.0",
- "sp-core",
- "sp-externalities",
- "sp-panic-handler",
- "sp-std",
- "sp-trie",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-panic-handler 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror",
  "tracing",
  "trie-db",
@@ -7063,7 +7456,25 @@ dependencies = [
 [[package]]
 name = "sp-std"
 version = "8.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+
+[[package]]
+name = "sp-std"
+version = "8.0.0"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
+
+[[package]]
+name = "sp-storage"
+version = "13.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "impl-serde",
+ "parity-scale-codec",
+ "ref-cast",
+ "serde",
+ "sp-debug-derive 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+]
 
 [[package]]
 name = "sp-storage"
@@ -7074,8 +7485,20 @@ dependencies = [
  "parity-scale-codec",
  "ref-cast",
  "serde",
- "sp-debug-derive",
- "sp-std",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+]
+
+[[package]]
+name = "sp-tracing"
+version = "10.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "parity-scale-codec",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber 0.2.25",
 ]
 
 [[package]]
@@ -7084,10 +7507,33 @@ version = "10.0.0"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "parity-scale-codec",
- "sp-std",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "tracing",
  "tracing-core",
  "tracing-subscriber 0.2.25",
+]
+
+[[package]]
+name = "sp-trie"
+version = "22.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "ahash 0.8.7",
+ "hash-db",
+ "hashbrown 0.13.2",
+ "lazy_static",
+ "memory-db",
+ "nohash-hasher",
+ "parity-scale-codec",
+ "parking_lot",
+ "scale-info",
+ "schnellru",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror",
+ "tracing",
+ "trie-db",
+ "trie-root",
 ]
 
 [[package]]
@@ -7105,12 +7551,29 @@ dependencies = [
  "parking_lot",
  "scale-info",
  "schnellru",
- "sp-core",
- "sp-std",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror",
  "tracing",
  "trie-db",
  "trie-root",
+]
+
+[[package]]
+name = "sp-version"
+version = "22.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "impl-serde",
+ "parity-scale-codec",
+ "parity-wasm",
+ "scale-info",
+ "serde",
+ "sp-core-hashing-proc-macro 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-version-proc-macro 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror",
 ]
 
 [[package]]
@@ -7123,11 +7586,22 @@ dependencies = [
  "parity-wasm",
  "scale-info",
  "serde",
- "sp-core-hashing-proc-macro",
- "sp-runtime",
- "sp-std",
- "sp-version-proc-macro",
+ "sp-core-hashing-proc-macro 9.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-version-proc-macro 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "thiserror",
+]
+
+[[package]]
+name = "sp-version-proc-macro"
+version = "8.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "parity-scale-codec",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -7144,14 +7618,42 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "14.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "anyhow",
+ "impl-trait-for-tuples",
+ "log",
+ "parity-scale-codec",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "wasmtime",
+]
+
+[[package]]
+name = "sp-wasm-interface"
+version = "14.0.0"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
  "log",
  "parity-scale-codec",
- "sp-std",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "wasmtime",
+]
+
+[[package]]
+name = "sp-weights"
+version = "20.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#bfb01fdb6d78f9e56cdd89b64b39d474f2c56d96"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "smallvec 1.12.0",
+ "sp-arithmetic 16.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
 ]
 
 [[package]]
@@ -7163,10 +7665,10 @@ dependencies = [
  "scale-info",
  "serde",
  "smallvec 1.12.0",
- "sp-arithmetic",
- "sp-core",
- "sp-debug-derive",
- "sp-std",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
 ]
 
 [[package]]
@@ -7339,9 +7841,9 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
- "sp-core",
- "sp-core-hashing",
- "sp-runtime",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core-hashing 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "subxt-macro",
  "subxt-metadata",
  "thiserror",
@@ -7389,7 +7891,7 @@ dependencies = [
  "frame-metadata 15.1.0",
  "parity-scale-codec",
  "scale-info",
- "sp-core-hashing",
+ "sp-core-hashing 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "thiserror",
 ]
 
