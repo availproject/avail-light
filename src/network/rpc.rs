@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use avail_subxt::{avail, primitives::Header, utils::H256};
+use avail_subxt::{primitives::Header, utils::H256};
 use codec::Decode;
 use color_eyre::{eyre::eyre, Report, Result};
 use kate_recovery::matrix::{Dimensions, Position};
@@ -13,7 +13,7 @@ use std::{
 	sync::{Arc, Mutex},
 };
 use tokio::{
-	sync::{broadcast, mpsc},
+	sync::broadcast,
 	time::{self, timeout},
 };
 use tracing::{debug, info};
@@ -24,24 +24,26 @@ use crate::{
 };
 
 mod client;
-mod event_loop;
+mod subscriptions;
 
-pub use client::Client;
-use event_loop::EventLoop;
+use subscriptions::SubscriptionLoop;
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
-pub use event_loop::Event;
+pub use subscriptions::Event;
+
+pub use client::Client;
+
+pub enum Subscription {
+	Header(Header),
+	Justification(GrandpaJustification),
+}
 
 #[async_trait]
 pub trait Command {
-	async fn run(&mut self, client: &avail::Client) -> Result<()>;
-	fn abort(&mut self, error: Report);
+	async fn run(&self, client: Client) -> Result<()>;
+	fn abort(&self, error: Report);
 }
-
-type SendableCommand = Box<dyn Command + Send + Sync>;
-type CommandSender = mpsc::Sender<SendableCommand>;
-type CommandReceiver = mpsc::Receiver<SendableCommand>;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct WrappedJustification(pub GrandpaJustification);
@@ -104,17 +106,6 @@ impl Node {
 		}
 	}
 
-	/// Checks if expected version matches network version.
-	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
-	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
-	/// Specification name is checked for exact match.
-	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
-	/// NOTE: Runtime compatibility check is currently not implemented.
-	pub fn matches(&self, expected_system_version: &str, expected_spec_name: &str) -> bool {
-		self.system_version.starts_with(expected_system_version)
-			&& self.spec_name == expected_spec_name
-	}
-
 	pub fn network(&self) -> String {
 		format!(
 			"{host}/{system_version}/{spec_name}/{spec_version}",
@@ -123,26 +114,6 @@ impl Node {
 			spec_name = self.spec_name,
 			spec_version = self.spec_version,
 		)
-	}
-
-	pub fn with_spec_version(&mut self, spec_version: u32) -> &mut Self {
-		self.spec_version = spec_version;
-		self
-	}
-
-	pub fn with_spec_name(&mut self, spec_name: &str) -> &mut Self {
-		self.spec_name = spec_name.to_string();
-		self
-	}
-
-	pub fn with_system_version(&mut self, system_version: &str) -> &mut Self {
-		self.system_version = system_version.to_string();
-		self
-	}
-
-	pub fn with_genesis_hash(&mut self, genesis_hash: H256) -> &mut Self {
-		self.genesis_hash = genesis_hash;
-		self
 	}
 }
 
@@ -153,7 +124,7 @@ impl Default for Node {
 			system_version: "{system_version}".to_string(),
 			spec_name: "data-avail".to_string(),
 			spec_version: 0,
-			genesis_hash: H256::default(),
+			genesis_hash: Default::default(),
 		}
 	}
 }
@@ -167,15 +138,9 @@ impl Display for Node {
 #[derive(Clone)]
 pub struct Nodes {
 	list: Vec<Node>,
-	current_index: usize,
 }
 
 impl Nodes {
-	pub fn get_current(&self) -> Option<Node> {
-		let node = &self.list[self.current_index];
-		Some(node.clone())
-	}
-
 	pub fn new(nodes: &[String]) -> Self {
 		let candidates = nodes.to_owned();
 		Self {
@@ -189,63 +154,64 @@ impl Nodes {
 					host: s.to_string(),
 				})
 				.collect(),
+		}
+	}
+
+	/// Shuffles the list of available Nodes, excluding the host used for the current Subxt client creation.
+	///
+	/// This method returns a new shuffled list of Nodes from the original list, excluding the Node
+	/// associated with the current Subxt client host.
+	/// The purpose of this exclusion is to prevent accidentally reconnecting to the same host in case of errors.
+	/// If there's a need to switch to a different host, the shuffled list provides a randomized order of available Nodes.
+	fn shuffle(&self, current_host: String) -> Vec<Node> {
+		let mut list: Vec<Node> = self
+			.list
+			.iter()
+			.filter(|&Node { host, .. }| host != &current_host)
+			.cloned()
+			.collect();
+		list.shuffle(&mut thread_rng());
+		list
+	}
+
+	pub fn iter(&self) -> NodesIterator {
+		NodesIterator {
+			nodes: self,
 			current_index: 0,
 		}
 	}
-
-	fn shuffle(&mut self) {
-		self.list.shuffle(&mut thread_rng());
-	}
-
-	fn reset(&mut self) {
-		// shuffle the available list of nodes
-		self.shuffle();
-		// set the current index to the first one
-		self.current_index = 0;
-	}
 }
 
-impl Iterator for Nodes {
-	type Item = Node;
+pub struct NodesIterator<'a> {
+	nodes: &'a Nodes,
+	current_index: usize,
+}
+
+impl<'a> Iterator for NodesIterator<'a> {
+	type Item = &'a Node;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		if self.current_index == self.list.len() {
-			// reset the iterator when it reaches the end
-			self.reset();
-			None
-		} else {
-			let node = self.get_current();
-			self.current_index += 1;
-			node
-		}
+		let res = self.nodes.list.get(self.current_index);
+		self.current_index += 1;
+		res
 	}
 }
 
-pub fn init(
+pub async fn init(
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
-) -> (Client, broadcast::Sender<Event>, EventLoop) {
-	// create channel for Event Loop Commands
-	let (command_sender, command_receiver) = mpsc::channel(1000);
+) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop)> {
+	let rpc_client =
+		Client::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
+	let subscriptions =
+		SubscriptionLoop::new(state, db, rpc_client.clone(), event_sender.clone()).await?;
 
-	(
-		Client::new(command_sender),
-		event_sender.clone(),
-		EventLoop::new(
-			db,
-			state,
-			Nodes::new(nodes),
-			command_receiver,
-			event_sender,
-			genesis_hash,
-			retry_config,
-		),
-	)
+	Ok((rpc_client, event_sender, subscriptions))
 }
 
 /// Generates random cell positions for sampling

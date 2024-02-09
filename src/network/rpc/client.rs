@@ -1,612 +1,289 @@
-use async_trait::async_trait;
 use avail_subxt::{
-	api::{
-		self, data_availability::calls::types::SubmitData,
-		runtime_types::sp_core::crypto::KeyTypeId,
-	},
-	avail::Pair,
-	primitives::{AvailExtrinsicParams, Header},
+	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
+	avail::{self, Pair},
+	build_client,
+	primitives::Header,
 	utils::H256,
 	AvailConfig,
 };
-use color_eyre::{
-	eyre::{eyre, WrapErr},
-	Report, Result,
-};
+use color_eyre::{eyre::eyre, Report, Result};
+use futures::{Stream, TryFutureExt, TryStreamExt};
 use kate_recovery::{data::Cell, matrix::Position};
-use sp_core::ed25519::{self, Public};
+use sp_core::{
+	bytes::from_hex,
+	ed25519::{self, Public},
+};
+use std::sync::{Arc, Mutex};
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
+	rpc_params,
 	storage::StorageKey,
-	tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress},
+	tx::{PairSigner, SubmittableExtrinsic},
 	utils::AccountId32,
-	OnlineClient,
 };
-use tokio::sync::oneshot;
+use tokio::sync::RwLock;
+use tokio_retry::Retry;
+use tokio_stream::StreamExt;
+use tracing::{info, warn};
 
-use super::{Command, CommandSender, SendableCommand, WrappedProof, CELL_WITH_PROOF_SIZE};
-use crate::types::RuntimeVersion;
+use super::{Node, Nodes, Subscription, WrappedProof, CELL_WITH_PROOF_SIZE};
+use crate::{
+	consts::ExpectedNodeVariant,
+	types::{RetryConfig, RuntimeVersion, State, DEV_FLAG_GENHASH},
+};
 
 #[derive(Clone)]
 pub struct Client {
-	command_sender: CommandSender,
+	subxt_client: Arc<RwLock<avail::Client>>,
+	state: Arc<Mutex<State>>,
+	nodes: Nodes,
+	retry_config: RetryConfig,
 }
 
-struct GetBlockHash {
-	block_number: u32,
-	response_sender: Option<oneshot::Sender<Result<H256>>>,
-}
+impl Client {
+	pub async fn new(
+		state: Arc<Mutex<State>>,
+		nodes: Nodes,
+		expected_genesis_hash: &str,
+		retry_config: RetryConfig,
+	) -> Result<Self> {
+		// try and connect appropriate Node from the provided list
+		// will do retries with the provided Retry Config
+		let (client, node, _) = Retry::spawn(retry_config.clone(), || async {
+			Self::connect_nodes_until_success(
+				nodes.shuffle(Default::default()),
+				ExpectedNodeVariant::new(),
+				expected_genesis_hash,
+				|_| futures::future::ok(()),
+			)
+			.await
+		})
+		.await?;
 
-#[async_trait]
-impl Command for GetBlockHash {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let hash = client
+		// update application wide State with the newly connected Node
+		state.lock().unwrap().connected_node = node;
+
+		Ok(Self {
+			subxt_client: Arc::new(RwLock::new(client)),
+			state,
+			nodes,
+			retry_config,
+		})
+	}
+
+	async fn create_subxt_client(
+		host: &str,
+		expected_node: ExpectedNodeVariant,
+		expected_genesis_hash: &str,
+	) -> Result<(avail::Client, Node)> {
+		let (client, _) = build_client(host, false).await.map_err(|e| eyre!(e))?;
+
+		// check genesis hash
+		let genesis_hash = client.genesis_hash();
+		info!("Genesis hash: {:?}", genesis_hash);
+		if let Some(cfg_genhash) = from_hex(expected_genesis_hash)
+			.ok()
+			.and_then(|e| TryInto::<[u8; 32]>::try_into(e).ok().map(H256::from))
+		{
+			if !genesis_hash.eq(&cfg_genhash) {
+				Err(eyre!(
+					"Genesis hash doesn't match the configured one! Change the config or the node url ({}).", host
+				))?
+			}
+		} else if expected_genesis_hash.starts_with(DEV_FLAG_GENHASH) {
+			warn!("Genesis hash configured for development ({}), skipping the genesis hash check entirely.", expected_genesis_hash);
+		} else {
+			Err(eyre!(
+				"Genesis hash invalid, badly configured or missing (\"{}\").",
+				expected_genesis_hash
+			))?
+		};
+
+		// check system and runtime versions
+		let system_version = client.rpc().system_version().await?;
+		let runtime_version: RuntimeVersion = client
 			.rpc()
-			.block_hash(Some(BlockNumber::from(self.block_number)))
-			.await?
-			.ok_or_else(|| eyre!("Block with number: {} not found", self.block_number))?;
+			.request("state_getRuntimeVersion", RpcParams::new())
+			.await?;
 
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(hash));
+		if !expected_node.matches(&system_version, &runtime_version.spec_name) {
+			return Err(eyre!(
+				"Expected Node system version:{}, found: {}. Skipping to another node.",
+				expected_node.system_version,
+				system_version.clone()
+			));
 		}
-		Ok(())
+
+		let variant = Node::new(
+			host.to_string(),
+			system_version,
+			runtime_version.spec_name,
+			runtime_version.spec_version,
+			genesis_hash,
+		);
+
+		Ok((client, variant))
 	}
 
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
+	async fn connect_nodes_until_success<T, Fun, Fut>(
+		nodes: Vec<Node>,
+		expected_node: ExpectedNodeVariant,
+		expected_genesis_hash: &str,
+		mut predicate: Fun,
+	) -> Result<(avail::Client, Node, T)>
+	where
+		Fun: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		// go through the provided list of Nodes to try and find and appropriate one,
+		// after a successful connection, try to execute passed call predicate
+		for Node { host, .. } in nodes.iter() {
+			let result =
+				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
+					.and_then(move |(client, node)| {
+						predicate(client.clone()).map_ok(|res| (client, node, res))
+					})
+					.await;
+
+			match result {
+				Err(error) => warn!(host, %error, "Skipping connection with this node"),
+				ok => return ok,
+			}
 		}
+
+		Err(eyre!("Failed to connect any appropriate working node"))
 	}
-}
 
-struct GetHeaderByHash {
-	block_hash: H256,
-	response_sender: Option<oneshot::Sender<Result<Header>>>,
-}
+	async fn with_retries<F, Fut, T>(&self, mut predicate: F) -> Result<T>
+	where
+		F: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
+	{
+		// try and execute the passed function, use the Retry strategy if needed
+		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
+			predicate(self.current_client().await).await
+		})
+		.await
+		{
+			// this was successful, return early
+			return Ok(result);
+		}
 
-#[async_trait]
-impl Command for GetHeaderByHash {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let header = client
+		// if not, find another Node where this could still be done
+		let connected_node = self.state.lock().unwrap().connected_node.clone();
+		let nodes = self.nodes.shuffle(connected_node.host);
+		let (client, node, result) = Self::connect_nodes_until_success(
+			nodes,
+			ExpectedNodeVariant::new(),
+			&connected_node.genesis_hash.to_string(),
+			move |client| predicate(client).map_err(Report::from),
+		)
+		.await?;
+
+		// retries gave results, update currently connected Node and created Client
+		*self.subxt_client.write().await = client;
+		self.state.lock().unwrap().connected_node = node;
+
+		Ok(result)
+	}
+
+	async fn create_subxt_subscriptions(
+		client: avail::Client,
+	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>, subxt::error::Error>
+	{
+		// create Header subscription
+		let header_subscription = client.rpc().subscribe_finalized_block_headers().await?;
+		// map Header subscription to the same type for later matching
+		let headers = header_subscription.map_ok(Subscription::Header);
+
+		let justification_subscription = client
 			.rpc()
-			.header(Some(self.block_hash))
+			.subscribe(
+				"grandpa_subscribeJustifications",
+				rpc_params![],
+				"grandpa_unsubscribeJustifications",
+			)
+			.await?;
+		// map Justification subscription to the same type for later matching
+		let justifications = justification_subscription.map_ok(Subscription::Justification);
+
+		Ok(headers.merge(justifications))
+	}
+
+	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
+		async_stream::stream! {
+			'outer: loop{
+				let mut stream = match self.with_retries(|client| async move{
+					Self::create_subxt_subscriptions(client).await
+				}).await {
+					Ok(s) => s,
+					Err(err) => {
+						yield Err(err);
+						return;
+					}
+				};
+
+				loop {
+					// no more subscriptions left on stream, we have to return
+					let Some(result) = stream.next().await else { return };
+					// if Error was received, we need to switch to another RPC Client
+					let Ok(item) = result else { continue 'outer};
+					yield Ok(item);
+				}
+			}
+		}
+	}
+
+	pub async fn current_client(&self) -> avail::Client {
+		self.subxt_client.read().await.clone()
+	}
+
+	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
+		let hash = self
+			.with_retries(|client| async move {
+				client
+					.rpc()
+					.block_hash(Some(BlockNumber::from(block_number)))
+					.await
+			})
 			.await?
-			.ok_or_else(|| eyre!("Block Header with hash: {:?} not found", self.block_hash))?;
+			.ok_or_else(|| eyre!("Block with number: {} not found", block_number))?;
 
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(header));
-		}
-		Ok(())
+		Ok(hash)
 	}
 
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
+	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
+		let header = self
+			.with_retries(|client| async move { client.rpc().header(Some(block_hash)).await })
+			.await?
+			.ok_or_else(|| eyre!("Block Header with hash: {:?} not found", block_hash))?;
+
+		Ok(header)
 	}
-}
 
-struct GetValidatorSetByHash {
-	block_hash: H256,
-	response_sender: Option<oneshot::Sender<Result<Vec<Public>>>>,
-}
-
-#[async_trait]
-impl Command for GetValidatorSetByHash {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let res = client
-			.runtime_api()
-			.at(self.block_hash)
-			.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
+	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
+		let res = self
+			.with_retries(|client| async move {
+				client
+					.runtime_api()
+					.at(block_hash)
+					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
+					.await
+			})
 			.await?
 			.iter()
 			.map(|e| e.0)
 			.collect();
 
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-type KateRowsSender = oneshot::Sender<Result<Vec<Option<Vec<u8>>>>>;
-struct RequestKateRows {
-	rows: Vec<u32>,
-	block_hash: H256,
-	response_sender: Option<KateRowsSender>,
-}
-
-#[async_trait]
-impl Command for RequestKateRows {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let mut params = RpcParams::new();
-		params.push(self.rows.clone())?;
-		params.push(self.block_hash)?;
-
-		let res: Vec<Option<Vec<u8>>> = client.rpc().request("kate_queryRows", params).await?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct RequestKateProof {
-	positions: Vec<Position>,
-	block_hash: H256,
-	response_sender: Option<oneshot::Sender<Result<Vec<Cell>>>>,
-}
-
-#[async_trait]
-impl Command for RequestKateProof {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let mut params = RpcParams::new();
-		params.push(self.positions.clone())?;
-		params.push(self.block_hash)?;
-
-		let proofs: Vec<u8> = client.rpc().request("kate_queryProof", params).await?;
-
-		let i = proofs
-			.chunks_exact(CELL_WITH_PROOF_SIZE)
-			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"));
-
-		let proof = self
-			.positions
-			.iter()
-			.zip(i)
-			.map(|(&position, &content)| Cell { position, content })
-			.collect::<Vec<_>>();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(proof));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetSystemVersion {
-	response_sender: Option<oneshot::Sender<Result<String>>>,
-}
-
-#[async_trait]
-impl Command for GetSystemVersion {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let res = client.rpc().system_version().await?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct RequestRuntimeVersion {
-	response_sender: Option<oneshot::Sender<Result<RuntimeVersion>>>,
-}
-
-#[async_trait]
-impl Command for RequestRuntimeVersion {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let res: RuntimeVersion = client
-			.rpc()
-			.request("state_getRuntimeVersion", RpcParams::new())
-			.await?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct FetchSetIdAt {
-	block_hash: H256,
-	response_sender: Option<oneshot::Sender<Result<u64>>>,
-}
-
-#[async_trait]
-impl Command for FetchSetIdAt {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let set_id_key = api::storage().grandpa().current_set_id();
-		let res = client
-			.storage()
-			.at(self.block_hash)
-			.fetch(&set_id_key)
-			.await?
-			.ok_or_else(|| eyre!("The set_id should exist"))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetValidatorSetAt {
-	block_hash: H256,
-	response_sender: Option<oneshot::Sender<Result<Option<Vec<AccountId32>>>>>,
-}
-
-#[async_trait]
-impl Command for GetValidatorSetAt {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		// get validator set from genesis (Substrate Account ID)
-		let validators_key = api::storage().session().validators();
-		let res = client
-			.storage()
-			.at(self.block_hash)
-			.fetch(&validators_key)
-			.await
-			.map_err(|e| eyre!(e))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-type FromBytesSender = oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>;
-struct SubmitFromBytesAndWatch {
-	tx_bytes: Vec<u8>,
-	response_sender: Option<FromBytesSender>,
-}
-
-#[async_trait]
-impl Command for SubmitFromBytesAndWatch {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let ext = SubmittableExtrinsic::from_bytes(client.clone(), self.tx_bytes.clone())
-			.submit_and_watch()
-			.await
-			.map_err(|e| eyre!(e))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(ext));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-type SignedSender = oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>;
-struct SubmitSignedAndWatch {
-	extrinsic: Payload<SubmitData>,
-	pair_signer: PairSigner<AvailConfig, Pair>,
-	params: AvailExtrinsicParams,
-	response_sender: Option<SignedSender>,
-}
-
-#[async_trait]
-impl Command for SubmitSignedAndWatch {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let res = client
-			.tx()
-			.sign_and_submit_then_watch(&self.extrinsic, &self.pair_signer, self.params.clone())
-			.await
-			.map_err(|e| eyre!(e))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetPagedStorageKeys {
-	key: Vec<u8>,
-	count: u32,
-	start_key: Option<Vec<u8>>,
-	hash: Option<H256>,
-	response_sender: Option<oneshot::Sender<Result<Vec<StorageKey>>>>,
-}
-
-#[async_trait]
-impl Command for GetPagedStorageKeys {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let res = client
-			.rpc()
-			.storage_keys_paged(&self.key, self.count, self.start_key.as_deref(), self.hash)
-			.await
-			.map_err(|e| eyre!(e))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetSessionKeyOwnerAt {
-	block_hash: H256,
-	public_key: ed25519::Public,
-	response_sender: Option<oneshot::Sender<Result<Option<AccountId32>>>>,
-}
-
-#[async_trait]
-impl Command for GetSessionKeyOwnerAt {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let session_key_key_owner = api::storage().session().key_owner(
-			KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
-			self.public_key.0,
-		);
-
-		let res = client
-			.storage()
-			.at(self.block_hash)
-			.fetch(&session_key_key_owner)
-			.await
-			.map_err(|e| eyre!(e))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct RequestFinalityProof {
-	block_number: u32,
-	response_sender: Option<oneshot::Sender<Result<WrappedProof>>>,
-}
-
-#[async_trait]
-impl Command for RequestFinalityProof {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let mut params = RpcParams::new();
-		params.push(self.block_number)?;
-
-		let res: WrappedProof = client
-			.rpc()
-			.request("grandpa_proveFinality", params)
-			.await
-			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetGenesisHash {
-	response_sender: Option<oneshot::Sender<Result<H256>>>,
-}
-
-#[async_trait]
-impl Command for GetGenesisHash {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let res = client.genesis_hash();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetFinalizedHeadHash {
-	response_sender: Option<oneshot::Sender<Result<H256>>>,
-}
-
-#[async_trait]
-impl Command for GetFinalizedHeadHash {
-	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
-		let head = client.rpc().finalized_head().await?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(head));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-// struct GetConnectedNode {
-// 	response_sender: oneshot::Sender<Result<Node>>,
-// }
-
-impl Client {
-	pub fn new(command_sender: CommandSender) -> Self {
-		Self { command_sender }
-	}
-
-	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
-	where
-		F: FnOnce(oneshot::Sender<Result<T>>) -> SendableCommand,
-	{
-		let (response_sender, response_receiver) = oneshot::channel();
-		let command = command_with_sender(response_sender);
-		self.command_sender.send(command).await?;
-		response_receiver
-			.await
-			.wrap_err("sender should not be dropped")?
-	}
-
-	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetBlockHash {
-				block_number,
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
-	}
-
-	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetHeaderByHash {
-				block_hash,
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
-	}
-
-	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetValidatorSetByHash {
-				block_hash,
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		Ok(res)
 	}
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetFinalizedHeadHash {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		let head = self
+			.with_retries(|client| async move { client.rpc().finalized_head().await })
+			.await?;
+
+		Ok(head)
 	}
 
 	pub async fn get_chain_head_header(&self) -> Result<Header> {
@@ -619,14 +296,18 @@ impl Client {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		self.execute_sync(|response_sender| {
-			Box::new(RequestKateRows {
-				rows,
-				block_hash,
-				response_sender: Some(response_sender),
+		let mut params = RpcParams::new();
+		params.push(rows.clone())?;
+		params.push(block_hash)?;
+
+		let res: Vec<Option<Vec<u8>>> = self
+			.with_retries(|client| {
+				let params = params.clone();
+				async move { client.rpc().request("kate_queryRows", params).await }
 			})
-		})
-		.await
+			.await?;
+
+		Ok(res)
 	}
 
 	pub async fn request_kate_proof(
@@ -634,32 +315,49 @@ impl Client {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		self.execute_sync(|response_sender| {
-			Box::new(RequestKateProof {
-				positions: positions.into(),
-				block_hash,
-				response_sender: Some(response_sender),
+		let mut params = RpcParams::new();
+		params.push(positions)?;
+		params.push(block_hash)?;
+
+		let proofs: Vec<u8> = self
+			.with_retries(|client| {
+				let params = params.clone();
+				async move { client.rpc().request("kate_queryProof", params).await }
 			})
-		})
-		.await
+			.await?;
+
+		let i = proofs
+			.chunks_exact(CELL_WITH_PROOF_SIZE)
+			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"));
+
+		let proof = positions
+			.iter()
+			.zip(i)
+			.map(|(&position, &content)| Cell { position, content })
+			.collect::<Vec<_>>();
+
+		Ok(proof)
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetSystemVersion {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		let res = self
+			.with_retries(|client| async move { client.rpc().system_version().await })
+			.await?;
+
+		Ok(res)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
-		self.execute_sync(|response_sender| {
-			Box::new(RequestRuntimeVersion {
-				response_sender: Some(response_sender),
+		let res: RuntimeVersion = self
+			.with_retries(|client| async move {
+				client
+					.rpc()
+					.request("state_getRuntimeVersion", RpcParams::new())
+					.await
 			})
-		})
-		.await
+			.await?;
+
+		Ok(res)
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {
@@ -668,13 +366,15 @@ impl Client {
 	}
 
 	pub async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
-		self.execute_sync(|response_sender| {
-			Box::new(FetchSetIdAt {
-				block_hash,
-				response_sender: Some(response_sender),
+		let res = self
+			.with_retries(|client| {
+				let set_id_key = api::storage().grandpa().current_set_id();
+				async move { client.storage().at(block_hash).fetch(&set_id_key).await }
 			})
-		})
-		.await
+			.await?
+			.ok_or_else(|| eyre!("The set_id should exist"))?;
+
+		Ok(res)
 	}
 
 	pub async fn get_current_set_id_by_block_number(&self, block_num: u32) -> Result<u64> {
@@ -690,43 +390,62 @@ impl Client {
 	}
 
 	pub async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetValidatorSetAt {
-				block_hash,
-				response_sender: Some(response_sender),
+		let res = self
+			.with_retries(|client| {
+				let validators_key = api::storage().session().validators();
+				async move { client.storage().at(block_hash).fetch(&validators_key).await }
 			})
-		})
-		.await
+			.await
+			.map_err(Report::from)?;
+
+		Ok(res)
 	}
 
-	pub async fn submit_signed_and_watch(
+	pub async fn submit_signed_and_wait_for_finalized<Call: subxt::tx::TxPayload>(
 		&self,
-		extrinsic: Payload<SubmitData>,
-		pair_signer: PairSigner<AvailConfig, Pair>,
-		params: AvailExtrinsicParams,
-	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
-		self.execute_sync(|response_sender| {
-			Box::new(SubmitSignedAndWatch {
-				extrinsic,
-				pair_signer,
-				params,
-				response_sender: Some(response_sender),
+		call: &Call,
+		signer: &PairSigner<AvailConfig, Pair>,
+		other_params: avail_subxt::primitives::AvailExtrinsicParams,
+	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
+		let tx_progress = self
+			.with_retries(|client| {
+				let other_params = other_params.clone();
+				async move {
+					client
+						.tx()
+						.sign_and_submit_then_watch(call, signer, other_params)
+						.await
+				}
 			})
-		})
-		.await
+			.await?;
+
+		tx_progress
+			.wait_for_finalized_success()
+			.await
+			.map_err(Report::from)
 	}
 
-	pub async fn submit_from_bytes_and_watch(
+	pub async fn submit_from_bytes_and_wait_for_finalized(
 		&self,
 		tx_bytes: Vec<u8>,
-	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
-		self.execute_sync(|response_sender| {
-			Box::new(SubmitFromBytesAndWatch {
-				tx_bytes,
-				response_sender: Some(response_sender),
+	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
+		let tx_progress = self
+			.with_retries(|client| {
+				let tx_bytes = tx_bytes.clone();
+				async move {
+					SubmittableExtrinsic::from_bytes(client, tx_bytes)
+						.submit_and_watch()
+						.await
+				}
 			})
-		})
-		.await
+			.await?;
+
+		let ext = tx_progress
+			.wait_for_finalized_success()
+			.await
+			.map_err(Report::from)?;
+
+		Ok(ext)
 	}
 
 	pub async fn get_paged_storage_keys(
@@ -736,16 +455,21 @@ impl Client {
 		start_key: Option<Vec<u8>>,
 		hash: Option<H256>,
 	) -> Result<Vec<StorageKey>> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetPagedStorageKeys {
-				key,
-				count,
-				start_key,
-				hash,
-				response_sender: Some(response_sender),
+		let res = self
+			.with_retries(|client| {
+				let key = &key;
+				let start_key = start_key.clone();
+				async move {
+					client
+						.rpc()
+						.storage_keys_paged(key, count, start_key.as_deref(), hash)
+						.await
+				}
 			})
-		})
-		.await
+			.await
+			.map_err(Report::from)?;
+
+		Ok(res)
 	}
 
 	pub async fn get_session_key_owner_at(
@@ -753,32 +477,44 @@ impl Client {
 		block_hash: H256,
 		public_key: ed25519::Public,
 	) -> Result<Option<AccountId32>> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetSessionKeyOwnerAt {
-				block_hash,
-				public_key,
-				response_sender: Some(response_sender),
+		let res = self
+			.with_retries(|client| {
+				let session_key_key_owner = api::storage().session().key_owner(
+					KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
+					public_key.0,
+				);
+				async move {
+					client
+						.storage()
+						.at(block_hash)
+						.fetch(&session_key_key_owner)
+						.await
+				}
 			})
-		})
-		.await
+			.await
+			.map_err(Report::from)?;
+
+		Ok(res)
 	}
 
 	pub async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof> {
-		self.execute_sync(|response_sender| {
-			Box::new(RequestFinalityProof {
-				block_number,
-				response_sender: Some(response_sender),
+		let mut params = RpcParams::new();
+		params.push(block_number)?;
+
+		let res: WrappedProof = self
+			.with_retries(|client| {
+				let params = params.clone();
+				async move { client.rpc().request("grandpa_proveFinality", params).await }
 			})
-		})
-		.await
+			.await
+			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;
+
+		Ok(res)
 	}
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetGenesisHash {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		let gen_hash = self.current_client().await.genesis_hash();
+
+		Ok(gen_hash)
 	}
 }

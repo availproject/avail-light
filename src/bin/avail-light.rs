@@ -202,13 +202,14 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let state = Arc::new(Mutex::new(State::default()));
-	let (rpc_client, rpc_events, rpc_event_loop) = rpc::init(
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		state.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
 		cfg.retry_config.clone(),
-	);
+	)
+	.await?;
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_events.subscribe();
@@ -219,7 +220,10 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
-	let rpc_event_loop_handle = tokio::spawn(shutdown.with_cancel(rpc_event_loop.run()));
+	let rpc_subscriptions_handle = tokio::spawn(shutdown.with_cancel(shutdown.with_trigger(
+		"Subscription loop ended or failed".to_string(),
+		rpc_subscriptions.run(),
+	)));
 
 	info!("Waiting for first finalized header...");
 	let block_header = match shutdown
@@ -230,20 +234,20 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		.await
 	{
 		Ok(Err(report)) => {
-			if !rpc_event_loop_handle.is_finished() {
+			if !rpc_subscriptions_handle.is_finished() {
 				return Err(report);
 			}
-			let Ok(Ok(Err(event_loop_error))) = rpc_event_loop_handle.await else {
+			let Ok(Ok(Err(subscriptions_error))) = rpc_subscriptions_handle.await else {
 				return Err(report);
 			};
-			return Err(eyre!(event_loop_error));
+			return Err(eyre!(subscriptions_error));
 		},
 		Ok(Ok(num)) => num,
 		Err(shutdown_reason) => {
-			if !rpc_event_loop_handle.is_finished() {
+			if !rpc_subscriptions_handle.is_finished() {
 				return Err(eyre!(shutdown_reason));
 			}
-			let Ok(Ok(Err(event_loop_error))) = rpc_event_loop_handle.await else {
+			let Ok(Ok(Err(event_loop_error))) = rpc_subscriptions_handle.await else {
 				return Err(eyre!(shutdown_reason));
 			};
 			return Err(eyre!(event_loop_error));

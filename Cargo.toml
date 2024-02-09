@@ -29,6 +29,7 @@ kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-
 
 # 3rd-party
 async-std = { version = "1.12.0", features = ["attributes"] }
+async-stream = "0.3.5"
 async-trait = "0.1.66"
 base64 = "0.21.0"
 better-panic = "0.3.0"

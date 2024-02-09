@@ -185,7 +185,7 @@ pub fn routes(
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	identity_config: IdentityConfig,
-	node_client: Client,
+	rpc_client: Client,
 	ws_clients: WsClients,
 	db: RocksDB,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -199,7 +199,7 @@ pub fn routes(
 
 	let submitter = app_id.map(|&app_id| {
 		Arc::new(transactions::Submitter {
-			node_client,
+			rpc_client,
 			app_id,
 			pair_signer,
 		})
