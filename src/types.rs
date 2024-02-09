@@ -761,7 +761,7 @@ impl Default for RuntimeConfig {
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
-			block_processing_delay: Some(15),
+			block_processing_delay: Some(20),
 			block_matrix_partition: None,
 			sync_start_block: None,
 			sync_finality_enable: false,
