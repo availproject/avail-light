@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use super::{Client, Subscription};
 use crate::{
