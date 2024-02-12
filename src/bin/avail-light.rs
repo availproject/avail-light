@@ -187,7 +187,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 				info!("Bootstrap done.");
 			},
 			Err(e) => {
-				error!("Bootstrap process: {e:?}.");
+				warn!("Bootstrap process: {e:?}.");
 			},
 		}
 	}));
