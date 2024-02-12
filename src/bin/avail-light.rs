@@ -266,7 +266,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		identity_cfg,
 		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
-		network_version: EXPECTED_SYSTEM_VERSION.to_string(),
+		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),

@@ -108,7 +108,7 @@ impl Client {
 
 		if !expected_node.matches(&system_version, &runtime_version.spec_name) {
 			return Err(eyre!(
-				"Expected Node system version:{}, found: {}. Skipping to another node.",
+				"Expected Node system version:{:?}, found: {}. Skipping to another node.",
 				expected_node.system_version,
 				system_version.clone()
 			));
