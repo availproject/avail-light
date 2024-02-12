@@ -36,6 +36,6 @@ impl ExpectedNodeVariant {
 	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
 	/// NOTE: Runtime compatibility check is currently not implemented.
 	pub fn matches(&self, system_version: &str, spec_name: &str) -> bool {
-		self.system_version.starts_with(system_version) && self.spec_name == spec_name
+		system_version.starts_with(self.system_version) && self.spec_name == spec_name
 	}
 }
