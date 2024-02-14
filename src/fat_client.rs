@@ -148,7 +148,14 @@ pub async fn process_block(
 			let batch_rpc_fetched =
 				result.wrap_err(format!("Failed to fetch cells from node RPC at batch {i}"))?;
 
-			rpc_fetched.extend(batch_rpc_fetched.clone());
+			if let Err(e) = fat_client
+				.insert_cells_into_dht(block_number, batch_rpc_fetched.clone())
+				.await
+			{
+				debug!("Error inserting cells into DHT: {e}");
+			}
+
+			rpc_fetched.extend(batch_rpc_fetched);
 		}
 	}
 
@@ -182,13 +189,6 @@ pub async fn process_block(
 		}
 	} else {
 		warn!("No rows has been inserted into DHT since partition size is less than one row.")
-	}
-
-	if let Err(e) = fat_client
-		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await
-	{
-		debug!("Error inserting cells into DHT: {e}");
 	}
 
 	Ok(())
