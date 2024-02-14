@@ -27,7 +27,7 @@
 
 Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
 
-2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the application client (part ot the light client) downloads all the relevant app data, reconstructs it and persists it locally. Reconstructed data is then available to accessed via an HTTP endpoint. (WIP)
+2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the application client (part of the light client) downloads all the relevant app data, reconstructs it and persists it locally. Reconstructed data is then available to accessed via an HTTP endpoint. (WIP)
 
 3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation.
    **IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct.
