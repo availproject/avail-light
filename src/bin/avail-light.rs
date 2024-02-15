@@ -221,8 +221,14 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
 	let rpc_subscriptions_handle = tokio::spawn(shutdown.with_cancel(shutdown.with_trigger(
-		"Subscription loop ended or failed".to_string(),
-		rpc_subscriptions.run(),
+		"Subscription loop failure triggered shutdown".to_string(),
+		async {
+			let result = rpc_subscriptions.run().await;
+			if let Err(ref err) = result {
+				error!(%err, "Subscription loop ended with error");
+			};
+			result
+		},
 	)));
 
 	info!("Waiting for first finalized header...");
