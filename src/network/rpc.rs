@@ -164,12 +164,16 @@ impl Nodes {
 	/// The purpose of this exclusion is to prevent accidentally reconnecting to the same host in case of errors.
 	/// If there's a need to switch to a different host, the shuffled list provides a randomized order of available Nodes.
 	fn shuffle(&self, current_host: String) -> Vec<Node> {
-		let mut list: Vec<Node> = self
+		if self.list.len() <= 1 {
+			return self.list.clone();
+		}
+
+		let mut list = self
 			.list
 			.iter()
 			.filter(|&Node { host, .. }| host != &current_host)
 			.cloned()
-			.collect();
+			.collect::<Vec<Node>>();
 		list.shuffle(&mut thread_rng());
 		list
 	}
