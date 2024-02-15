@@ -50,7 +50,7 @@ impl Client {
 		// try and connect appropriate Node from the provided list
 		// will do retries with the provided Retry Config
 		let (client, node, _) = Retry::spawn(retry_config.clone(), || async {
-			Self::connect_nodes_until_success(
+			Self::try_connect_and_execute(
 				nodes.shuffle(Default::default()),
 				ExpectedNodeVariant::new(),
 				expected_genesis_hash,
@@ -125,23 +125,23 @@ impl Client {
 		Ok((client, variant))
 	}
 
-	async fn connect_nodes_until_success<T, Fun, Fut>(
+	async fn try_connect_and_execute<T, F, Fut>(
 		nodes: Vec<Node>,
 		expected_node: ExpectedNodeVariant,
 		expected_genesis_hash: &str,
-		mut predicate: Fun,
+		mut f: F,
 	) -> Result<(avail::Client, Node, T)>
 	where
-		Fun: FnMut(avail::Client) -> Fut + Copy,
+		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		// go through the provided list of Nodes to try and find and appropriate one,
-		// after a successful connection, try to execute passed call predicate
+		// after a successful connection, try to execute passed function call
 		for Node { host, .. } in nodes.iter() {
 			let result =
 				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
 					.and_then(move |(client, node)| {
-						predicate(client.clone()).map_ok(|res| (client, node, res))
+						f(client.clone()).map_ok(|res| (client, node, res))
 					})
 					.await;
 
@@ -154,30 +154,41 @@ impl Client {
 		Err(eyre!("Failed to connect any appropriate working node"))
 	}
 
-	async fn with_retries<F, Fut, T>(&self, mut predicate: F) -> Result<T>
+	async fn with_retries<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
 		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
-			predicate(self.current_client().await).await
+			f(self.current_client().await).await
 		})
 		.await
 		{
 			// this was successful, return early
 			return Ok(result);
 		}
-
 		// if not, find another Node where this could still be done
 		let connected_node = self.state.lock().unwrap().connected_node.clone();
+		warn!(
+			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
+			connected_node.host
+		);
+		// shuffle nodes, if possible
 		let nodes = self.nodes.shuffle(connected_node.host);
-		let (client, node, result) = Self::connect_nodes_until_success(
-			nodes,
-			ExpectedNodeVariant::new(),
-			&connected_node.genesis_hash.to_string(),
-			move |client| predicate(client).map_err(Report::from),
-		)
+		// go through available Nodes, try to connect, Retry connecting if needed
+		let (client, node, result) = Retry::spawn(self.retry_config.clone(), move || {
+			let nodes = nodes.clone();
+			async move {
+				Self::try_connect_and_execute(
+					nodes,
+					ExpectedNodeVariant::new(),
+					&connected_node.genesis_hash.to_string(),
+					move |client| f(client).map_err(Report::from),
+				)
+				.await
+			}
+		})
 		.await?;
 
 		// retries gave results, update currently connected Node and created Client
@@ -224,11 +235,19 @@ impl Client {
 				};
 
 				loop {
-					// no more subscriptions left on stream, we have to return
-					let Some(result) = stream.next().await else { return };
-					// if Error was received, we need to switch to another RPC Client
-					let Ok(item) = result else { continue 'outer};
-					yield Ok(item);
+					// no more subscriptions left on stream, we have to try and create a new stream
+					let Some(result) = stream.next().await else {
+						warn!("No more items on Subscriptions Stream. Trying to create a new one.");
+						continue 'outer
+					};
+					match result {
+						Ok(item) => yield Ok(item),
+						// if Error was received, we need to switch to another RPC Client
+						Err(err)=> {
+							warn!(%err, "Received Error on stream. Trying to create a new one.");
+							continue 'outer
+						}
+					}
 				}
 			}
 		}
