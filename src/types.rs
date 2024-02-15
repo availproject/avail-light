@@ -279,12 +279,14 @@ impl IntoIterator for RetryConfig {
 	fn into_iter(self) -> Self::IntoIter {
 		match self {
 			RetryConfig::Exponential(config) => ExponentialBackoff::from_millis(config.base)
+				.factor(1000)
 				.max_delay(Duration::from_millis(config.max_delay))
 				.map(jitter)
 				.take(config.retries)
 				.collect::<Vec<Duration>>()
 				.into_iter(),
 			RetryConfig::Fibonacci(config) => FibonacciBackoff::from_millis(config.base)
+				.factor(1000)
 				.max_delay(Duration::from_millis(config.max_delay))
 				.map(jitter)
 				.take(config.retries)
@@ -418,12 +420,12 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
-	/// Set the configuration based on which the retries will be orchestrated, max duration between retries and number of tries.
+	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
 	/// (default:
-	/// exponential:
-	///     base: 10,
-	///     max_delay: 4000,
-	///     retries: 4,
+	/// fibonacci:
+	///     base: 1,
+	///     max_delay: 10,
+	///     retries: 6,
 	/// )
 	pub retry_config: RetryConfig,
 	#[cfg(feature = "crawl")]
