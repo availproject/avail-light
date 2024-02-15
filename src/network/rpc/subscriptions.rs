@@ -104,7 +104,6 @@ impl SubscriptionLoop {
 			match result {
 				Ok(sub) => {
 					self.handle_new_subscription(sub).await;
-					continue;
 				},
 				Err(err) => return Err(eyre!(err)),
 			};
