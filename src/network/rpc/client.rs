@@ -38,6 +38,7 @@ pub struct Client {
 	state: Arc<Mutex<State>>,
 	nodes: Nodes,
 	retry_config: RetryConfig,
+	expected_genesis_hash: String,
 }
 
 impl Client {
@@ -68,6 +69,7 @@ impl Client {
 			state,
 			nodes,
 			retry_config,
+			expected_genesis_hash: expected_genesis_hash.to_string(),
 		})
 	}
 
@@ -183,7 +185,7 @@ impl Client {
 				Self::try_connect_and_execute(
 					nodes,
 					ExpectedNodeVariant::new(),
-					&connected_node.genesis_hash.to_string(),
+					&self.expected_genesis_hash,
 					move |client| f(client).map_err(Report::from),
 				)
 				.await

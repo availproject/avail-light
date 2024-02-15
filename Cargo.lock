@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light"
-version = "1.7.7"
+version = "1.7.8"
 dependencies = [
  "async-std",
  "async-stream",
