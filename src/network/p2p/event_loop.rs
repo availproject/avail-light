@@ -10,6 +10,7 @@ use libp2p::{
 	},
 	mdns,
 	multiaddr::Protocol,
+	ping,
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
 		ConnectionError, SwarmEvent,
@@ -420,6 +421,13 @@ impl EventLoop {
 				Err(err) => {
 					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
 				},
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { result, .. })) => {
+				if let Ok(rtt) = result {
+					let _ = metrics
+						.record(MetricValue::PingLatency(rtt.as_millis() as f64))
+						.await;
+				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
 				upnp::Event::NewExternalAddr(addr) => {

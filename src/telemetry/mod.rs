@@ -70,6 +70,7 @@ pub enum MetricValue {
 	KadRoutingPeerNum(usize),
 	HealthCheck(),
 	BlockProcessingDelay(f64),
+	PingLatency(f64),
 	ReplicationFactor(u16),
 	QueryTimeout(u32),
 	#[cfg(feature = "crawl")]
