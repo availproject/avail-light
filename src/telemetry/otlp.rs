@@ -138,6 +138,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::QueryTimeout(number) => {
 				self.record_f64("query_timeout", number as f64).await?;
 			},
+			super::MetricValue::PingLatency(number) => {
+				self.record_f64("ping_latency", number).await?;
+			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
 				self.record_f64("crawl_cells_success_rate", number).await?;
