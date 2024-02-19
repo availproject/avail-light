@@ -321,12 +321,14 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
+		let partition = cfg.crawl.crawl_block_matrix_partition;
 		tokio::task::spawn(shutdown.with_cancel(avail_light::crawl_client::run(
 			crawler_rpc_event_receiver,
 			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
+			partition.unwrap_or(avail_light::crawl_client::ENTIRE_BLOCK),
 		)));
 	}
 
