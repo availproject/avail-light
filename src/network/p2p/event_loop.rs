@@ -162,17 +162,22 @@ impl EventLoop {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
 				command = command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
-					// Command channel closed, thus shutting down the network event loop.
-					None => break,
+					//
+					None => {
+						warn!("Command channel closed, exiting the network event loop");
+						break;
+					},
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
-				_ = self.shutdown.triggered_shutdown() => break
+				_ = self.shutdown.triggered_shutdown() => {
+					info!("Shutdown triggered, exiting the network event loop");
+					break;
+				}
 			}
 		}
 		self.disconnect_peers();
-		info!("Exiting event loop...");
 	}
 
 	fn disconnect_peers(&mut self) {

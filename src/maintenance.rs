@@ -1,7 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -27,6 +27,11 @@ pub async fn process_block(
 		.shrink_kademlia_map()
 		.await
 		.wrap_err("Unable to perform Kademlia map shrink")?;
+
+	let map_size = p2p_client
+		.get_kademlia_map_size()
+		.await
+		.wrap_err("Unable to get Kademlia map size")?;
 
 	if let Ok((multiaddr, ip)) = p2p_client.get_multiaddress_and_ip().await {
 		metrics.set_multiaddress(multiaddr).await;
@@ -54,7 +59,7 @@ pub async fn process_block(
 		.await?;
 	metrics.record(MetricValue::HealthCheck()).await?;
 
-	debug!(block_number, "Maintenance completed");
+	info!(block_number, map_size, "Maintenance completed");
 	Ok(())
 }
 

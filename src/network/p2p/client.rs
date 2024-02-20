@@ -349,6 +349,33 @@ impl Command for ReduceKademliaMapSize {
 	}
 }
 
+struct GetKademliaMapSize {
+	response_sender: Option<oneshot::Sender<Result<usize>>>,
+}
+
+impl Command for GetKademliaMapSize {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<(), Report> {
+		let size = entries
+			.behavior_mut()
+			.kademlia
+			.store_mut()
+			.records_iter()
+			.count();
+
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(size))
+			.expect("GetKademliaMapSize receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, _: Report) {
+		// theres should be no errors from running this Command
+		debug!("No possible errors for GetKademliaMapSize");
+	}
+}
+
 struct DialPeer {
 	peer_id: PeerId,
 	peer_address: Multiaddr,
@@ -536,6 +563,15 @@ impl Client {
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(ReduceKademliaMapSize {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn get_kademlia_map_size(&self) -> Result<usize> {
+		self.execute_sync(|response_sender| {
+			Box::new(GetKademliaMapSize {
 				response_sender: Some(response_sender),
 			})
 		})
