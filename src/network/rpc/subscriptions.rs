@@ -5,7 +5,6 @@ use rocksdb::DB;
 use sp_core::{
 	blake2_256,
 	ed25519::{self, Public},
-	Pair,
 };
 use std::{
 	sync::{Arc, Mutex},
@@ -13,12 +12,13 @@ use std::{
 };
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 use super::{Client, Subscription};
 use crate::{
 	data::store_finality_sync_checkpoint,
-	types::{FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, SignerMessage, State},
+	finality::{check_finality, ValidatorSet},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -28,12 +28,6 @@ pub enum Event {
 		header: Header,
 		received_at: Instant,
 	},
-}
-
-#[derive(Clone, Debug)]
-struct ValidatorSet {
-	set_id: u64,
-	validator_set: Vec<Public>,
 }
 
 struct BlockData {
@@ -180,78 +174,10 @@ impl SubscriptionLoop {
 				// basically, pop it out of the collection
 				let (header, received_at, valset) =
 					self.block_data.unverified_headers.swap_remove(pos);
-				// form a message which is signed in the Justification, it's a triplet of a Precommit,
-				// round number and set_id (taken from Substrate code)
-				let signed_message = Encode::encode(&(
-					&SignerMessage::PrecommitMessage(
-						justification.commit.precommits[0].clone().precommit,
-					),
-					&justification.round,
-					&valset.set_id, // Set ID is needed here.
-				));
 
-				// verify all the Signatures of the Justification signs,
-				// verify the hash of the block and extract all the signer addresses
-				let signer_addresses = justification
-					.commit
-					.precommits
-					.iter()
-					.map(|precommit| {
-						let mut is_ok = <ed25519::Pair as Pair>::verify(
-							&precommit.signature,
-							&signed_message,
-							&precommit.id,
-						);
-						if !is_ok {
-							warn!("Signature verification fails with default set_id {}, trying alternatives.", valset.set_id);
-							for set_id_m in (valset.set_id - 10)..(valset.set_id + 10) {
-								let s_m = Encode::encode(&(
-									&SignerMessage::PrecommitMessage(
-										justification.commit.precommits[0].clone().precommit,
-									),
-									&justification.round,
-									&set_id_m,
-								));
-								is_ok = <ed25519::Pair as Pair>::verify(
-									&precommit.signature,
-									&s_m,
-									&precommit.id,
-								);
-								if is_ok {
-									info!("Signature match with set_id={set_id_m}");
-									break;
-								}
-							}
-						}
-						is_ok.then(|| precommit.clone().id).ok_or_else(|| {
-							eyre!(
-								"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",
-								&precommit.id,
-								valset.set_id,
-								justification
-							)
-						})
-					})
-					.collect::<Result<Vec<_>>>();
+				let is_final = check_finality(&valset, &justification);
 
-				let signer_addresses = signer_addresses.unwrap();
-				// match all the Signer addresses to the Current Validator Set
-				let num_matched_addresses = signer_addresses
-					.iter()
-					.filter(|x| valset.validator_set.iter().any(|e| e.0.eq(&x.0)))
-					.count();
-
-				info!(
-					"Number of matching signatures: {num_matched_addresses}/{} for block {}, set_id {}",
-					valset.validator_set.len(),
-					header.number,
-					valset.set_id
-				);
-
-				assert!(
-					is_signed_by_supermajority(num_matched_addresses, valset.validator_set.len()),
-					"Not signed by the supermajority of the validator set."
-				);
+				is_final.expect("Finality check failed");
 
 				// To avoid locking the global state all the time, after finality is synced, it will not be necessary to read the state
 				if !finality_synced {
@@ -329,61 +255,5 @@ impl SubscriptionLoop {
 				break;
 			}
 		}
-	}
-}
-
-fn is_signed_by_supermajority(num_signatures: usize, validator_set_size: usize) -> bool {
-	let supermajority = (validator_set_size * 2 / 3) + 1;
-	num_signatures >= supermajority
-}
-
-#[cfg(test)]
-mod tests {
-	use codec::Encode;
-	use hex::FromHex;
-	use sp_core::{
-		ed25519::{self, Public, Signature},
-		Pair,
-	};
-	use test_case::test_case;
-
-	use crate::types::{Precommit, SignerMessage};
-	#[test_case(1, 1 => true)]
-	#[test_case(1, 2 => false)]
-	#[test_case(2, 2 => true)]
-	#[test_case(2, 3 => false)]
-	#[test_case(3, 3 => true)]
-	#[test_case(3, 4 => true)]
-	#[test_case(4, 5 => true)]
-	#[test_case(66, 100 => false)]
-	#[test_case(67, 100 => true)]
-	fn check_supermajority_condition(num_signatures: usize, validator_set_size: usize) -> bool {
-		use crate::network::rpc::subscriptions::is_signed_by_supermajority;
-		is_signed_by_supermajority(num_signatures, validator_set_size)
-	}
-
-	#[test_case("019150591418c44041725fc53bbe69fdfb5ec4ad7c35fa3f680db07f41e096988ac3fe0314ca9829fa44fc29e5507bd56f5fa4c45fc955030309bb662f70a10e", "f55c915b3e25a013931f5401a22c3481123584d9ce5a119cabf353bca5c43f05", 41911, "0501c3f8cbba5745aa58ff5f4d8dea89fc2326aa0c95d3eb6fb8070d77511ba9", 14, 9649   => true)]
-	#[test_case("b7d22a1854a4836f3d4e7f1af03f8d762913afcf2aa5b20dbdfd23af3e046e80d7410281fdb185b820687a7abe1d201ff866759b00ed2cfc0bab210cea1f7b07", "b91026ef68a88f5ab767a2a7386ac0e7dbb4e62220df1f1c865595bf3afc990b", 39863, "07bc6fca05724fb6cac16fedb80688185ddc74746c7105bddb871cccc626e5e0", 12, 8628   => true)]
-	fn check_sig(
-		sig_hex: &str,
-		target_hash_hex: &str,
-		target_number: u32,
-		sig_id_hex: &str,
-		set_id: u64,
-		round: u64,
-	) -> bool {
-		let sig = Signature(<[u8; 64]>::from_hex(sig_hex).unwrap());
-		let precommit_message = Precommit {
-			target_hash: <[u8; 32]>::from_hex(target_hash_hex).unwrap().into(),
-			target_number,
-		};
-		let id: Public = Public(<[u8; 32]>::from_hex(sig_id_hex).unwrap());
-		let signed_message = Encode::encode(&(
-			&SignerMessage::PrecommitMessage(precommit_message),
-			&round,
-			&set_id,
-		));
-
-		<ed25519::Pair as Pair>::verify(&sig, signed_message, &id)
 	}
 }

@@ -5,6 +5,7 @@ pub mod consts;
 pub mod crawl_client;
 pub mod data;
 pub mod fat_client;
+pub mod finality;
 pub mod light_client;
 pub mod maintenance;
 pub mod network;
