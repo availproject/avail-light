@@ -1,7 +1,7 @@
 use avail_subxt::primitives::Header;
 use codec::Encode;
 use color_eyre::{
-	eyre::{bail, eyre, Context},
+	eyre::{eyre, Context},
 	Result,
 };
 use futures::future::join_all;
@@ -9,18 +9,19 @@ use rocksdb::DB;
 use sp_core::{
 	blake2_256,
 	ed25519::{self},
-	twox_128, Pair, H256,
+	twox_128, H256,
 };
 use std::sync::{Arc, Mutex};
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, trace};
 
 use crate::{
 	data::{
 		get_finality_sync_checkpoint, store_block_header_in_db, store_finality_sync_checkpoint,
 	},
+	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
-	types::{FinalitySyncCheckpoint, SignerMessage, State},
+	types::{FinalitySyncCheckpoint, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -200,92 +201,28 @@ pub async fn sync_finality(
 			.await
 			.wrap_err(format!("Couldn't get header for {}", proof_block_hash))?;
 
-		let signed_message = Encode::encode(&(
-			&SignerMessage::PrecommitMessage(
-				proof.0.justification.0.commit.precommits[0]
-					.clone()
-					.precommit,
-			),
-			&proof.0.justification.0.round,
-			&set_id,
-		));
-		// Verify all the signatures of the justification signs the hash of the block
-		let signer_addresses =
-			proof
-				.0
-				.justification
-				.0
-				.commit
-				.precommits
-				.iter()
-				.map(|precommit| {
-					let mut is_ok = <ed25519::Pair as Pair>::verify(
-						&precommit.signature,
-						&signed_message,
-						&precommit.id,
-					);
-					if !is_ok {
-						warn!("Signature verification fails with default set_id {}, trying alternatives.", set_id);
-						for set_id_m in (set_id - 10)..(set_id + 10) {
-							let s_m = Encode::encode(&(
-								&SignerMessage::PrecommitMessage(
-									proof.0.justification.0.commit.precommits[0]
-										.clone()
-										.precommit,
-								),
-								&proof.0.justification.0.round,
-								&set_id_m,
-							));
-							is_ok = <ed25519::Pair as Pair>::verify(
-								&precommit.signature,
-								&s_m,
-								&precommit.id,
-							);
-							if is_ok {
-								info!("Signature match with set_id={set_id_m}");
-								break;
-							}
-						}
-					}
-					is_ok
-						.then(|| precommit.clone().id)
-						.ok_or_else(|| eyre!("Not signed by this signature!"))
-				})
-				.collect::<Result<Vec<_>>>();
-
-		let Ok(signer_addresses) = signer_addresses else {
-			error!("Verification failed!");
-			bail!("Some of the signatures don't match");
+		let valset = ValidatorSet {
+			set_id,
+			validator_set,
 		};
+		check_finality(&valset, &proof.0.justification.0).context("Finality sync check failed")?;
 
-		let num_matched_addresses = signer_addresses
+		trace!("Proof in block: {}", p_h.number);
+		curr_block_num += 1;
+
+		validator_set = next_validator_set[0]
 			.iter()
-			.filter(|x| validator_set.iter().any(|e| e.0.eq(&x.0)))
-			.count();
-		info!(
-			"Number of matching signatures for block {curr_block_num}: {num_matched_addresses}/{}",
-			validator_set.len()
-		);
-		if num_matched_addresses < (validator_set.len() * 2 / 3) {
-			bail!("Not signed by the supermajority of the validator set.");
-		} else {
-			trace!("Proof in block: {}", p_h.number);
-			curr_block_num += 1;
-
-			validator_set = next_validator_set[0]
-				.iter()
-				.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
-				.collect();
-			set_id += 1;
-			store_finality_sync_checkpoint(
-				sync_finality.get_db(),
-				FinalitySyncCheckpoint {
-					number: curr_block_num,
-					set_id,
-					validator_set: validator_set.clone(),
-				},
-			)?;
-		}
+			.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
+			.collect();
+		set_id += 1;
+		store_finality_sync_checkpoint(
+			sync_finality.get_db(),
+			FinalitySyncCheckpoint {
+				number: curr_block_num,
+				set_id,
+				validator_set: validator_set.clone(),
+			},
+		)?;
 	}
 	state.lock().unwrap().finality_synced = true;
 	info!("Finality is fully synced.");

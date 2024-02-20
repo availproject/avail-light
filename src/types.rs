@@ -1071,7 +1071,7 @@ pub struct Commit {
 pub struct GrandpaJustification {
 	pub round: u64,
 	pub commit: Commit,
-	pub _votes_ancestries: Vec<DaHeader>,
+	pub votes_ancestries: Vec<DaHeader>,
 }
 
 impl<'de> Deserialize<'de> for GrandpaJustification {
