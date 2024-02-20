@@ -925,7 +925,7 @@ impl RuntimeConfig {
 		if let Some(port) = opts.port {
 			self.port = port;
 		}
-		self.sync_finality_enable = opts.finality_sync_enable;
+		self.sync_finality_enable |= opts.finality_sync_enable;
 		self.app_id = opts.app_id.or(self.app_id);
 
 		Ok(())
