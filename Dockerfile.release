@@ -5,7 +5,7 @@ ARG BUILDPLATFORM
 
 WORKDIR /var/lib/avail-light
 
-ARG AVAIL_TAG=v1.7.5
+ARG AVAIL_TAG=v1.7.8
 ARG AVAIL_LC_BIN=https://github.com/availproject/avail-light/releases/download/$AVAIL_TAG/avail-light-linux-$TARGETARCH.tar.gz
 
 RUN adduser --disabled-password --gecos "" --no-create-home --uid 1000 avail \
