@@ -789,10 +789,10 @@ impl Default for RuntimeConfig {
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: "external".to_string(),
 			operation_mode: KademliaMode::Client,
-			retry_config: RetryConfig::Exponential(ExponentialConfig {
-				base: 10,
-				max_delay: 4000,
-				retries: 3,
+			retry_config: RetryConfig::Fibonacci(FibonacciConfig {
+				base: 1,
+				max_delay: 10,
+				retries: 6,
 			}),
 		}
 	}
