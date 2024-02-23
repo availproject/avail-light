@@ -101,7 +101,7 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             ${{ secrets.CRAWLER_BUILD_URL}} \
-            -d '{"event_type": "lc_crawler_build", "client_payload": {"tag": ${GITHUB_REF#refs/tags/}}}'
+            -d '{"event_type": "lc_crawler_build", "client_payload": {"tag": "${GITHUB_REF#refs/tags/}"}}'
 
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
   binary_publish:
