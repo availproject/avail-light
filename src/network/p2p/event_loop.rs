@@ -18,7 +18,9 @@ use libp2p::{
 	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{
+	collections::HashMap, str::FromStr, sync::Arc, time::Duration, time::Instant as StdInstant,
+};
 use tokio::{
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
@@ -76,6 +78,13 @@ struct BootstrapState {
 	timer: Interval,
 }
 
+struct EventLoopConfig {
+	// Used for checking protocol version
+	identity_data: IdentifyConfig,
+	is_fat_client: bool,
+	kad_record_ttl: u64,
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	// Tracking Kademlia events
@@ -84,12 +93,11 @@ pub struct EventLoop {
 	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
-	is_fat_client: bool,
 	/// Blocks we monitor for PUT success rate
 	active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
-	// Used for checking protocol version
-	identity_data: IdentifyConfig,
+
+	event_loop_config: EventLoopConfig,
 }
 
 #[derive(PartialEq, Debug)]
@@ -143,10 +151,13 @@ impl EventLoop {
 				is_startup_done: false,
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
-			is_fat_client,
 			active_blocks: Default::default(),
 			shutdown,
-			identity_data: cfg.identify,
+			event_loop_config: EventLoopConfig {
+				identity_data: cfg.identify,
+				is_fat_client,
+				kad_record_ttl: cfg.kademlia.kad_record_ttl,
+			},
 		}
 	}
 
@@ -224,9 +235,17 @@ impl EventLoop {
 							match record {
 								Some(rec) => {
 									let key = &rec.key;
-									trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+									// Set TTL for all incoming records
+									// TTL will be set to a lower value between the local TTL and incoming record TTL
+									let mut record = rec.clone();
+									record.expires = record.expires.min(
+										StdInstant::now().checked_add(Duration::from_secs(
+											self.event_loop_config.kad_record_ttl,
+										)),
+									);
 
-									_ = self.swarm.behaviour_mut().kademlia.store_mut().put(rec);
+									trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+									_ = self.swarm.behaviour_mut().kademlia.store_mut().put(record);
 								},
 								None => {
 									debug!("Received empty cell record from: {source:?}");
@@ -332,7 +351,7 @@ impl EventLoop {
 							return;
 						},
 					};
-					if protocol_version == self.identity_data.protocol_version {
+					if protocol_version == self.event_loop_config.identity_data.protocol_version {
 						// Add peer to routing table only if it's in Kademlia server mode
 						if incoming_peer_agent_version.kademlia_mode
 							== KademliaMode::Server.to_string()
@@ -408,7 +427,7 @@ impl EventLoop {
 					if new == NatStatus::Private || old == NatStatus::Private {
 						info!("Autonat says we're still private.");
 						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
-						if !self.is_fat_client {
+						if !self.event_loop_config.is_fat_client {
 							// select a relay, try to dial it
 							self.select_and_dial_relay();
 						}
@@ -631,7 +650,7 @@ impl EventLoop {
 					.await;
 			}
 
-			if self.is_fat_client {
+			if self.event_loop_config.is_fat_client {
 				// Remove local records for fat clients (memory optimization)
 				debug!("Pruning local records on fat client");
 				self.swarm.behaviour_mut().kademlia.remove_record(&key);

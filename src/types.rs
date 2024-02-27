@@ -575,6 +575,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 /// Kademlia configuration (see [RuntimeConfig] for details)
 #[derive(Clone)]
 pub struct KademliaConfig {
+	pub kad_record_ttl: u64,
 	pub record_replication_factor: NonZeroUsize,
 	pub record_replication_interval: Option<Duration>,
 	pub publication_interval: Option<Duration>,
@@ -591,6 +592,7 @@ pub struct KademliaConfig {
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		Self {
+			kad_record_ttl: val.kad_record_ttl,
 			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
 				.expect("Invalid replication factor"),
 			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
