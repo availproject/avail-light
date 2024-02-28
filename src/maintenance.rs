@@ -1,7 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -15,6 +15,7 @@ pub struct StaticConfigParams {
 	pub block_confidence_treshold: f64,
 	pub replication_factor: u16,
 	pub query_timeout: u32,
+	pub pruning_interval: u32,
 }
 
 pub async fn process_block(
@@ -23,6 +24,14 @@ pub async fn process_block(
 	static_config_params: StaticConfigParams,
 	metrics: &Arc<impl Metrics>,
 ) -> Result<()> {
+	if block_number % static_config_params.pruning_interval == 0 {
+		info!(block_number, "Pruning...");
+		match p2p_client.prune_expired_records().await {
+			Ok(pruned) => info!(block_number, pruned, "Pruning finished"),
+			Err(error) => error!(block_number, "Pruning failed: {error:#}"),
+		}
+	}
+
 	p2p_client
 		.shrink_kademlia_map()
 		.await

@@ -81,6 +81,31 @@ impl BlockStat {
 	}
 }
 
+struct PruneExpiredRecords {
+	now: Instant,
+	response_sender: Option<oneshot::Sender<Result<usize>>>,
+}
+
+impl Command for PruneExpiredRecords {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<(), Report> {
+		let store = entries.behavior_mut().kademlia.store_mut();
+
+		let before = store.records_iter().count();
+		store.retain(|_, record| !record.is_expired(self.now));
+		let after = store.records_iter().count();
+
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(before - after))
+			.expect("PruneExpiredRecords receiver dropped");
+
+		Ok(())
+	}
+
+	fn abort(&mut self, _: Report) {}
+}
+
 struct StartListening {
 	addr: Multiaddr,
 	response_sender: Option<oneshot::Sender<Result<()>>>,
@@ -572,6 +597,16 @@ impl Client {
 	pub async fn get_kademlia_map_size(&self) -> Result<usize> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetKademliaMapSize {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn prune_expired_records(&self) -> Result<usize> {
+		self.execute_sync(|response_sender| {
+			Box::new(PruneExpiredRecords {
+				now: Instant::now(),
 				response_sender: Some(response_sender),
 			})
 		})
