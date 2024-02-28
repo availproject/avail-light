@@ -18,9 +18,7 @@ use libp2p::{
 	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::{
-	collections::HashMap, str::FromStr, sync::Arc, time::Duration, time::Instant as StdInstant,
-};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
@@ -31,7 +29,7 @@ use crate::{
 	network::p2p::kad_mem_store::MemoryStore,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{AgentVersion, IdentifyConfig, KademliaMode, LibP2PConfig},
+	types::{AgentVersion, IdentifyConfig, KademliaMode, LibP2PConfig, TimeToLive},
 };
 
 use super::{
@@ -82,7 +80,7 @@ struct EventLoopConfig {
 	// Used for checking protocol version
 	identity_data: IdentifyConfig,
 	is_fat_client: bool,
-	kad_record_ttl: u64,
+	kad_record_ttl: TimeToLive,
 }
 
 pub struct EventLoop {
@@ -156,7 +154,7 @@ impl EventLoop {
 			event_loop_config: EventLoopConfig {
 				identity_data: cfg.identify,
 				is_fat_client,
-				kad_record_ttl: cfg.kademlia.kad_record_ttl,
+				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 			},
 		}
 	}
@@ -233,18 +231,12 @@ impl EventLoop {
 						InboundRequest::PutRecord { source, record, .. } => {
 							metrics.count(MetricCounter::IncomingPutRecord).await;
 							match record {
-								Some(rec) => {
-									let key = &rec.key;
+								Some(mut record) => {
+									let ttl = &self.event_loop_config.kad_record_ttl;
+
 									// Set TTL for all incoming records
 									// TTL will be set to a lower value between the local TTL and incoming record TTL
-									let mut record = rec.clone();
-									record.expires = record.expires.min(
-										StdInstant::now().checked_add(Duration::from_secs(
-											self.event_loop_config.kad_record_ttl,
-										)),
-									);
-
-									trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+									record.expires = record.expires.min(ttl.expires());
 									_ = self.swarm.behaviour_mut().kademlia.store_mut().put(record);
 								},
 								None => {
