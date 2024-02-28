@@ -33,7 +33,6 @@ use kate_recovery::{
 use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
-use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
 	ops::Range,
@@ -43,7 +42,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	data::store_encoded_data_in_db,
+	data::{DataManager, Database},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -85,14 +84,14 @@ trait AppClient {
 }
 
 #[derive(Clone)]
-struct AppClientImpl {
-	db: Arc<DB>,
+struct AppClientImpl<D: Database + Clone> {
+	data_manager: DataManager<D>,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
 #[async_trait]
-impl AppClient for AppClientImpl {
+impl<D: Database + Clone> AppClient for AppClientImpl<D> {
 	async fn reconstruct_rows_from_dht(
 		&self,
 		pp: Arc<PublicParameters>,
@@ -222,7 +221,8 @@ impl AppClient for AppClientImpl {
 		block_number: u32,
 		data: &T,
 	) -> Result<()> {
-		store_encoded_data_in_db(self.db.clone(), app_id, block_number, &data)
+		self.data_manager
+			.store_extrinsics(app_id, block_number, &data)
 			.wrap_err("Failed to store data into database")
 	}
 }
@@ -432,9 +432,9 @@ async fn process_block(
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 #[allow(clippy::too_many_arguments)]
-pub async fn run(
+pub async fn run<T: Database + Clone>(
 	cfg: AppClientConfig,
-	db: Arc<DB>,
+	data_manager: DataManager<T>,
 	network_client: P2pClient,
 	rpc_client: RpcClient,
 	app_id: AppId,
@@ -486,9 +486,8 @@ pub async fn run(
 			continue;
 		}
 
-		let db_clone = db.clone();
 		let app_client = AppClientImpl {
-			db: db_clone,
+			data_manager: data_manager.clone(),
 			p2p_client: network_client.clone(),
 			rpc_client: rpc_client.clone(),
 		};
