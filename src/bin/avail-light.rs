@@ -373,6 +373,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		block_confidence_treshold: cfg.confidence,
 		replication_factor: cfg.replication_factor,
 		query_timeout: cfg.query_timeout,
+		pruning_interval: cfg.store_pruning_interval,
 	};
 
 	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(

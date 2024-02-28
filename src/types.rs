@@ -404,8 +404,10 @@ pub struct RuntimeConfig {
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: u8,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
-	pub query_timeout: u32,
+	pub store_pruning_interval: u32,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
+	pub query_timeout: u32,
+	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
 	pub query_parallelism: u16,
 	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
 	/// If set to 0, caching is disabled.
@@ -780,6 +782,7 @@ impl Default for RuntimeConfig {
 			task_command_buffer_size: 32,
 			per_connection_event_buffer_size: 7,
 			dial_concurrency_factor: 8,
+			store_pruning_interval: 180,
 			query_timeout: 10,
 			query_parallelism: 3,
 			caching_max_peers: 1,
