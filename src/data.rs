@@ -18,16 +18,6 @@ use crate::{
 
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
-fn store_data_in_db(db: Arc<DB>, app_id: AppId, block_number: u32, data: &[u8]) -> Result<()> {
-	let key = format!("{}:{block_number}", app_id.0);
-	let cf_handle = db
-		.cf_handle(APP_DATA_CF)
-		.ok_or_else(|| eyre!("Failed to get cf handle"))?;
-
-	db.put_cf(&cf_handle, key.as_bytes(), data)
-		.wrap_err("Failed to write application data")
-}
-
 fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Option<Vec<u8>>> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
@@ -65,16 +55,6 @@ pub fn init_db(path: &str) -> Result<Arc<DB>> {
 
 	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
 	Ok(Arc::new(db))
-}
-
-/// Encodes and stores app data into database under the `app_id:block_number` key
-pub fn store_encoded_data_in_db<T: Encode>(
-	db: Arc<DB>,
-	app_id: AppId,
-	block_number: u32,
-	data: &T,
-) -> Result<()> {
-	store_data_in_db(db, app_id, block_number, &data.encode())
 }
 
 /// Gets and decodes app data from database for the `app_id:block_number` key
@@ -131,16 +111,16 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 		.map(|value| value.is_some())
 }
 
-pub trait Database: Clone + Send {
+pub trait DatabaseOld: Clone + Send {
 	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>>;
 	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>>;
 	fn get_data(&self, app_id: u32, block_number: u32) -> Result<Option<AppData>>;
 }
 
 #[derive(Clone)]
-pub struct RocksDB(pub Arc<DB>);
+pub struct RocksDBOld(pub Arc<DB>);
 
-impl Database for RocksDB {
+impl DatabaseOld for RocksDBOld {
 	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>> {
 		get_confidence_from_db(self.0.clone(), block_number)
 	}
