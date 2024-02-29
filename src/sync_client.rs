@@ -51,13 +51,13 @@ pub trait SyncClient {
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
 }
 #[derive(Clone)]
-struct SyncClientImpl<D: Database + Clone> {
-	data_manager: DataManager<D>,
+struct SyncClientImpl<T: Database + Clone> {
+	data_manager: DataManager<T>,
 	rpc_client: RpcClient,
 }
 
-pub fn new<D: Database + Clone>(
-	data_manager: DataManager<D>,
+pub fn new<T: Database + Clone>(
+	data_manager: DataManager<T>,
 	rpc_client: RpcClient,
 ) -> impl SyncClient {
 	SyncClientImpl {
@@ -67,7 +67,7 @@ pub fn new<D: Database + Clone>(
 }
 
 #[async_trait]
-impl<D: Database + Clone> SyncClient for SyncClientImpl<D> {
+impl<T: Database + Clone> SyncClient for SyncClientImpl<T> {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		if let Some(header) = self
 			.data_manager
