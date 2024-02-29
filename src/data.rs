@@ -274,4 +274,28 @@ impl<D: Database + Clone> DataManager<D> {
 			)
 			.wrap_err("Failed to store Confidence Factor in DB")
 	}
+
+	/// Gets decoded finality sync checkpoint from database
+	pub fn get_finality_sync_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>> {
+		let result = self
+			.db
+			.get(Some(STATE_CF), FINALITY_SYNC_CHECKPOINT_KEY.as_bytes())?;
+
+		result.map_or(Ok(None), |v| {
+			FinalitySyncCheckpoint::decode(&mut &v[..])
+				.wrap_err("Failed to decode Finality Sync Check Point")
+				.map(Some)
+		})
+	}
+
+	/// Stores encoded finality sync checkpoint data into database
+	pub fn store_finality_sync_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()> {
+		self.db
+			.put(
+				Some(STATE_CF),
+				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes(),
+				checkpoint.encode().as_slice(),
+			)
+			.wrap_err("Failed to store Finality Sync Checkpoint data")
+	}
 }
