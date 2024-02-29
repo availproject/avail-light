@@ -18,16 +18,6 @@ use crate::{
 
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
-fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Option<Vec<u8>>> {
-	let key = format!("{app_id}:{block_number}");
-	let cf_handle = db
-		.cf_handle(APP_DATA_CF)
-		.ok_or_else(|| eyre!("Couldn't get column handle from db"))?;
-
-	db.get_cf(&cf_handle, key.as_bytes())
-		.wrap_err("Couldn't get app_data from db")
-}
-
 /// Initializes Rocks Database
 pub fn init_db(path: &str) -> Result<Arc<DB>> {
 	let mut confidence_cf_opts = Options::default();
@@ -55,23 +45,6 @@ pub fn init_db(path: &str) -> Result<Arc<DB>> {
 
 	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
 	Ok(Arc::new(db))
-}
-
-/// Gets and decodes app data from database for the `app_id:block_number` key
-pub fn get_decoded_data_from_db<T: Decode>(
-	db: Arc<DB>,
-	app_id: u32,
-	block_number: u32,
-) -> Result<Option<T>> {
-	let res = get_data_from_db(db, app_id, block_number)
-		.map(|e| e.map(|v| <T>::decode(&mut &v[..]).wrap_err("Failed decoding the app data.")));
-
-	match res {
-		Ok(Some(Err(e))) => Err(e),
-		Ok(Some(Ok(s))) => Ok(Some(s)),
-		Ok(None) => Ok(None),
-		Err(e) => Err(e),
-	}
 }
 
 /// Gets the block header from database
@@ -293,5 +266,20 @@ impl<D: Database + Clone> DataManager<D> {
 		let key = format!("{}:{block_number}", app_id.0);
 		self.db
 			.put(Some(APP_DATA_CF), key.as_bytes(), &data.encode())
+	}
+
+	/// Gets and decodes app data from database for the `app_id:block_number` key
+	pub fn get_app_data<T: Decode>(&self, app_id: u32, block_number: u32) -> Result<Option<T>> {
+		let key = format!("{app_id}:{block_number}");
+		let result = self
+			.db
+			.get(Some(APP_DATA_CF), key.as_bytes())?
+			.map(|v| <T>::decode(&mut &v[..]));
+
+		match result {
+			Some(Err(e)) => Err(eyre!("Failed to decode extrinsics data: {e}")),
+			Some(Ok(data)) => Ok(Some(data)),
+			None => Ok(None),
+		}
 	}
 }

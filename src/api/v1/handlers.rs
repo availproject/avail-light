@@ -1,7 +1,7 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{get_confidence_from_db, get_decoded_data_from_db},
+	data::{get_confidence_from_db, DataManager, Database},
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
@@ -98,10 +98,10 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 	}
 }
 
-pub fn appdata(
+pub fn appdata<T: Database + Clone>(
 	block_num: u32,
 	query: AppDataQuery,
-	db: Arc<DB>,
+	data_manager: DataManager<T>,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
@@ -130,11 +130,9 @@ pub fn appdata(
 	let state = state.lock().unwrap();
 	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
-	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
-		db,
-		app_id.unwrap_or(0u32),
-		block_num,
-	)) {
+	let res = match decode_app_data_to_extrinsics(
+		data_manager.get_app_data(app_id.unwrap_or(0u32), block_num),
+	) {
 		Ok(Some(data)) => {
 			if !decode {
 				ClientResponse::Normal(ExtrinsicsDataResponse {

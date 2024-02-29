@@ -222,7 +222,7 @@ impl<D: Database + Clone> AppClient for AppClientImpl<D> {
 		data: &T,
 	) -> Result<()> {
 		self.data_manager
-			.store_extrinsics(app_id, block_number, &data)
+			.store_app_data(app_id, block_number, &data)
 			.wrap_err("Failed to store data into database")
 	}
 }
