@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::Database,
+	data::{DataManager, Database},
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -87,11 +87,11 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 	result
 }
 
-pub async fn block(
+pub async fn block<T: Database + Clone>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: impl Database,
+	data_manager: DataManager<T>,
 ) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -99,19 +99,19 @@ pub async fn block(
 		return Err(Error::not_found());
 	};
 
-	let confidence = db
-		.get_confidence(block_number)
+	let confidence = data_manager
+		.get_confidence_factor(block_number)
 		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 
 	Ok(Block::new(block_status, confidence))
 }
 
-pub async fn block_header(
+pub async fn block_header<T: Database + Clone>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: impl Database,
+	data_manager: DataManager<T>,
 ) -> Result<Header, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -126,18 +126,19 @@ pub async fn block_header(
 		return Err(Error::bad_request_unknown("Block header is not available"));
 	};
 
-	db.get_header(block_number)
+	data_manager
+		.get_block_header(block_number)
 		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn block_data(
+pub async fn block_data<T: Database + Clone>(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: impl Database,
+	data_manager: DataManager<T>,
 ) -> Result<DataResponse, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -153,8 +154,8 @@ pub async fn block_data(
 		return Err(Error::bad_request_unknown("Block data is not available"));
 	};
 
-	let data = db
-		.get_data(app_id, block_number)
+	let data = data_manager
+		.get_app_data(app_id, block_number)
 		.map_err(Error::internal_server_error)?;
 
 	let Some(data) = data else {
