@@ -275,12 +275,12 @@ impl Database for RocksDB {
 
 // Generic struct that uses any type implementing the Database trait
 #[derive(Clone)]
-pub struct DataManager<T: Database + Clone> {
-	db: T,
+pub struct DataManager<D: Database + Clone> {
+	db: D,
 }
 
-impl<T: Database + Clone> DataManager<T> {
-	pub fn new(db: T) -> DataManager<T> {
+impl<D: Database + Clone> DataManager<D> {
+	pub fn new(db: D) -> DataManager<D> {
 		DataManager { db }
 	}
 
