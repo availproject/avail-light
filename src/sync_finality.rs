@@ -5,7 +5,6 @@ use color_eyre::{
 	Result,
 };
 use futures::future::join_all;
-use rocksdb::DB;
 use sp_core::{
 	blake2_256,
 	ed25519::{self},
@@ -15,9 +14,7 @@ use std::sync::{Arc, Mutex};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{
-		get_finality_sync_checkpoint, store_block_header_in_db, store_finality_sync_checkpoint,
-	},
+	data::{DataManager, Database},
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
@@ -27,26 +24,48 @@ use crate::{
 
 pub trait SyncFinality {
 	fn get_client(&self) -> rpc::Client;
-	fn get_db(&self) -> Arc<DB>;
+	fn store_block_header(&self, block_number: u32, header: &Header) -> Result<()>;
+	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>;
+	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>;
 }
 
-pub struct SyncFinalityImpl {
-	db: Arc<DB>,
+pub struct SyncFinalityImpl<T: Database + Clone> {
+	data_manager: DataManager<T>,
 	rpc_client: rpc::Client,
 }
 
-impl SyncFinality for SyncFinalityImpl {
+impl<T: Database + Clone> SyncFinality for SyncFinalityImpl<T> {
 	fn get_client(&self) -> rpc::Client {
 		self.rpc_client.clone()
 	}
 
-	fn get_db(&self) -> Arc<DB> {
-		self.db.clone()
+	fn store_block_header(&self, block_number: u32, header: &Header) -> Result<()> {
+		self.data_manager
+			.store_block_header(block_number, header)
+			.wrap_err("Finality Sync failed to store Block Header")
+	}
+
+	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>> {
+		self.data_manager
+			.get_finality_sync_checkpoint()
+			.wrap_err("Finality Sync failed to get Checkpoint")
+	}
+
+	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()> {
+		self.data_manager
+			.store_finality_sync_checkpoint(checkpoint)
+			.wrap_err("Finality Sync failed to store Checkpoint")
 	}
 }
 
-pub fn new(db: Arc<DB>, rpc_client: rpc::Client) -> impl SyncFinality {
-	SyncFinalityImpl { db, rpc_client }
+pub fn new<T: Database + Clone>(
+	data_manager: DataManager<T>,
+	rpc_client: rpc::Client,
+) -> impl SyncFinality {
+	SyncFinalityImpl {
+		data_manager,
+		rpc_client,
+	}
 }
 
 const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
@@ -127,7 +146,7 @@ pub async fn sync_finality(
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.get_genesis_hash().await?;
 
-	let checkpoint = get_finality_sync_checkpoint(sync_finality.get_db())?;
+	let checkpoint = sync_finality.get_checkpoint()?;
 
 	info!("Starting finality validation sync.");
 	let mut set_id: u64;
@@ -152,7 +171,6 @@ pub async fn sync_finality(
 	let last_block_num = from_header.number;
 
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
-	let db = sync_finality.get_db();
 
 	let mut prev_hash = rpc_client
 		.get_block_hash(curr_block_num - 1)
@@ -174,7 +192,7 @@ pub async fn sync_finality(
 			.get_header_by_hash(hash)
 			.await
 			.wrap_err(format!("Couldn't get header for {}", hash))?;
-		store_block_header_in_db(db.clone(), curr_block_num, &from_header)?;
+		sync_finality.store_block_header(curr_block_num, &from_header)?;
 
 		assert_eq!(
 			from_header.parent_hash, prev_hash,
@@ -215,14 +233,11 @@ pub async fn sync_finality(
 			.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
 			.collect();
 		set_id += 1;
-		store_finality_sync_checkpoint(
-			sync_finality.get_db(),
-			FinalitySyncCheckpoint {
-				number: curr_block_num,
-				set_id,
-				validator_set: validator_set.clone(),
-			},
-		)?;
+		sync_finality.store_checkpoint(FinalitySyncCheckpoint {
+			number: curr_block_num,
+			set_id,
+			validator_set: validator_set.clone(),
+		})?;
 	}
 	state.lock().unwrap().finality_synced = true;
 	info!("Finality is fully synced.");
