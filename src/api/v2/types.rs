@@ -415,35 +415,6 @@ impl TryFrom<HeaderExtension> for Extension {
 
 	fn try_from(value: HeaderExtension) -> Result<Self, Self::Error> {
 		match value {
-			HeaderExtension::V1(v1) => {
-				let commitments = commitments::from_slice(&v1.commitment.commitment)?
-					.into_iter()
-					.map(Commitment)
-					.collect::<Vec<_>>();
-				Ok(Extension {
-					rows: v1.commitment.rows,
-					cols: v1.commitment.cols,
-					data_root: v1.commitment.data_root,
-					commitments,
-					app_lookup: v1.app_lookup,
-				})
-			},
-
-			HeaderExtension::V2(v2) => {
-				let commitments = commitments::from_slice(&v2.commitment.commitment)?
-					.into_iter()
-					.map(Commitment)
-					.collect::<Vec<_>>();
-
-				Ok(Extension {
-					rows: v2.commitment.rows,
-					cols: v2.commitment.cols,
-					data_root: v2.commitment.data_root,
-					commitments,
-					app_lookup: v2.app_lookup,
-				})
-			},
-
 			HeaderExtension::V3(v3) => {
 				let commitments = commitments::from_slice(&v3.commitment.commitment)?
 					.into_iter()

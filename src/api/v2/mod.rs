@@ -236,8 +236,8 @@ mod tests {
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
-			header::extension::{v2, HeaderExtension},
-			kate_commitment::v2::KateCommitment,
+			header::extension::{v3, HeaderExtension},
+			kate_commitment::v3::KateCommitment,
 		},
 		primitives::Header as DaHeader,
 	};
@@ -436,7 +436,7 @@ mod tests {
 			number: 1,
 			state_root: H256::default(),
 			extrinsics_root: H256::default(),
-			extension: HeaderExtension::V2(v2::HeaderExtension {
+			extension: HeaderExtension::V3(v3::HeaderExtension {
 				commitment: KateCommitment::default(),
 				app_lookup: CompactDataLookup {
 					size: 0,
@@ -467,7 +467,7 @@ mod tests {
 			.await;
 		assert_eq!(
 			response.body(),
-			r#"{"hash":"0xffb84ad27c9d095b0f4790bd168637a6891f962d5a738e2dc7fbdb7a482cce83","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":0,"index":[]}}}"#
+			r#"{"hash":"0xb4ab92948e78b5e3115d2ce5ff2207e7d713a7fb33f4a9240e413c00954f244b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":0,"index":[]}}}"#
 		);
 	}
 
