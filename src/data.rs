@@ -240,4 +240,38 @@ impl<D: Database + Clone> DataManager<D> {
 			.transpose()
 			.wrap_err("Failed to get Block Header from DB")
 	}
+
+	fn get_confidence_data(&self, block_number: u32) -> Result<Option<Vec<u8>>> {
+		self.db
+			.get(Some(CONFIDENCE_FACTOR_CF), &block_number.to_be_bytes())
+			.wrap_err("Failed to get Confidence Data from DB")
+	}
+
+	/// Checks if confidence factor for given block number is in database
+	pub fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
+		self.get_confidence_data(block_number).map(|v| v.is_some())
+	}
+
+	/// Gets confidence factor from database for given block numbers
+	pub fn get_confidence_factor(&self, block_number: u32) -> Result<Option<u32>> {
+		self.get_confidence_data(block_number)?
+			.map(|data| {
+				data.try_into()
+					.map_err(|_| eyre!("conversion failed"))
+					.wrap_err("Unable to convert confidence (wrong number or bytes)")
+					.map(u32::from_be_bytes)
+			})
+			.transpose()
+	}
+
+	/// Stores confidence factor into database under the given block number key
+	pub fn store_confidence_factor(&self, block_number: u32, count: u32) -> Result<()> {
+		self.db
+			.put(
+				Some(CONFIDENCE_FACTOR_CF),
+				&block_number.to_be_bytes(),
+				&count.to_be_bytes(),
+			)
+			.wrap_err("Failed to store Confidence Factor in DB")
+	}
 }
