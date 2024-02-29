@@ -261,6 +261,7 @@ impl<D: Database + Clone> DataManager<D> {
 		let key = format!("{}:{block_number}", app_id.0);
 		self.db
 			.put(Some(APP_DATA_CF), key.as_bytes(), &data.encode())
+			.wrap_err("Failed to store App Data in DB")
 	}
 
 	/// Gets and decodes app data from database for the `app_id:block_number` key
@@ -272,7 +273,7 @@ impl<D: Database + Clone> DataManager<D> {
 			.map(|v| AppData::decode(&mut &v[..]));
 
 		match result {
-			Some(Err(e)) => Err(eyre!("Failed to decode extrinsics data: {e}")),
+			Some(Err(e)) => Err(eyre!("Failed to decode Extrinsics Data: {e}")),
 			Some(Ok(data)) => Ok(Some(data)),
 			None => Ok(None),
 		}
