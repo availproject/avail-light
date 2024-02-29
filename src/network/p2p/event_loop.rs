@@ -404,20 +404,17 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {
-					trace!("AutoNat Inbound Probe: {:#?}", e);
+					trace!("[AutoNat] Inbound Probe: {:#?}", e);
 				},
 				autonat::Event::OutboundProbe(e) => {
-					trace!("AutoNat Outbound Probe: {:#?}", e);
+					trace!("[AutoNat] Outbound Probe: {:#?}", e);
 				},
 				autonat::Event::StatusChanged { old, new } => {
-					debug!(
-						"AutoNat Old status: {:#?}. AutoNat New status: {:#?}",
-						old, new
-					);
+					debug!("[AutoNat] Old status: {:#?}. New status: {:#?}", old, new);
 					// check if went private or are private
 					// if so, create reservation request with relay
 					if new == NatStatus::Private || old == NatStatus::Private {
-						info!("Autonat says we're still private.");
+						info!("[AutoNat] Autonat says we're still private.");
 						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
 						if !self.event_loop_config.is_fat_client {
 							// select a relay, try to dial it
@@ -447,16 +444,16 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
 				upnp::Event::NewExternalAddr(addr) => {
-					info!("New external address: {addr}");
+					trace!("[UPnP] New external address: {addr}");
 				},
 				upnp::Event::GatewayNotFound => {
-					trace!("Gateway does not support UPnP");
+					trace!("[UPnP] Gateway does not support UPnP");
 				},
 				upnp::Event::NonRoutableGateway => {
-					trace!("Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
+					trace!("[UPnP] Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
 				},
 				upnp::Event::ExpiredExternalAddr(addr) => {
-					trace!("Gateway address expired: {addr}");
+					trace!("[UPnP] Gateway address expired: {addr}");
 				},
 			},
 			swarm_event => {
@@ -483,6 +480,12 @@ impl EventLoop {
 					},
 					SwarmEvent::IncomingConnectionError { .. } => {
 						metrics.count(MetricCounter::IncomingConnectionError).await;
+					},
+					SwarmEvent::ExternalAddrConfirmed { address } => {
+						info!(
+							"External reachability confirmed on address: {}",
+							address.to_string()
+						);
 					},
 					SwarmEvent::ConnectionEstablished { peer_id, .. } => {
 						metrics.count(MetricCounter::ConnectionEstablished).await;

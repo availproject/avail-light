@@ -11,7 +11,6 @@ use kate_recovery::{
 };
 use libp2p::{
 	kad::{PeerRecord, Quorum, Record, RecordKey},
-	multiaddr::Protocol,
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
@@ -239,23 +238,50 @@ impl Command for PutKadRecord {
 	fn abort(&mut self, _: Report) {}
 }
 
-struct CountDHTPeers {
+struct CountConnectedPeers {
 	response_sender: Option<oneshot::Sender<Result<usize>>>,
 }
 
-impl Command for CountDHTPeers {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		let mut total_peers: usize = 0;
-		for bucket in entries.behavior_mut().kademlia.kbuckets() {
-			total_peers += bucket.num_entries();
-		}
+impl Command for CountConnectedPeers {
+	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(entries.swarm.network_info().num_peers()))
+			.expect("CountDHTPeers receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: Report) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("CountDHTPeers receiver dropped");
+	}
+}
+
+struct ListConnectedPeers {
+	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
+}
+
+impl Command for ListConnectedPeers {
+	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
+		let connected_peer_list = entries
+			.swarm
+			.connected_peers()
+			.map(|peer_id| peer_id.to_string())
+			.collect::<Vec<_>>();
 
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(total_peers))
+			.send(Ok(connected_peer_list))
 			.expect("CountDHTPeers receiver dropped");
 		Ok(())
 	}
@@ -319,7 +345,7 @@ impl Command for GetCellsInDHTPerBlock {
 }
 
 struct GetMultiaddress {
-	response_sender: Option<oneshot::Sender<Result<Multiaddr>>>,
+	response_sender: Option<oneshot::Sender<Result<Vec<Multiaddr>>>>,
 }
 
 impl Command for GetMultiaddress {
@@ -327,15 +353,16 @@ impl Command for GetMultiaddress {
 		let last_address = entries
 			.swarm()
 			.external_addresses()
-			.last()
-			.ok_or_else(|| eyre!("The last_address should exist"))?;
+			.into_iter()
+			.cloned()
+			.collect::<Vec<_>>();
 
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(last_address.clone()))
+			.send(Ok(last_address))
 			.expect("GetMultiaddress receiver dropped");
 		Ok(())
 	}
@@ -568,14 +595,23 @@ impl Client {
 
 	pub async fn count_dht_entries(&self) -> Result<usize> {
 		self.execute_sync(|response_sender| {
-			Box::new(CountDHTPeers {
+			Box::new(CountConnectedPeers {
 				response_sender: Some(response_sender),
 			})
 		})
 		.await
 	}
 
-	async fn get_multiaddress(&self) -> Result<Multiaddr> {
+	pub async fn list_connected_peers(&self) -> Result<Vec<String>> {
+		self.execute_sync(|response_sender| {
+			Box::new(ListConnectedPeers {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	async fn get_multiaddress(&self) -> Result<Vec<Multiaddr>> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetMultiaddress {
 				response_sender: Some(response_sender),
@@ -773,15 +809,14 @@ impl Client {
 		self.insert_into_dht(records, block).await
 	}
 
-	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
-		let addr = self.get_multiaddress().await?;
-		for protocol in &addr {
-			match protocol {
-				Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
-				Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
-				_ => continue,
-			}
-		}
-		Err(eyre!("No IP Address was present in Multiaddress"))
+	pub async fn get_multiaddress_and_ip(&self) -> Result<Vec<String>> {
+		let addr = self
+			.get_multiaddress()
+			.await?
+			.into_iter()
+			.map(|addr| addr.to_string())
+			.collect::<Vec<_>>();
+
+		Ok(addr)
 	}
 }

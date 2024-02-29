@@ -1,7 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -42,15 +42,25 @@ pub async fn process_block(
 		.await
 		.wrap_err("Unable to get Kademlia map size")?;
 
-	if let Ok((multiaddr, ip)) = p2p_client.get_multiaddress_and_ip().await {
-		metrics.set_multiaddress(multiaddr).await;
-		metrics.set_ip(ip).await;
+	// Get last confirmed external multiaddress
+	if let Ok(multiaddrs) = p2p_client.get_multiaddress_and_ip().await {
+		debug!("Confirmed external multiaddresses: {:?}", multiaddrs);
+		if let Some(last_confirmed_ma) = multiaddrs.last() {
+			metrics
+				.set_multiaddress(last_confirmed_ma.to_string())
+				.await;
+		}
 	}
 
 	let peers_num = p2p_client.count_dht_entries().await?;
-	let peers_num_metric = MetricValue::KadRoutingPeerNum(peers_num);
+	info!("Number of connected peers: {peers_num}");
 
+	let connected_peers = p2p_client.list_connected_peers().await?;
+	debug!("Connected peers: {:?}", connected_peers);
+
+	let peers_num_metric = MetricValue::ConnectedPeersNum(peers_num);
 	metrics.record(peers_num_metric).await?;
+
 	metrics
 		.record(MetricValue::BlockConfidenceTreshold(
 			static_config_params.block_confidence_treshold,

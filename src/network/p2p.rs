@@ -13,6 +13,7 @@ use tokio::sync::{
 	mpsc::{self},
 	oneshot,
 };
+use tracing::info;
 
 #[cfg(feature = "network-analysis")]
 pub mod analyzer;
@@ -161,6 +162,8 @@ fn build_swarm(
 				.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
 		})
 		.build();
+
+	info!("Local peerID: {}", swarm.local_peer_id());
 
 	// Setting the mode this way disables automatic mode changes.
 	//
