@@ -23,7 +23,6 @@ use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
-use rocksdb::DB;
 use sp_core::blake2_256;
 use std::{
 	sync::{Arc, Mutex},
@@ -32,7 +31,7 @@ use std::{
 use tracing::{error, info};
 
 use crate::{
-	data::{store_block_header_in_db, store_confidence_in_db},
+	data::{DataManager, Database},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -46,28 +45,30 @@ use crate::{
 #[async_trait]
 #[automock]
 pub trait LightClient {
-	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
+	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()>;
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
-struct LightClientImpl {
-	db: Arc<DB>,
+struct LightClientImpl<T: Database + Clone> {
+	data_manager: DataManager<T>,
 }
 
-pub fn new(db: Arc<DB>) -> impl LightClient {
-	LightClientImpl { db }
+pub fn new<T: Database + Clone>(data_manager: DataManager<T>) -> impl LightClient {
+	LightClientImpl { data_manager }
 }
 
 #[async_trait]
-impl LightClient for LightClientImpl {
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
-		store_confidence_in_db(self.db.clone(), block_number, count)
-			.wrap_err("Failed to store confidence in DB")
+impl<T: Database + Clone> LightClient for LightClientImpl<T> {
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
+		self.data_manager
+			.store_confidence_factor(block_number, count)
+			.wrap_err("Light Client failed to store Confidence Factor")
 	}
-	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
-		store_block_header_in_db(self.db.clone(), block_number, header)
-			.wrap_err("Failed to store block header in DB")
+	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()> {
+		self.data_manager
+			.store_block_header(block_number, header)
+			.wrap_err("Light Client failed to store Block Header")
 	}
 }
 
@@ -162,7 +163,7 @@ pub async fn process_block(
 
 	// write confidence factor into on-disk database
 	light_client
-		.store_confidence_in_db(fetched.len() as u32, block_number)
+		.store_confidence(fetched.len() as u32, block_number)
 		.wrap_err("Failed to store confidence in DB")?;
 
 	state.lock().unwrap().confidence_achieved.set(block_number);
@@ -187,7 +188,7 @@ pub async fn process_block(
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
 	light_client
-		.store_block_header_in_db(header, block_number)
+		.store_block_header(header, block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
 	Ok(Some(confidence))
@@ -370,10 +371,10 @@ mod tests {
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
-			.expect_store_confidence_in_db()
+			.expect_store_confidence()
 			.returning(|_, _| Ok(()));
 		mock_client
-			.expect_store_block_header_in_db()
+			.expect_store_block_header()
 			.returning(|_, _| Ok(()));
 
 		let mut mock_metrics = telemetry::MockMetrics::new();
