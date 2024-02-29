@@ -16,7 +16,7 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
-	data::{is_confidence_in_db, store_confidence_in_db, DataManager, Database},
+	data::{DataManager, Database},
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -47,8 +47,8 @@ use tracing::{error, info, warn};
 #[automock]
 pub trait SyncClient {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
-	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
+	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>;
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
 }
 #[derive(Clone)]
 struct SyncClientImpl<D: Database + Clone> {
@@ -72,7 +72,7 @@ impl<D: Database + Clone> SyncClient for SyncClientImpl<D> {
 		if let Some(header) = self
 			.data_manager
 			.get_block_header(block_number)
-			.wrap_err("Failed to get block header from the DB")?
+			.wrap_err("Sync Client failed to get Block Header from the storage")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			return Ok((header, hash));
@@ -82,27 +82,33 @@ impl<D: Database + Clone> SyncClient for SyncClientImpl<D> {
 			.rpc_client
 			.get_header_by_block_number(block_number)
 			.await
-			.wrap_err_with(|| format!("Failed to get block {:#?} by block number", block_number))
-		{
+			.wrap_err_with(|| {
+				format!(
+					"Sync Client failed to get Block {:#?} by Block Number from storage",
+					block_number
+				)
+			}) {
 			Ok(value) => value,
 			Err(error) => return Err(error),
 		};
 
 		self.data_manager
 			.store_block_header(block_number, &header)
-			.wrap_err("Failed to store block header in DB")?;
+			.wrap_err("Sync Client failed to store Block Header")?;
 
 		Ok((header, hash))
 	}
 
-	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool> {
-		is_confidence_in_db(self.db.clone(), block_number)
-			.wrap_err("Failed to check if confidence is in DB")
+	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
+		self.data_manager
+			.is_confidence_stored(block_number)
+			.wrap_err("Sync Client failed to check if Confidence Factor is stored")
 	}
 
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
-		store_confidence_in_db(self.db.clone(), block_number, count)
-			.wrap_err("Failed to store confidence in DB")
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
+		self.data_manager
+			.store_confidence_factor(block_number, count)
+			.wrap_err("Sync Client failed to store Confidence Factor")
 	}
 }
 
@@ -148,7 +154,7 @@ async fn process_block(
 
 	// write confidence factor into on-disk database
 	sync_client
-		.store_confidence_in_db(fetched.len().try_into()?, block_number)
+		.store_confidence(fetched.len().try_into()?, block_number)
 		.wrap_err("Failed to store confidence in DB")?;
 
 	let confidence = Some(calculate_confidence(fetched.len() as u32));
@@ -191,7 +197,7 @@ pub async fn run(
 	for block_number in sync_range {
 		// TODO: This is still an ambiguous check since data fetch can fail.
 		// We should write block status in DB explicitly.
-		match sync_client.is_confidence_in_db(block_number) {
+		match sync_client.is_confidence_stored(block_number) {
 			Ok(false) => (),
 			Ok(true) => continue,
 			Err(error) => {
@@ -367,11 +373,11 @@ mod tests {
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
-			.expect_is_confidence_in_db()
+			.expect_is_confidence_stored()
 			.with(eq(2))
 			.returning(|_| Ok(true));
 		mock_client
-			.expect_store_confidence_in_db()
+			.expect_store_confidence()
 			.withf(move |_, block_number| *block_number == 2)
 			.returning(move |_, _| Ok(()));
 		process_block(
@@ -457,7 +463,7 @@ mod tests {
 			});
 
 		mock_client
-			.expect_store_confidence_in_db()
+			.expect_store_confidence()
 			.withf(move |_, block_number| *block_number == 2)
 			.returning(move |_, _| Ok(()));
 		process_block(
