@@ -16,10 +16,7 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
-	data::{
-		get_block_header_from_db, is_confidence_in_db, store_block_header_in_db,
-		store_confidence_in_db,
-	},
+	data::{is_confidence_in_db, store_confidence_in_db, DataManager, Database},
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -37,7 +34,6 @@ use color_eyre::{
 };
 use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
-use rocksdb::DB;
 use sp_core::blake2_256;
 use std::{
 	ops::Range,
@@ -55,19 +51,27 @@ pub trait SyncClient {
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
 #[derive(Clone)]
-struct SyncClientImpl {
-	db: Arc<DB>,
+struct SyncClientImpl<D: Database + Clone> {
+	data_manager: DataManager<D>,
 	rpc_client: RpcClient,
 }
 
-pub fn new(db: Arc<DB>, rpc_client: RpcClient) -> impl SyncClient {
-	SyncClientImpl { db, rpc_client }
+pub fn new<D: Database + Clone>(
+	data_manager: DataManager<D>,
+	rpc_client: RpcClient,
+) -> impl SyncClient {
+	SyncClientImpl {
+		data_manager,
+		rpc_client,
+	}
 }
 
 #[async_trait]
-impl SyncClient for SyncClientImpl {
+impl<D: Database + Clone> SyncClient for SyncClientImpl<D> {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
-		if let Some(header) = get_block_header_from_db(self.db.clone(), block_number)
+		if let Some(header) = self
+			.data_manager
+			.get_block_header(block_number)
 			.wrap_err("Failed to get block header from the DB")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
@@ -84,7 +88,8 @@ impl SyncClient for SyncClientImpl {
 			Err(error) => return Err(error),
 		};
 
-		store_block_header_in_db(self.db.clone(), block_number, &header)
+		self.data_manager
+			.store_block_header(block_number, &header)
 			.wrap_err("Failed to store block header in DB")?;
 
 		Ok((header, hash))

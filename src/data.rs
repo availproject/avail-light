@@ -18,61 +18,6 @@ use crate::{
 
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
-/// Initializes Rocks Database
-pub fn init_db(path: &str) -> Result<Arc<DB>> {
-	let mut confidence_cf_opts = Options::default();
-	confidence_cf_opts.set_max_write_buffer_number(16);
-
-	let mut block_header_cf_opts = Options::default();
-	block_header_cf_opts.set_max_write_buffer_number(16);
-
-	let mut app_data_cf_opts = Options::default();
-	app_data_cf_opts.set_max_write_buffer_number(16);
-
-	let mut state_cf_opts = Options::default();
-	state_cf_opts.set_max_write_buffer_number(16);
-
-	let cf_opts = vec![
-		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
-		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
-		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
-		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
-	];
-
-	let mut db_opts = Options::default();
-	db_opts.create_if_missing(true);
-	db_opts.create_missing_column_families(true);
-
-	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
-	Ok(Arc::new(db))
-}
-
-/// Gets the block header from database
-pub fn get_block_header_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<DaHeader>> {
-	let handle = db
-		.cf_handle(BLOCK_HEADER_CF)
-		.ok_or_else(|| eyre!("Failed to get cf handle"))?;
-
-	db.get_cf(&handle, block_number.to_be_bytes())
-		.wrap_err("Failed to get block header")?
-		.map(|value| serde_json::from_slice(&value).wrap_err("Failed to deserialize header"))
-		.transpose()
-}
-
-/// Stores block header into database under the given block number key
-pub fn store_block_header_in_db(db: Arc<DB>, block_number: u32, header: &DaHeader) -> Result<()> {
-	let handle = db
-		.cf_handle(BLOCK_HEADER_CF)
-		.ok_or_else(|| eyre!("Failed to get cf handle"))?;
-
-	db.put_cf(
-		&handle,
-		block_number.to_be_bytes(),
-		serde_json::to_string(header)?.as_bytes(),
-	)
-	.wrap_err("Failed to write block header")
-}
-
 /// Checks if confidence factor for given block number is in database
 pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 	let handle = db
@@ -277,5 +222,22 @@ impl<D: Database + Clone> DataManager<D> {
 			Some(Ok(data)) => Ok(Some(data)),
 			None => Ok(None),
 		}
+	}
+
+	/// Stores block header into database under the given block number key
+	pub fn store_block_header(&self, block_number: u32, header: &DaHeader) -> Result<()> {
+		let value = serde_json::to_string(header)?.as_bytes();
+		self.db
+			.put(Some(BLOCK_HEADER_CF), &block_number.to_be_bytes(), value)
+			.wrap_err("Failed to store Block Header in DB")
+	}
+
+	/// Gets the block header from database
+	pub fn get_block_header(&self, block_number: u32) -> Result<Option<DaHeader>> {
+		self.db
+			.get(Some(BLOCK_HEADER_CF), &block_number.to_be_bytes())?
+			.map(|v| serde_json::from_slice(&v))
+			.transpose()
+			.wrap_err("Failed to get Block Header from DB")
 	}
 }
