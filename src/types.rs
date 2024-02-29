@@ -811,7 +811,6 @@ impl Default for RuntimeConfig {
 #[derive(Clone)]
 pub enum Network {
 	Local,
-	Goldberg,
 }
 
 impl FromStr for Network {
@@ -820,8 +819,7 @@ impl FromStr for Network {
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		match s {
 			"local" => Ok(Network::Local),
-			"goldberg" => Ok(Network::Goldberg),
-			_ => Err("valid values are: local, biryani, goldberg".to_string()),
+			_ => Err("valid values are: local".to_string()),
 		}
 	}
 }
@@ -830,35 +828,30 @@ impl Network {
 	fn peer_id(&self) -> &str {
 		match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
-			Network::Goldberg => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		}
 	}
 
 	fn multiaddr(&self) -> &str {
 		match self {
 			Network::Local => "/ip4/127.0.0.1/tcp/39000",
-			Network::Goldberg => "/dns/bootnode.1.lightclient.goldberg.avail.tools/tcp/37000",
 		}
 	}
 
 	fn full_node_ws(&self) -> &str {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
-			Network::Goldberg => "wss://goldberg.avail.tools:443/ws",
 		}
 	}
 
 	fn ot_collector_endpoint(&self) -> &str {
 		match self {
 			Network::Local => "http://127.0.0.1:4317",
-			Network::Goldberg => "http://otel.lightclient.goldberg.avail.tools:4317",
 		}
 	}
 
 	fn genesis_hash(&self) -> &str {
 		match self {
 			Network::Local => "DEV",
-			Network::Goldberg => "6f09966420b2608d1947ccfb0f2a362450d1fc7fd902c29b67c906eaa965a7ae",
 		}
 	}
 }

@@ -5,10 +5,7 @@ use avail_core::{
 };
 use avail_subxt::{
 	api::runtime_types::{
-		avail_core::{
-			header::extension::HeaderExtension,
-			header::extension::{v1, v2, v3},
-		},
+		avail_core::{header::extension::v3, header::extension::HeaderExtension},
 		da_control::pallet::Call,
 		da_runtime::RuntimeCall,
 	},
@@ -42,22 +39,6 @@ pub fn calculate_confidence(count: u32) -> f64 {
 /// Extract fields from extension header
 pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<u8>) {
 	match &extension {
-		HeaderExtension::V1(v1::HeaderExtension {
-			commitment: kate, ..
-		}) => (
-			kate.rows,
-			kate.cols,
-			kate.data_root,
-			kate.commitment.clone(),
-		),
-		HeaderExtension::V2(v2::HeaderExtension {
-			commitment: kate, ..
-		}) => (
-			kate.rows,
-			kate.cols,
-			kate.data_root,
-			kate.commitment.clone(),
-		),
 		HeaderExtension::V3(v3::HeaderExtension {
 			commitment: kate, ..
 		}) => (
@@ -73,8 +54,6 @@ pub(crate) fn extract_app_lookup(
 	extension: &HeaderExtension,
 ) -> Result<DataLookup, DataLookupError> {
 	let compact = match &extension {
-		HeaderExtension::V1(v1::HeaderExtension { app_lookup, .. }) => app_lookup,
-		HeaderExtension::V2(v2::HeaderExtension { app_lookup, .. }) => app_lookup,
 		HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) => app_lookup,
 	};
 

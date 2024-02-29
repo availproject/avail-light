@@ -22,10 +22,10 @@ bench = false
 subxt = "0.29"
 
 # Internal deps
-avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "kate-recovery/v0.9.2" }
-avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", branch = "goldberg" }
+avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", branch = "main" }
+avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", branch = "main" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "kate-recovery/v0.9.2" }
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", branch = "main" }
 
 # 3rd-party
 async-std = { version = "1.12.0", features = ["attributes"] }
@@ -79,11 +79,10 @@ opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
 [patch.crates-io]
-sp-core = { git = "https://github.com/availproject/substrate.git", branch = "goldberg" }
-sp-io = { git = "https://github.com/availproject/substrate.git", branch = "goldberg" }
-sp-runtime = { git = "https://github.com/availproject/substrate.git", branch = "goldberg" }
-sp-std = { git = "https://github.com/availproject/substrate.git", branch = "goldberg" }
-sp-core-hashing = { git = "https://github.com/availproject/substrate.git", branch = "goldberg" }
+sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch" }
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch" }
+sp-runtime = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch" }
+sp-std = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch" }
 
 [features]
 network-analysis = []

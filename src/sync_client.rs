@@ -246,8 +246,8 @@ mod tests {
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
-			header::extension::{v1::HeaderExtension, HeaderExtension::V1},
-			kate_commitment::v1::KateCommitment,
+			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
+			kate_commitment::v3::KateCommitment,
 		},
 		config::substrate::Digest,
 	};
@@ -267,7 +267,7 @@ mod tests {
 			)
 			.into(),
 			digest: Digest { logs: vec![] },
-			extension: V1(HeaderExtension {
+			extension: V3(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
 					cols: 4,
