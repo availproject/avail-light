@@ -353,7 +353,6 @@ impl Command for GetMultiaddress {
 		let last_address = entries
 			.swarm()
 			.external_addresses()
-			.into_iter()
 			.cloned()
 			.collect::<Vec<_>>();
 
