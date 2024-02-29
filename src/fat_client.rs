@@ -20,13 +20,12 @@ use kate_recovery::{
 };
 use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
-use rocksdb::DB;
 use sp_core::blake2_256;
 use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-	data::store_block_header_in_db,
+	data::{DataManager, Database},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -43,26 +42,30 @@ pub trait FatClient {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
-	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
+	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
-struct FatClientImpl {
-	db: Arc<DB>,
+struct FatClientImpl<T: Database + Clone> {
+	data_manager: DataManager<T>,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-pub fn new(db: Arc<DB>, p2p_client: P2pClient, rpc_client: RpcClient) -> impl FatClient {
+pub fn new<T: Database + Clone>(
+	data_manager: DataManager<T>,
+	p2p_client: P2pClient,
+	rpc_client: RpcClient,
+) -> impl FatClient {
 	FatClientImpl {
-		db,
+		data_manager,
 		p2p_client,
 		rpc_client,
 	}
 }
 
 #[async_trait]
-impl FatClient for FatClientImpl {
+impl<T: Database + Clone> FatClient for FatClientImpl<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
@@ -72,9 +75,10 @@ impl FatClient for FatClientImpl {
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		self.rpc_client.request_kate_proof(hash, positions).await
 	}
-	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
-		store_block_header_in_db(self.db.clone(), block_number, header)
-			.wrap_err("Failed to store block header in DB")
+	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()> {
+		self.data_manager
+			.store_block_header(block_number, header)
+			.wrap_err("Fat Client failed to store Block Header")
 	}
 }
 
@@ -119,7 +123,7 @@ pub async fn process_block(
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
 	fat_client
-		.store_block_header_in_db(header, block_number)
+		.store_block_header(header, block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
 	// Fat client partition upload logic
@@ -370,7 +374,7 @@ mod tests {
 			.expect_get_kate_proof()
 			.returning(move |_, _| Box::pin(async move { Ok(DEFAULT_CELLS.to_vec()) }));
 		mock_client
-			.expect_store_block_header_in_db()
+			.expect_store_block_header()
 			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
