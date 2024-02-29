@@ -257,24 +257,19 @@ impl<D: Database + Clone> DataManager<D> {
 		DataManager { db }
 	}
 
-	pub fn store_app_data<T: Encode>(
-		&self,
-		app_id: AppId,
-		block_number: u32,
-		data: &T,
-	) -> Result<()> {
+	pub fn store_app_data(&self, app_id: AppId, block_number: u32, data: &AppData) -> Result<()> {
 		let key = format!("{}:{block_number}", app_id.0);
 		self.db
 			.put(Some(APP_DATA_CF), key.as_bytes(), &data.encode())
 	}
 
 	/// Gets and decodes app data from database for the `app_id:block_number` key
-	pub fn get_app_data<T: Decode>(&self, app_id: u32, block_number: u32) -> Result<Option<T>> {
+	pub fn get_app_data(&self, app_id: u32, block_number: u32) -> Result<Option<AppData>> {
 		let key = format!("{app_id}:{block_number}");
 		let result = self
 			.db
 			.get(Some(APP_DATA_CF), key.as_bytes())?
-			.map(|v| <T>::decode(&mut &v[..]));
+			.map(|v| AppData::decode(&mut &v[..]));
 
 		match result {
 			Some(Err(e)) => Err(eyre!("Failed to decode extrinsics data: {e}")),
