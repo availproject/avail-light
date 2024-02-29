@@ -1,7 +1,7 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{get_confidence_from_db, DataManager, Database},
+	data::{DataManager, Database},
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
@@ -13,7 +13,6 @@ use base64::{engine::general_purpose, Engine};
 use codec::Decode;
 use color_eyre::{eyre::WrapErr, Result};
 use num::{BigUint, FromPrimitive};
-use rocksdb::DB;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
@@ -28,13 +27,13 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 	ClientResponse::Normal(Mode::from(app_id))
 }
 
-pub fn confidence(
+pub fn confidence<T: Database + Clone>(
 	block_num: u32,
-	db: Arc<DB>,
+	data_manager: DataManager<T>,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
-	let res = match get_confidence_from_db(db, block_num) {
+	let res = match data_manager.get_confidence_factor(block_num) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			let serialised_confidence = serialised_confidence(block_num, confidence);
@@ -63,16 +62,16 @@ pub fn confidence(
 	res
 }
 
-pub fn status(
+pub fn status<T: Database + Clone>(
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-	db: Arc<DB>,
+	data_manager: DataManager<T>,
 ) -> ClientResponse<Status> {
 	let state = state.lock().unwrap();
 	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
 	};
-	let res = match get_confidence_from_db(db, last) {
+	let res = match data_manager.get_confidence_factor(last) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
