@@ -284,11 +284,11 @@ impl<D: Database + Clone> DataManager<D> {
 		DataManager { db }
 	}
 
-	pub fn store_extrinsics<D: Encode>(
+	pub fn store_app_data<T: Encode>(
 		&self,
 		app_id: AppId,
 		block_number: u32,
-		data: &D,
+		data: &T,
 	) -> Result<()> {
 		let key = format!("{}:{block_number}", app_id.0);
 		self.db
