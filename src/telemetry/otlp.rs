@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 use super::MetricCounter;
 
-const ATTRIBUTE_NUMBER: usize = 9;
+const ATTRIBUTE_NUMBER: usize = 8;
 
 #[derive(Debug)]
 pub struct Metrics {
@@ -43,7 +43,6 @@ impl Metrics {
 				"multiaddress",
 				self.attributes.multiaddress.read().await.clone(),
 			),
-			KeyValue::new("ip", self.attributes.ip.read().await.clone()),
 			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
 			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
@@ -73,11 +72,6 @@ impl Metrics {
 	async fn set_multiaddress(&self, multiaddr: String) {
 		let mut m = self.attributes.multiaddress.write().await;
 		*m = multiaddr;
-	}
-
-	async fn set_ip(&self, ip: String) {
-		let mut i = self.attributes.ip.write().await;
-		*i = ip;
 	}
 }
 
@@ -122,8 +116,8 @@ impl super::Metrics for Metrics {
 			super::MetricValue::DHTPutSuccess(number) => {
 				self.record_f64("dht_put_success", number).await?;
 			},
-			super::MetricValue::KadRoutingPeerNum(number) => {
-				self.record_u64("kad_routing_table_peer_num", number as u64)
+			super::MetricValue::ConnectedPeersNum(number) => {
+				self.record_u64("connected_peers_num", number as u64)
 					.await?;
 			},
 			super::MetricValue::HealthCheck() => {
@@ -159,10 +153,6 @@ impl super::Metrics for Metrics {
 
 	async fn set_multiaddress(&self, multiaddr: String) {
 		self.set_multiaddress(multiaddr).await;
-	}
-
-	async fn set_ip(&self, ip: String) {
-		self.set_ip(ip).await;
 	}
 }
 
