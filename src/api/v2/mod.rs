@@ -236,7 +236,8 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
-		data::Database,
+		consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+		data::{DataManager, Database},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
@@ -249,6 +250,8 @@ mod tests {
 		},
 		primitives::Header as DaHeader,
 	};
+	use codec::Encode;
+	use color_eyre::eyre::eyre;
 	use hyper::StatusCode;
 	use kate_recovery::{com::AppData, matrix::Partition};
 	use std::{
@@ -354,7 +357,9 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = latest;
 		}
-		let route = super::block_route(config, state, MockDatabase::default());
+		let mock_db = MockDatabase::default();
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}"))
@@ -374,14 +379,12 @@ mod tests {
 			state.header_verified.set(10);
 			state.data_verified.set(10);
 		}
-		let route = super::block_route(
-			config,
-			state,
-			MockDatabase {
-				confidence: Some(4),
-				..Default::default()
-			},
-		);
+		let mock_db = MockDatabase {
+			confidence: Some(4),
+			..Default::default()
+		};
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/10")
@@ -411,7 +414,9 @@ mod tests {
 			..Default::default()
 		}));
 
-		let route = super::block_header_route(config, state, MockDatabase::default());
+		let mock_db = MockDatabase::default();
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_header_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/header"))
@@ -428,8 +433,9 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		}));
-
-		let route = super::block_header_route(config, state, MockDatabase::default());
+		let mock_db = MockDatabase::default();
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_header_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/header")
@@ -463,11 +469,12 @@ mod tests {
 			header_verified: Some(BlockRange::init(1)),
 			..Default::default()
 		}));
-		let database = MockDatabase {
+		let mock_db = MockDatabase {
 			header: Some(header()),
 			..Default::default()
 		};
-		let route = super::block_header_route(config, state, database);
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_header_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/1/header")
@@ -500,7 +507,9 @@ mod tests {
 			..Default::default()
 		}));
 
-		let route = super::block_data_route(config, state, MockDatabase::default());
+		let mock_db = MockDatabase::default();
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_data_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/data"))
@@ -518,7 +527,9 @@ mod tests {
 			..Default::default()
 		}));
 
-		let route = super::block_data_route(config, state, MockDatabase::default());
+		let mock_db = MockDatabase::default();
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_data_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/data")
@@ -541,7 +552,9 @@ mod tests {
 			..Default::default()
 		}));
 
-		let route = super::block_data_route(config, state, MockDatabase::default());
+		let mock_db = MockDatabase::default();
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_data_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -567,7 +580,8 @@ mod tests {
 			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
-		let db = MockDatabase {
+
+		let mock_db = MockDatabase {
 			app_data: Some(vec![vec![
 				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
 				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
@@ -579,8 +593,8 @@ mod tests {
 			]]),
 			..Default::default()
 		};
-
-		let route = super::block_data_route(config, state, db);
+		let mock_manager = DataManager::new(mock_db);
+		let route = super::block_data_route(config, state, mock_manager);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -632,16 +646,32 @@ mod tests {
 	}
 
 	impl Database for MockDatabase {
-		fn get_confidence(&self, _: u32) -> color_eyre::Result<Option<u32>> {
-			Ok(self.confidence)
+		fn put(
+			&self,
+			column_family: Option<&str>,
+			key: &[u8],
+			value: &[u8],
+		) -> color_eyre::eyre::Result<()> {
+			Ok(())
 		}
 
-		fn get_header(&self, _: u32) -> color_eyre::Result<Option<DaHeader>> {
-			Ok(self.header.clone())
+		fn delete(&self, column_family: Option<&str>, key: &[u8]) -> color_eyre::eyre::Result<()> {
+			Ok(())
 		}
 
-		fn get_data(&self, _app_id: u32, _: u32) -> color_eyre::Result<Option<AppData>> {
-			Ok(self.app_data.clone())
+		fn get(
+			&self,
+			column_family: Option<&str>,
+			key: &[u8],
+		) -> color_eyre::eyre::Result<Option<Vec<u8>>> {
+			match column_family {
+				Some(CONFIDENCE_FACTOR_CF) => Ok(self.confidence.map(|c| c.to_be_bytes().to_vec())),
+				Some(BLOCK_HEADER_CF) => Ok(self
+					.header
+					.map(|h| serde_json::to_string(&h).unwrap().as_bytes().to_vec())),
+				Some(APP_DATA_CF) => Ok(self.app_data.map(|d| d.encode())),
+				_ => Err(eyre!("provided Column Family is not mocked")),
+			}
 		}
 	}
 
