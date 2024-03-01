@@ -14,7 +14,6 @@
 use async_trait::async_trait;
 use avail_core::AppId;
 use avail_subxt::utils::H256;
-use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
@@ -75,23 +74,23 @@ trait AppClient {
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>>;
 
-	fn store_encoded_data_in_db<T: Encode + 'static>(
+	fn store_encoded_data_in_db(
 		&self,
 		app_id: AppId,
 		block_number: u32,
-		data: &T,
+		data: &AppData,
 	) -> Result<()>;
 }
 
 #[derive(Clone)]
-struct AppClientImpl<D: Database + Clone> {
-	data_manager: DataManager<D>,
+struct AppClientImpl<T: Database + Clone> {
+	data_manager: DataManager<T>,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
 #[async_trait]
-impl<D: Database + Clone> AppClient for AppClientImpl<D> {
+impl<T: Database + Clone> AppClient for AppClientImpl<T> {
 	async fn reconstruct_rows_from_dht(
 		&self,
 		pp: Arc<PublicParameters>,
@@ -215,11 +214,11 @@ impl<D: Database + Clone> AppClient for AppClientImpl<D> {
 		Ok(result)
 	}
 
-	fn store_encoded_data_in_db<T: Encode + 'static>(
+	fn store_encoded_data_in_db(
 		&self,
 		app_id: AppId,
 		block_number: u32,
-		data: &T,
+		data: &AppData,
 	) -> Result<()> {
 		self.data_manager
 			.store_app_data(app_id, block_number, &data)
