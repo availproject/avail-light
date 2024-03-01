@@ -17,7 +17,7 @@ use self::{
 
 use crate::{
 	api::v2::types::Topic,
-	data::{Database, RocksDB},
+	data::{DataManager, Database},
 	network::rpc::Client,
 	types::{IdentityConfig, RuntimeConfig, State},
 };
@@ -59,45 +59,45 @@ fn status_route(
 		.map(handlers::status)
 }
 
-fn block_route(
+fn block_route<T: Database + Clone>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: impl Database,
+	data_manager: DataManager<T>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.and(warp::any().map(move || db.clone()))
+		.and(warp::any().map(move || data_manager.clone()))
 		.then(handlers::block)
 		.map(log_internal_server_error)
 }
 
-fn block_header_route(
+fn block_header_route<T: Database + Clone>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: impl Database,
+	data_manager: DataManager<T>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "header")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.and(warp::any().map(move || db.clone()))
+		.and(warp::any().map(move || data_manager.clone()))
 		.then(handlers::block_header)
 		.map(log_internal_server_error)
 }
 
-fn block_data_route(
+fn block_data_route<T: Database + Clone>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: impl Database,
+	data_manager: DataManager<T>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "data")
 		.and(warp::get())
 		.and(warp::query::<DataQuery>())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.and(warp::any().map(move || db.clone()))
+		.and(warp::any().map(move || data_manager.clone()))
 		.then(handlers::block_data)
 		.map(log_internal_server_error)
 }
@@ -179,7 +179,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes(
+pub fn routes<T: Database + Clone>(
 	version: String,
 	network_version: String,
 	state: Arc<Mutex<State>>,
@@ -187,7 +187,7 @@ pub fn routes(
 	identity_config: IdentityConfig,
 	rpc_client: Client,
 	ws_clients: WsClients,
-	db: RocksDB,
+	data_manager: DataManager<T>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
 		version,
@@ -207,13 +207,21 @@ pub fn routes(
 
 	version_route(version.clone())
 		.or(status_route(config.clone(), state.clone()))
-		.or(block_route(config.clone(), state.clone(), db.clone()))
+		.or(block_route(
+			config.clone(),
+			state.clone(),
+			data_manager.clone(),
+		))
 		.or(block_header_route(
 			config.clone(),
 			state.clone(),
-			db.clone(),
+			data_manager.clone(),
 		))
-		.or(block_data_route(config.clone(), state.clone(), db.clone()))
+		.or(block_data_route(
+			config.clone(),
+			state.clone(),
+			data_manager.clone(),
+		))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
