@@ -8,7 +8,7 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::com::AppData;
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use rocksdb::{ColumnFamilyDescriptor, Options};
 use std::sync::Arc;
 
 use crate::{
@@ -18,104 +18,13 @@ use crate::{
 
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
-/// Checks if confidence factor for given block number is in database
-pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
-	let handle = db
-		.cf_handle(CONFIDENCE_FACTOR_CF)
-		.ok_or_else(|| eyre!("Failed to get cf handle"))?;
-
-	db.get_pinned_cf(&handle, block_number.to_be_bytes())
-		.wrap_err("Failed to get confidence")
-		.map(|value| value.is_some())
-}
-
-pub trait DatabaseOld: Clone + Send {
-	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>>;
-	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>>;
-	fn get_data(&self, app_id: u32, block_number: u32) -> Result<Option<AppData>>;
-}
-
-#[derive(Clone)]
-pub struct RocksDBOld(pub Arc<DB>);
-
-impl DatabaseOld for RocksDBOld {
-	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>> {
-		get_confidence_from_db(self.0.clone(), block_number)
-	}
-
-	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>> {
-		get_block_header_from_db(self.0.clone(), block_number)
-	}
-
-	fn get_data(&self, app_id: u32, block_number: u32) -> Result<Option<AppData>> {
-		get_decoded_data_from_db(self.0.clone(), app_id, block_number)
-	}
-}
-
-/// Gets confidence factor from database for given block number
-pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u32>> {
-	let cf_handle = db
-		.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
-		.ok_or_else(|| eyre!("Couldn't get column handle from db"))?;
-
-	db.get_cf(&cf_handle, block_number.to_be_bytes())
-		.wrap_err("Couldn't get confidence in db")?
-		.map(|data| {
-			data.try_into()
-				.map_err(|_| eyre!("Conversion failed"))
-				.wrap_err("Unable to convert confidence (wrong number of bytes)")
-				.map(u32::from_be_bytes)
-		})
-		.transpose()
-}
-
-/// Stores confidence factor into database under the given block number key
-pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Result<()> {
-	let handle = db
-		.cf_handle(CONFIDENCE_FACTOR_CF)
-		.ok_or_else(|| eyre!("Failed to get cf handle"))?;
-
-	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
-		.wrap_err("Failed to write confidence")
-}
-
-pub fn get_finality_sync_checkpoint(db: Arc<DB>) -> Result<Option<FinalitySyncCheckpoint>> {
-	let cf_handle = db
-		.cf_handle(STATE_CF)
-		.ok_or_else(|| eyre!("Couldn't get column handle from db"))?;
-
-	let result = db
-		.get_cf(&cf_handle, FINALITY_SYNC_CHECKPOINT_KEY.as_bytes())
-		.wrap_err("Couldn't get finality sync checkpoint from db")?;
-
-	result.map_or(Ok(None), |e| {
-		FinalitySyncCheckpoint::decode(&mut &e[..])
-			.wrap_err("Failed to decoded finality sync checkpoint")
-			.map(Some)
-	})
-}
-
-pub fn store_finality_sync_checkpoint(
-	db: Arc<DB>,
-	checkpoint: FinalitySyncCheckpoint,
-) -> Result<()> {
-	let cf_handle = db
-		.cf_handle(STATE_CF)
-		.ok_or_else(|| eyre!("Couldn't get column handle from db"))?;
-	db.put_cf(
-		&cf_handle,
-		FINALITY_SYNC_CHECKPOINT_KEY.as_bytes(),
-		checkpoint.encode().as_slice(),
-	)
-	.wrap_err("Failed to write finality sync checkpoint data")
-}
-
 pub trait Database: Send + Sync {
 	fn put(&self, column_family: Option<&str>, key: &[u8], value: &[u8]) -> Result<()>;
 	fn get(&self, column_family: Option<&str>, key: &[u8]) -> Result<Option<Vec<u8>>>;
 	fn delete(&self, column_family: Option<&str>, key: &[u8]) -> Result<()>;
 }
 
+#[derive(Clone)]
 pub struct RocksDB {
 	db: Arc<rocksdb::DB>,
 }
