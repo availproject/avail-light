@@ -646,30 +646,26 @@ mod tests {
 	}
 
 	impl Database for MockDatabase {
-		fn put(
-			&self,
-			column_family: Option<&str>,
-			key: &[u8],
-			value: &[u8],
-		) -> color_eyre::eyre::Result<()> {
+		fn put(&self, _: Option<&str>, _: &[u8], _: &[u8]) -> color_eyre::eyre::Result<()> {
 			Ok(())
 		}
 
-		fn delete(&self, column_family: Option<&str>, key: &[u8]) -> color_eyre::eyre::Result<()> {
+		fn delete(&self, _: Option<&str>, _: &[u8]) -> color_eyre::eyre::Result<()> {
 			Ok(())
 		}
 
 		fn get(
 			&self,
 			column_family: Option<&str>,
-			key: &[u8],
+			_: &[u8],
 		) -> color_eyre::eyre::Result<Option<Vec<u8>>> {
 			match column_family {
 				Some(CONFIDENCE_FACTOR_CF) => Ok(self.confidence.map(|c| c.to_be_bytes().to_vec())),
 				Some(BLOCK_HEADER_CF) => Ok(self
 					.header
+					.clone()
 					.map(|h| serde_json::to_string(&h).unwrap().as_bytes().to_vec())),
-				Some(APP_DATA_CF) => Ok(self.app_data.map(|d| d.encode())),
+				Some(APP_DATA_CF) => Ok(self.app_data.clone().map(|d| d.encode())),
 				_ => Err(eyre!("provided Column Family is not mocked")),
 			}
 		}
