@@ -4,7 +4,7 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data,
+	data::{DataManager, RocksDB},
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
@@ -113,7 +113,9 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let db = data::init_db(&cfg.avail_path).wrap_err("Cannot initialize database")?;
+	let rocks =
+		RocksDB::open(&cfg.avail_path).wrap_err("Avail Light could not initialize database")?;
+	let data_on_rocks = DataManager::new(rocks);
 
 	let cfg_libp2p: LibP2PConfig = (&cfg).into();
 	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;
@@ -207,7 +209,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let state = Arc::new(Mutex::new(State::default()));
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
-		db.clone(),
+		data_on_rocks.clone(),
 		state.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
@@ -271,7 +273,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let server = api::server::Server {
-		db: db.clone(),
+		data_manager: data_on_rocks.clone(),
 		cfg: cfg.clone(),
 		identity_cfg,
 		state: state.clone(),
@@ -289,7 +291,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
 		tokio::task::spawn(shutdown.with_cancel(avail_light::app_client::run(
 			(&cfg).into(),
-			db.clone(),
+			data_on_rocks.clone(),
 			p2p_client.clone(),
 			rpc_client.clone(),
 			app_id,
@@ -336,7 +338,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		)));
 	}
 
-	let sync_client = avail_light::sync_client::new(db.clone(), rpc_client.clone());
+	let sync_client = avail_light::sync_client::new(data_on_rocks.clone(), rpc_client.clone());
 
 	let sync_network_client = network::new(
 		p2p_client.clone(),
@@ -358,7 +360,8 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	}
 
 	if cfg.sync_finality_enable {
-		let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
+		let sync_finality =
+			avail_light::sync_finality::new(data_on_rocks.clone(), rpc_client.clone());
 		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_finality::run(
 			sync_finality,
 			shutdown.clone(),
@@ -394,8 +397,11 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	};
 
 	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client =
-			avail_light::fat_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
+		let fat_client = avail_light::fat_client::new(
+			data_on_rocks.clone(),
+			p2p_client.clone(),
+			rpc_client.clone(),
+		);
 
 		tokio::task::spawn(shutdown.with_cancel(avail_light::fat_client::run(
 			fat_client,
@@ -406,7 +412,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			shutdown.clone(),
 		)));
 	} else {
-		let light_client = avail_light::light_client::new(db.clone());
+		let light_client = avail_light::light_client::new(data_on_rocks.clone());
 
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
