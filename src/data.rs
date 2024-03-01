@@ -226,9 +226,13 @@ impl<T: Database + Clone> DataManager<T> {
 
 	/// Stores block header into database under the given block number key
 	pub fn store_block_header(&self, block_number: u32, header: &DaHeader) -> Result<()> {
-		let value = serde_json::to_string(header)?.as_bytes();
+		let header_string = serde_json::to_string(header)?;
 		self.db
-			.put(Some(BLOCK_HEADER_CF), &block_number.to_be_bytes(), value)
+			.put(
+				Some(BLOCK_HEADER_CF),
+				&block_number.to_be_bytes(),
+				header_string.as_bytes(),
+			)
 			.wrap_err("Failed to store Block Header in DB")
 	}
 
