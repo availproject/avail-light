@@ -430,7 +430,7 @@ fn construct_multiaddress(is_websocket: bool, port: u16) -> Multiaddr {
 		.with(Protocol::Tcp(port));
 
 	if is_websocket {
-		return tcp_multiaddress.with(Protocol::Ws(std::borrow::Cow::Borrowed("avail")));
+		return tcp_multiaddress.with(Protocol::Ws(std::borrow::Cow::Borrowed("avail-light")));
 	}
 
 	tcp_multiaddress

@@ -205,7 +205,8 @@ async fn build_swarm(
 		.behaviour_mut()
 		.kademlia
 		.set_mode(Some(cfg.kademlia.kademlia_mode.into()));
-	return Ok(swarm);
+
+	Ok(swarm)
 }
 
 // Keypair function creates identity Keypair for a local node.
