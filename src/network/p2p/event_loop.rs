@@ -122,18 +122,20 @@ impl TryFrom<RecordKey> for DHTKey {
 }
 
 impl EventLoop {
-	pub fn new(
+	pub async fn new(
 		cfg: LibP2PConfig,
 		id_keys: &Keypair,
 		is_fat_client: bool,
+		is_ws_transport: bool,
 		shutdown: Controller<String>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_interval;
-		let kad_mode = cfg.kademlia.kademlia_mode.into();
 		let peer_id = id_keys.public().to_peer_id();
 		let store = MemoryStore::with_config(peer_id, (&cfg).into());
 
-		let swarm = build_swarm(&cfg, id_keys, kad_mode, store).expect("Swarm can be built");
+		let swarm = build_swarm(&cfg, id_keys, store, is_ws_transport)
+			.await
+			.expect("Unable to build swarm.");
 
 		Self {
 			swarm,

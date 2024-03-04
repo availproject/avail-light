@@ -150,11 +150,20 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	// Create sender channel for P2P event loop commands
 	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
 
-	let p2p_event_loop =
-		p2p::EventLoop::new(cfg_libp2p, &id_keys, cfg.is_fat_client(), shutdown.clone());
+	let p2p_event_loop = p2p::EventLoop::new(
+		cfg_libp2p,
+		&id_keys,
+		cfg.is_fat_client(),
+		cfg.ws_transport_enable,
+		shutdown.clone(),
+	);
 
 	tokio::spawn(
-		shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone(), p2p_event_loop_receiver)),
+		shutdown.with_cancel(
+			p2p_event_loop
+				.await
+				.run(ot_metrics.clone(), p2p_event_loop_receiver),
+		),
 	);
 
 	let p2p_client = p2p::Client::new(
@@ -164,16 +173,11 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	);
 
 	// Start listening on provided port
-	let port = cfg.port;
 	p2p_client
-		.start_listening(
-			Multiaddr::empty()
-				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Tcp(port)),
-		)
+		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {port}");
+	info!("TCP listener started on port {}", cfg.port);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -418,6 +422,18 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	}
 
 	Ok(())
+}
+
+fn construct_multiaddress(is_websocket: bool, port: u16) -> Multiaddr {
+	let tcp_multiaddress = Multiaddr::empty()
+		.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+		.with(Protocol::Tcp(port));
+
+	if is_websocket {
+		return tcp_multiaddress.with(Protocol::Ws(std::borrow::Cow::Borrowed("avail")));
+	}
+
+	tcp_multiaddress
 }
 
 fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {

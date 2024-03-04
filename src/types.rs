@@ -64,6 +64,9 @@ pub struct CliOpts {
 	/// P2P port
 	#[arg(short, long)]
 	pub port: Option<u16>,
+	/// Enable websocket transport
+	#[arg(long, value_name = "ws_transport_enable")]
+	pub ws_transport_enable: bool,
 	/// Log level
 	#[arg(long)]
 	pub verbosity: Option<LogLevel>,
@@ -325,6 +328,7 @@ pub struct RuntimeConfig {
 	pub secret_key: Option<SecretKey>,
 	/// P2P service port (default: 37000).
 	pub port: u16,
+	pub ws_transport_enable: bool,
 	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 	pub autonat_only_global_ips: bool,
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
@@ -747,6 +751,7 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7000,
 			port: 37000,
+			ws_transport_enable: false,
 			secret_key: None,
 			autonat_only_global_ips: false,
 			autonat_refresh_interval: 360,
@@ -932,6 +937,7 @@ impl RuntimeConfig {
 		}
 		self.sync_finality_enable |= opts.finality_sync_enable;
 		self.app_id = opts.app_id.or(self.app_id);
+		self.ws_transport_enable |= opts.ws_transport_enable;
 
 		Ok(())
 	}
