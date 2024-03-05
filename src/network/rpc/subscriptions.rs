@@ -15,9 +15,12 @@ use tracing::{debug, info, trace};
 
 use super::{Client, Subscription};
 use crate::{
-	data::{DataManager, Database},
+	data::{
+		database::{Database, Encode as DbEncode},
+		FinalitySyncCheckpoint, Key,
+	},
 	finality::{check_finality, ValidatorSet},
-	types::{FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, State},
+	types::{GrandpaJustification, OptionBlockRange, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -37,18 +40,18 @@ struct BlockData {
 	last_finalized_block_header: Option<Header>,
 }
 
-pub struct SubscriptionLoop<T: Database + Clone> {
+pub struct SubscriptionLoop<T: Database> {
 	rpc_client: Client,
 	event_sender: Sender<Event>,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
+	db: T,
 	block_data: BlockData,
 }
 
-impl<T: Database + Clone> SubscriptionLoop<T> {
+impl<T: Database> SubscriptionLoop<T> {
 	pub async fn new(
 		state: Arc<Mutex<State>>,
-		data_manager: DataManager<T>,
+		db: T,
 		rpc_client: Client,
 		event_sender: Sender<Event>,
 	) -> Result<Self> {
@@ -74,7 +77,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 			rpc_client,
 			event_sender,
 			state,
-			data_manager,
+			db,
 			block_data: BlockData {
 				justifications: Default::default(),
 				unverified_headers: Default::default(),
@@ -88,7 +91,19 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		})
 	}
 
-	pub async fn run(mut self) -> Result<()> {
+	fn store_finality_sync_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
+	where
+		T::Key: From<Key>,
+		FinalitySyncCheckpoint: DbEncode<T::Result>,
+	{
+		self.db.put(Key::FinalitySyncCheckpoint, checkpoint)
+	}
+
+	pub async fn run(mut self) -> Result<()>
+	where
+		T::Key: From<Key>,
+		FinalitySyncCheckpoint: DbEncode<T::Result>,
+	{
 		// create subscriptions stream
 		let subscriptions = self.rpc_client.clone().subscription_stream().await;
 		futures::pin_mut!(subscriptions);
@@ -105,7 +120,11 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		Ok(())
 	}
 
-	async fn handle_new_subscription(&mut self, subscription: Subscription) {
+	async fn handle_new_subscription(&mut self, subscription: Subscription)
+	where
+		T::Key: From<Key>,
+		FinalitySyncCheckpoint: DbEncode<T::Result>,
+	{
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
@@ -159,7 +178,11 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		self.verify_and_output_block_headers().await;
 	}
 
-	async fn verify_and_output_block_headers(&mut self) {
+	async fn verify_and_output_block_headers(&mut self)
+	where
+		T::Key: From<Key>,
+		FinalitySyncCheckpoint: DbEncode<T::Result>,
+	{
 		let mut finality_synced = false;
 		while let Some(justification) = self.block_data.justifications.pop() {
 			// iterate through Headers and try to find a matching one
@@ -185,13 +208,12 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				// store Finality Checkpoint if finality is synced
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
-					self.data_manager
-						.store_finality_sync_checkpoint(FinalitySyncCheckpoint {
-							set_id: self.block_data.current_valset.set_id,
-							number: header.number,
-							validator_set: self.block_data.current_valset.validator_set.clone(),
-						})
-						.unwrap();
+					self.store_finality_sync_checkpoint(FinalitySyncCheckpoint {
+						set_id: self.block_data.current_valset.set_id,
+						number: header.number,
+						validator_set: self.block_data.current_valset.validator_set.clone(),
+					})
+					.unwrap();
 				}
 
 				// try and get get all the skipped blocks, if they exist

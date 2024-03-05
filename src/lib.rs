@@ -4,7 +4,6 @@ pub mod consts;
 #[cfg(feature = "crawl")]
 pub mod crawl_client;
 pub mod data;
-pub mod db;
 pub mod fat_client;
 pub mod finality;
 pub mod light_client;

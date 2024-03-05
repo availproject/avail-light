@@ -31,7 +31,10 @@ use std::{
 use tracing::{error, info};
 
 use crate::{
-	data::{DataManager, Database},
+	data::{
+		database::{Database, Encode as DbEncode},
+		Key,
+	},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -42,52 +45,57 @@ use crate::{
 	utils::{calculate_confidence, extract_kate},
 };
 
-#[async_trait]
-#[automock]
-pub trait LightClient {
-	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()>;
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
-}
-
 #[derive(Clone)]
-struct LightClientImpl<T: Database + Clone> {
-	data_manager: DataManager<T>,
+struct LightClient<T: Database> {
+	db: T,
 }
 
-pub fn new<T: Database + Clone>(data_manager: DataManager<T>) -> impl LightClient {
-	LightClientImpl { data_manager }
+pub fn new<T: Database>(db: T) -> LightClient<T> {
+	LightClient { db }
 }
 
-#[async_trait]
-impl<T: Database + Clone> LightClient for LightClientImpl<T> {
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
-		self.data_manager
-			.store_confidence_factor(block_number, count)
+impl<T: Database + Clone> LightClient<T> {
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>
+	where
+		T::Key: From<Key>,
+		u32: DbEncode<T::Result>,
+	{
+		self.db
+			.put(Key::ConfidenceFactor(block_number), count)
 			.wrap_err("Light Client failed to store Confidence Factor")
 	}
-	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()> {
-		self.data_manager
-			.store_block_header(block_number, header)
+	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
+	where
+		T::Key: From<Key>,
+		Header: DbEncode<T::Result>,
+	{
+		self.db
+			.put(Key::BlockHeader(block_number), header)
 			.wrap_err("Light Client failed to store Block Header")
 	}
 }
 
-pub async fn process_block(
-	light_client: &impl LightClient,
+pub async fn process_block<T: Database + Clone>(
+	light_client: LightClient<T>,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
-	header: &Header,
+	header: Header,
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
-) -> Result<Option<f64>> {
+) -> Result<Option<f64>>
+where
+	T::Key: From<Key>,
+	Header: DbEncode<T::Result>,
+	u32: DbEncode<T::Result>,
+{
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
 		.await?;
 
 	let block_number = header.number;
-	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
+	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 
 	info!(
 		{ block_number, block_delay = received_at.elapsed().as_secs()},
@@ -204,8 +212,8 @@ pub async fn process_block(
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
-pub async fn run(
-	light_client: impl LightClient,
+pub async fn run<T: Database>(
+	light_client: LightClient<T>,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,
@@ -241,7 +249,7 @@ pub async fn run(
 		}
 
 		let process_block_result = process_block(
-			&light_client,
+			light_client,
 			&network_client,
 			&metrics,
 			&cfg,

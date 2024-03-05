@@ -14,58 +14,60 @@ use std::sync::{Arc, Mutex};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{DataManager, Database},
+	data::{
+		database::{Database, Decode, Encode as DbEncode},
+		FinalitySyncCheckpoint, Key,
+	},
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
-	types::{FinalitySyncCheckpoint, State},
+	types::State,
 	utils::filter_auth_set_changes,
 };
 
-pub trait SyncFinality {
-	fn get_client(&self) -> rpc::Client;
-	fn store_block_header(&self, block_number: u32, header: &Header) -> Result<()>;
-	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>;
-	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>;
-}
-
-pub struct SyncFinalityImpl<T: Database + Clone> {
-	data_manager: DataManager<T>,
+pub struct SyncFinality<T: Database> {
+	db: T,
 	rpc_client: rpc::Client,
 }
 
-impl<T: Database + Clone> SyncFinality for SyncFinalityImpl<T> {
+impl<T: Database> SyncFinality<T> {
 	fn get_client(&self) -> rpc::Client {
 		self.rpc_client.clone()
 	}
 
-	fn store_block_header(&self, block_number: u32, header: &Header) -> Result<()> {
-		self.data_manager
-			.store_block_header(block_number, header)
+	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()>
+	where
+		Header: DbEncode<T::Result>,
+		Key: Into<T::Key>,
+	{
+		self.db
+			.put(Key::BlockHeader(block_number), header)
 			.wrap_err("Finality Sync failed to store Block Header")
 	}
 
-	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>> {
-		self.data_manager
-			.get_finality_sync_checkpoint()
+	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>
+	where
+		FinalitySyncCheckpoint: Decode<T::Result>,
+		Key: Into<T::Key>,
+	{
+		self.db
+			.get(Key::FinalitySyncCheckpoint)
 			.wrap_err("Finality Sync failed to get Checkpoint")
 	}
 
-	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()> {
-		self.data_manager
-			.store_finality_sync_checkpoint(checkpoint)
+	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
+	where
+		FinalitySyncCheckpoint: DbEncode<T::Result>,
+		Key: Into<T::Key>,
+	{
+		self.db
+			.put(Key::FinalitySyncCheckpoint, checkpoint)
 			.wrap_err("Finality Sync failed to store Checkpoint")
 	}
 }
 
-pub fn new<T: Database + Clone>(
-	data_manager: DataManager<T>,
-	rpc_client: rpc::Client,
-) -> impl SyncFinality {
-	SyncFinalityImpl {
-		data_manager,
-		rpc_client,
-	}
+pub fn new<T: Database>(db: T, rpc_client: rpc::Client) -> SyncFinality<T> {
+	SyncFinality { db, rpc_client }
 }
 
 const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
@@ -126,23 +128,34 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn run(
-	sync_finality_impl: impl SyncFinality,
+pub async fn run<T: Database>(
+	sync_finality: SyncFinality<T>,
 	shutdown: Controller<String>,
 	state: Arc<Mutex<State>>,
 	from_header: Header,
-) {
-	if let Err(error) = sync_finality(sync_finality_impl, state, from_header).await {
+) where
+	FinalitySyncCheckpoint: Decode<T::Result>,
+	FinalitySyncCheckpoint: DbEncode<T::Result>,
+	Header: DbEncode<T::Result>,
+	Key: Into<T::Key>,
+{
+	if let Err(error) = sync(sync_finality, state, from_header).await {
 		error!("Cannot sync finality {error}");
 		let _ = shutdown.trigger_shutdown(format!("Cannot sync finality {error:#}"));
 	};
 }
 
-pub async fn sync_finality(
-	sync_finality: impl SyncFinality,
+pub async fn sync<T: Database>(
+	sync_finality: SyncFinality<T>,
 	state: Arc<Mutex<State>>,
 	mut from_header: Header,
-) -> Result<()> {
+) -> Result<()>
+where
+	FinalitySyncCheckpoint: Decode<T::Result>,
+	FinalitySyncCheckpoint: DbEncode<T::Result>,
+	Header: DbEncode<T::Result>,
+	Key: Into<T::Key>,
+{
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.get_genesis_hash().await?;
 
@@ -192,7 +205,7 @@ pub async fn sync_finality(
 			.get_header_by_hash(hash)
 			.await
 			.wrap_err(format!("Couldn't get header for {}", hash))?;
-		sync_finality.store_block_header(curr_block_num, &from_header)?;
+		sync_finality.store_block_header(curr_block_num, from_header.clone())?;
 
 		assert_eq!(
 			from_header.parent_hash, prev_hash,

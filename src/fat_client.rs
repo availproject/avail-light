@@ -9,7 +9,6 @@
 //!
 //! In case delay is configured, block processing is delayed for configured time.
 
-use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
@@ -25,7 +24,10 @@ use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-	data::{DataManager, Database},
+	data::{
+		database::{Database, Encode as DbEncode},
+		Key,
+	},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -36,36 +38,22 @@ use crate::{
 	utils::extract_kate,
 };
 
-#[async_trait]
-#[automock]
-pub trait FatClient {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
-	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
-	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()>;
-}
-
 #[derive(Clone)]
-struct FatClientImpl<T: Database + Clone> {
-	data_manager: DataManager<T>,
+struct FatClient<T: Database> {
+	db: T,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: Database + Clone>(
-	data_manager: DataManager<T>,
-	p2p_client: P2pClient,
-	rpc_client: RpcClient,
-) -> impl FatClient {
-	FatClientImpl {
-		data_manager,
+pub fn new<T: Database>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient<T> {
+	FatClient {
+		db,
 		p2p_client,
 		rpc_client,
 	}
 }
 
-#[async_trait]
-impl<T: Database + Clone> FatClient for FatClientImpl<T> {
+impl<T: Database> FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
@@ -75,21 +63,29 @@ impl<T: Database + Clone> FatClient for FatClientImpl<T> {
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		self.rpc_client.request_kate_proof(hash, positions).await
 	}
-	fn store_block_header(&self, header: &Header, block_number: u32) -> Result<()> {
-		self.data_manager
-			.store_block_header(block_number, header)
+	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
+	where
+		T::Key: From<Key>,
+		Header: DbEncode<T::Result>,
+	{
+		self.db
+			.put(Key::BlockHeader(block_number), header)
 			.wrap_err("Fat Client failed to store Block Header")
 	}
 }
 
-pub async fn process_block(
-	fat_client: &impl FatClient,
+pub async fn process_block<T: Database>(
+	fat_client: &FatClient<T>,
 	metrics: &Arc<impl Metrics>,
 	cfg: &FatClientConfig,
 	header: &Header,
 	received_at: Instant,
 	partition: Partition,
-) -> Result<()> {
+) -> Result<()>
+where
+	T::Key: From<Key>,
+	Header: DbEncode<T::Result>,
+{
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
@@ -123,7 +119,7 @@ pub async fn process_block(
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
 	fat_client
-		.store_block_header(header, block_number)
+		.store_block_header(header.clone(), block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
 	// Fat client partition upload logic
@@ -208,8 +204,8 @@ pub async fn process_block(
 /// * `channels` - Communication channels
 /// * `partition` - Assigned fat client partition
 /// * `shutdown` - Shutdown controller
-pub async fn run(
-	fat_client: impl FatClient,
+pub async fn run<T: Database>(
+	fat_client: &FatClient<T>,
 	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
@@ -244,7 +240,7 @@ pub async fn run(
 		}
 
 		if let Err(error) =
-			process_block(&fat_client, &metrics, &cfg, &header, received_at, partition).await
+			process_block(fat_client, &metrics, &cfg, &header, received_at, partition).await
 		{
 			error!("Cannot process block: {error}");
 			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));

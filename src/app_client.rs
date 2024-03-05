@@ -41,56 +41,24 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	data::{DataManager, Database},
+	data::{
+		database::{Database, Encode},
+		Key,
+	},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
-#[async_trait]
-#[automock]
-trait AppClient {
-	async fn reconstruct_rows_from_dht(
-		&self,
-		pp: Arc<PublicParameters>,
-		block_number: u32,
-		dimensions: Dimensions,
-		commitments: &[[u8; config::COMMITMENT_SIZE]],
-		missing_rows: &[u32],
-	) -> Result<Vec<(u32, Vec<u8>)>>;
-
-	async fn fetch_rows_from_dht(
-		&self,
-		block_number: u32,
-		dimensions: Dimensions,
-		row_indexes: &[u32],
-	) -> Vec<Option<Vec<u8>>>;
-
-	async fn get_kate_rows(
-		&self,
-		rows: Vec<u32>,
-		dimensions: Dimensions,
-		block_hash: H256,
-	) -> Result<Vec<Option<Vec<u8>>>>;
-
-	fn store_encoded_data_in_db(
-		&self,
-		app_id: AppId,
-		block_number: u32,
-		data: &AppData,
-	) -> Result<()>;
-}
-
 #[derive(Clone)]
-struct AppClientImpl<T: Database + Clone> {
-	data_manager: DataManager<T>,
+struct AppClient<T: Database> {
+	db: T,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-#[async_trait]
-impl<T: Database + Clone> AppClient for AppClientImpl<T> {
+impl<T: Database + Sync> AppClient<T> {
 	async fn reconstruct_rows_from_dht(
 		&self,
 		pp: Arc<PublicParameters>,
@@ -218,10 +186,14 @@ impl<T: Database + Clone> AppClient for AppClientImpl<T> {
 		&self,
 		app_id: AppId,
 		block_number: u32,
-		data: &AppData,
-	) -> Result<()> {
-		self.data_manager
-			.store_app_data(app_id, block_number, data)
+		data: AppData,
+	) -> Result<()>
+	where
+		T::Key: From<Key>,
+		AppData: Encode<T::Result>,
+	{
+		self.db
+			.put(Key::AppData(app_id.0, block_number), data)
 			.wrap_err("Failed to store data into database")
 	}
 }
@@ -293,13 +265,17 @@ async fn fetch_verified(
 }
 
 #[instrument(skip_all, fields(block = block.block_num), level = "trace")]
-async fn process_block(
-	app_client: impl AppClient,
+async fn process_block<T: Database + Sync>(
+	app_client: AppClient<T>,
 	cfg: &AppClientConfig,
 	app_id: AppId,
 	block: &BlockVerified,
 	pp: Arc<PublicParameters>,
-) -> Result<AppData> {
+) -> Result<AppData>
+where
+	T::Key: From<Key>,
+	AppData: Encode<T::Result>,
+{
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = block.dimensions;
@@ -410,7 +386,7 @@ async fn process_block(
 
 	debug!(block_number, "Storing data into database");
 	app_client
-		.store_encoded_data_in_db(app_id, block_number, &data)
+		.store_encoded_data_in_db(app_id, block_number, data.clone())
 		.wrap_err("Failed to store data into database")?;
 
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
@@ -433,7 +409,7 @@ async fn process_block(
 #[allow(clippy::too_many_arguments)]
 pub async fn run<T: Database + Clone>(
 	cfg: AppClientConfig,
-	data_manager: DataManager<T>,
+	db: T,
 	network_client: P2pClient,
 	rpc_client: RpcClient,
 	app_id: AppId,
@@ -485,8 +461,8 @@ pub async fn run<T: Database + Clone>(
 			continue;
 		}
 
-		let app_client = AppClientImpl {
-			data_manager: data_manager.clone(),
+		let app_client = AppClient {
+			db: db.clone(),
 			p2p_client: network_client.clone(),
 			rpc_client: rpc_client.clone(),
 		};

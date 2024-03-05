@@ -16,7 +16,10 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
-	data::{DataManager, Database},
+	data::{
+		database::{Database, Decode, Encode as DbEncode},
+		Key,
+	},
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -25,7 +28,6 @@ use crate::{
 	utils::{calculate_confidence, extract_app_lookup, extract_kate},
 };
 
-use async_trait::async_trait;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::Encode;
 use color_eyre::{
@@ -43,35 +45,28 @@ use std::{
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-#[async_trait]
-#[automock]
-pub trait SyncClient {
-	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
-	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>;
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
-}
 #[derive(Clone)]
-struct SyncClientImpl<T: Database + Clone> {
-	data_manager: DataManager<T>,
+struct SyncClient<T: Database> {
+	db: T,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: Database + Clone>(
-	data_manager: DataManager<T>,
-	rpc_client: RpcClient,
-) -> impl SyncClient {
-	SyncClientImpl {
-		data_manager,
-		rpc_client,
-	}
+pub fn new<T: Database>(db: T, rpc_client: RpcClient) -> SyncClient<T> {
+	SyncClient { db, rpc_client }
 }
 
-#[async_trait]
-impl<T: Database + Clone> SyncClient for SyncClientImpl<T> {
-	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
+impl<T: Database> SyncClient<T>
+where
+	T::Key: From<Key>,
+{
+	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>
+	where
+		DaHeader: Decode<T::Result>,
+		DaHeader: DbEncode<T::Result>,
+	{
 		if let Some(header) = self
-			.data_manager
-			.get_block_header(block_number)
+			.db
+			.get(Key::BlockHeader(block_number))
 			.wrap_err("Sync Client failed to get Block Header from the storage")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
@@ -92,34 +87,45 @@ impl<T: Database + Clone> SyncClient for SyncClientImpl<T> {
 			Err(error) => return Err(error),
 		};
 
-		self.data_manager
-			.store_block_header(block_number, &header)
+		self.db
+			.put(Key::BlockHeader(block_number), header.clone())
 			.wrap_err("Sync Client failed to store Block Header")?;
 
 		Ok((header, hash))
 	}
 
-	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
-		self.data_manager
-			.is_confidence_stored(block_number)
+	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>
+	where
+		u32: Decode<T::Result>,
+	{
+		self.db
+			.get(Key::ConfidenceFactor(block_number))
 			.wrap_err("Sync Client failed to check if Confidence Factor is stored")
+			.map(|c: Option<u32>| c.is_some())
 	}
 
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
-		self.data_manager
-			.store_confidence_factor(block_number, count)
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>
+	where
+		u32: DbEncode<T::Result>,
+	{
+		self.db
+			.put(Key::ConfidenceFactor(block_number), count)
 			.wrap_err("Sync Client failed to store Confidence Factor")
 	}
 }
 
-async fn process_block(
-	sync_client: &impl SyncClient,
+async fn process_block<T: Database>(
+	sync_client: SyncClient<T>,
 	network_client: &impl network::Client,
 	header: DaHeader,
 	header_hash: H256,
 	cfg: &SyncClientConfig,
 	block_verified_sender: broadcast::Sender<BlockVerified>,
-) -> Result<()> {
+) -> Result<()>
+where
+	T::Key: From<Key>,
+	u32: DbEncode<T::Result>,
+{
 	let block_number = header.number;
 	let begin = Instant::now();
 
@@ -176,14 +182,19 @@ async fn process_block(
 /// * `start_block` - Sync start block
 /// * `end_block` - Sync end block
 /// * `block_verified_sender` - Optional channel to send verified blocks
-pub async fn run(
-	sync_client: impl SyncClient,
+pub async fn run<T: Database>(
+	sync_client: SyncClient<T>,
 	network_client: impl network::Client,
 	cfg: SyncClientConfig,
 	sync_range: Range<u32>,
 	block_verified_sender: broadcast::Sender<BlockVerified>,
 	state: Arc<Mutex<State>>,
-) {
+) where
+	T::Key: From<Key>,
+	u32: Decode<T::Result>,
+	DaHeader: Decode<T::Result>,
+	DaHeader: DbEncode<T::Result>,
+{
 	if sync_range.is_empty() {
 		warn!("There are no blocks to sync for range {sync_range:?}");
 		return;
@@ -226,7 +237,7 @@ pub async fn run(
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
 		if let Err(error) = process_block(
-			&sync_client,
+			sync_client,
 			&network_client,
 			header,
 			header_hash,
