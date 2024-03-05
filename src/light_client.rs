@@ -62,80 +62,88 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let (rows, cols, _, commitment) = extract_kate(&header.extension);
-	let Some(dimensions) = Dimensions::new(rows, cols) else {
-		info!(
-			block_number,
-			"Skipping block with invalid dimensions {rows}x{cols}",
-		);
-		return Ok(None);
+	let (required, verified, unverified) = match extract_kate(&header.extension) {
+		None => {
+			info!("Skipping block without header extension");
+			(0, 0, 0)
+		},
+		Some((rows, cols, _, commitment)) => {
+			let Some(dimensions) = Dimensions::new(rows, cols) else {
+				info!(
+					block_number,
+					"Skipping block with invalid dimensions {rows}x{cols}",
+				);
+				return Ok(None);
+			};
+
+			if dimensions.cols().get() <= 2 {
+				error!(block_number, "more than 2 columns is required");
+				return Ok(None);
+			}
+
+			let commitments = commitments::from_slice(&commitment)?;
+			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
+			let positions = rpc::generate_random_cells(dimensions, cell_count);
+			info!(
+				block_number,
+				"cells_requested" = positions.len(),
+				"Random cells generated: {}",
+				positions.len()
+			);
+
+			let (fetched, unfetched, fetch_stats) = network_client
+				.fetch_verified(
+					block_number,
+					header_hash,
+					dimensions,
+					&commitments,
+					&positions,
+				)
+				.await?;
+
+			metrics
+				.record(MetricValue::DHTFetched(fetch_stats.dht_fetched))
+				.await?;
+
+			metrics
+				.record(MetricValue::DHTFetchedPercentage(
+					fetch_stats.dht_fetched_percentage,
+				))
+				.await?;
+
+			metrics
+				.record(MetricValue::DHTFetchDuration(
+					fetch_stats.dht_fetch_duration,
+				))
+				.await?;
+
+			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
+				metrics
+					.record(MetricValue::NodeRPCFetched(rpc_fetched))
+					.await?;
+			}
+
+			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
+				metrics
+					.record(MetricValue::NodeRPCFetchDuration(rpc_fetch_duration))
+					.await?;
+			}
+			(positions.len(), fetched.len(), unfetched.len())
+		},
 	};
 
-	if dimensions.cols().get() <= 2 {
-		error!(block_number, "more than 2 columns is required");
-		return Ok(None);
-	}
-
-	let commitments = commitments::from_slice(&commitment)?;
-	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-	let positions = rpc::generate_random_cells(dimensions, cell_count);
-	info!(
-		block_number,
-		"cells_requested" = positions.len(),
-		"Random cells generated: {}",
-		positions.len()
-	);
-
-	let (fetched, unfetched, fetch_stats) = network_client
-		.fetch_verified(
-			block_number,
-			header_hash,
-			dimensions,
-			&commitments,
-			&positions,
-		)
-		.await?;
-
-	metrics
-		.record(MetricValue::DHTFetched(fetch_stats.dht_fetched))
-		.await?;
-
-	metrics
-		.record(MetricValue::DHTFetchedPercentage(
-			fetch_stats.dht_fetched_percentage,
-		))
-		.await?;
-
-	metrics
-		.record(MetricValue::DHTFetchDuration(
-			fetch_stats.dht_fetch_duration,
-		))
-		.await?;
-
-	if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
-		metrics
-			.record(MetricValue::NodeRPCFetched(rpc_fetched))
-			.await?;
-	}
-
-	if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
-		metrics
-			.record(MetricValue::NodeRPCFetchDuration(rpc_fetch_duration))
-			.await?;
-	}
-
-	if positions.len() > fetched.len() {
-		error!(block_number, "Failed to fetch {} cells", unfetched.len());
+	if required > verified {
+		error!(block_number, "Failed to fetch {} cells", unverified);
 		return Ok(None);
 	}
 
 	// write confidence factor into on-disk database
-	db.put(Key::VerifiedCellCount(block_number), fetched.len() as u32)
+	db.put(Key::VerifiedCellCount(block_number), verified as u32)
 		.wrap_err("Light Client failed to store Confidence Factor")?;
 
 	state.lock().unwrap().confidence_achieved.set(block_number);
 
-	let confidence = calculate_confidence(fetched.len() as u32);
+	let confidence = calculate_confidence(verified as u32);
 	info!(
 		block_number,
 		"confidence" = confidence,

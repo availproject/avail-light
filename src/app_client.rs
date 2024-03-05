@@ -282,11 +282,13 @@ async fn process_block(
 	block: &BlockVerified,
 	pp: Arc<PublicParameters>,
 ) -> Result<AppData> {
-	let lookup = &block.lookup;
+	let Some(extension) = &block.extension else {
+		return Err(eyre!("Missing header extension"));
+	};
+	let lookup = &extension.lookup;
 	let block_number = block.block_num;
-	let dimensions = block.dimensions;
-
-	let commitments = &block.commitments;
+	let dimensions = extension.dimensions;
+	let commitments = &extension.commitments;
 
 	let app_rows = app_specific_rows(lookup, dimensions, app_id);
 
@@ -455,11 +457,16 @@ pub async fn run(
 		};
 
 		let block_number = block.block_num;
-		let dimensions = &block.dimensions;
+		let Some(extension) = &block.extension else {
+			info!(block_number, "Skipping block without header extension");
+			set_data_verified_state(state.clone(), &sync_range, block_number);
+			continue;
+		};
+		let dimensions = &extension.dimensions;
 
 		info!(block_number, "Block available: {dimensions:?}");
 
-		if block.lookup.range_of(app_id).is_none() {
+		if extension.lookup.range_of(app_id).is_none() {
 			info!(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
@@ -497,7 +504,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		data::mem_db,
-		types::{AppClientConfig, RuntimeConfig},
+		types::{AppClientConfig, Extension, RuntimeConfig},
 	};
 	use avail_core::DataLookup;
 	use hex_literal::hex;
@@ -523,21 +530,23 @@ mod tests {
 			header_hash: hex!("ec30fcc1f32db0f51ce6305c2601089741ea0b42853f402194b49b04bf936338")
 				.into(),
 			block_num: 270,
-			dimensions,
-			lookup,
-			commitments: [
-				[
-					171, 159, 250, 70, 135, 100, 125, 155, 243, 109, 243, 101, 158, 165, 185, 147,
-					73, 58, 163, 138, 88, 81, 86, 159, 103, 164, 86, 46, 208, 19, 86, 30, 10, 59,
-					45, 229, 54, 119, 29, 226, 134, 68, 186, 219, 36, 20, 181, 99,
-				],
-				[
-					171, 159, 250, 70, 135, 100, 125, 155, 243, 109, 243, 101, 158, 165, 185, 147,
-					73, 58, 163, 138, 88, 81, 86, 159, 103, 164, 86, 46, 208, 19, 86, 30, 10, 59,
-					45, 229, 54, 119, 29, 226, 134, 68, 186, 219, 36, 20, 181, 99,
-				],
-			]
-			.to_vec(),
+			extension: Some(Extension {
+				dimensions,
+				lookup,
+				commitments: [
+					[
+						171, 159, 250, 70, 135, 100, 125, 155, 243, 109, 243, 101, 158, 165, 185,
+						147, 73, 58, 163, 138, 88, 81, 86, 159, 103, 164, 86, 46, 208, 19, 86, 30,
+						10, 59, 45, 229, 54, 119, 29, 226, 134, 68, 186, 219, 36, 20, 181, 99,
+					],
+					[
+						171, 159, 250, 70, 135, 100, 125, 155, 243, 109, 243, 101, 158, 165, 185,
+						147, 73, 58, 163, 138, 88, 81, 86, 159, 103, 164, 86, 46, 208, 19, 86, 30,
+						10, 59, 45, 229, 54, 119, 29, 226, 134, 68, 186, 219, 36, 20, 181, 99,
+					],
+				]
+				.to_vec(),
+			}),
 			confidence: None,
 		};
 		mock_client
@@ -578,21 +587,23 @@ mod tests {
 			header_hash: hex!("5bc959e1d05c68f7e1b5bc3a83cfba4efe636ce7f86102c30bcd6a2794e75afe")
 				.into(),
 			block_num: 288,
-			dimensions,
-			lookup,
-			commitments: [
-				[
-					165, 227, 207, 130, 59, 77, 78, 242, 184, 232, 114, 218, 145, 167, 149, 53, 89,
-					7, 230, 49, 85, 113, 218, 116, 43, 195, 144, 203, 149, 114, 106, 89, 73, 164,
-					17, 163, 3, 145, 173, 6, 119, 222, 17, 60, 251, 215, 40, 192,
-				],
-				[
-					165, 227, 207, 130, 59, 77, 78, 242, 184, 232, 114, 218, 145, 167, 149, 53, 89,
-					7, 230, 49, 85, 113, 218, 116, 43, 195, 144, 203, 149, 114, 106, 89, 73, 164,
-					17, 163, 3, 145, 173, 6, 119, 222, 17, 60, 251, 215, 40, 192,
-				],
-			]
-			.to_vec(),
+			extension: Some(Extension {
+				dimensions,
+				lookup,
+				commitments: [
+					[
+						165, 227, 207, 130, 59, 77, 78, 242, 184, 232, 114, 218, 145, 167, 149, 53,
+						89, 7, 230, 49, 85, 113, 218, 116, 43, 195, 144, 203, 149, 114, 106, 89,
+						73, 164, 17, 163, 3, 145, 173, 6, 119, 222, 17, 60, 251, 215, 40, 192,
+					],
+					[
+						165, 227, 207, 130, 59, 77, 78, 242, 184, 232, 114, 218, 145, 167, 149, 53,
+						89, 7, 230, 49, 85, 113, 218, 116, 43, 195, 144, 203, 149, 114, 106, 89,
+						73, 164, 17, 163, 3, 145, 173, 6, 119, 222, 17, 60, 251, 215, 40, 192,
+					],
+				]
+				.to_vec(),
+			}),
 			confidence: None,
 		};
 		mock_client
