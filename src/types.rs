@@ -81,14 +81,31 @@ pub struct CliOpts {
 	pub private_key: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeVersion {
+	apis: Vec<(String, u32)>,
+	authoring_version: u32,
+	impl_name: String,
+	pub impl_version: u32,
+	pub spec_name: String,
+	pub spec_version: u32,
+	transaction_version: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct Extension {
+	pub dimensions: Dimensions,
+	pub lookup: DataLookup,
+	pub commitments: Vec<[u8; 48]>,
+}
+
 /// Light to app client channel message struct
 #[derive(Clone, Debug)]
 pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,
-	pub dimensions: Dimensions,
-	pub lookup: DataLookup,
-	pub commitments: Vec<[u8; 48]>,
+	pub extension: Option<Extension>,
 	pub confidence: Option<f64>,
 }
 
@@ -101,20 +118,32 @@ impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
 	type Error = Report;
 	fn try_from((header, confidence): (DaHeader, Option<f64>)) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
-		let enc_lookup = extract_app_lookup(&header.extension)
-			.map_err(|e| eyre!("Invalid DataLookup: {}", e))?
-			.encode();
-		let lookup = DataLookup::decode(&mut enc_lookup.as_slice())?;
-		let (rows, cols, _, commitment) = extract_kate(&header.extension);
-
-		Ok(BlockVerified {
+		let mut block = BlockVerified {
 			header_hash: hash,
 			block_num: header.number,
-			dimensions: Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?,
-			lookup,
-			commitments: commitments::from_slice(&commitment)?,
+			extension: None,
 			confidence,
-		})
+		};
+
+		let Some((rows, cols, _, commitment)) = extract_kate(&header.extension) else {
+			return Ok(block);
+		};
+
+		let Some(lookup) = extract_app_lookup(&header.extension)? else {
+			return Ok(block);
+		};
+
+		if !commitment.is_empty() {
+		if !lookup.is_empty() {
+			block.extension = Some(Extension {
+				dimensions: Dimensions::new(rows, cols)
+					.ok_or_else(|| eyre!("Invalid dimensions"))?,
+				lookup,
+				commitments: commitments::from_slice(&commitment)?,
+			});
+		}
+
+		Ok(block)
 	}
 }
 

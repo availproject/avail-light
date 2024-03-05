@@ -1,6 +1,5 @@
 use avail_core::{
 	data_lookup::compact::{CompactDataLookup, DataLookupItem},
-	data_lookup::Error as DataLookupError,
 	AppId, DataLookup,
 };
 use avail_subxt::{
@@ -15,7 +14,10 @@ use avail_subxt::{
 	utils::H256,
 };
 use codec::Decode;
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::{
+	eyre::{self, eyre, WrapErr},
+	Result,
+};
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
@@ -36,23 +38,39 @@ pub fn calculate_confidence(count: u32) -> f64 {
 	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
 }
 
+pub trait OptionalExtension {
+	fn option(&self) -> Option<&Self>;
+}
+
+impl OptionalExtension for HeaderExtension {
+	fn option(&self) -> Option<&Self> {
+		let HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) = self;
+		(!app_lookup.index.is_empty()).then_some(self)
+	}
+}
+
 /// Extract fields from extension header
-pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<u8>) {
+pub(crate) fn extract_kate(extension: &HeaderExtension) -> Option<(u16, u16, H256, Vec<u8>)> {
+	let Some(extension) = extension.option() else {
+		return None;
+	};
 	match &extension {
 		HeaderExtension::V3(v3::HeaderExtension {
 			commitment: kate, ..
-		}) => (
+		}) => Some((
 			kate.rows,
 			kate.cols,
 			kate.data_root,
 			kate.commitment.clone(),
-		),
+		)),
 	}
 }
 
-pub(crate) fn extract_app_lookup(
-	extension: &HeaderExtension,
-) -> Result<DataLookup, DataLookupError> {
+pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> eyre::Result<Option<DataLookup>> {
+	let Some(extension) = extension.option() else {
+		return Ok(None);
+	};
+
 	let compact = match &extension {
 		HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) => app_lookup,
 	};
@@ -66,6 +84,8 @@ pub(crate) fn extract_app_lookup(
 
 	let compact = CompactDataLookup::new(size, index);
 	DataLookup::try_from(compact)
+		.map(Some)
+		.map_err(|e| eyre!("Invalid DataLookup: {}", e))
 }
 
 pub fn filter_auth_set_changes(header: &DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
