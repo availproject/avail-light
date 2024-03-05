@@ -91,7 +91,10 @@ pub async fn process_block(
 	let block_delay = received_at.elapsed().as_secs();
 	info!(block_number, block_delay, "Processing finalized block",);
 
-	let (rows, cols, _, _) = extract_kate(&header.extension);
+	let Some((rows, cols, _, _)) = extract_kate(&header.extension) else {
+		info!(block_number, "Skipping block without header extension");
+		return Ok(());
+	};
 	let Some(dimensions) = Dimensions::new(rows, cols) else {
 		info!(
 			block_number,
