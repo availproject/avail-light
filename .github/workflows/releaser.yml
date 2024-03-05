@@ -93,6 +93,10 @@ jobs:
   build_crawler_external:
     runs-on: ubuntu-20.04
     steps:
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
       - name: Trigger repository dispatch for crawler build
         shell: bash
         run: |
@@ -101,8 +105,8 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             ${{ secrets.CRAWLER_BUILD_URL}} \
-            -d '{"event_type": "lc_crawler_build", "client_payload": {"tag": "${GITHUB_REF#refs/tags/}"}}' \
-            | grep -q "200"
+            -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ env.TAG_NAME }}\"}}" \
+            | grep -q "204"
 
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
   binary_publish:
