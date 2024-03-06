@@ -16,9 +16,11 @@ use tracing::{debug, info, trace};
 use super::{Client, Subscription};
 use crate::{
 	data::{
-		database::{Database, Encode as DbEncode},
-		FinalitySyncCheckpoint, Key,
+		// database::{Database, Encode as DbEncode},
+		FinalitySyncCheckpoint,
+		Key,
 	},
+	db::data::{Encode as DbEncode, DB},
 	finality::{check_finality, ValidatorSet},
 	types::{GrandpaJustification, OptionBlockRange, State},
 	utils::filter_auth_set_changes,
@@ -40,7 +42,10 @@ struct BlockData {
 	last_finalized_block_header: Option<Header>,
 }
 
-pub struct SubscriptionLoop<T: Database> {
+pub struct SubscriptionLoop<T: DB<Key>>
+where
+	Key: Into<T::Key>,
+{
 	rpc_client: Client,
 	event_sender: Sender<Event>,
 	state: Arc<Mutex<State>>,
@@ -48,7 +53,10 @@ pub struct SubscriptionLoop<T: Database> {
 	block_data: BlockData,
 }
 
-impl<T: Database> SubscriptionLoop<T> {
+impl<T: DB<Key>> SubscriptionLoop<T>
+where
+	Key: Into<T::Key>,
+{
 	pub async fn new(
 		state: Arc<Mutex<State>>,
 		db: T,

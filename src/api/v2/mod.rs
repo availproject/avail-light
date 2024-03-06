@@ -17,7 +17,8 @@ use self::{
 
 use crate::{
 	api::v2::types::Topic,
-	data::{DataManager, Database},
+	data::Key,
+	db::data::{Decode, DB},
 	network::rpc::Client,
 	types::{IdentityConfig, RuntimeConfig, State},
 };
@@ -32,6 +33,15 @@ async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
 		Some(value) => Ok(value),
 		None => Err(warp::reject::not_found()),
 	}
+}
+
+fn with_db<T: DB<Key> + Clone + Send>(
+	db: T,
+) -> impl Filter<Extract = (T,), Error = Infallible> + Clone
+where
+	Key: Into<T::Key>,
+{
+	warp::any().map(move || db.clone())
 }
 
 fn with_ws_clients(
@@ -59,45 +69,57 @@ fn status_route(
 		.map(handlers::status)
 }
 
-fn block_route<T: Database + Clone>(
+fn block_route<T: DB<Key> + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	db: T,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
+where
+	Key: Into<T::Key>,
+	u32: Decode<T::Result>,
+{
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.and(warp::any().map(move || data_manager.clone()))
+		.and(with_db(db))
 		.then(handlers::block)
 		.map(log_internal_server_error)
 }
 
-fn block_header_route<T: Database + Clone>(
+fn block_header_route<T: DB<Key> + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	db: T,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
+where
+	Key: Into<T::Key>,
+	avail_subxt::Header: Decode<T::Result>,
+{
 	warp::path!("v2" / "blocks" / u32 / "header")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.and(warp::any().map(move || data_manager.clone()))
+		.and(with_db(db))
 		.then(handlers::block_header)
 		.map(log_internal_server_error)
 }
 
-fn block_data_route<T: Database + Clone>(
+fn block_data_route<T: DB<Key> + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	db: T,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
+where
+	Key: Into<T::Key>,
+	Vec<Vec<u8>>: Decode<T::Result>,
+{
 	warp::path!("v2" / "blocks" / u32 / "data")
 		.and(warp::get())
 		.and(warp::query::<DataQuery>())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.and(warp::any().map(move || data_manager.clone()))
+		.and(with_db(db))
 		.then(handlers::block_data)
 		.map(log_internal_server_error)
 }
@@ -179,7 +201,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes<T: Database + Clone>(
+pub fn routes<T: DB<Key> + Clone + Send>(
 	version: String,
 	network_version: String,
 	state: Arc<Mutex<State>>,
@@ -187,8 +209,14 @@ pub fn routes<T: Database + Clone>(
 	identity_config: IdentityConfig,
 	rpc_client: Client,
 	ws_clients: WsClients,
-	data_manager: DataManager<T>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	db: T,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
+where
+	Key: Into<T::Key>,
+	u32: Decode<T::Result>,
+	avail_subxt::Header: Decode<T::Result>,
+	Vec<Vec<u8>>: Decode<T::Result>,
+{
 	let version = Version {
 		version,
 		network_version,
@@ -207,21 +235,13 @@ pub fn routes<T: Database + Clone>(
 
 	version_route(version.clone())
 		.or(status_route(config.clone(), state.clone()))
-		.or(block_route(
-			config.clone(),
-			state.clone(),
-			data_manager.clone(),
-		))
+		.or(block_route(config.clone(), state.clone(), db.clone()))
 		.or(block_header_route(
 			config.clone(),
 			state.clone(),
-			data_manager.clone(),
+			db.clone(),
 		))
-		.or(block_data_route(
-			config.clone(),
-			state.clone(),
-			data_manager.clone(),
-		))
+		.or(block_data_route(config.clone(), state.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
@@ -236,7 +256,6 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
-		consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 		data::{DataManager, Database},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};

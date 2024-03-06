@@ -11,7 +11,6 @@
 //! # Notes
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
-use async_trait::async_trait;
 use avail_core::AppId;
 use avail_subxt::utils::H256;
 use color_eyre::{
@@ -29,7 +28,6 @@ use kate_recovery::{
 	data::{Cell, DataCell},
 	matrix::{Dimensions, Position},
 };
-use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
 use std::{
@@ -42,9 +40,10 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::{
-		database::{Database, Encode},
+		// database::{Database, Encode},
 		Key,
 	},
+	db::{self, data::DB},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -52,13 +51,19 @@ use crate::{
 };
 
 #[derive(Clone)]
-struct AppClient<T: Database> {
+struct AppClient<T: DB<Key>>
+where
+	Key: Into<T::Key>,
+{
 	db: T,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-impl<T: Database + Sync> AppClient<T> {
+impl<T: DB<Key> + Sync> AppClient<T>
+where
+	Key: Into<T::Key>,
+{
 	async fn reconstruct_rows_from_dht(
 		&self,
 		pp: Arc<PublicParameters>,
@@ -189,8 +194,8 @@ impl<T: Database + Sync> AppClient<T> {
 		data: AppData,
 	) -> Result<()>
 	where
-		T::Key: From<Key>,
-		AppData: Encode<T::Result>,
+		Key: Into<T::Key>,
+		Vec<Vec<u8>>: db::data::Encode<T::Result>,
 	{
 		self.db
 			.put(Key::AppData(app_id.0, block_number), data)
@@ -265,7 +270,7 @@ async fn fetch_verified(
 }
 
 #[instrument(skip_all, fields(block = block.block_num), level = "trace")]
-async fn process_block<T: Database + Sync>(
+async fn process_block<T: DB<Key> + Sync>(
 	app_client: AppClient<T>,
 	cfg: &AppClientConfig,
 	app_id: AppId,
@@ -273,8 +278,8 @@ async fn process_block<T: Database + Sync>(
 	pp: Arc<PublicParameters>,
 ) -> Result<AppData>
 where
-	T::Key: From<Key>,
-	AppData: Encode<T::Result>,
+	Key: Into<T::Key>,
+	Vec<Vec<u8>>: db::data::Encode<T::Result>,
 {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
@@ -407,7 +412,7 @@ where
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 #[allow(clippy::too_many_arguments)]
-pub async fn run<T: Database + Clone>(
+pub async fn run<T: DB<Key> + Clone + Sync>(
 	cfg: AppClientConfig,
 	db: T,
 	network_client: P2pClient,
@@ -419,7 +424,10 @@ pub async fn run<T: Database + Clone>(
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
 	shutdown: Controller<String>,
-) {
+) where
+	Key: Into<T::Key>,
+	Vec<Vec<u8>>: db::data::Encode<T::Result>,
+{
 	info!("Starting for app {app_id}...");
 
 	fn set_data_verified_state(

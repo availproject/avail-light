@@ -15,8 +15,13 @@ use tracing::{error, info, trace};
 
 use crate::{
 	data::{
-		database::{Database, Decode, Encode as DbEncode},
-		FinalitySyncCheckpoint, Key,
+		// database::{Database, Decode, Encode as DbEncode},
+		FinalitySyncCheckpoint,
+		Key,
+	},
+	db::{
+		// self,
+		data::{Decode, Encode as DbEncode, DB},
 	},
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
@@ -25,20 +30,26 @@ use crate::{
 	utils::filter_auth_set_changes,
 };
 
-pub struct SyncFinality<T: Database> {
+pub struct SyncFinality<T: DB<Key>>
+where
+	Key: Into<T::Key>,
+{
 	db: T,
 	rpc_client: rpc::Client,
 }
 
-impl<T: Database> SyncFinality<T> {
+impl<T: DB<Key>> SyncFinality<T>
+where
+	Key: Into<T::Key>,
+{
 	fn get_client(&self) -> rpc::Client {
 		self.rpc_client.clone()
 	}
 
 	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()>
 	where
-		Header: DbEncode<T::Result>,
 		Key: Into<T::Key>,
+		avail_subxt::Header: DbEncode<T::Result>,
 	{
 		self.db
 			.put(Key::BlockHeader(block_number), header)
@@ -47,8 +58,8 @@ impl<T: Database> SyncFinality<T> {
 
 	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>
 	where
-		FinalitySyncCheckpoint: Decode<T::Result>,
 		Key: Into<T::Key>,
+		FinalitySyncCheckpoint: Decode<T::Result>,
 	{
 		self.db
 			.get(Key::FinalitySyncCheckpoint)
@@ -57,8 +68,8 @@ impl<T: Database> SyncFinality<T> {
 
 	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
 	where
-		FinalitySyncCheckpoint: DbEncode<T::Result>,
 		Key: Into<T::Key>,
+		FinalitySyncCheckpoint: DbEncode<T::Result>,
 	{
 		self.db
 			.put(Key::FinalitySyncCheckpoint, checkpoint)
@@ -66,7 +77,10 @@ impl<T: Database> SyncFinality<T> {
 	}
 }
 
-pub fn new<T: Database>(db: T, rpc_client: rpc::Client) -> SyncFinality<T> {
+pub fn new<T: DB<Key>>(db: T, rpc_client: rpc::Client) -> SyncFinality<T>
+where
+	Key: Into<T::Key>,
+{
 	SyncFinality { db, rpc_client }
 }
 
@@ -128,16 +142,16 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn run<T: Database>(
+pub async fn run<T: DB<Key>>(
 	sync_finality: SyncFinality<T>,
 	shutdown: Controller<String>,
 	state: Arc<Mutex<State>>,
 	from_header: Header,
 ) where
+	Key: Into<T::Key>,
 	FinalitySyncCheckpoint: Decode<T::Result>,
 	FinalitySyncCheckpoint: DbEncode<T::Result>,
-	Header: DbEncode<T::Result>,
-	Key: Into<T::Key>,
+	avail_subxt::Header: DbEncode<T::Result>,
 {
 	if let Err(error) = sync(sync_finality, state, from_header).await {
 		error!("Cannot sync finality {error}");
@@ -145,16 +159,16 @@ pub async fn run<T: Database>(
 	};
 }
 
-pub async fn sync<T: Database>(
+pub async fn sync<T: DB<Key>>(
 	sync_finality: SyncFinality<T>,
 	state: Arc<Mutex<State>>,
 	mut from_header: Header,
 ) -> Result<()>
 where
+	Key: Into<T::Key>,
 	FinalitySyncCheckpoint: Decode<T::Result>,
 	FinalitySyncCheckpoint: DbEncode<T::Result>,
-	Header: DbEncode<T::Result>,
-	Key: Into<T::Key>,
+	avail_subxt::Header: DbEncode<T::Result>,
 {
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.get_genesis_hash().await?;

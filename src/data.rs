@@ -1,4 +1,3 @@
-use avail_core::AppId;
 use avail_subxt::Header;
 use codec::{Decode, Encode};
 use color_eyre::eyre::{eyre, Context, Ok, Result};
@@ -6,20 +5,20 @@ use kate_recovery::com::AppData;
 use num::traits::ToBytes;
 use sp_core::ed25519;
 
-pub mod database;
-pub mod rocks_db;
+// pub mod database;
+// pub mod rocks_db;
 
 /// Column family for confidence factor
-const CONFIDENCE_FACTOR_CF: &str = "avail_light_confidence_factor_cf";
+pub const CONFIDENCE_FACTOR_CF: &str = "avail_light_confidence_factor_cf";
 
 /// Column family for block header
-const BLOCK_HEADER_CF: &str = "avail_light_block_header_cf";
+pub const BLOCK_HEADER_CF: &str = "avail_light_block_header_cf";
 
 /// Column family for app data
-const APP_DATA_CF: &str = "avail_light_app_data_cf";
+pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
 
 /// Column family for state
-const STATE_CF: &str = "avail_light_state_cf";
+pub const STATE_CF: &str = "avail_light_state_cf";
 
 /// Sync finality checkpoint key name
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
@@ -35,9 +34,9 @@ pub enum Key {
 impl From<Key> for (Option<&'static str>, Vec<u8>) {
 	fn from(key: Key) -> Self {
 		match key {
-			Key::AppData(appId, block_number) => (
+			Key::AppData(app_id, block_number) => (
 				Some(APP_DATA_CF),
-				format!("{appId}:{block_number}").into_bytes(),
+				format!("{app_id}:{block_number}").into_bytes(),
 			),
 			Key::BlockHeader(block_number) => {
 				(Some(BLOCK_HEADER_CF), block_number.to_be_bytes().to_vec())
@@ -61,39 +60,39 @@ pub struct FinalitySyncCheckpoint {
 	pub validator_set: Vec<ed25519::Public>,
 }
 
-impl database::Encode<Vec<u8>> for FinalitySyncCheckpoint {
+impl crate::db::data::Encode<Vec<u8>> for FinalitySyncCheckpoint {
 	fn encode(&self) -> Result<Vec<u8>> {
 		Ok(<Self as codec::Encode>::encode(&self))
 	}
 }
 
-impl database::Decode<Vec<u8>> for FinalitySyncCheckpoint {
+impl crate::db::data::Decode<Vec<u8>> for FinalitySyncCheckpoint {
 	fn decode(source: Vec<u8>) -> Result<Self> {
 		<Self as codec::Decode>::decode(&mut &source[..])
 			.wrap_err("Decoding Finality Sync Checkpoint for RocksDB failed")
 	}
 }
 
-impl database::Encode<Vec<u8>> for AppData {
+impl crate::db::data::Encode<Vec<u8>> for AppData {
 	fn encode(&self) -> Result<Vec<u8>> {
 		Ok(<&Self as codec::Encode>::encode(&self))
 	}
 }
 
-impl database::Decode<Vec<u8>> for AppData {
+impl crate::db::data::Decode<Vec<u8>> for AppData {
 	fn decode(source: Vec<u8>) -> Result<Self> {
 		<Self as codec::Decode>::decode(&mut &source[..])
 			.wrap_err("Decoding AppData for RocksDB failed")
 	}
 }
 
-impl database::Encode<Vec<u8>> for u32 {
+impl crate::db::data::Encode<Vec<u8>> for u32 {
 	fn encode(&self) -> Result<Vec<u8>> {
 		Ok(self.to_be_bytes().to_vec())
 	}
 }
 
-impl database::Decode<Vec<u8>> for u32 {
+impl crate::db::data::Decode<Vec<u8>> for u32 {
 	fn decode(source: Vec<u8>) -> Result<Self> {
 		source
 			.try_into()
@@ -103,7 +102,7 @@ impl database::Decode<Vec<u8>> for u32 {
 	}
 }
 
-impl database::Encode<Vec<u8>> for Header {
+impl crate::db::data::Encode<Vec<u8>> for Header {
 	fn encode(&self) -> Result<Vec<u8>> {
 		let string = serde_json::to_string(&self)
 			.wrap_err("Serializing Header failed for RocksDB failed")?;
@@ -112,7 +111,7 @@ impl database::Encode<Vec<u8>> for Header {
 	}
 }
 
-impl database::Decode<Vec<u8>> for Header {
+impl crate::db::data::Decode<Vec<u8>> for Header {
 	fn decode(source: Vec<u8>) -> Result<Self> {
 		serde_json::from_slice(&source).wrap_err("Deserializing Header failed for RocksDB failed")
 	}

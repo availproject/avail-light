@@ -9,7 +9,8 @@
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use crate::api::v2;
-use crate::data::{DataManager, Database};
+use crate::data::Key;
+use crate::db::data::{Decode, DB};
 use crate::shutdown::Controller;
 use crate::types::IdentityConfig;
 use crate::{
@@ -27,8 +28,10 @@ use std::{
 use tracing::info;
 use warp::{Filter, Reply};
 
-pub struct Server<T: Database + Clone> {
-	pub data_manager: DataManager<T>,
+pub struct Server<T: DB<Key>>
+where
+	Key: Into<T::Key>,
+{
 	pub cfg: RuntimeConfig,
 	pub identity_cfg: IdentityConfig,
 	pub state: Arc<Mutex<State>>,
@@ -37,6 +40,7 @@ pub struct Server<T: Database + Clone> {
 	pub node_client: rpc::Client,
 	pub ws_clients: v2::types::WsClients,
 	pub shutdown: Controller<String>,
+	pub db: T,
 }
 
 fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
@@ -46,9 +50,18 @@ fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> 
 		.map(|_| warp::reply::with_status("", warp::http::StatusCode::OK))
 }
 
-impl<T: Database + Clone + 'static> Server<T> {
+impl<T: DB<Key> + Clone + Send + Sync + 'static> Server<T>
+where
+	T::Key: From<Key>,
+{
 	/// Creates a HTTP server that needs to be spawned into a runtime
-	pub fn bind(self) -> impl Future<Output = ()> {
+	pub fn bind(self) -> impl Future<Output = ()>
+	where
+		Key: Into<T::Key>,
+		u32: Decode<T::Result>,
+		avail_subxt::Header: Decode<T::Result>,
+		Vec<Vec<u8>>: Decode<T::Result>,
+	{
 		let RuntimeConfig {
 			http_server_host: host,
 			http_server_port: port,
@@ -56,7 +69,7 @@ impl<T: Database + Clone + 'static> Server<T> {
 			..
 		} = self.cfg.clone();
 
-		let v1_api = v1::routes(self.data_manager.clone(), app_id, self.state.clone());
+		let v1_api = v1::routes(self.db.clone(), app_id, self.state.clone());
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
@@ -65,7 +78,7 @@ impl<T: Database + Clone + 'static> Server<T> {
 			self.identity_cfg,
 			self.node_client.clone(),
 			self.ws_clients.clone(),
-			self.data_manager.clone(),
+			self.db.clone(),
 		);
 
 		let cors = warp::cors()

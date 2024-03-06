@@ -17,9 +17,11 @@
 
 use crate::{
 	data::{
-		database::{Database, Decode, Encode as DbEncode},
+		FinalitySyncCheckpoint,
+		// database::{Database, Decode, Encode as DbEncode},
 		Key,
 	},
+	db::data::{Decode, Encode as DbEncode, DB},
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -35,7 +37,6 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::{commitments, matrix::Dimensions};
-use mockall::automock;
 use sp_core::blake2_256;
 use std::{
 	ops::Range,
@@ -46,23 +47,29 @@ use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
 #[derive(Clone)]
-struct SyncClient<T: Database> {
+pub struct SyncClient<T: DB<Key> + Clone>
+where
+	Key: Into<T::Key>,
+{
 	db: T,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: Database>(db: T, rpc_client: RpcClient) -> SyncClient<T> {
+pub fn new<T: DB<Key> + Clone>(db: T, rpc_client: RpcClient) -> SyncClient<T>
+where
+	Key: Into<T::Key>,
+{
 	SyncClient { db, rpc_client }
 }
 
-impl<T: Database> SyncClient<T>
+impl<T: DB<Key> + Clone> SyncClient<T>
 where
 	T::Key: From<Key>,
 {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>
 	where
-		DaHeader: Decode<T::Result>,
-		DaHeader: DbEncode<T::Result>,
+		avail_subxt::Header: Decode<T::Result>,
+		avail_subxt::Header: DbEncode<T::Result>,
 	{
 		if let Some(header) = self
 			.db
@@ -114,7 +121,7 @@ where
 	}
 }
 
-async fn process_block<T: Database>(
+async fn process_block<T: DB<Key> + Clone>(
 	sync_client: SyncClient<T>,
 	network_client: &impl network::Client,
 	header: DaHeader,
@@ -182,7 +189,7 @@ where
 /// * `start_block` - Sync start block
 /// * `end_block` - Sync end block
 /// * `block_verified_sender` - Optional channel to send verified blocks
-pub async fn run<T: Database>(
+pub async fn run<T: DB<Key> + Clone>(
 	sync_client: SyncClient<T>,
 	network_client: impl network::Client,
 	cfg: SyncClientConfig,
@@ -191,9 +198,12 @@ pub async fn run<T: Database>(
 	state: Arc<Mutex<State>>,
 ) where
 	T::Key: From<Key>,
+	FinalitySyncCheckpoint: Decode<T::Result>,
+	FinalitySyncCheckpoint: DbEncode<T::Result>,
 	u32: Decode<T::Result>,
-	DaHeader: Decode<T::Result>,
-	DaHeader: DbEncode<T::Result>,
+	u32: DbEncode<T::Result>,
+	avail_subxt::Header: Decode<T::Result>,
+	avail_subxt::Header: DbEncode<T::Result>,
 {
 	if sync_range.is_empty() {
 		warn!("There are no blocks to sync for range {sync_range:?}");
@@ -237,7 +247,7 @@ pub async fn run<T: Database>(
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
 		if let Err(error) = process_block(
-			sync_client,
+			sync_client.clone(),
 			&network_client,
 			header,
 			header_hash,

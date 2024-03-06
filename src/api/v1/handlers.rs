@@ -1,7 +1,8 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{DataManager, Database},
+	data::Key,
+	db::data::{Decode as DbDecode, DB},
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
@@ -27,13 +28,17 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 	ClientResponse::Normal(Mode::from(app_id))
 }
 
-pub fn confidence<T: Database + Clone>(
+pub fn confidence<T: DB<Key>>(
 	block_num: u32,
-	data_manager: DataManager<T>,
+	db: T,
 	state: Arc<Mutex<State>>,
-) -> ClientResponse<ConfidenceResponse> {
+) -> ClientResponse<ConfidenceResponse>
+where
+	Key: Into<T::Key>,
+	u32: DbDecode<T::Result>,
+{
 	info!("Got request for confidence for block {block_num}");
-	let res = match data_manager.get_confidence_factor(block_num) {
+	let res = match db.get(Key::ConfidenceFactor(block_num)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			let serialised_confidence = serialised_confidence(block_num, confidence);
@@ -62,16 +67,20 @@ pub fn confidence<T: Database + Clone>(
 	res
 }
 
-pub fn status<T: Database + Clone>(
+pub fn status<T: DB<Key>>(
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> ClientResponse<Status> {
+	db: T,
+) -> ClientResponse<Status>
+where
+	Key: Into<T::Key>,
+	u32: DbDecode<T::Result>,
+{
 	let state = state.lock().unwrap();
 	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
 	};
-	let res = match data_manager.get_confidence_factor(last) {
+	let res = match db.get(Key::ConfidenceFactor(last)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
@@ -97,13 +106,17 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 	}
 }
 
-pub fn appdata<T: Database + Clone>(
+pub fn appdata<T: DB<Key>>(
 	block_num: u32,
 	query: AppDataQuery,
-	data_manager: DataManager<T>,
+	db: T,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-) -> ClientResponse<ExtrinsicsDataResponse> {
+) -> ClientResponse<ExtrinsicsDataResponse>
+where
+	Key: Into<T::Key>,
+	Vec<Vec<u8>>: DbDecode<T::Result>,
+{
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
 	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
@@ -130,7 +143,7 @@ pub fn appdata<T: Database + Clone>(
 	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
 	let res = match decode_app_data_to_extrinsics(
-		data_manager.get_app_data(app_id.unwrap_or(0u32), block_num),
+		db.get(Key::AppData(app_id.unwrap_or(0u32), block_num)),
 	) {
 		Ok(Some(data)) => {
 			if !decode {

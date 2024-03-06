@@ -1,5 +1,5 @@
 use avail_light::{
-	data::{DataManager, RocksDB},
+	// data::{DataManager, RocksDB},
 	network::rpc,
 	types::{ExponentialConfig, RetryConfig, State},
 };
@@ -21,9 +21,9 @@ async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
 	println!("Using URL: {}", command_args.url);
 	println!("Using Path: {}", command_args.avail_path);
-	let rocks = RocksDB::open(&command_args.avail_path)
+	let db = avail_light::db::data::rocks::RocksDB::open(&command_args.avail_path)
 		.wrap_err("API Compatibility Test could not initialize database")?;
-	let data_on_rocks = DataManager::new(rocks);
+	// let data_on_rocks = DataManager::new(rocks);
 
 	let state = Arc::new(Mutex::new(State::default()));
 	let retry_cfg = RetryConfig::Exponential(ExponentialConfig {
@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
 	});
 
 	let (rpc_client, _, subscriptions) =
-		rpc::init(data_on_rocks, state, &[command_args.url], "DEV", retry_cfg).await?;
+		rpc::init(db, state, &[command_args.url], "DEV", retry_cfg).await?;
 	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;

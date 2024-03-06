@@ -18,16 +18,16 @@ use kate_recovery::{
 	matrix::{Dimensions, Partition, Position},
 };
 use kate_recovery::{data::Cell, matrix::RowIndex};
-use mockall::automock;
 use sp_core::blake2_256;
 use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
 	data::{
-		database::{Database, Encode as DbEncode},
+		// database::{Database, Encode as DbEncode},
 		Key,
 	},
+	db::data::{Encode as DbEncode, DB},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -39,13 +39,19 @@ use crate::{
 };
 
 #[derive(Clone)]
-struct FatClient<T: Database> {
+pub struct FatClient<T: DB<Key>>
+where
+	Key: Into<T::Key>,
+{
 	db: T,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: Database>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient<T> {
+pub fn new<T: DB<Key>>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient<T>
+where
+	Key: Into<T::Key>,
+{
 	FatClient {
 		db,
 		p2p_client,
@@ -53,7 +59,10 @@ pub fn new<T: Database>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> 
 	}
 }
 
-impl<T: Database> FatClient<T> {
+impl<T: DB<Key>> FatClient<T>
+where
+	Key: Into<T::Key>,
+{
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
@@ -65,8 +74,7 @@ impl<T: Database> FatClient<T> {
 	}
 	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
 	where
-		T::Key: From<Key>,
-		Header: DbEncode<T::Result>,
+		avail_subxt::Header: DbEncode<T::Result>,
 	{
 		self.db
 			.put(Key::BlockHeader(block_number), header)
@@ -74,7 +82,7 @@ impl<T: Database> FatClient<T> {
 	}
 }
 
-pub async fn process_block<T: Database>(
+pub async fn process_block<T: DB<Key>>(
 	fat_client: &FatClient<T>,
 	metrics: &Arc<impl Metrics>,
 	cfg: &FatClientConfig,
@@ -83,8 +91,8 @@ pub async fn process_block<T: Database>(
 	partition: Partition,
 ) -> Result<()>
 where
-	T::Key: From<Key>,
-	Header: DbEncode<T::Result>,
+	Key: Into<T::Key>,
+	avail_subxt::Header: DbEncode<T::Result>,
 {
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
@@ -204,14 +212,17 @@ where
 /// * `channels` - Communication channels
 /// * `partition` - Assigned fat client partition
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: Database>(
-	fat_client: &FatClient<T>,
+pub async fn run<T: DB<Key> + Sync>(
+	fat_client: FatClient<T>,
 	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	partition: Partition,
 	shutdown: Controller<String>,
-) {
+) where
+	Key: Into<T::Key>,
+	avail_subxt::Header: DbEncode<T::Result>,
+{
 	info!("Starting fat client...");
 
 	loop {
@@ -240,7 +251,7 @@ pub async fn run<T: Database>(
 		}
 
 		if let Err(error) =
-			process_block(fat_client, &metrics, &cfg, &header, received_at, partition).await
+			process_block(&fat_client, &metrics, &cfg, &header, received_at, partition).await
 		{
 			error!("Cannot process block: {error}");
 			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));

@@ -9,10 +9,12 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::{DataManager, Database},
+	data::Key,
+	db::data::{Decode, DB},
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
+use avail_subxt::primitives;
 use color_eyre::{eyre::eyre, Result};
 use hyper::StatusCode;
 use std::{
@@ -87,32 +89,41 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 	result
 }
 
-pub async fn block<T: Database + Clone>(
+pub async fn block<T: DB<Key> + Clone + Send>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> Result<impl Reply, Error> {
+	db: T,
+) -> Result<impl Reply, Error>
+where
+	Key: Into<T::Key>,
+	u32: Decode<T::Result>,
+{
 	let state = state.lock().expect("Lock should be acquired");
 
 	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
 		return Err(Error::not_found());
 	};
 
-	let confidence = data_manager
-		.get_confidence_factor(block_number)
+	let confidence: Result<Option<u32>> = db.get(Key::ConfidenceFactor(block_number));
+
+	let confidence = confidence
 		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 
 	Ok(Block::new(block_status, confidence))
 }
 
-pub async fn block_header<T: Database + Clone>(
+pub async fn block_header<T: DB<Key>>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> Result<Header, Error> {
+	db: T,
+) -> Result<Header, Error>
+where
+	Key: Into<T::Key>,
+	avail_subxt::Header: Decode<T::Result>,
+{
 	let state = state.lock().expect("Lock should be acquired");
 
 	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
@@ -126,20 +137,23 @@ pub async fn block_header<T: Database + Clone>(
 		return Err(Error::bad_request_unknown("Block header is not available"));
 	};
 
-	data_manager
-		.get_block_header(block_number)
+	db.get(Key::BlockHeader(block_number))
 		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
-		.and_then(|header| header.try_into())
+		.and_then(|header: primitives::Header| header.try_into())
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn block_data<T: Database + Clone>(
+pub async fn block_data<T: DB<Key> + Clone>(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	data_manager: DataManager<T>,
-) -> Result<DataResponse, Error> {
+	db: T,
+) -> Result<DataResponse, Error>
+where
+	Key: Into<T::Key>,
+	Vec<Vec<u8>>: Decode<T::Result>,
+{
 	let state = state.lock().expect("Lock should be acquired");
 
 	let Some(app_id) = config.app_id else {
@@ -154,8 +168,8 @@ pub async fn block_data<T: Database + Clone>(
 		return Err(Error::bad_request_unknown("Block data is not available"));
 	};
 
-	let data = data_manager
-		.get_app_data(app_id, block_number)
+	let data: Option<Vec<Vec<u8>>> = db
+		.get(Key::AppData(app_id, block_number))
 		.map_err(Error::internal_server_error)?;
 
 	let Some(data) = data else {

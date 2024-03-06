@@ -17,12 +17,10 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{commitments, matrix::Dimensions};
-use mockall::automock;
 use sp_core::blake2_256;
 use std::{
 	sync::{Arc, Mutex},
@@ -32,9 +30,10 @@ use tracing::{error, info};
 
 use crate::{
 	data::{
-		database::{Database, Encode as DbEncode},
+		// database::{Database, Encode as DbEncode},
 		Key,
 	},
+	db::data::{Encode as DbEncode, DB},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -46,18 +45,27 @@ use crate::{
 };
 
 #[derive(Clone)]
-struct LightClient<T: Database> {
+pub struct LightClient<T: DB<Key>>
+where
+	Key: Into<T::Key>,
+{
 	db: T,
 }
 
-pub fn new<T: Database>(db: T) -> LightClient<T> {
+pub fn new<T: DB<Key>>(db: T) -> LightClient<T>
+where
+	Key: Into<T::Key>,
+{
 	LightClient { db }
 }
 
-impl<T: Database + Clone> LightClient<T> {
+impl<T: DB<Key> + Clone> LightClient<T>
+where
+	Key: Into<T::Key>,
+{
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>
 	where
-		T::Key: From<Key>,
+		Key: Into<T::Key>,
 		u32: DbEncode<T::Result>,
 	{
 		self.db
@@ -66,8 +74,8 @@ impl<T: Database + Clone> LightClient<T> {
 	}
 	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
 	where
-		T::Key: From<Key>,
-		Header: DbEncode<T::Result>,
+		Key: Into<T::Key>,
+		avail_subxt::Header: DbEncode<T::Result>,
 	{
 		self.db
 			.put(Key::BlockHeader(block_number), header)
@@ -75,8 +83,8 @@ impl<T: Database + Clone> LightClient<T> {
 	}
 }
 
-pub async fn process_block<T: Database + Clone>(
-	light_client: LightClient<T>,
+pub async fn process_block<T: DB<Key> + Clone>(
+	light_client: &LightClient<T>,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
@@ -85,9 +93,9 @@ pub async fn process_block<T: Database + Clone>(
 	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>>
 where
-	T::Key: From<Key>,
-	Header: DbEncode<T::Result>,
+	Key: Into<T::Key>,
 	u32: DbEncode<T::Result>,
+	avail_subxt::Header: DbEncode<T::Result>,
 {
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
@@ -212,7 +220,7 @@ where
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: Database>(
+pub async fn run<T: DB<Key> + Clone>(
 	light_client: LightClient<T>,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
@@ -220,7 +228,11 @@ pub async fn run<T: Database>(
 	state: Arc<Mutex<State>>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
-) {
+) where
+	Key: Into<T::Key>,
+	u32: DbEncode<T::Result>,
+	avail_subxt::Header: DbEncode<T::Result>,
+{
 	info!("Starting light client...");
 
 	loop {
@@ -249,11 +261,11 @@ pub async fn run<T: Database>(
 		}
 
 		let process_block_result = process_block(
-			light_client,
+			&light_client,
 			&network_client,
 			&metrics,
 			&cfg,
-			&header,
+			header.clone(),
 			received_at,
 			state.clone(),
 		)
