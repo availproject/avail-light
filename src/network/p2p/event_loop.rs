@@ -499,7 +499,7 @@ impl EventLoop {
 						metrics.count(MetricCounter::OutgoingConnectionError).await;
 
 						if let Some(peer_id) = peer_id {
-							// Notify the connections we're waiting on an error has occured
+							// Notify the connections we're waiting on an error has occurred
 							if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
 								if let Some(peer) =
 									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
