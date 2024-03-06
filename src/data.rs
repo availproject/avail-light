@@ -165,7 +165,7 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u
 		.map(|data| {
 			data.try_into()
 				.map_err(|_| eyre!("Conversion failed"))
-				.wrap_err("Unable to convert confindence (wrong number of bytes)")
+				.wrap_err("Unable to convert confidence (wrong number of bytes)")
 				.map(u32::from_be_bytes)
 		})
 		.transpose()

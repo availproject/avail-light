@@ -201,7 +201,7 @@ pub async fn process_block(
 /// * `cfg` - Light client configuration
 /// * `metrics` - Metrics registry
 /// * `state` - Processed blocks state
-/// * `channels` - Communitaction channels
+/// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
 pub async fn run(
 	light_client: impl LightClient,

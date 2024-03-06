@@ -201,7 +201,7 @@ pub async fn process_block(
 /// * `fat_client` - Fat client implementation
 /// * `cfg` - Fat client configuration
 /// * `metrics` -  Metrics registry
-/// * `channels` - Communitaction channels
+/// * `channels` - Communication channels
 /// * `partition` - Assigned fat client partition
 /// * `shutdown` - Shutdown controller
 pub async fn run(
