@@ -89,14 +89,13 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 	result
 }
 
-pub async fn block<T: DB<Key> + Clone + Send>(
+pub async fn block<T: DB + Clone + Send>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
 ) -> Result<impl Reply, Error>
 where
-	Key: Into<T::Key>,
 	u32: Decode<T::Result>,
 {
 	let state = state.lock().expect("Lock should be acquired");
@@ -114,14 +113,13 @@ where
 	Ok(Block::new(block_status, confidence))
 }
 
-pub async fn block_header<T: DB<Key>>(
+pub async fn block_header<T: DB>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
 ) -> Result<Header, Error>
 where
-	Key: Into<T::Key>,
 	avail_subxt::Header: Decode<T::Result>,
 {
 	let state = state.lock().expect("Lock should be acquired");
@@ -143,7 +141,7 @@ where
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn block_data<T: DB<Key> + Clone>(
+pub async fn block_data<T: DB + Clone>(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,
@@ -151,7 +149,6 @@ pub async fn block_data<T: DB<Key> + Clone>(
 	db: T,
 ) -> Result<DataResponse, Error>
 where
-	Key: Into<T::Key>,
 	Vec<Vec<u8>>: Decode<T::Result>,
 {
 	let state = state.lock().expect("Lock should be acquired");

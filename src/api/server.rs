@@ -9,7 +9,6 @@
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use crate::api::v2;
-use crate::data::Key;
 use crate::db::data::{Decode, DB};
 use crate::shutdown::Controller;
 use crate::types::IdentityConfig;
@@ -28,10 +27,7 @@ use std::{
 use tracing::info;
 use warp::{Filter, Reply};
 
-pub struct Server<T: DB<Key>>
-where
-	Key: Into<T::Key>,
-{
+pub struct Server<T: DB> {
 	pub cfg: RuntimeConfig,
 	pub identity_cfg: IdentityConfig,
 	pub state: Arc<Mutex<State>>,
@@ -50,14 +46,10 @@ fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> 
 		.map(|_| warp::reply::with_status("", warp::http::StatusCode::OK))
 }
 
-impl<T: DB<Key> + Clone + Send + Sync + 'static> Server<T>
-where
-	T::Key: From<Key>,
-{
+impl<T: DB + Clone + Send + Sync + 'static> Server<T> {
 	/// Creates a HTTP server that needs to be spawned into a runtime
 	pub fn bind(self) -> impl Future<Output = ()>
 	where
-		Key: Into<T::Key>,
 		u32: Decode<T::Result>,
 		avail_subxt::Header: Decode<T::Result>,
 		Vec<Vec<u8>>: Decode<T::Result>,

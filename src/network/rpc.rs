@@ -18,7 +18,6 @@ use tokio::{
 use tracing::{debug, info};
 
 use crate::{
-	data::Key,
 	db::data::DB,
 	// data::database::Database,
 	network::rpc,
@@ -203,16 +202,13 @@ impl<'a> Iterator for NodesIterator<'a> {
 	}
 }
 
-pub async fn init<T: DB<Key>>(
+pub async fn init<T: DB>(
 	db: T,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
-) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop<T>)>
-where
-	Key: Into<T::Key>,
-{
+) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
 	let rpc_client =
 		Client::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
 	// create output channel for RPC Subscription Events

@@ -30,25 +30,18 @@ use crate::{
 	utils::filter_auth_set_changes,
 };
 
-pub struct SyncFinality<T: DB<Key>>
-where
-	Key: Into<T::Key>,
-{
+pub struct SyncFinality<T: DB> {
 	db: T,
 	rpc_client: rpc::Client,
 }
 
-impl<T: DB<Key>> SyncFinality<T>
-where
-	Key: Into<T::Key>,
-{
+impl<T: DB> SyncFinality<T> {
 	fn get_client(&self) -> rpc::Client {
 		self.rpc_client.clone()
 	}
 
 	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()>
 	where
-		Key: Into<T::Key>,
 		avail_subxt::Header: DbEncode<T::Result>,
 	{
 		self.db
@@ -58,7 +51,6 @@ where
 
 	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>
 	where
-		Key: Into<T::Key>,
 		FinalitySyncCheckpoint: Decode<T::Result>,
 	{
 		self.db
@@ -68,7 +60,6 @@ where
 
 	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
 	where
-		Key: Into<T::Key>,
 		FinalitySyncCheckpoint: DbEncode<T::Result>,
 	{
 		self.db
@@ -77,10 +68,7 @@ where
 	}
 }
 
-pub fn new<T: DB<Key>>(db: T, rpc_client: rpc::Client) -> SyncFinality<T>
-where
-	Key: Into<T::Key>,
-{
+pub fn new<T: DB>(db: T, rpc_client: rpc::Client) -> SyncFinality<T> {
 	SyncFinality { db, rpc_client }
 }
 
@@ -142,13 +130,12 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn run<T: DB<Key>>(
+pub async fn run<T: DB>(
 	sync_finality: SyncFinality<T>,
 	shutdown: Controller<String>,
 	state: Arc<Mutex<State>>,
 	from_header: Header,
 ) where
-	Key: Into<T::Key>,
 	FinalitySyncCheckpoint: Decode<T::Result>,
 	FinalitySyncCheckpoint: DbEncode<T::Result>,
 	avail_subxt::Header: DbEncode<T::Result>,
@@ -159,13 +146,12 @@ pub async fn run<T: DB<Key>>(
 	};
 }
 
-pub async fn sync<T: DB<Key>>(
+pub async fn sync<T: DB>(
 	sync_finality: SyncFinality<T>,
 	state: Arc<Mutex<State>>,
 	mut from_header: Header,
 ) -> Result<()>
 where
-	Key: Into<T::Key>,
 	FinalitySyncCheckpoint: Decode<T::Result>,
 	FinalitySyncCheckpoint: DbEncode<T::Result>,
 	avail_subxt::Header: DbEncode<T::Result>,

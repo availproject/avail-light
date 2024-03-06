@@ -1,6 +1,8 @@
 pub mod data {
 	use color_eyre::eyre::Result;
 
+	use crate::data::Key;
+
 	/// Types that can be decoded from T
 	pub trait Decode<T>: Sized {
 		fn decode(source: T) -> Result<Self>;
@@ -11,10 +13,7 @@ pub mod data {
 		fn encode(&self) -> Result<T>;
 	}
 
-	pub trait DB<K>
-	where
-		K: Into<Self::Key>,
-	{
+	pub trait DB {
 		/// Type of the database key which we can get from the custom key.
 		type Key;
 
@@ -23,23 +22,23 @@ pub mod data {
 
 		/// Puts value for given key into database.
 		/// Key is encoded into database key, value is encoded into type supported by database.
-		fn put<T>(&self, key: K, value: T) -> Result<()>
+		fn put<T>(&self, key: Key, value: T) -> Result<()>
 		where
 			T: Encode<Self::Result>;
 
 		/// Gets value for given key.
 		/// Key is encoded into database key, value is decoded into the given type.
-		fn get<T>(&self, key: K) -> Result<Option<T>>
+		fn get<T>(&self, key: Key) -> Result<Option<T>>
 		where
 			T: Decode<Self::Result>;
 
 		/// Deletes value from the database for the given key.
-		fn delete(&self, key: K) -> Result<()>;
+		fn delete(&self, key: Key) -> Result<()>;
 	}
 
 	pub mod rocks {
 		use crate::{
-			data::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF},
+			data::{Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF},
 			db::data,
 		};
 		use color_eyre::eyre::{eyre, Context, Result};
@@ -71,11 +70,11 @@ pub mod data {
 
 		type RocksKey = (Option<&'static str>, Vec<u8>);
 
-		impl<K: Into<RocksKey>> data::DB<K> for RocksDB {
+		impl data::DB for RocksDB {
 			type Key = RocksKey;
 			type Result = Vec<u8>;
 
-			fn put<T>(&self, key: K, value: T) -> Result<()>
+			fn put<T>(&self, key: Key, value: T) -> Result<()>
 			where
 				T: data::Encode<Self::Result>,
 			{
@@ -98,7 +97,7 @@ pub mod data {
 					.wrap_err("Put operation with Column Family failed on RocksDB")
 			}
 
-			fn get<T>(&self, key: K) -> Result<Option<T>>
+			fn get<T>(&self, key: Key) -> Result<Option<T>>
 			where
 				T: data::Decode<Self::Result>,
 			{
@@ -126,7 +125,7 @@ pub mod data {
 					.wrap_err("Get operation with Column Family failed on RocksDB")
 			}
 
-			fn delete(&self, key: K) -> Result<()> {
+			fn delete(&self, key: Key) -> Result<()> {
 				let (column_family, key) = key.into();
 				// if Column Family descriptor was provided, delete the key from that partition
 				let Some(cf) = column_family else {
@@ -147,54 +146,62 @@ pub mod data {
 		}
 	}
 
-	// pub mod mem {
-	// 	use crate::db::data::{Decode, Encode, DB};
-	// 	use color_eyre::eyre::Result;
-	// 	use std::{collections::HashMap, sync::RwLock};
+	pub mod mem {
+		use crate::{
+			data::Key,
+			db::data::{Decode, Encode, DB},
+		};
+		use color_eyre::eyre::Result;
+		use std::{
+			collections::HashMap,
+			sync::{Arc, RwLock},
+		};
 
-	// 	#[derive(Eq, Hash, PartialEq)]
-	// 	pub struct HashMapKey(pub String);
+		#[derive(Eq, Hash, PartialEq)]
+		pub struct HashMapKey(pub String);
 
-	// 	pub struct MemoryDB {
-	// 		map: RwLock<HashMap<HashMapKey, String>>,
-	// 	}
+		#[derive(Clone)]
+		pub struct MemoryDB {
+			map: Arc<RwLock<HashMap<HashMapKey, String>>>,
+		}
 
-	// 	impl Default for MemoryDB {
-	// 		fn default() -> Self {
-	// 			MemoryDB {
-	// 				map: RwLock::new(HashMap::new()),
-	// 			}
-	// 		}
-	// 	}
+		impl Default for MemoryDB {
+			fn default() -> Self {
+				MemoryDB {
+					map: Arc::new(RwLock::new(HashMap::new())),
+				}
+			}
+		}
 
-	// 	impl<K: Into<HashMapKey>> DB<K> for MemoryDB {
-	// 		type Key = HashMapKey;
-	// 		type Result = String;
+		impl DB for MemoryDB {
+			type Key = HashMapKey;
+			type Result = String;
 
-	// 		fn put<T>(&self, key: K, value: T) -> Result<()>
-	// 		where
-	// 			T: Encode<Self::Result>,
-	// 		{
-	// 			let mut map = self.map.write().expect("Lock acquired");
-	// 			map.insert(key.into(), value.encode()?);
-	// 			Ok(())
-	// 		}
+			fn put<T>(&self, key: Key, value: T) -> Result<()>
+			where
+				T: Encode<Self::Result>,
+			{
+				let mut map = self.map.write().expect("Lock acquired");
 
-	// 		fn get<T>(&self, key: K) -> Result<Option<T>>
-	// 		where
-	// 			T: Decode<Self::Result>,
-	// 		{
-	// 			let map = self.map.read().expect("Lock acquired");
-	// 			map.get(&key.into()).cloned().map(T::decode).transpose()
-	// 		}
+				map.insert(key.into(), value.encode()?);
+				Ok(())
+			}
 
-	// 		fn delete(&self, key: K) -> Result<()> {
-	// 			let mut map = self.map.write().expect("Lock acquired");
-	// 			map.remove(&key.into());
-	// 			Ok(())
-	// 		}
-	// 	}
-	// }
+			fn get<T>(&self, key: Key) -> Result<Option<T>>
+			where
+				T: Decode<Self::Result>,
+			{
+				let map = self.map.read().expect("Lock acquired");
+				map.get(&key.into()).cloned().map(T::decode).transpose()
+			}
+
+			fn delete(&self, key: Key) -> Result<()> {
+				let mut map = self.map.write().expect("Lock acquired");
+				map.remove(&key.into());
+				Ok(())
+			}
+		}
+	}
 
 	// pub mod domain {
 	// 	use super::{mem::HashMapKey, Decode, Encode};

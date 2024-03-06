@@ -3,7 +3,10 @@ use codec::{Decode, Encode};
 use color_eyre::eyre::{eyre, Context, Ok, Result};
 use kate_recovery::com::AppData;
 use num::traits::ToBytes;
+use serde::{Deserialize, Serialize};
 use sp_core::ed25519;
+
+use crate::db::data::mem::HashMapKey;
 
 // pub mod database;
 // pub mod rocks_db;
@@ -53,7 +56,24 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 	}
 }
 
-#[derive(Debug, Decode, Encode)]
+impl From<Key> for HashMapKey {
+	fn from(key: Key) -> Self {
+		match key {
+			Key::AppData(app_id, block_number) => {
+				HashMapKey(format!("{APP_DATA_CF}:{app_id}:{block_number}"))
+			},
+			Key::BlockHeader(block_number) => {
+				HashMapKey(format!("{BLOCK_HEADER_CF}:{block_number}"))
+			},
+			Key::ConfidenceFactor(block_number) => {
+				HashMapKey(format!("{CONFIDENCE_FACTOR_CF}:{block_number}"))
+			},
+			Key::FinalitySyncCheckpoint => HashMapKey(format!("{FINALITY_SYNC_CHECKPOINT_KEY}")),
+		}
+	}
+}
+
+#[derive(Serialize, Deserialize, Debug, Decode, Encode)]
 pub struct FinalitySyncCheckpoint {
 	pub number: u32,
 	pub set_id: u64,
@@ -73,6 +93,18 @@ impl crate::db::data::Decode<Vec<u8>> for FinalitySyncCheckpoint {
 	}
 }
 
+impl crate::db::data::Encode<String> for FinalitySyncCheckpoint {
+	fn encode(&self) -> Result<String> {
+		serde_json::to_string(self).map_err(|error| eyre!("{error}"))
+	}
+}
+
+impl crate::db::data::Decode<String> for FinalitySyncCheckpoint {
+	fn decode(source: String) -> Result<Self> {
+		serde_json::from_str(&source).map_err(|error| eyre!("{error}"))
+	}
+}
+
 impl crate::db::data::Encode<Vec<u8>> for AppData {
 	fn encode(&self) -> Result<Vec<u8>> {
 		Ok(<&Self as codec::Encode>::encode(&self))
@@ -83,6 +115,18 @@ impl crate::db::data::Decode<Vec<u8>> for AppData {
 	fn decode(source: Vec<u8>) -> Result<Self> {
 		<Self as codec::Decode>::decode(&mut &source[..])
 			.wrap_err("Decoding AppData for RocksDB failed")
+	}
+}
+
+impl crate::db::data::Encode<String> for AppData {
+	fn encode(&self) -> Result<String> {
+		serde_json::to_string(self).map_err(|error| eyre!("{error}"))
+	}
+}
+
+impl crate::db::data::Decode<String> for AppData {
+	fn decode(source: String) -> Result<Self> {
+		serde_json::from_str(&source).map_err(|error| eyre!("{error}"))
 	}
 }
 
@@ -102,6 +146,18 @@ impl crate::db::data::Decode<Vec<u8>> for u32 {
 	}
 }
 
+impl crate::db::data::Encode<String> for u32 {
+	fn encode(&self) -> Result<String> {
+		Ok(self.to_string())
+	}
+}
+
+impl crate::db::data::Decode<String> for u32 {
+	fn decode(source: String) -> Result<Self> {
+		source.parse::<u32>().map_err(|error| eyre!("{error}"))
+	}
+}
+
 impl crate::db::data::Encode<Vec<u8>> for Header {
 	fn encode(&self) -> Result<Vec<u8>> {
 		let string = serde_json::to_string(&self)
@@ -114,5 +170,17 @@ impl crate::db::data::Encode<Vec<u8>> for Header {
 impl crate::db::data::Decode<Vec<u8>> for Header {
 	fn decode(source: Vec<u8>) -> Result<Self> {
 		serde_json::from_slice(&source).wrap_err("Deserializing Header failed for RocksDB failed")
+	}
+}
+
+impl crate::db::data::Encode<String> for Header {
+	fn encode(&self) -> Result<String> {
+		serde_json::to_string(&self).wrap_err("Serializing Header failed for RocksDB failed")
+	}
+}
+
+impl crate::db::data::Decode<String> for Header {
+	fn decode(source: String) -> Result<Self> {
+		serde_json::from_str(&source).wrap_err("Deserializing Header failed for RocksDB failed")
 	}
 }

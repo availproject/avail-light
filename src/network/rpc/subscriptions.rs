@@ -42,10 +42,7 @@ struct BlockData {
 	last_finalized_block_header: Option<Header>,
 }
 
-pub struct SubscriptionLoop<T: DB<Key>>
-where
-	Key: Into<T::Key>,
-{
+pub struct SubscriptionLoop<T: DB> {
 	rpc_client: Client,
 	event_sender: Sender<Event>,
 	state: Arc<Mutex<State>>,
@@ -53,10 +50,7 @@ where
 	block_data: BlockData,
 }
 
-impl<T: DB<Key>> SubscriptionLoop<T>
-where
-	Key: Into<T::Key>,
-{
+impl<T: DB> SubscriptionLoop<T> {
 	pub async fn new(
 		state: Arc<Mutex<State>>,
 		db: T,

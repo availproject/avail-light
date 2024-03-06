@@ -1,5 +1,4 @@
 use crate::{
-	data::Key,
 	db::data::{Decode, DB},
 	types::State,
 };
@@ -14,12 +13,7 @@ use warp::{Filter, Rejection, Reply};
 mod handlers;
 mod types;
 
-fn with_db<T: DB<Key> + Clone + Send>(
-	db: T,
-) -> impl Filter<Extract = (T,), Error = Infallible> + Clone
-where
-	Key: Into<T::Key>,
-{
+fn with_db<T: DB + Clone + Send>(db: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
 	warp::any().map(move || db.clone())
 }
 
@@ -35,13 +29,12 @@ fn with_app_id(
 	warp::any().map(move || app_id)
 }
 
-pub fn routes<T: DB<Key> + Clone + Send>(
+pub fn routes<T: DB + Clone + Send>(
 	db: T,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
 where
-	Key: Into<T::Key>,
 	Vec<Vec<u8>>: Decode<T::Result>,
 	u32: Decode<T::Result>,
 {

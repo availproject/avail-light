@@ -28,13 +28,12 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 	ClientResponse::Normal(Mode::from(app_id))
 }
 
-pub fn confidence<T: DB<Key>>(
+pub fn confidence<T: DB>(
 	block_num: u32,
 	db: T,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ConfidenceResponse>
 where
-	Key: Into<T::Key>,
 	u32: DbDecode<T::Result>,
 {
 	info!("Got request for confidence for block {block_num}");
@@ -67,13 +66,8 @@ where
 	res
 }
 
-pub fn status<T: DB<Key>>(
-	app_id: Option<u32>,
-	state: Arc<Mutex<State>>,
-	db: T,
-) -> ClientResponse<Status>
+pub fn status<T: DB>(app_id: Option<u32>, state: Arc<Mutex<State>>, db: T) -> ClientResponse<Status>
 where
-	Key: Into<T::Key>,
 	u32: DbDecode<T::Result>,
 {
 	let state = state.lock().unwrap();
@@ -106,7 +100,7 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 	}
 }
 
-pub fn appdata<T: DB<Key>>(
+pub fn appdata<T: DB>(
 	block_num: u32,
 	query: AppDataQuery,
 	db: T,
@@ -114,7 +108,6 @@ pub fn appdata<T: DB<Key>>(
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse>
 where
-	Key: Into<T::Key>,
 	Vec<Vec<u8>>: DbDecode<T::Result>,
 {
 	fn decode_app_data_to_extrinsics(

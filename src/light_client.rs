@@ -29,10 +29,7 @@ use std::{
 use tracing::{error, info};
 
 use crate::{
-	data::{
-		// database::{Database, Encode as DbEncode},
-		Key,
-	},
+	data::Key,
 	db::data::{Encode as DbEncode, DB},
 	network::{
 		self,
@@ -45,27 +42,17 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct LightClient<T: DB<Key>>
-where
-	Key: Into<T::Key>,
-{
+pub struct LightClient<T: DB> {
 	db: T,
 }
 
-pub fn new<T: DB<Key>>(db: T) -> LightClient<T>
-where
-	Key: Into<T::Key>,
-{
+pub fn new<T: DB>(db: T) -> LightClient<T> {
 	LightClient { db }
 }
 
-impl<T: DB<Key> + Clone> LightClient<T>
-where
-	Key: Into<T::Key>,
-{
+impl<T: DB + Clone> LightClient<T> {
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>
 	where
-		Key: Into<T::Key>,
 		u32: DbEncode<T::Result>,
 	{
 		self.db
@@ -74,7 +61,6 @@ where
 	}
 	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
 	where
-		Key: Into<T::Key>,
 		avail_subxt::Header: DbEncode<T::Result>,
 	{
 		self.db
@@ -83,7 +69,7 @@ where
 	}
 }
 
-pub async fn process_block<T: DB<Key> + Clone>(
+pub async fn process_block<T: DB + Clone>(
 	light_client: &LightClient<T>,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
@@ -93,7 +79,6 @@ pub async fn process_block<T: DB<Key> + Clone>(
 	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>>
 where
-	Key: Into<T::Key>,
 	u32: DbEncode<T::Result>,
 	avail_subxt::Header: DbEncode<T::Result>,
 {
@@ -220,7 +205,7 @@ where
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: DB<Key> + Clone>(
+pub async fn run<T: DB + Clone>(
 	light_client: LightClient<T>,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
@@ -229,7 +214,6 @@ pub async fn run<T: DB<Key> + Clone>(
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 ) where
-	Key: Into<T::Key>,
 	u32: DbEncode<T::Result>,
 	avail_subxt::Header: DbEncode<T::Result>,
 {

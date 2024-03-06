@@ -17,7 +17,6 @@ use self::{
 
 use crate::{
 	api::v2::types::Topic,
-	data::Key,
 	db::data::{Decode, DB},
 	network::rpc::Client,
 	types::{IdentityConfig, RuntimeConfig, State},
@@ -35,12 +34,7 @@ async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
 	}
 }
 
-fn with_db<T: DB<Key> + Clone + Send>(
-	db: T,
-) -> impl Filter<Extract = (T,), Error = Infallible> + Clone
-where
-	Key: Into<T::Key>,
-{
+fn with_db<T: DB + Clone + Send>(db: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
 	warp::any().map(move || db.clone())
 }
 
@@ -69,13 +63,12 @@ fn status_route(
 		.map(handlers::status)
 }
 
-fn block_route<T: DB<Key> + Clone + Send>(
+fn block_route<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
 where
-	Key: Into<T::Key>,
 	u32: Decode<T::Result>,
 {
 	warp::path!("v2" / "blocks" / u32)
@@ -87,13 +80,12 @@ where
 		.map(log_internal_server_error)
 }
 
-fn block_header_route<T: DB<Key> + Clone + Send>(
+fn block_header_route<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
 where
-	Key: Into<T::Key>,
 	avail_subxt::Header: Decode<T::Result>,
 {
 	warp::path!("v2" / "blocks" / u32 / "header")
@@ -105,13 +97,12 @@ where
 		.map(log_internal_server_error)
 }
 
-fn block_data_route<T: DB<Key> + Clone + Send>(
+fn block_data_route<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
 where
-	Key: Into<T::Key>,
 	Vec<Vec<u8>>: Decode<T::Result>,
 {
 	warp::path!("v2" / "blocks" / u32 / "data")
@@ -201,7 +192,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes<T: DB<Key> + Clone + Send>(
+pub fn routes<T: DB + Clone + Send>(
 	version: String,
 	network_version: String,
 	state: Arc<Mutex<State>>,
@@ -212,7 +203,6 @@ pub fn routes<T: DB<Key> + Clone + Send>(
 	db: T,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
 where
-	Key: Into<T::Key>,
 	u32: Decode<T::Result>,
 	avail_subxt::Header: Decode<T::Result>,
 	Vec<Vec<u8>>: Decode<T::Result>,
@@ -256,7 +246,7 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
-		data::{DataManager, Database},
+		db::data::mem,
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
@@ -269,7 +259,6 @@ mod tests {
 		},
 		primitives::Header as DaHeader,
 	};
-	use codec::Encode;
 	use color_eyre::eyre::eyre;
 	use hyper::StatusCode;
 	use kate_recovery::{com::AppData, matrix::Partition};
@@ -376,9 +365,8 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = latest;
 		}
-		let mock_db = MockDatabase::default();
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}"))
@@ -398,12 +386,8 @@ mod tests {
 			state.header_verified.set(10);
 			state.data_verified.set(10);
 		}
-		let mock_db = MockDatabase {
-			confidence: Some(4),
-			..Default::default()
-		};
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/10")
@@ -433,9 +417,8 @@ mod tests {
 			..Default::default()
 		}));
 
-		let mock_db = MockDatabase::default();
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_header_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/header"))
@@ -452,9 +435,8 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		}));
-		let mock_db = MockDatabase::default();
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_header_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/header")
@@ -488,12 +470,8 @@ mod tests {
 			header_verified: Some(BlockRange::init(1)),
 			..Default::default()
 		}));
-		let mock_db = MockDatabase {
-			header: Some(header()),
-			..Default::default()
-		};
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_header_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/1/header")
@@ -525,10 +503,8 @@ mod tests {
 			data_verified: Some(BlockRange::init(8)),
 			..Default::default()
 		}));
-
-		let mock_db = MockDatabase::default();
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_data_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/data"))
@@ -545,10 +521,8 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		}));
-
-		let mock_db = MockDatabase::default();
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_data_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/data")
@@ -570,10 +544,8 @@ mod tests {
 			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
-
-		let mock_db = MockDatabase::default();
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_data_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -599,21 +571,8 @@ mod tests {
 			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
-
-		let mock_db = MockDatabase {
-			app_data: Some(vec![vec![
-				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
-				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
-				50, 12, 43, 176, 19, 42, 23, 73, 70, 223, 198, 180, 103, 34, 60, 246, 184, 49, 140,
-				113, 174, 234, 229, 95, 71, 18, 92, 158, 185, 168, 140, 126, 12, 191, 156, 50, 234,
-				8, 4, 68, 137, 5, 156, 94, 209, 7, 169, 105, 62, 63, 1, 122, 253, 195, 112, 173,
-				239, 21, 73, 163, 240, 106, 109, 131, 0, 4, 0, 4, 29, 1, 20, 116, 101, 115, 116,
-				10,
-			]]),
-			..Default::default()
-		};
-		let mock_manager = DataManager::new(mock_db);
-		let route = super::block_data_route(config, state, mock_manager);
+		let db = mem::MemoryDB::default();
+		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -654,39 +613,6 @@ mod tests {
 				hash: H256::random(),
 				index: 0,
 			})
-		}
-	}
-
-	#[derive(Clone, Default)]
-	struct MockDatabase {
-		confidence: Option<u32>,
-		header: Option<DaHeader>,
-		app_data: Option<AppData>,
-	}
-
-	impl Database for MockDatabase {
-		fn put(&self, _: Option<&str>, _: &[u8], _: &[u8]) -> color_eyre::eyre::Result<()> {
-			Ok(())
-		}
-
-		fn delete(&self, _: Option<&str>, _: &[u8]) -> color_eyre::eyre::Result<()> {
-			Ok(())
-		}
-
-		fn get(
-			&self,
-			column_family: Option<&str>,
-			_: &[u8],
-		) -> color_eyre::eyre::Result<Option<Vec<u8>>> {
-			match column_family {
-				Some(CONFIDENCE_FACTOR_CF) => Ok(self.confidence.map(|c| c.to_be_bytes().to_vec())),
-				Some(BLOCK_HEADER_CF) => Ok(self
-					.header
-					.clone()
-					.map(|h| serde_json::to_string(&h).unwrap().as_bytes().to_vec())),
-				Some(APP_DATA_CF) => Ok(self.app_data.clone().map(|d| d.encode())),
-				_ => Err(eyre!("provided Column Family is not mocked")),
-			}
 		}
 	}
 
