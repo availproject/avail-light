@@ -92,7 +92,7 @@ For local development, a couple of prerequisites have to be met.
 1. Run the Avail [node](https://github.com/availproject/avail). For this setup, we'll run it in `dev` mode:
 
 ```sh
-./data-avail --dev
+./data-avail --dev --enable-kate-rpc
 ```
 
 2. A [bootstrap](https://github.com/availproject/avail-light-bootstrap) node is required for deploying the Light Client(s) locally. Once the bootstrap has been downloaded and started, run the following command:
