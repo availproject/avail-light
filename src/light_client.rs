@@ -21,6 +21,7 @@ use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{commitments, matrix::Dimensions};
+use mockall::automock;
 use sp_core::blake2_256;
 use std::{
 	sync::{Arc, Mutex},
@@ -41,16 +42,24 @@ use crate::{
 	utils::{calculate_confidence, extract_kate},
 };
 
+#[automock]
+pub trait Client {
+	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>;
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
+}
+
 #[derive(Clone)]
 pub struct LightClient<T: Database> {
 	db: T,
 }
 
-pub fn new<T: Database>(db: T) -> LightClient<T> {
-	LightClient { db }
+impl<T: Database> LightClient<T> {
+	pub fn new(db: T) -> impl Client {
+		LightClient { db }
+	}
 }
 
-impl<T: Database + Clone> LightClient<T> {
+impl<T: Database> Client for LightClient<T> {
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::ConfidenceFactor(block_number), count)
@@ -63,8 +72,8 @@ impl<T: Database + Clone> LightClient<T> {
 	}
 }
 
-pub async fn process_block<T: Database + Clone>(
-	light_client: &LightClient<T>,
+pub async fn process_block(
+	light_client: &impl Client,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
@@ -195,8 +204,8 @@ pub async fn process_block<T: Database + Clone>(
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: Database + Clone>(
-	light_client: LightClient<T>,
+pub async fn run(
+	light_client: impl Client,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,
