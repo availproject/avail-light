@@ -73,7 +73,7 @@ impl<T: Database> Client for LightClient<T> {
 }
 
 pub async fn process_block(
-	light_client: &impl Client,
+	client: &impl Client,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
@@ -162,7 +162,7 @@ pub async fn process_block(
 	}
 
 	// write confidence factor into on-disk database
-	light_client
+	client
 		.store_confidence(fetched.len() as u32, block_number)
 		.wrap_err("Failed to store confidence in DB")?;
 
@@ -187,7 +187,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	light_client
+	client
 		.store_block_header(header, block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
@@ -205,7 +205,7 @@ pub async fn process_block(
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
 pub async fn run(
-	light_client: impl Client,
+	client: impl Client,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,
@@ -241,7 +241,7 @@ pub async fn run(
 		}
 
 		let process_block_result = process_block(
-			&light_client,
+			&client,
 			&network_client,
 			&metrics,
 			&cfg,
