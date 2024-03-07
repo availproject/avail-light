@@ -53,9 +53,15 @@ pub trait Client {
 	async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof>;
 }
 
-pub struct SyncFinality<T: Database> {
+pub struct SyncFinality<T: Database + Sync> {
 	db: T,
 	rpc_client: rpc::Client,
+}
+
+impl<T: Database + Sync> SyncFinality<T> {
+	pub fn new(db: T, rpc_client: rpc::Client) -> impl Client {
+		SyncFinality { db, rpc_client }
+	}
 }
 
 #[async_trait]
@@ -145,10 +151,6 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 			.put(Key::FinalitySyncCheckpoint, checkpoint)
 			.wrap_err("Finality Sync Client failed to store Checkpoint")
 	}
-}
-
-pub fn new<T: Database>(db: T, rpc_client: rpc::Client) -> SyncFinality<T> {
-	SyncFinality { db, rpc_client }
 }
 
 const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
