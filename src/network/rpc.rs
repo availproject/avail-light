@@ -18,8 +18,7 @@ use tokio::{
 use tracing::{debug, info};
 
 use crate::{
-	db::data::DB,
-	// data::database::Database,
+	data::Database,
 	network::rpc,
 	types::{GrandpaJustification, RetryConfig, State},
 };
@@ -202,7 +201,7 @@ impl<'a> Iterator for NodesIterator<'a> {
 	}
 }
 
-pub async fn init<T: DB>(
+pub async fn init<T: Database>(
 	db: T,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],

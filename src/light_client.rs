@@ -42,15 +42,15 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct LightClient<T: DB> {
+pub struct LightClient<T: Database> {
 	db: T,
 }
 
-pub fn new<T: DB>(db: T) -> LightClient<T> {
+pub fn new<T: Database>(db: T) -> LightClient<T> {
 	LightClient { db }
 }
 
-impl<T: DB + Clone> LightClient<T> {
+impl<T: Database + Clone> LightClient<T> {
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::ConfidenceFactor(block_number), count)
@@ -63,7 +63,7 @@ impl<T: DB + Clone> LightClient<T> {
 	}
 }
 
-pub async fn process_block<T: DB + Clone>(
+pub async fn process_block<T: Database + Clone>(
 	light_client: &LightClient<T>,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
@@ -195,7 +195,7 @@ pub async fn process_block<T: DB + Clone>(
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: DB + Clone>(
+pub async fn run<T: Database + Clone>(
 	light_client: LightClient<T>,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,

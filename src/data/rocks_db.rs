@@ -1,12 +1,11 @@
-use color_eyre::eyre::{Context, ContextCompat, Result};
+use crate::data::{self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
+use codec::{Decode, Encode};
+use color_eyre::eyre::{eyre, Context, Result};
 use rocksdb::{ColumnFamilyDescriptor, Options};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use super::{
-	database::{Database, Decode, Encode},
-	APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF,
-};
-
+#[derive(Clone)]
 pub struct RocksDB {
 	db: Arc<rocksdb::DB>,
 }
@@ -29,14 +28,14 @@ impl RocksDB {
 	}
 }
 
-impl Database for RocksDB {
-	type Key = (Option<&'static str>, Vec<u8>);
-	type Result = Vec<u8>;
+type RocksKey = (Option<&'static str>, Vec<u8>);
 
-	fn put<K, T>(&self, key: K, value: T) -> Result<()>
+impl data::Database for RocksDB {
+	type Key = RocksKey;
+
+	fn put<T>(&self, key: Key, value: T) -> Result<()>
 	where
-		K: Into<Self::Key>,
-		T: Encode<Self::Result>,
+		T: Serialize + Encode,
 	{
 		let (column_family, key) = key.into();
 		// if Column Family descriptor was provided, put the key in that partition
@@ -44,24 +43,22 @@ impl Database for RocksDB {
 			// else, just put it in the default partition
 			return self
 				.db
-				.put(key, value.encode()?)
+				.put(key, <T>::encode(&value))
 				.wrap_err("Put operation failed on RocksDB");
 		};
 
 		let cf_handle = self
 			.db
 			.cf_handle(cf)
-			.wrap_err("Couldn't get Column Family handle from RocksDB")?;
-
+			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
 		self.db
-			.put_cf(&cf_handle, key, value.encode()?)
+			.put_cf(&cf_handle, key, <T>::encode(&value))
 			.wrap_err("Put operation with Column Family failed on RocksDB")
 	}
 
-	fn get<K, T>(&self, key: K) -> Result<Option<T>>
+	fn get<T>(&self, key: Key) -> Result<Option<T>>
 	where
-		K: Into<Self::Key>,
-		T: Decode<Self::Result>,
+		T: for<'a> Deserialize<'a> + Decode,
 	{
 		let (column_family, key) = key.into();
 		// if Column Family descriptor was provided, get the key from that partition
@@ -70,7 +67,7 @@ impl Database for RocksDB {
 			return self
 				.db
 				.get(key)?
-				.map(T::decode)
+				.map(|value| <T>::decode(&mut &value[..]).wrap_err("Failed decoding the app data."))
 				.transpose()
 				.wrap_err("Get operation failed on RocksDB");
 		};
@@ -78,19 +75,16 @@ impl Database for RocksDB {
 		let cf_handle = self
 			.db
 			.cf_handle(cf)
-			.wrap_err("Couldn't get Column Family handle from RocksDB")?;
+			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
 
 		self.db
 			.get_cf(&cf_handle, key)?
-			.map(T::decode)
+			.map(|value| <T>::decode(&mut &value[..]).wrap_err("Failed decoding the app data."))
 			.transpose()
 			.wrap_err("Get operation with Column Family failed on RocksDB")
 	}
 
-	fn delete<K>(&self, key: K) -> Result<()>
-	where
-		K: Into<Self::Key>,
-	{
+	fn delete(&self, key: Key) -> Result<()> {
 		let (column_family, key) = key.into();
 		// if Column Family descriptor was provided, delete the key from that partition
 		let Some(cf) = column_family else {
@@ -103,8 +97,7 @@ impl Database for RocksDB {
 		let cf_handle = self
 			.db
 			.cf_handle(cf)
-			.wrap_err("Couldn't get Column Family handle from RocksDB")?;
-
+			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
 		self.db
 			.delete_cf(&cf_handle, key)
 			.wrap_err("Delete operation with Column Family failed on RocksDB")

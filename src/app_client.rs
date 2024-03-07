@@ -39,11 +39,11 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
+	data::Database,
 	data::{
 		// database::{Database, Encode},
 		Key,
 	},
-	db::data::DB,
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -51,13 +51,13 @@ use crate::{
 };
 
 #[derive(Clone)]
-struct AppClient<T: DB> {
+struct AppClient<T: Database> {
 	db: T,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-impl<T: DB + Sync> AppClient<T> {
+impl<T: Database + Sync> AppClient<T> {
 	async fn reconstruct_rows_from_dht(
 		&self,
 		pp: Arc<PublicParameters>,
@@ -260,7 +260,7 @@ async fn fetch_verified(
 }
 
 #[instrument(skip_all, fields(block = block.block_num), level = "trace")]
-async fn process_block<T: DB + Sync>(
+async fn process_block<T: Database + Sync>(
 	app_client: AppClient<T>,
 	cfg: &AppClientConfig,
 	app_id: AppId,
@@ -398,7 +398,7 @@ async fn process_block<T: DB + Sync>(
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 #[allow(clippy::too_many_arguments)]
-pub async fn run<T: DB + Clone + Sync>(
+pub async fn run<T: Database + Clone + Sync>(
 	cfg: AppClientConfig,
 	db: T,
 	network_client: P2pClient,

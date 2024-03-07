@@ -17,7 +17,7 @@ use self::{
 
 use crate::{
 	api::v2::types::Topic,
-	db::data::DB,
+	data::Database,
 	network::rpc::Client,
 	types::{IdentityConfig, RuntimeConfig, State},
 };
@@ -34,7 +34,9 @@ async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
 	}
 }
 
-fn with_db<T: DB + Clone + Send>(db: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
+fn with_db<T: Database + Clone + Send>(
+	db: T,
+) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
 	warp::any().map(move || db.clone())
 }
 
@@ -63,7 +65,7 @@ fn status_route(
 		.map(handlers::status)
 }
 
-fn block_route<T: DB + Clone + Send>(
+fn block_route<T: Database + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
@@ -77,7 +79,7 @@ fn block_route<T: DB + Clone + Send>(
 		.map(log_internal_server_error)
 }
 
-fn block_header_route<T: DB + Clone + Send>(
+fn block_header_route<T: Database + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
@@ -91,7 +93,7 @@ fn block_header_route<T: DB + Clone + Send>(
 		.map(log_internal_server_error)
 }
 
-fn block_data_route<T: DB + Clone + Send>(
+fn block_data_route<T: Database + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
@@ -183,7 +185,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes<T: DB + Clone + Send>(
+pub fn routes<T: Database + Clone + Send>(
 	version: String,
 	network_version: String,
 	state: Arc<Mutex<State>>,
@@ -233,7 +235,7 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::Key,
-		db::data::{mem, DB},
+		data::{mem_db, Database},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
@@ -246,9 +248,8 @@ mod tests {
 		},
 		primitives::Header as DaHeader,
 	};
-	use color_eyre::eyre::eyre;
 	use hyper::StatusCode;
-	use kate_recovery::{com::AppData, matrix::Partition};
+	use kate_recovery::matrix::Partition;
 	use std::{
 		collections::HashSet,
 		str::FromStr,
@@ -352,7 +353,7 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = latest;
 		}
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -373,7 +374,7 @@ mod tests {
 			state.header_verified.set(10);
 			state.data_verified.set(10);
 		}
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		_ = db.put(Key::ConfidenceFactor(10), 4);
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
@@ -405,7 +406,7 @@ mod tests {
 			..Default::default()
 		}));
 
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -423,7 +424,7 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		}));
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -458,7 +459,7 @@ mod tests {
 			header_verified: Some(BlockRange::init(1)),
 			..Default::default()
 		}));
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		_ = db.put(Key::BlockHeader(1), header());
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
@@ -492,7 +493,7 @@ mod tests {
 			data_verified: Some(BlockRange::init(8)),
 			..Default::default()
 		}));
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -510,7 +511,7 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		}));
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -533,7 +534,7 @@ mod tests {
 			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -560,7 +561,7 @@ mod tests {
 			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
-		let db = mem::MemoryDB::default();
+		let db = mem_db::MemoryDB::default();
 		_ = db.put(
 			Key::AppData(1, 5),
 			vec![vec![

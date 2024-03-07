@@ -1,11 +1,32 @@
 use codec::{Decode, Encode};
+use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
 use sp_core::ed25519;
 
-use crate::db::data::mem::HashMapKey;
+pub mod rocks_db;
 
-// pub mod database;
-// pub mod rocks_db;
+#[cfg(test)]
+pub mod mem_db;
+
+pub trait Database {
+	/// Type of the database key which we can get from the custom key.
+	type Key;
+
+	/// Puts value for given key into database.
+	/// Key is serialized into database key, value is serialized into type supported by database.
+	fn put<T>(&self, key: Key, value: T) -> Result<()>
+	where
+		T: Serialize + Encode;
+
+	/// Gets value for given key.
+	/// Key is serialized into database key, value is deserialized into the given type.
+	fn get<T>(&self, key: Key) -> Result<Option<T>>
+	where
+		for<'a> T: Deserialize<'a> + Decode;
+
+	/// Deletes value from the database for the given key.
+	fn delete(&self, key: Key) -> Result<()>;
+}
 
 /// Column family for confidence factor
 pub const CONFIDENCE_FACTOR_CF: &str = "avail_light_confidence_factor_cf";
@@ -48,23 +69,6 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 				Some(STATE_CF),
 				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
 			),
-		}
-	}
-}
-
-impl From<Key> for HashMapKey {
-	fn from(key: Key) -> Self {
-		match key {
-			Key::AppData(app_id, block_number) => {
-				HashMapKey(format!("{APP_DATA_CF}:{app_id}:{block_number}"))
-			},
-			Key::BlockHeader(block_number) => {
-				HashMapKey(format!("{BLOCK_HEADER_CF}:{block_number}"))
-			},
-			Key::ConfidenceFactor(block_number) => {
-				HashMapKey(format!("{CONFIDENCE_FACTOR_CF}:{block_number}"))
-			},
-			Key::FinalitySyncCheckpoint => HashMapKey(format!("{FINALITY_SYNC_CHECKPOINT_KEY}")),
 		}
 	}
 }

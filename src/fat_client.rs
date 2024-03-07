@@ -23,11 +23,11 @@ use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
+	data::Database,
 	data::{
 		// database::{Database, Encode as DbEncode},
 		Key,
 	},
-	db::data::DB,
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -39,13 +39,13 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct FatClient<T: DB> {
+pub struct FatClient<T: Database> {
 	db: T,
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: DB>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient<T> {
+pub fn new<T: Database>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient<T> {
 	FatClient {
 		db,
 		p2p_client,
@@ -53,7 +53,7 @@ pub fn new<T: DB>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatCli
 	}
 }
 
-impl<T: DB> FatClient<T> {
+impl<T: Database> FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
@@ -70,7 +70,7 @@ impl<T: DB> FatClient<T> {
 	}
 }
 
-pub async fn process_block<T: DB>(
+pub async fn process_block<T: Database>(
 	fat_client: &FatClient<T>,
 	metrics: &Arc<impl Metrics>,
 	cfg: &FatClientConfig,
@@ -196,7 +196,7 @@ pub async fn process_block<T: DB>(
 /// * `channels` - Communication channels
 /// * `partition` - Assigned fat client partition
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: DB + Sync>(
+pub async fn run<T: Database + Sync>(
 	fat_client: FatClient<T>,
 	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,

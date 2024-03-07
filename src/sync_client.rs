@@ -16,8 +16,8 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
+	data::Database,
 	data::Key,
-	db::data::DB,
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -43,16 +43,16 @@ use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
 #[derive(Clone)]
-pub struct SyncClient<T: DB + Clone> {
+pub struct SyncClient<T: Database + Clone> {
 	db: T,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: DB + Clone>(db: T, rpc_client: RpcClient) -> SyncClient<T> {
+pub fn new<T: Database + Clone>(db: T, rpc_client: RpcClient) -> SyncClient<T> {
 	SyncClient { db, rpc_client }
 }
 
-impl<T: DB + Clone> SyncClient<T> {
+impl<T: Database + Clone> SyncClient<T> {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		if let Some(header) = self
 			.db
@@ -98,7 +98,7 @@ impl<T: DB + Clone> SyncClient<T> {
 	}
 }
 
-async fn process_block<T: DB + Clone>(
+async fn process_block<T: Database + Clone>(
 	sync_client: SyncClient<T>,
 	network_client: &impl network::Client,
 	header: DaHeader,
@@ -162,7 +162,7 @@ async fn process_block<T: DB + Clone>(
 /// * `start_block` - Sync start block
 /// * `end_block` - Sync end block
 /// * `block_verified_sender` - Optional channel to send verified blocks
-pub async fn run<T: DB + Clone>(
+pub async fn run<T: Database + Clone>(
 	sync_client: SyncClient<T>,
 	network_client: impl network::Client,
 	cfg: SyncClientConfig,
@@ -240,7 +240,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		db::data::mem,
+		data::mem_db,
 		types::{self, RuntimeConfig},
 	};
 	use avail_subxt::{

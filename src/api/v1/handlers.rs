@@ -1,8 +1,8 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
+	data::Database,
 	data::Key,
-	db::data::DB,
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
@@ -28,7 +28,7 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 	ClientResponse::Normal(Mode::from(app_id))
 }
 
-pub fn confidence<T: DB>(
+pub fn confidence<T: Database>(
 	block_num: u32,
 	db: T,
 	state: Arc<Mutex<State>>,
@@ -63,7 +63,7 @@ pub fn confidence<T: DB>(
 	res
 }
 
-pub fn status<T: DB>(
+pub fn status<T: Database>(
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 	db: T,
@@ -98,7 +98,7 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 	}
 }
 
-pub fn appdata<T: DB>(
+pub fn appdata<T: Database>(
 	block_num: u32,
 	query: AppDataQuery,
 	db: T,

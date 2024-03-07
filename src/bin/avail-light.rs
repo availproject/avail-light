@@ -4,7 +4,6 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	// data::{DataManager, RocksDB},
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
@@ -113,9 +112,8 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let db = avail_light::db::data::rocks::RocksDB::open(&cfg.avail_path)
+	let db = avail_light::data::rocks_db::RocksDB::open(&cfg.avail_path)
 		.wrap_err("Avail Light could not initialize database")?;
-	// let data_on_rocks = DataManager::new(rocks);
 
 	let cfg_libp2p: LibP2PConfig = (&cfg).into();
 	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;

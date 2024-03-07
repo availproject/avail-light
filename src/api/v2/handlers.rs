@@ -9,8 +9,8 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
+	data::Database,
 	data::Key,
-	db::data::DB,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -89,7 +89,7 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 	result
 }
 
-pub async fn block<T: DB + Clone + Send>(
+pub async fn block<T: Database + Clone + Send>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
@@ -110,7 +110,7 @@ pub async fn block<T: DB + Clone + Send>(
 	Ok(Block::new(block_status, confidence))
 }
 
-pub async fn block_header<T: DB>(
+pub async fn block_header<T: Database>(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
@@ -135,7 +135,7 @@ pub async fn block_header<T: DB>(
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn block_data<T: DB + Clone>(
+pub async fn block_data<T: Database + Clone>(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,

@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use tracing::{error, info, trace};
 
 use crate::{
+	data::Database,
 	data::{FinalitySyncCheckpoint, Key},
-	db::data::DB,
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
@@ -23,12 +23,12 @@ use crate::{
 	utils::filter_auth_set_changes,
 };
 
-pub struct SyncFinality<T: DB> {
+pub struct SyncFinality<T: Database> {
 	db: T,
 	rpc_client: rpc::Client,
 }
 
-impl<T: DB> SyncFinality<T> {
+impl<T: Database> SyncFinality<T> {
 	fn get_client(&self) -> rpc::Client {
 		self.rpc_client.clone()
 	}
@@ -52,7 +52,7 @@ impl<T: DB> SyncFinality<T> {
 	}
 }
 
-pub fn new<T: DB>(db: T, rpc_client: rpc::Client) -> SyncFinality<T> {
+pub fn new<T: Database>(db: T, rpc_client: rpc::Client) -> SyncFinality<T> {
 	SyncFinality { db, rpc_client }
 }
 
@@ -114,7 +114,7 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn run<T: DB>(
+pub async fn run<T: Database>(
 	sync_finality: SyncFinality<T>,
 	shutdown: Controller<String>,
 	state: Arc<Mutex<State>>,
@@ -126,7 +126,7 @@ pub async fn run<T: DB>(
 	};
 }
 
-pub async fn sync<T: DB>(
+pub async fn sync<T: Database>(
 	sync_finality: SyncFinality<T>,
 	state: Arc<Mutex<State>>,
 	mut from_header: Header,
