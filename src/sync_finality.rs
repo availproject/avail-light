@@ -14,15 +14,8 @@ use std::sync::{Arc, Mutex};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{
-		// database::{Database, Decode, Encode as DbEncode},
-		FinalitySyncCheckpoint,
-		Key,
-	},
-	db::{
-		// self,
-		data::{Decode, Encode as DbEncode, DB},
-	},
+	data::{FinalitySyncCheckpoint, Key},
+	db::data::DB,
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
@@ -40,28 +33,19 @@ impl<T: DB> SyncFinality<T> {
 		self.rpc_client.clone()
 	}
 
-	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()>
-	where
-		avail_subxt::Header: DbEncode<T::Result>,
-	{
+	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()> {
 		self.db
 			.put(Key::BlockHeader(block_number), header)
 			.wrap_err("Finality Sync failed to store Block Header")
 	}
 
-	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>
-	where
-		FinalitySyncCheckpoint: Decode<T::Result>,
-	{
+	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>> {
 		self.db
 			.get(Key::FinalitySyncCheckpoint)
 			.wrap_err("Finality Sync failed to get Checkpoint")
 	}
 
-	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
-	where
-		FinalitySyncCheckpoint: DbEncode<T::Result>,
-	{
+	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()> {
 		self.db
 			.put(Key::FinalitySyncCheckpoint, checkpoint)
 			.wrap_err("Finality Sync failed to store Checkpoint")
@@ -135,11 +119,7 @@ pub async fn run<T: DB>(
 	shutdown: Controller<String>,
 	state: Arc<Mutex<State>>,
 	from_header: Header,
-) where
-	FinalitySyncCheckpoint: Decode<T::Result>,
-	FinalitySyncCheckpoint: DbEncode<T::Result>,
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) {
 	if let Err(error) = sync(sync_finality, state, from_header).await {
 		error!("Cannot sync finality {error}");
 		let _ = shutdown.trigger_shutdown(format!("Cannot sync finality {error:#}"));
@@ -150,12 +130,7 @@ pub async fn sync<T: DB>(
 	sync_finality: SyncFinality<T>,
 	state: Arc<Mutex<State>>,
 	mut from_header: Header,
-) -> Result<()>
-where
-	FinalitySyncCheckpoint: Decode<T::Result>,
-	FinalitySyncCheckpoint: DbEncode<T::Result>,
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) -> Result<()> {
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.get_genesis_hash().await?;
 

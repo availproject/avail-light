@@ -43,7 +43,7 @@ use crate::{
 		// database::{Database, Encode},
 		Key,
 	},
-	db::{self, data::DB},
+	db::data::DB,
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -186,10 +186,7 @@ impl<T: DB + Sync> AppClient<T> {
 		app_id: AppId,
 		block_number: u32,
 		data: AppData,
-	) -> Result<()>
-	where
-		Vec<Vec<u8>>: db::data::Encode<T::Result>,
-	{
+	) -> Result<()> {
 		self.db
 			.put(Key::AppData(app_id.0, block_number), data)
 			.wrap_err("Failed to store data into database")
@@ -269,10 +266,7 @@ async fn process_block<T: DB + Sync>(
 	app_id: AppId,
 	block: &BlockVerified,
 	pp: Arc<PublicParameters>,
-) -> Result<AppData>
-where
-	Vec<Vec<u8>>: db::data::Encode<T::Result>,
-{
+) -> Result<AppData> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = block.dimensions;
@@ -416,9 +410,7 @@ pub async fn run<T: DB + Clone + Sync>(
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
 	shutdown: Controller<String>,
-) where
-	Vec<Vec<u8>>: db::data::Encode<T::Result>,
-{
+) {
 	info!("Starting for app {app_id}...");
 
 	fn set_data_verified_state(

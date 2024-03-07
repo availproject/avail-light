@@ -2,7 +2,7 @@ use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlock
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::Key,
-	db::data::{Decode as DbDecode, DB},
+	db::data::DB,
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
@@ -32,10 +32,7 @@ pub fn confidence<T: DB>(
 	block_num: u32,
 	db: T,
 	state: Arc<Mutex<State>>,
-) -> ClientResponse<ConfidenceResponse>
-where
-	u32: DbDecode<T::Result>,
-{
+) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
 	let res = match db.get(Key::ConfidenceFactor(block_num)) {
 		Ok(Some(count)) => {
@@ -66,10 +63,11 @@ where
 	res
 }
 
-pub fn status<T: DB>(app_id: Option<u32>, state: Arc<Mutex<State>>, db: T) -> ClientResponse<Status>
-where
-	u32: DbDecode<T::Result>,
-{
+pub fn status<T: DB>(
+	app_id: Option<u32>,
+	state: Arc<Mutex<State>>,
+	db: T,
+) -> ClientResponse<Status> {
 	let state = state.lock().unwrap();
 	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
@@ -106,10 +104,7 @@ pub fn appdata<T: DB>(
 	db: T,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-) -> ClientResponse<ExtrinsicsDataResponse>
-where
-	Vec<Vec<u8>>: DbDecode<T::Result>,
-{
+) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
 	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {

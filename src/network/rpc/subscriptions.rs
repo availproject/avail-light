@@ -20,7 +20,7 @@ use crate::{
 		FinalitySyncCheckpoint,
 		Key,
 	},
-	db::data::{Encode as DbEncode, DB},
+	db::data::DB,
 	finality::{check_finality, ValidatorSet},
 	types::{GrandpaJustification, OptionBlockRange, State},
 	utils::filter_auth_set_changes,
@@ -96,7 +96,6 @@ impl<T: DB> SubscriptionLoop<T> {
 	fn store_finality_sync_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
 	where
 		T::Key: From<Key>,
-		FinalitySyncCheckpoint: DbEncode<T::Result>,
 	{
 		self.db.put(Key::FinalitySyncCheckpoint, checkpoint)
 	}
@@ -104,7 +103,6 @@ impl<T: DB> SubscriptionLoop<T> {
 	pub async fn run(mut self) -> Result<()>
 	where
 		T::Key: From<Key>,
-		FinalitySyncCheckpoint: DbEncode<T::Result>,
 	{
 		// create subscriptions stream
 		let subscriptions = self.rpc_client.clone().subscription_stream().await;
@@ -125,7 +123,6 @@ impl<T: DB> SubscriptionLoop<T> {
 	async fn handle_new_subscription(&mut self, subscription: Subscription)
 	where
 		T::Key: From<Key>,
-		FinalitySyncCheckpoint: DbEncode<T::Result>,
 	{
 		match subscription {
 			Subscription::Header(header) => {
@@ -183,7 +180,6 @@ impl<T: DB> SubscriptionLoop<T> {
 	async fn verify_and_output_block_headers(&mut self)
 	where
 		T::Key: From<Key>,
-		FinalitySyncCheckpoint: DbEncode<T::Result>,
 	{
 		let mut finality_synced = false;
 		while let Some(justification) = self.block_data.justifications.pop() {

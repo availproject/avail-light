@@ -1,17 +1,8 @@
 pub mod data {
 	use color_eyre::eyre::Result;
+	use serde::{Deserialize, Serialize};
 
 	use crate::data::Key;
-
-	/// Types that can be decoded from T
-	pub trait Decode<T>: Sized {
-		fn decode(source: T) -> Result<Self>;
-	}
-
-	/// Types that can be encoded into T
-	pub trait Encode<T> {
-		fn encode(&self) -> Result<T>;
-	}
 
 	pub trait DB {
 		/// Type of the database key which we can get from the custom key.
@@ -21,16 +12,16 @@ pub mod data {
 		type Result;
 
 		/// Puts value for given key into database.
-		/// Key is encoded into database key, value is encoded into type supported by database.
+		/// Key is serialized into database key, value is serialized into type supported by database.
 		fn put<T>(&self, key: Key, value: T) -> Result<()>
 		where
-			T: Encode<Self::Result>;
+			T: Serialize;
 
 		/// Gets value for given key.
-		/// Key is encoded into database key, value is decoded into the given type.
+		/// Key is serialized into database key, value is deserialized into the given type.
 		fn get<T>(&self, key: Key) -> Result<Option<T>>
 		where
-			T: Decode<Self::Result>;
+			for<'a> T: Deserialize<'a>;
 
 		/// Deletes value from the database for the given key.
 		fn delete(&self, key: Key) -> Result<()>;
@@ -43,6 +34,7 @@ pub mod data {
 		};
 		use color_eyre::eyre::{eyre, Context, Result};
 		use rocksdb::{ColumnFamilyDescriptor, Options};
+		use serde::{Deserialize, Serialize};
 		use std::sync::Arc;
 
 		#[derive(Clone)]
@@ -76,7 +68,7 @@ pub mod data {
 
 			fn put<T>(&self, key: Key, value: T) -> Result<()>
 			where
-				T: data::Encode<Self::Result>,
+				T: Serialize,
 			{
 				let (column_family, key) = key.into();
 				// if Column Family descriptor was provided, put the key in that partition
@@ -84,7 +76,7 @@ pub mod data {
 					// else, just put it in the default partition
 					return self
 						.db
-						.put(key, value.encode()?)
+						.put(key, serde_json::to_vec(&value)?)
 						.wrap_err("Put operation failed on RocksDB");
 				};
 
@@ -93,13 +85,13 @@ pub mod data {
 					.cf_handle(cf)
 					.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
 				self.db
-					.put_cf(&cf_handle, key, value.encode()?)
+					.put_cf(&cf_handle, key, serde_json::to_vec(&value)?)
 					.wrap_err("Put operation with Column Family failed on RocksDB")
 			}
 
 			fn get<T>(&self, key: Key) -> Result<Option<T>>
 			where
-				T: data::Decode<Self::Result>,
+				T: for<'a> Deserialize<'a>,
 			{
 				let (column_family, key) = key.into();
 				// if Column Family descriptor was provided, get the key from that partition
@@ -108,7 +100,7 @@ pub mod data {
 					return self
 						.db
 						.get(key)?
-						.map(T::decode)
+						.map(|value| serde_json::from_slice(&value))
 						.transpose()
 						.wrap_err("Get operation failed on RocksDB");
 				};
@@ -120,7 +112,7 @@ pub mod data {
 
 				self.db
 					.get_cf(&cf_handle, key)?
-					.map(T::decode)
+					.map(|value| serde_json::from_slice(&value))
 					.transpose()
 					.wrap_err("Get operation with Column Family failed on RocksDB")
 			}
@@ -147,11 +139,9 @@ pub mod data {
 	}
 
 	pub mod mem {
-		use crate::{
-			data::Key,
-			db::data::{Decode, Encode, DB},
-		};
-		use color_eyre::eyre::Result;
+		use crate::{data::Key, db::data::DB};
+		use color_eyre::eyre::{eyre, Result};
+		use serde::{Deserialize, Serialize};
 		use std::{
 			collections::HashMap,
 			sync::{Arc, RwLock},
@@ -179,20 +169,22 @@ pub mod data {
 
 			fn put<T>(&self, key: Key, value: T) -> Result<()>
 			where
-				T: Encode<Self::Result>,
+				T: Serialize,
 			{
 				let mut map = self.map.write().expect("Lock acquired");
 
-				map.insert(key.into(), value.encode()?);
+				map.insert(key.into(), serde_json::to_string(&value)?);
 				Ok(())
 			}
 
 			fn get<T>(&self, key: Key) -> Result<Option<T>>
 			where
-				T: Decode<Self::Result>,
+				T: for<'a> Deserialize<'a>,
 			{
 				let map = self.map.read().expect("Lock acquired");
-				map.get(&key.into()).cloned().map(T::decode).transpose()
+				map.get(&key.into())
+					.map(|value| serde_json::from_str(value).map_err(|error| eyre!("{error}")))
+					.transpose()
 			}
 
 			fn delete(&self, key: Key) -> Result<()> {

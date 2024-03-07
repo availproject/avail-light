@@ -27,7 +27,7 @@ use crate::{
 		// database::{Database, Encode as DbEncode},
 		Key,
 	},
-	db::data::{Encode as DbEncode, DB},
+	db::data::DB,
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -63,10 +63,7 @@ impl<T: DB> FatClient<T> {
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		self.rpc_client.request_kate_proof(hash, positions).await
 	}
-	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
-	where
-		avail_subxt::Header: DbEncode<T::Result>,
-	{
+	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::BlockHeader(block_number), header)
 			.wrap_err("Fat Client failed to store Block Header")
@@ -80,10 +77,7 @@ pub async fn process_block<T: DB>(
 	header: &Header,
 	received_at: Instant,
 	partition: Partition,
-) -> Result<()>
-where
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) -> Result<()> {
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
@@ -209,9 +203,7 @@ pub async fn run<T: DB + Sync>(
 	mut channels: ClientChannels,
 	partition: Partition,
 	shutdown: Controller<String>,
-) where
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) {
 	info!("Starting fat client...");
 
 	loop {

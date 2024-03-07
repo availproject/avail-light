@@ -51,18 +51,12 @@ pub fn new<T: DB>(db: T) -> LightClient<T> {
 }
 
 impl<T: DB + Clone> LightClient<T> {
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>
-	where
-		u32: DbEncode<T::Result>,
-	{
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::ConfidenceFactor(block_number), count)
 			.wrap_err("Light Client failed to store Confidence Factor")
 	}
-	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>
-	where
-		avail_subxt::Header: DbEncode<T::Result>,
-	{
+	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::BlockHeader(block_number), header)
 			.wrap_err("Light Client failed to store Block Header")
@@ -77,11 +71,7 @@ pub async fn process_block<T: DB + Clone>(
 	header: Header,
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
-) -> Result<Option<f64>>
-where
-	u32: DbEncode<T::Result>,
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) -> Result<Option<f64>> {
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
@@ -213,10 +203,7 @@ pub async fn run<T: DB + Clone>(
 	state: Arc<Mutex<State>>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
-) where
-	u32: DbEncode<T::Result>,
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) {
 	info!("Starting light client...");
 
 	loop {

@@ -1,7 +1,4 @@
-use crate::{
-	db::data::{Decode, DB},
-	types::State,
-};
+use crate::{db::data::DB, types::State};
 
 use self::types::AppDataQuery;
 use std::{
@@ -33,11 +30,7 @@ pub fn routes<T: DB + Clone + Send>(
 	db: T,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
-where
-	Vec<Vec<u8>>: Decode<T::Result>,
-	u32: Decode<T::Result>,
-{
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let mode = warp::path!("v1" / "mode")
 		.and(with_app_id(app_id))
 		.map(handlers::mode);

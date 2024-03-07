@@ -9,7 +9,7 @@
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use crate::api::v2;
-use crate::db::data::{Decode, DB};
+use crate::db::data::DB;
 use crate::shutdown::Controller;
 use crate::types::IdentityConfig;
 use crate::{
@@ -48,12 +48,7 @@ fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> 
 
 impl<T: DB + Clone + Send + Sync + 'static> Server<T> {
 	/// Creates a HTTP server that needs to be spawned into a runtime
-	pub fn bind(self) -> impl Future<Output = ()>
-	where
-		u32: Decode<T::Result>,
-		avail_subxt::Header: Decode<T::Result>,
-		Vec<Vec<u8>>: Decode<T::Result>,
-	{
+	pub fn bind(self) -> impl Future<Output = ()> {
 		let RuntimeConfig {
 			http_server_host: host,
 			http_server_port: port,

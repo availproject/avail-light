@@ -17,7 +17,7 @@ use self::{
 
 use crate::{
 	api::v2::types::Topic,
-	db::data::{Decode, DB},
+	db::data::DB,
 	network::rpc::Client,
 	types::{IdentityConfig, RuntimeConfig, State},
 };
@@ -67,10 +67,7 @@ fn block_route<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
-where
-	u32: Decode<T::Result>,
-{
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
@@ -84,10 +81,7 @@ fn block_header_route<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
-where
-	avail_subxt::Header: Decode<T::Result>,
-{
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "header")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
@@ -101,10 +95,7 @@ fn block_data_route<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
-where
-	Vec<Vec<u8>>: Decode<T::Result>,
-{
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "data")
 		.and(warp::get())
 		.and(warp::query::<DataQuery>())
@@ -201,12 +192,7 @@ pub fn routes<T: DB + Clone + Send>(
 	rpc_client: Client,
 	ws_clients: WsClients,
 	db: T,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
-where
-	u32: Decode<T::Result>,
-	avail_subxt::Header: Decode<T::Result>,
-	Vec<Vec<u8>>: Decode<T::Result>,
-{
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
 		version,
 		network_version,
@@ -246,7 +232,8 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
-		db::data::mem,
+		data::Key,
+		db::data::{mem, DB},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
@@ -387,6 +374,7 @@ mod tests {
 			state.data_verified.set(10);
 		}
 		let db = mem::MemoryDB::default();
+		_ = db.put(Key::ConfidenceFactor(10), 4);
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -471,6 +459,7 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem::MemoryDB::default();
+		_ = db.put(Key::BlockHeader(1), header());
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -572,6 +561,18 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem::MemoryDB::default();
+		_ = db.put(
+			Key::AppData(1, 5),
+			vec![vec![
+				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
+				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
+				50, 12, 43, 176, 19, 42, 23, 73, 70, 223, 198, 180, 103, 34, 60, 246, 184, 49, 140,
+				113, 174, 234, 229, 95, 71, 18, 92, 158, 185, 168, 140, 126, 12, 191, 156, 50, 234,
+				8, 4, 68, 137, 5, 156, 94, 209, 7, 169, 105, 62, 63, 1, 122, 253, 195, 112, 173,
+				239, 21, 73, 163, 240, 106, 109, 131, 0, 4, 0, 4, 29, 1, 20, 116, 101, 115, 116,
+				10,
+			]],
+		);
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")

@@ -16,12 +16,8 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
-	data::{
-		FinalitySyncCheckpoint,
-		// database::{Database, Decode, Encode as DbEncode},
-		Key,
-	},
-	db::data::{Decode, Encode as DbEncode, DB},
+	data::Key,
+	db::data::DB,
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -57,11 +53,7 @@ pub fn new<T: DB + Clone>(db: T, rpc_client: RpcClient) -> SyncClient<T> {
 }
 
 impl<T: DB + Clone> SyncClient<T> {
-	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>
-	where
-		avail_subxt::Header: Decode<T::Result>,
-		avail_subxt::Header: DbEncode<T::Result>,
-	{
+	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		if let Some(header) = self
 			.db
 			.get(Key::BlockHeader(block_number))
@@ -92,20 +84,14 @@ impl<T: DB + Clone> SyncClient<T> {
 		Ok((header, hash))
 	}
 
-	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>
-	where
-		u32: Decode<T::Result>,
-	{
+	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
 		self.db
 			.get(Key::ConfidenceFactor(block_number))
 			.wrap_err("Sync Client failed to check if Confidence Factor is stored")
 			.map(|c: Option<u32>| c.is_some())
 	}
 
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>
-	where
-		u32: DbEncode<T::Result>,
-	{
+	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::ConfidenceFactor(block_number), count)
 			.wrap_err("Sync Client failed to store Confidence Factor")
@@ -119,10 +105,7 @@ async fn process_block<T: DB + Clone>(
 	header_hash: H256,
 	cfg: &SyncClientConfig,
 	block_verified_sender: broadcast::Sender<BlockVerified>,
-) -> Result<()>
-where
-	u32: DbEncode<T::Result>,
-{
+) -> Result<()> {
 	let block_number = header.number;
 	let begin = Instant::now();
 
@@ -186,14 +169,7 @@ pub async fn run<T: DB + Clone>(
 	sync_range: Range<u32>,
 	block_verified_sender: broadcast::Sender<BlockVerified>,
 	state: Arc<Mutex<State>>,
-) where
-	FinalitySyncCheckpoint: Decode<T::Result>,
-	FinalitySyncCheckpoint: DbEncode<T::Result>,
-	u32: Decode<T::Result>,
-	u32: DbEncode<T::Result>,
-	avail_subxt::Header: Decode<T::Result>,
-	avail_subxt::Header: DbEncode<T::Result>,
-{
+) {
 	if sync_range.is_empty() {
 		warn!("There are no blocks to sync for range {sync_range:?}");
 		return;

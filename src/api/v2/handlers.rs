@@ -10,7 +10,7 @@ use super::{
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
 	data::Key,
-	db::data::{Decode, DB},
+	db::data::DB,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -94,10 +94,7 @@ pub async fn block<T: DB + Clone + Send>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
-) -> Result<impl Reply, Error>
-where
-	u32: Decode<T::Result>,
-{
+) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
 	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
@@ -118,10 +115,7 @@ pub async fn block_header<T: DB>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
-) -> Result<Header, Error>
-where
-	avail_subxt::Header: Decode<T::Result>,
-{
+) -> Result<Header, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
 	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
@@ -147,10 +141,7 @@ pub async fn block_data<T: DB + Clone>(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
 	db: T,
-) -> Result<DataResponse, Error>
-where
-	Vec<Vec<u8>>: Decode<T::Result>,
-{
+) -> Result<DataResponse, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
 	let Some(app_id) = config.app_id else {
