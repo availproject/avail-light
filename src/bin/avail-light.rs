@@ -4,7 +4,6 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	light_client::LightClient,
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
@@ -409,11 +408,10 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			shutdown.clone(),
 		)));
 	} else {
-		let light_client = LightClient::new(db.clone());
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
 		tokio::task::spawn(shutdown.with_cancel(avail_light::light_client::run(
-			light_client,
+			db.clone(),
 			light_network_client,
 			(&cfg).into(),
 			ot_metrics,
