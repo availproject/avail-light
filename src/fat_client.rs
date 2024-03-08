@@ -9,6 +9,7 @@
 //!
 //! In case delay is configured, block processing is delayed for configured time.
 
+use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
@@ -18,16 +19,14 @@ use kate_recovery::{
 	matrix::{Dimensions, Partition, Position},
 };
 use kate_recovery::{data::Cell, matrix::RowIndex};
+use mockall::automock;
 use sp_core::blake2_256;
 use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
 	data::Database,
-	data::{
-		// database::{Database, Encode as DbEncode},
-		Key,
-	},
+	data::Key,
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -37,6 +36,15 @@ use crate::{
 	types::{BlockVerified, ClientChannels, FatClientConfig},
 	utils::extract_kate,
 };
+
+#[async_trait]
+#[automock]
+pub trait Client {
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
+	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
+	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>;
+}
 
 #[derive(Clone)]
 pub struct FatClient<T: Database> {
@@ -53,16 +61,20 @@ pub fn new<T: Database>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> 
 	}
 }
 
-impl<T: Database> FatClient<T> {
+#[async_trait]
+impl<T: Database + Sync> Client for FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
+
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()> {
 		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
+
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		self.rpc_client.request_kate_proof(hash, positions).await
 	}
+
 	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()> {
 		self.db
 			.put(Key::BlockHeader(block_number), header)
@@ -70,8 +82,8 @@ impl<T: Database> FatClient<T> {
 	}
 }
 
-pub async fn process_block<T: Database>(
-	fat_client: &FatClient<T>,
+pub async fn process_block(
+	client: &impl Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &FatClientConfig,
 	header: &Header,
@@ -110,7 +122,7 @@ pub async fn process_block<T: Database>(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	fat_client
+	client
 		.store_block_header(header.clone(), block_number)
 		.wrap_err("Failed to store block header in DB")?;
 
@@ -128,7 +140,7 @@ pub async fn process_block<T: Database>(
 	let begin = Instant::now();
 	let mut rpc_fetched: Vec<Cell> = vec![];
 
-	let get_kate_proof = |&n| fat_client.get_kate_proof(header_hash, n);
+	let get_kate_proof = |&n| client.get_kate_proof(header_hash, n);
 
 	let rpc_batches = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
 	let parallel_batches = rpc_batches
@@ -140,7 +152,7 @@ pub async fn process_block<T: Database>(
 			let batch_rpc_fetched =
 				result.wrap_err(format!("Failed to fetch cells from node RPC at batch {i}"))?;
 
-			if let Err(e) = fat_client
+			if let Err(e) = client
 				.insert_cells_into_dht(block_number, batch_rpc_fetched.clone())
 				.await
 			{
@@ -173,10 +185,7 @@ pub async fn process_block<T: Database>(
 
 		let data_rows = data::rows(dimensions, &data_cells);
 
-		if let Err(e) = fat_client
-			.insert_rows_into_dht(block_number, data_rows)
-			.await
-		{
+		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
 			debug!("Error inserting rows into DHT: {e}");
 		}
 	} else {
@@ -196,8 +205,8 @@ pub async fn process_block<T: Database>(
 /// * `channels` - Communication channels
 /// * `partition` - Assigned fat client partition
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: Database + Sync>(
-	fat_client: FatClient<T>,
+pub async fn run(
+	client: impl Client,
 	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
@@ -232,7 +241,7 @@ pub async fn run<T: Database + Sync>(
 		}
 
 		if let Err(error) =
-			process_block(&fat_client, &metrics, &cfg, &header, received_at, partition).await
+			process_block(&client, &metrics, &cfg, &header, received_at, partition).await
 		{
 			error!("Cannot process block: {error}");
 			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
@@ -355,35 +364,35 @@ mod tests {
 		}
 	}
 
-	// #[tokio::test]
-	// async fn process_block_successful() {
-	// 	let mut mock_client = FatClient::new();
-	// 	mock_client
-	// 		.expect_get_kate_proof()
-	// 		.returning(move |_, _| Box::pin(async move { Ok(DEFAULT_CELLS.to_vec()) }));
-	// 	mock_client
-	// 		.expect_store_block_header()
-	// 		.returning(|_, _| Ok(()));
-	// 	mock_client
-	// 		.expect_insert_rows_into_dht()
-	// 		.returning(|_, _| Box::pin(async move { Ok(()) }));
-	// 	mock_client
-	// 		.expect_insert_cells_into_dht()
-	// 		.returning(|_, _| Box::pin(async move { Ok(()) }));
+	#[tokio::test]
+	async fn process_block_successful() {
+		let mut mock_client = MockClient::new();
+		mock_client
+			.expect_get_kate_proof()
+			.returning(move |_, _| Box::pin(async move { Ok(DEFAULT_CELLS.to_vec()) }));
+		mock_client
+			.expect_store_block_header()
+			.returning(|_, _| Ok(()));
+		mock_client
+			.expect_insert_rows_into_dht()
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_insert_cells_into_dht()
+			.returning(|_, _| Box::pin(async move { Ok(()) }));
 
-	// 	let mut mock_metrics = telemetry::MockMetrics::new();
-	// 	mock_metrics.expect_count().returning(|_| ());
-	// 	mock_metrics.expect_record().returning(|_| Ok(()));
+		let mut mock_metrics = telemetry::MockMetrics::new();
+		mock_metrics.expect_count().returning(|_| ());
+		mock_metrics.expect_record().returning(|_| Ok(()));
 
-	// 	process_block(
-	// 		&mock_client,
-	// 		&Arc::new(mock_metrics),
-	// 		&FatClientConfig::from(&RuntimeConfig::default()),
-	// 		&default_header(),
-	// 		Instant::now(),
-	// 		entire_block(),
-	// 	)
-	// 	.await
-	// 	.unwrap();
-	// }
+		process_block(
+			&mock_client,
+			&Arc::new(mock_metrics),
+			&FatClientConfig::from(&RuntimeConfig::default()),
+			&default_header(),
+			Instant::now(),
+			entire_block(),
+		)
+		.await
+		.unwrap();
+	}
 }
