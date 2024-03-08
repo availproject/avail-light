@@ -59,7 +59,7 @@ pub struct SyncFinality<T: Database + Sync> {
 }
 
 impl<T: Database + Sync> SyncFinality<T> {
-	pub fn new(db: T, rpc_client: rpc::Client) -> impl Client {
+	pub fn new(db: T, rpc_client: rpc::Client) -> Self {
 		SyncFinality { db, rpc_client }
 	}
 }

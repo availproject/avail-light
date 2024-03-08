@@ -54,7 +54,7 @@ pub struct LightClient<T: Database> {
 }
 
 impl<T: Database> LightClient<T> {
-	pub fn new(db: T) -> impl Client {
+	pub fn new(db: T) -> Self {
 		LightClient { db }
 	}
 }

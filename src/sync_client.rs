@@ -59,7 +59,7 @@ pub struct SyncClient<T: Database + Sync> {
 }
 
 impl<T: Database + Sync> SyncClient<T> {
-	pub fn new(db: T, rpc_client: RpcClient) -> impl Client {
+	pub fn new(db: T, rpc_client: RpcClient) -> Self {
 		SyncClient { db, rpc_client }
 	}
 }

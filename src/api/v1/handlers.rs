@@ -1,8 +1,7 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::Database,
-	data::Key,
+	data::{Database, Key},
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };

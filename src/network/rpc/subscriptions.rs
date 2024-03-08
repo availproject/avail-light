@@ -16,11 +16,7 @@ use tracing::{debug, info, trace};
 use super::{Client, Subscription};
 use crate::{
 	data::Database,
-	data::{
-		// database::{Database, Encode as DbEncode},
-		FinalitySyncCheckpoint,
-		Key,
-	},
+	data::{FinalitySyncCheckpoint, Key},
 	finality::{check_finality, ValidatorSet},
 	types::{GrandpaJustification, OptionBlockRange, State},
 	utils::filter_auth_set_changes,
