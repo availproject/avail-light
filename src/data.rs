@@ -51,28 +51,6 @@ pub enum Key {
 	FinalitySyncCheckpoint,
 }
 
-impl From<Key> for (Option<&'static str>, Vec<u8>) {
-	fn from(key: Key) -> Self {
-		match key {
-			Key::AppData(app_id, block_number) => (
-				Some(APP_DATA_CF),
-				format!("{app_id}:{block_number}").into_bytes(),
-			),
-			Key::BlockHeader(block_number) => {
-				(Some(BLOCK_HEADER_CF), block_number.to_be_bytes().to_vec())
-			},
-			Key::ConfidenceFactor(block_number) => (
-				Some(CONFIDENCE_FACTOR_CF),
-				block_number.to_be_bytes().to_vec(),
-			),
-			Key::FinalitySyncCheckpoint => (
-				Some(STATE_CF),
-				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
-			),
-		}
-	}
-}
-
 #[derive(Serialize, Deserialize, Debug, Decode, Encode)]
 pub struct FinalitySyncCheckpoint {
 	pub number: u32,
