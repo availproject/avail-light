@@ -4,9 +4,12 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
+	light_client::LightClient,
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
+	sync_client::SyncClient,
+	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes},
 	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
 };
@@ -336,7 +339,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		)));
 	}
 
-	let sync_client = avail_light::sync_client::new(db.clone(), rpc_client.clone());
+	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
 	let sync_network_client = network::new(
 		p2p_client.clone(),
@@ -358,7 +361,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	}
 
 	if cfg.sync_finality_enable {
-		let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
+		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
 		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_finality::run(
 			sync_finality,
 			shutdown.clone(),
@@ -406,8 +409,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			shutdown.clone(),
 		)));
 	} else {
-		let light_client = avail_light::light_client::new(db.clone());
-
+		let light_client = LightClient::new(db.clone());
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
 		tokio::task::spawn(shutdown.with_cancel(avail_light::light_client::run(
