@@ -375,7 +375,7 @@ mod tests {
 			state.data_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::ConfidenceFactor(10), 4);
+		_ = db.put(Key::VerifiedCellCount(10), 4);
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")

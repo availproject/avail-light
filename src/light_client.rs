@@ -131,7 +131,7 @@ pub async fn process_block(
 	}
 
 	// write confidence factor into on-disk database
-	db.put(Key::ConfidenceFactor(block_number), fetched.len() as u32)
+	db.put(Key::VerifiedCellCount(block_number), fetched.len() as u32)
 		.wrap_err("Light Client failed to store Confidence Factor")?;
 
 	state.lock().unwrap().confidence_achieved.set(block_number);

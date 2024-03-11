@@ -102,7 +102,7 @@ pub async fn block(
 	};
 
 	let confidence = db
-		.get(Key::ConfidenceFactor(block_number))
+		.get(Key::VerifiedCellCount(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 

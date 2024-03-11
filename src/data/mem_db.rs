@@ -62,7 +62,7 @@ impl From<Key> for HashMapKey {
 			Key::BlockHeader(block_number) => {
 				HashMapKey(format!("{BLOCK_HEADER_CF}:{block_number}"))
 			},
-			Key::ConfidenceFactor(block_number) => {
+			Key::VerifiedCellCount(block_number) => {
 				HashMapKey(format!("{CONFIDENCE_FACTOR_CF}:{block_number}"))
 			},
 			Key::FinalitySyncCheckpoint => HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string()),

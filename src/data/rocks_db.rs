@@ -42,7 +42,7 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 			Key::BlockHeader(block_number) => {
 				(Some(BLOCK_HEADER_CF), block_number.to_be_bytes().to_vec())
 			},
-			Key::ConfidenceFactor(block_number) => (
+			Key::VerifiedCellCount(block_number) => (
 				Some(CONFIDENCE_FACTOR_CF),
 				block_number.to_be_bytes().to_vec(),
 			),

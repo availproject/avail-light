@@ -98,14 +98,14 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 
 	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
 		self.db
-			.get(Key::ConfidenceFactor(block_number))
+			.get(Key::VerifiedCellCount(block_number))
 			.wrap_err("Sync Client failed to check if Confidence Factor is stored")
 			.map(|c: Option<u32>| c.is_some())
 	}
 
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
-			.put(Key::ConfidenceFactor(block_number), count)
+			.put(Key::VerifiedCellCount(block_number), count)
 			.wrap_err("Sync Client failed to store Confidence Factor")
 	}
 }

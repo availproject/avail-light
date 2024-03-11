@@ -33,7 +33,7 @@ pub fn confidence(
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
-	let res = match db.get(Key::ConfidenceFactor(block_num)) {
+	let res = match db.get(Key::VerifiedCellCount(block_num)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			let serialised_confidence = serialised_confidence(block_num, confidence);
@@ -71,7 +71,7 @@ pub fn status(
 	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
 	};
-	let res = match db.get(Key::ConfidenceFactor(last)) {
+	let res = match db.get(Key::VerifiedCellCount(last)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
