@@ -140,28 +140,26 @@ async fn build_swarm(
 
 	let mut swarm;
 
+	let behaviour = |key: &identity::Keypair, relay_client| {
+		Ok(Behaviour {
+			ping: ping::Behaviour::new(ping::Config::new()),
+			identify: identify::Behaviour::new(identify_cfg),
+			relay_client,
+			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
+			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, cfg.into()),
+			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
+			mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
+			upnp: upnp::tokio::Behaviour::default(),
+			blocked_peers: allow_block_list::Behaviour::default(),
+		})
+	};
+
 	if is_ws_transport {
 		swarm = tokio_swarm
 			.with_websocket(noise::Config::new, yamux::Config::default)
 			.await?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(|key, relay_client| {
-				Ok(Behaviour {
-					ping: ping::Behaviour::new(ping::Config::new()),
-					identify: identify::Behaviour::new(identify_cfg),
-					relay_client,
-					dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
-					kademlia: kad::Behaviour::with_config(
-						key.public().to_peer_id(),
-						kad_store,
-						cfg.into(),
-					),
-					auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
-					mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
-					upnp: upnp::tokio::Behaviour::default(),
-					blocked_peers: allow_block_list::Behaviour::default(),
-				})
-			})?
+			.with_behaviour(behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	} else {
@@ -173,23 +171,7 @@ async fn build_swarm(
 			)?
 			.with_dns()?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(|key, relay_client| {
-				Ok(Behaviour {
-					ping: ping::Behaviour::new(ping::Config::new()),
-					identify: identify::Behaviour::new(identify_cfg),
-					relay_client,
-					dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
-					kademlia: kad::Behaviour::with_config(
-						key.public().to_peer_id(),
-						kad_store,
-						cfg.into(),
-					),
-					auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
-					mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
-					upnp: upnp::tokio::Behaviour::default(),
-					blocked_peers: allow_block_list::Behaviour::default(),
-				})
-			})?
+			.with_behaviour(behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	}
