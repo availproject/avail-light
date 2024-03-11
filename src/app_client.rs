@@ -421,9 +421,9 @@ async fn process_block(
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 #[allow(clippy::too_many_arguments)]
-pub async fn run<T: Database + Clone + Sync>(
+pub async fn run(
 	cfg: AppClientConfig,
-	db: T,
+	db: impl Database + Clone + Sync,
 	network_client: P2pClient,
 	rpc_client: RpcClient,
 	app_id: AppId,

@@ -89,17 +89,7 @@ impl<T: Database> SubscriptionLoop<T> {
 		})
 	}
 
-	fn store_finality_sync_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>
-	where
-		T::Key: From<Key>,
-	{
-		self.db.put(Key::FinalitySyncCheckpoint, checkpoint)
-	}
-
-	pub async fn run(mut self) -> Result<()>
-	where
-		T::Key: From<Key>,
-	{
+	pub async fn run(mut self) -> Result<()> {
 		// create subscriptions stream
 		let subscriptions = self.rpc_client.clone().subscription_stream().await;
 		futures::pin_mut!(subscriptions);
@@ -116,10 +106,7 @@ impl<T: Database> SubscriptionLoop<T> {
 		Ok(())
 	}
 
-	async fn handle_new_subscription(&mut self, subscription: Subscription)
-	where
-		T::Key: From<Key>,
-	{
+	async fn handle_new_subscription(&mut self, subscription: Subscription) {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
@@ -173,10 +160,7 @@ impl<T: Database> SubscriptionLoop<T> {
 		self.verify_and_output_block_headers().await;
 	}
 
-	async fn verify_and_output_block_headers(&mut self)
-	where
-		T::Key: From<Key>,
-	{
+	async fn verify_and_output_block_headers(&mut self) {
 		let mut finality_synced = false;
 		while let Some(justification) = self.block_data.justifications.pop() {
 			// iterate through Headers and try to find a matching one
@@ -202,12 +186,16 @@ impl<T: Database> SubscriptionLoop<T> {
 				// store Finality Checkpoint if finality is synced
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
-					self.store_finality_sync_checkpoint(FinalitySyncCheckpoint {
-						set_id: self.block_data.current_valset.set_id,
-						number: header.number,
-						validator_set: self.block_data.current_valset.validator_set.clone(),
-					})
-					.unwrap();
+					self.db
+						.put(
+							Key::FinalitySyncCheckpoint,
+							FinalitySyncCheckpoint {
+								set_id: self.block_data.current_valset.set_id,
+								number: header.number,
+								validator_set: self.block_data.current_valset.validator_set.clone(),
+							},
+						)
+						.unwrap();
 				}
 
 				// try and get get all the skipped blocks, if they exist

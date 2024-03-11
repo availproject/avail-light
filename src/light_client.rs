@@ -41,8 +41,8 @@ use crate::{
 	utils::{calculate_confidence, extract_kate},
 };
 
-pub async fn process_block<T: Database>(
-	db: T,
+pub async fn process_block(
+	db: impl Database,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
@@ -171,8 +171,8 @@ pub async fn process_block<T: Database>(
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
-pub async fn run<T: Database + Clone>(
-	db: T,
+pub async fn run(
+	db: impl Database + Clone,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,

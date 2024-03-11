@@ -27,9 +27,9 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 	ClientResponse::Normal(Mode::from(app_id))
 }
 
-pub fn confidence<T: Database>(
+pub fn confidence(
 	block_num: u32,
-	db: T,
+	db: impl Database,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
@@ -62,10 +62,10 @@ pub fn confidence<T: Database>(
 	res
 }
 
-pub fn status<T: Database>(
+pub fn status(
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database,
 ) -> ClientResponse<Status> {
 	let state = state.lock().unwrap();
 	let Some(last) = state.confidence_achieved.last() else {
@@ -97,10 +97,10 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 	}
 }
 
-pub fn appdata<T: Database>(
+pub fn appdata(
 	block_num: u32,
 	query: AppDataQuery,
-	db: T,
+	db: impl Database,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {

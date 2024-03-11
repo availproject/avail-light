@@ -65,10 +65,10 @@ fn status_route(
 		.map(handlers::status)
 }
 
-fn block_route<T: Database + Clone + Send>(
+fn block_route(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
@@ -79,10 +79,10 @@ fn block_route<T: Database + Clone + Send>(
 		.map(log_internal_server_error)
 }
 
-fn block_header_route<T: Database + Clone + Send>(
+fn block_header_route(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "header")
 		.and(warp::get())
@@ -93,10 +93,10 @@ fn block_header_route<T: Database + Clone + Send>(
 		.map(log_internal_server_error)
 }
 
-fn block_data_route<T: Database + Clone + Send>(
+fn block_data_route(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "data")
 		.and(warp::get())
@@ -185,7 +185,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes<T: Database + Clone + Send>(
+pub fn routes(
 	version: String,
 	network_version: String,
 	state: Arc<Mutex<State>>,
@@ -193,7 +193,7 @@ pub fn routes<T: Database + Clone + Send>(
 	identity_config: IdentityConfig,
 	rpc_client: Client,
 	ws_clients: WsClients,
-	db: T,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
 		version,

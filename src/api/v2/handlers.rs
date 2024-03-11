@@ -89,11 +89,11 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 	result
 }
 
-pub async fn block<T: Database + Clone + Send>(
+pub async fn block(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database,
 ) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -101,20 +101,19 @@ pub async fn block<T: Database + Clone + Send>(
 		return Err(Error::not_found());
 	};
 
-	let confidence: Result<Option<u32>> = db.get(Key::ConfidenceFactor(block_number));
-
-	let confidence = confidence
+	let confidence = db
+		.get(Key::ConfidenceFactor(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 
 	Ok(Block::new(block_status, confidence))
 }
 
-pub async fn block_header<T: Database>(
+pub async fn block_header(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database,
 ) -> Result<Header, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -129,18 +128,18 @@ pub async fn block_header<T: Database>(
 		return Err(Error::bad_request_unknown("Block header is not available"));
 	};
 
-	db.get(Key::BlockHeader(block_number))
+	db.get::<primitives::Header>(Key::BlockHeader(block_number))
 		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
-		.and_then(|header: primitives::Header| header.try_into())
+		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn block_data<T: Database + Clone>(
+pub async fn block_data(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
-	db: T,
+	db: impl Database,
 ) -> Result<DataResponse, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -156,8 +155,8 @@ pub async fn block_data<T: Database + Clone>(
 		return Err(Error::bad_request_unknown("Block data is not available"));
 	};
 
-	let data: Option<Vec<Vec<u8>>> = db
-		.get(Key::AppData(app_id, block_number))
+	let data = db
+		.get::<Vec<Vec<u8>>>(Key::AppData(app_id, block_number))
 		.map_err(Error::internal_server_error)?;
 
 	let Some(data) = data else {

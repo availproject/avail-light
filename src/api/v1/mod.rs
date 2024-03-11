@@ -10,16 +10,16 @@ use warp::{Filter, Rejection, Reply};
 mod handlers;
 mod types;
 
-fn with_db<T: Database + Clone + Send>(
-	db: T,
-) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
-	warp::any().map(move || db.clone())
-}
-
 fn with_state(
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (Arc<Mutex<State>>,), Error = Infallible> + Clone {
 	warp::any().map(move || state.clone())
+}
+
+fn with_db<T: Database + Clone + Send>(
+	db: T,
+) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
+	warp::any().map(move || db.clone())
 }
 
 fn with_app_id(
@@ -28,8 +28,8 @@ fn with_app_id(
 	warp::any().map(move || app_id)
 }
 
-pub fn routes<T: Database + Clone + Send>(
-	db: T,
+pub fn routes(
+	db: impl Database + Clone + Send,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {

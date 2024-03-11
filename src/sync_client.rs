@@ -82,8 +82,7 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 			.await
 			.wrap_err_with(|| {
 				format!(
-					"Sync Client failed to get Block {:#?} by Block Number from storage",
-					block_number
+					"Sync Client failed to get Block {block_number:#?} by Block Number from storage",
 				)
 			}) {
 			Ok(value) => value,

@@ -1,4 +1,5 @@
 use avail_light::{
+	data::rocks_db::RocksDB,
 	network::rpc,
 	types::{ExponentialConfig, RetryConfig, State},
 };
@@ -20,7 +21,7 @@ async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
 	println!("Using URL: {}", command_args.url);
 	println!("Using Path: {}", command_args.avail_path);
-	let db = avail_light::data::rocks_db::RocksDB::open(&command_args.avail_path)
+	let db = RocksDB::open(&command_args.avail_path)
 		.wrap_err("API Compatibility Test could not initialize database")?;
 
 	let state = Arc::new(Mutex::new(State::default()));
