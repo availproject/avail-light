@@ -396,11 +396,11 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	};
 
 	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client =
-			avail_light::fat_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
+		let fat_client = avail_light::fat_client::new(p2p_client.clone(), rpc_client.clone());
 
 		tokio::task::spawn(shutdown.with_cancel(avail_light::fat_client::run(
 			fat_client,
+			db.clone(),
 			(&cfg).into(),
 			ot_metrics.clone(),
 			channels,

@@ -43,26 +43,23 @@ pub trait Client {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
-	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
-pub struct FatClient<T: Database> {
-	db: T,
+pub struct FatClient {
 	p2p_client: P2pClient,
 	rpc_client: RpcClient,
 }
 
-pub fn new<T: Database>(db: T, p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient<T> {
+pub fn new(p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient {
 	FatClient {
-		db,
 		p2p_client,
 		rpc_client,
 	}
 }
 
 #[async_trait]
-impl<T: Database + Sync> Client for FatClient<T> {
+impl Client for FatClient {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
@@ -74,16 +71,11 @@ impl<T: Database + Sync> Client for FatClient<T> {
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		self.rpc_client.request_kate_proof(hash, positions).await
 	}
-
-	fn store_block_header(&self, header: Header, block_number: u32) -> Result<()> {
-		self.db
-			.put(Key::BlockHeader(block_number), header)
-			.wrap_err("Fat Client failed to store Block Header")
-	}
 }
 
 pub async fn process_block(
 	client: &impl Client,
+	db: impl Database,
 	metrics: &Arc<impl Metrics>,
 	cfg: &FatClientConfig,
 	header: &Header,
@@ -122,9 +114,8 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	client
-		.store_block_header(header.clone(), block_number)
-		.wrap_err("Failed to store block header in DB")?;
+	db.put(Key::BlockHeader(block_number), header)
+		.wrap_err("Fat Client failed to store Block Header")?;
 
 	// Fat client partition upload logic
 	let positions: Vec<Position> = dimensions
@@ -207,6 +198,7 @@ pub async fn process_block(
 /// * `shutdown` - Shutdown controller
 pub async fn run(
 	client: impl Client,
+	db: impl Database + Clone,
 	cfg: FatClientConfig,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
@@ -240,8 +232,16 @@ pub async fn run(
 			tokio::time::sleep(seconds).await;
 		}
 
-		if let Err(error) =
-			process_block(&client, &metrics, &cfg, &header, received_at, partition).await
+		if let Err(error) = process_block(
+			&client,
+			db.clone(),
+			&metrics,
+			&cfg,
+			&header,
+			received_at,
+			partition,
+		)
+		.await
 		{
 			error!("Cannot process block: {error}");
 			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
@@ -265,7 +265,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{telemetry, types::RuntimeConfig};
+	use crate::{data::mem_db, telemetry, types::RuntimeConfig};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -366,13 +366,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn process_block_successful() {
+		let db = mem_db::MemoryDB::default();
 		let mut mock_client = MockClient::new();
 		mock_client
 			.expect_get_kate_proof()
 			.returning(move |_, _| Box::pin(async move { Ok(DEFAULT_CELLS.to_vec()) }));
-		mock_client
-			.expect_store_block_header()
-			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
 			.returning(|_, _| Box::pin(async move { Ok(()) }));
@@ -386,6 +384,7 @@ mod tests {
 
 		process_block(
 			&mock_client,
+			db,
 			&Arc::new(mock_metrics),
 			&FatClientConfig::from(&RuntimeConfig::default()),
 			&default_header(),
