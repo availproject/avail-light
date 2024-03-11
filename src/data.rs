@@ -47,7 +47,7 @@ const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 pub enum Key {
 	AppData(u32, u32),
 	BlockHeader(u32),
-	ConfidenceFactor(u32),
+	VerifiedCellCount(u32),
 	FinalitySyncCheckpoint,
 }
 
