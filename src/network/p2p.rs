@@ -104,64 +104,77 @@ pub struct Behaviour {
 	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
 }
 
-fn build_swarm(
+fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {
+	config
+		.with_idle_connection_timeout(cfg.connection_idle_timeout)
+		.with_max_negotiating_inbound_streams(cfg.max_negotiating_inbound_streams)
+		.with_notify_handler_buffer_size(cfg.task_command_buffer_size)
+		.with_dial_concurrency_factor(cfg.dial_concurrency_factor)
+		.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
+}
+
+async fn build_swarm(
 	cfg: &LibP2PConfig,
 	id_keys: &libp2p::identity::Keypair,
-	kad_mode: libp2p::kad::Mode,
 	kad_store: MemoryStore,
+	is_ws_transport: bool,
 ) -> Result<Swarm<Behaviour>> {
+	// create Identify Protocol Config
+	let identify_cfg =
+		identify::Config::new(cfg.identify.protocol_version.clone(), id_keys.public())
+			.with_agent_version(cfg.identify.agent_version.to_string());
+
+	// create AutoNAT Client Config
+	let autonat_cfg = autonat::Config {
+		retry_interval: cfg.autonat.retry_interval,
+		refresh_interval: cfg.autonat.refresh_interval,
+		boot_delay: cfg.autonat.boot_delay,
+		throttle_server_period: cfg.autonat.throttle_server_period,
+		only_global_ips: cfg.autonat.only_global_ips,
+		..Default::default()
+	};
+
 	// build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
-	let mut swarm = SwarmBuilder::with_existing_identity(id_keys.clone())
-		.with_tokio()
-		.with_tcp(
-			tcp::Config::default().port_reuse(false).nodelay(false),
-			noise::Config::new,
-			yamux::Config::default,
-		)?
-		.with_quic()
-		.with_dns()?
-		.with_relay_client(noise::Config::new, yamux::Config::default)?
-		.with_behaviour(|key, relay_client| {
-			// create Identify Protocol Config
-			let identify_cfg =
-				identify::Config::new(cfg.identify.protocol_version.clone(), key.public())
-					.with_agent_version(cfg.identify.agent_version.to_string());
+	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
 
-			// create AutoNAT Client Config
-			let autonat_cfg = autonat::Config {
-				retry_interval: cfg.autonat.retry_interval,
-				refresh_interval: cfg.autonat.refresh_interval,
-				boot_delay: cfg.autonat.boot_delay,
-				throttle_server_period: cfg.autonat.throttle_server_period,
-				only_global_ips: cfg.autonat.only_global_ips,
-				..Default::default()
-			};
+	let mut swarm;
 
-			Ok(Behaviour {
-				ping: ping::Behaviour::new(ping::Config::new()),
-				identify: identify::Behaviour::new(identify_cfg),
-				relay_client,
-				dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
-				kademlia: kad::Behaviour::with_config(
-					key.public().to_peer_id(),
-					kad_store,
-					cfg.into(),
-				),
-				auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
-				mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
-				upnp: upnp::tokio::Behaviour::default(),
-				blocked_peers: allow_block_list::Behaviour::default(),
-			})
-		})?
-		.with_swarm_config(|c| {
-			c.with_idle_connection_timeout(cfg.connection_idle_timeout)
-				.with_max_negotiating_inbound_streams(cfg.max_negotiating_inbound_streams)
-				.with_notify_handler_buffer_size(cfg.task_command_buffer_size)
-				.with_dial_concurrency_factor(cfg.dial_concurrency_factor)
-				.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
+	let behaviour = |key: &identity::Keypair, relay_client| {
+		Ok(Behaviour {
+			ping: ping::Behaviour::new(ping::Config::new()),
+			identify: identify::Behaviour::new(identify_cfg),
+			relay_client,
+			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
+			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, cfg.into()),
+			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
+			mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
+			upnp: upnp::tokio::Behaviour::default(),
+			blocked_peers: allow_block_list::Behaviour::default(),
 		})
-		.build();
+	};
+
+	if is_ws_transport {
+		swarm = tokio_swarm
+			.with_websocket(noise::Config::new, yamux::Config::default)
+			.await?
+			.with_relay_client(noise::Config::new, yamux::Config::default)?
+			.with_behaviour(behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
+			.build();
+	} else {
+		swarm = tokio_swarm
+			.with_tcp(
+				tcp::Config::default().port_reuse(false).nodelay(false),
+				noise::Config::new,
+				yamux::Config::default,
+			)?
+			.with_dns()?
+			.with_relay_client(noise::Config::new, yamux::Config::default)?
+			.with_behaviour(behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
+			.build();
+	}
 
 	info!("Local peerID: {}", swarm.local_peer_id());
 
@@ -170,7 +183,10 @@ fn build_swarm(
 	// Because the identify protocol doesn't allow us to change
 	// agent data on the fly, we're forced to use static Kad modes
 	// instead of relying on dynamic changes
-	swarm.behaviour_mut().kademlia.set_mode(Some(kad_mode));
+	swarm
+		.behaviour_mut()
+		.kademlia
+		.set_mode(Some(cfg.kademlia.kademlia_mode.into()));
 
 	Ok(swarm)
 }
