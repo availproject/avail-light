@@ -25,8 +25,7 @@ use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-	data::Database,
-	data::Key,
+	data::{Database, Key},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},

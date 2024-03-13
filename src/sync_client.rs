@@ -16,8 +16,7 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
-	data::Database,
-	data::Key,
+	data::{Database, Key},
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},

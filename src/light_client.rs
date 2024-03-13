@@ -29,8 +29,7 @@ use std::{
 use tracing::{error, info};
 
 use crate::{
-	data::Key,
-	db::data::{Encode as DbEncode, DB},
+	data::{Database, Key},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -277,7 +276,6 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
-		let mut mock_client = MockLightClient::new();
 		let mut mock_network_client = network::MockClient::new();
 		let db = mem_db::MemoryDB::default();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
@@ -349,7 +347,7 @@ mod tests {
 			&mock_network_client,
 			&Arc::new(mock_metrics),
 			&cfg,
-			&header,
+			header,
 			recv,
 			state,
 		)

@@ -19,8 +19,7 @@ use subxt::{storage::StorageKey, utils::AccountId32};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::Database,
-	data::{FinalitySyncCheckpoint, Key},
+	data::{Database, FinalitySyncCheckpoint, Key},
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
