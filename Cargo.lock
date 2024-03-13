@@ -742,6 +742,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -758,6 +759,7 @@ checksum = "c980ee35e870bd1a4d2c8294d4c04d0499e67bca1e4b5cefcc693c2fa00caea9"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -816,6 +818,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "auto_impl"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c87f3f15e7794432337fc718554eaa4dc8f04c9677a950ffe366f20a162ae42"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -824,25 +837,54 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "avail-core"
 version = "0.5.1"
-source = "git+https://github.com/availproject/avail-core?branch=main#79a0cbfd4c2b47086ba8a6e10a81e8e450f5aa73"
+source = "git+https://github.com/availproject/avail-core?tag=core-goldberg-v1.11.0.0#34c910c175b6b7f18a48aabd1e64c86da5cfbad2"
 dependencies = [
- "binary-merkle-tree",
+ "binary-merkle-tree 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "derive_more",
  "ethabi",
- "frame-support",
+ "frame-support 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "hash256-std-hasher",
  "hex",
  "log",
+ "nomad-core 0.1.5 (git+https://github.com/availproject/avail-core?tag=core-goldberg-v1.11.0.0)",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-arithmetic 23.0.0",
- "sp-core 28.0.0",
- "sp-io 30.0.0",
- "sp-runtime 31.0.1",
- "sp-runtime-interface 24.0.0 (git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch)",
- "sp-std 14.0.0 (git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch)",
- "sp-trie 29.0.0",
+ "sp-arithmetic 16.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-io 23.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-trie 22.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "static_assertions",
+ "thiserror-no-std",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "avail-core"
+version = "0.5.1"
+source = "git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.2#9091f4a7acc730f06e1d64ecfab0ba5441bb2172"
+dependencies = [
+ "binary-merkle-tree 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "derive_more",
+ "ethabi",
+ "frame-support 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "hash256-std-hasher",
+ "hex",
+ "log",
+ "nomad-core 0.1.5 (git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.2)",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "static_assertions",
  "thiserror-no-std",
  "tiny-keccak",
@@ -912,11 +954,11 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.4.0"
-source = "git+https://github.com/availproject/avail.git?branch=main#188c20d6a1577670da65e0c6e1c2a38bea8239bb"
+source = "git+https://github.com/availproject/avail.git?branch=goldberg#0d5c16908bbcf5d2da3e11a1c52e90461fe0652d"
 dependencies = [
  "anyhow",
- "avail-core",
- "bounded-collections 0.2.0",
+ "avail-core 0.5.1 (git+https://github.com/availproject/avail-core?tag=core-goldberg-v1.11.0.0)",
+ "bounded-collections",
  "curve25519-dalek 2.1.3",
  "derive_more",
  "futures",
@@ -1074,8 +1116,17 @@ dependencies = [
 
 [[package]]
 name = "binary-merkle-tree"
-version = "13.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
+dependencies = [
+ "hash-db",
+ "log",
+]
+
+[[package]]
+name = "binary-merkle-tree"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "hash-db",
  "log",
@@ -1109,19 +1160,6 @@ dependencies = [
  "rustc-hash",
  "shlex",
  "syn 2.0.52",
-]
-
-[[package]]
-name = "bip39"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93f2635620bf0b9d4576eb7bb9a38a55df78bd1205d26fa994b25911a69f212f"
-dependencies = [
- "bitcoin_hashes",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "serde",
- "unicode-normalization",
 ]
 
 [[package]]
@@ -1496,6 +1534,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -1846,6 +1885,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -1894,6 +1934,7 @@ dependencies = [
  "quote",
  "strsim 0.10.0",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -1915,6 +1956,7 @@ checksum = "836a9bbc7ad63342d6d6e7b815ccab164bc77a2d95d84bc3117a8c0d5c98e2d5"
 dependencies = [
  "darling_core 0.20.3",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -2089,49 +2131,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
-]
-
-[[package]]
-name = "dleq_vrf"
-version = "0.0.2"
-source = "git+https://github.com/w3f/ring-vrf?rev=e9782f9#e9782f938629c90f3adb3fff2358bc8d1386af3e"
-dependencies = [
- "ark-ec",
- "ark-ff",
- "ark-scale",
- "ark-secret-scalar",
- "ark-serialize",
- "ark-std",
- "ark-transcript",
- "arrayvec 0.7.4",
- "zeroize",
-]
-
-[[package]]
-name = "docify"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc4fd38aaa9fb98ac70794c82a00360d1e165a87fbf96a8a91f9dfc602aaee2"
-dependencies = [
- "docify_macros",
-]
-
-[[package]]
-name = "docify_macros"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63fa215f3a0d40fb2a221b3aa90d8e1fbb8379785a990cb60d62ac71ebdc6460"
-dependencies = [
- "common-path",
- "derive-syn-parse",
- "once_cell",
- "proc-macro2",
- "quote",
- "regex",
- "syn 2.0.52",
- "termcolor",
- "toml 0.8.10",
- "walkdir",
 ]
 
 [[package]]
@@ -2347,6 +2346,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -2451,6 +2451,7 @@ dependencies = [
  "fs-err",
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -2588,8 +2589,8 @@ dependencies = [
 
 [[package]]
 name = "frame-support"
-version = "28.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "aquamarine",
  "array-bytes 6.2.2",
@@ -2629,8 +2630,8 @@ dependencies = [
 
 [[package]]
 name = "frame-support-procedural"
-version = "23.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "Inflector",
  "cfg-expr",
@@ -2642,14 +2643,31 @@ dependencies = [
  "proc-macro-warning",
  "proc-macro2",
  "quote",
- "sp-crypto-hashing",
+ "syn 2.0.52",
+]
+
+[[package]]
+name = "frame-support-procedural"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
+dependencies = [
+ "Inflector",
+ "cfg-expr",
+ "derive-syn-parse",
+ "expander",
+ "frame-support-procedural-tools 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "itertools 0.10.5",
+ "macro_magic",
+ "proc-macro-warning",
+ "proc-macro2",
+ "quote",
  "syn 2.0.52",
 ]
 
 [[package]]
 name = "frame-support-procedural-tools"
-version = "10.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "frame-support-procedural-tools-derive",
  "proc-macro-crate 3.1.0",
@@ -2659,9 +2677,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "frame-support-procedural-tools"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
+dependencies = [
+ "frame-support-procedural-tools-derive 3.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
+]
+
+[[package]]
 name = "frame-support-procedural-tools-derive"
-version = "11.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "3.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
+]
+
+[[package]]
+name = "frame-support-procedural-tools-derive"
+version = "3.0.0"
+source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2778,6 +2818,7 @@ checksum = "87750cf4b7a4c0625b1529e4c543c2182106e4dedc60a2a6455e00d212c489ac"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -3289,6 +3330,7 @@ dependencies = [
  "itoa",
  "pin-project-lite",
  "socket2 0.4.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -3335,6 +3377,7 @@ dependencies = [
  "iana-time-zone-haiku",
  "js-sys",
  "wasm-bindgen",
+ "windows-core",
  "windows-core",
 ]
 
@@ -4266,6 +4309,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -4541,6 +4585,7 @@ dependencies = [
  "macro_magic_macros",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -4555,6 +4600,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -4566,6 +4612,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -4576,6 +4623,7 @@ checksum = "ef9d79ae96aaba821963320eb2b6e34d17df1e5a83d8a1985c29cc5be59577b3"
 dependencies = [
  "macro_magic_core",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -4924,6 +4972,82 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "nomad-core"
+version = "0.1.5"
+source = "git+https://github.com/availproject/avail-core?tag=core-goldberg-v1.11.0.0#34c910c175b6b7f18a48aabd1e64c86da5cfbad2"
+dependencies = [
+ "ethers-core",
+ "ethers-signers",
+ "nomad-signature 0.1.3 (git+https://github.com/availproject/avail-core?tag=core-goldberg-v1.11.0.0)",
+ "parity-scale-codec",
+ "primitive-types",
+ "scale-info",
+ "serde",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-std 8.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "nomad-core"
+version = "0.1.5"
+source = "git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.2#9091f4a7acc730f06e1d64ecfab0ba5441bb2172"
+dependencies = [
+ "ethers-core",
+ "ethers-signers",
+ "nomad-signature 0.1.3 (git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.2)",
+ "parity-scale-codec",
+ "primitive-types",
+ "scale-info",
+ "serde",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "nomad-signature"
+version = "0.1.3"
+source = "git+https://github.com/availproject/avail-core?tag=core-goldberg-v1.11.0.0#34c910c175b6b7f18a48aabd1e64c86da5cfbad2"
+dependencies = [
+ "elliptic-curve 0.12.3",
+ "ethers-core",
+ "frame-support 4.0.0-dev (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "generic-array 0.14.7",
+ "hex",
+ "k256 0.11.6",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core 21.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "sp-runtime 24.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
+ "thiserror-no-std",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "nomad-signature"
+version = "0.1.3"
+source = "git+https://github.com/availproject/avail-core?tag=kate-recovery/v0.9.2#9091f4a7acc730f06e1d64ecfab0ba5441bb2172"
+dependencies = [
+ "elliptic-curve 0.12.3",
+ "ethers-core",
+ "frame-support 4.0.0-dev (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "generic-array 0.14.7",
+ "hex",
+ "k256 0.11.6",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
+ "thiserror-no-std",
+ "tiny-keccak",
 ]
 
 [[package]]
@@ -5365,6 +5489,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -5552,6 +5677,7 @@ checksum = "a41cf62165e97c7f814d2221421dbb9afcbcdb0a88068e5ea206e19951c2cbb5"
 dependencies = [
  "proc-macro2",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -5628,6 +5754,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -5659,6 +5786,7 @@ checksum = "440f724eba9f6996b75d63681b0a92b06947f1457076d503a4d2e2c8f56442b8"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -5967,6 +6095,7 @@ checksum = "5fddb4f8d99b0a2ebafc65a87a69a7b9875e4b1ae1f00db265d300ef7f28bccc"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -6557,7 +6686,9 @@ checksum = "f638d531eccd6e23b980caf34876660d38e265409d8e99b397ab71eb3612fad0"
 [[package]]
 name = "serde"
 version = "1.0.197"
+version = "1.0.197"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fb1c873e1b9b056a4dc4c0c198b24c3ffa059243875552b2bd0933b1aee4ce2"
 checksum = "3fb1c873e1b9b056a4dc4c0c198b24c3ffa059243875552b2bd0933b1aee4ce2"
 dependencies = [
  "serde_derive",
@@ -6586,11 +6717,14 @@ dependencies = [
 [[package]]
 name = "serde_derive"
 version = "1.0.197"
+version = "1.0.197"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eb0b34b42edc17f6b7cac84a52a1c5f0e1bb2227e997ca9011ea3dd34e8610b"
 checksum = "7eb0b34b42edc17f6b7cac84a52a1c5f0e1bb2227e997ca9011ea3dd34e8610b"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -6831,8 +6965,8 @@ dependencies = [
 
 [[package]]
 name = "sp-api"
-version = "26.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "hash-db",
  "log",
@@ -6852,8 +6986,8 @@ dependencies = [
 
 [[package]]
 name = "sp-api-proc-macro"
-version = "15.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "Inflector",
  "blake2",
@@ -6865,10 +6999,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sp-api-proc-macro"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0#948fbd2fd1233dc26dbb9f9bbc1d2cca2c03945d"
+dependencies = [
+ "Inflector",
+ "blake2",
+ "expander",
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
+]
+
+[[package]]
 name = "sp-application-crypto"
 version = "23.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "899492ea547816d5dfe9a5a2ecc32f65a7110805af6da3380aa4902371b31dc2"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -6894,8 +7041,7 @@ dependencies = [
 [[package]]
 name = "sp-arithmetic"
 version = "16.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb6020576e544c6824a51d651bc8df8e6ab67cd59f1c9ac09868bb81a5199ded"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "integer-sqrt",
  "num-traits",
@@ -6941,8 +7087,7 @@ dependencies = [
 [[package]]
 name = "sp-core"
 version = "21.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f18d9e2f67d8661f9729f35347069ac29d92758b59135176799db966947a7336"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "array-bytes 4.2.0",
  "bitflags 1.3.2",
@@ -7032,8 +7177,7 @@ dependencies = [
 [[package]]
 name = "sp-core-hashing"
 version = "9.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee599a8399448e65197f9a6cee338ad192e9023e35e31f22382964c3c174c68"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -7079,12 +7223,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-crypto-hashing-proc-macro"
-version = "0.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+name = "sp-core-hashing-proc-macro"
+version = "9.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "quote",
- "sp-crypto-hashing",
+ "sp-core-hashing 9.0.0 (git+https://github.com/availproject/substrate.git?branch=goldberg)",
  "syn 2.0.52",
 ]
 
@@ -7096,16 +7240,18 @@ checksum = "c7f531814d2f16995144c74428830ccf7d94ff4a7749632b83ad8199b181140c"
 dependencies = [
  "proc-macro2",
  "quote",
+ "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/substrate.git?branch=polkadot-v1.0.0)",
  "syn 2.0.52",
 ]
 
 [[package]]
 name = "sp-debug-derive"
-version = "14.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "8.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -7117,13 +7263,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
 name = "sp-externalities"
 version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0f71c671e01a8ca60da925d43a1b351b69626e268b8837f8371e320cf1dd100"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -7143,9 +7289,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-externalities"
-version = "0.25.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#629506ce061db76d31d4f7a81f4a497752b27259"
+name = "sp-inherents"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -7181,8 +7327,7 @@ dependencies = [
 [[package]]
 name = "sp-io"
 version = "23.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d597e35a9628fe7454b08965b2442e3ec0f264b0a90d41328e87422cec02e99"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "bytes",
  "ed25519 1.5.3",
@@ -7233,8 +7378,7 @@ dependencies = [
 [[package]]
 name = "sp-keystore"
 version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9be3cdd67cc1d9c1db17c5cbc4ec4924054a8437009d167f21f6590797e4aa45"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "futures",
  "parity-scale-codec",
@@ -7258,8 +7402,8 @@ dependencies = [
 
 [[package]]
 name = "sp-metadata-ir"
-version = "0.6.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "0.1.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "frame-metadata 16.0.0",
  "parity-scale-codec",
@@ -7270,8 +7414,7 @@ dependencies = [
 [[package]]
 name = "sp-panic-handler"
 version = "8.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebd2de46003fa8212426838ca71cd42ee36a26480ba9ffea983506ce03131033"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "backtrace",
  "lazy_static",
@@ -7291,8 +7434,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime"
 version = "24.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21c5bfc764a1a8259d7e8f7cfd22c84006275a512c958d3ff966c92151e134d5"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "either",
  "hash256-std-hasher",
@@ -7338,8 +7480,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "17.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e676128182f90015e916f806cba635c8141e341e7abbc45d25525472e1bbce8"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -7394,13 +7535,13 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "11.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5d5bd5566fe5633ec48dfa35ab152fd29f8a577c21971e1c6db9f28afb9bbb9"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "Inflector",
  "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -7415,12 +7556,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
-name = "sp-runtime-interface-proc-macro"
-version = "17.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#629506ce061db76d31d4f7a81f4a497752b27259"
+name = "sp-staking"
+version = "4.0.0-dev"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "Inflector",
  "expander",
@@ -7447,8 +7589,7 @@ dependencies = [
 [[package]]
 name = "sp-state-machine"
 version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ef45d31f9e7ac648f8899a0cd038a3608f8499028bff55b6c799702592325b6"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "hash-db",
  "log",
@@ -7489,8 +7630,7 @@ dependencies = [
 [[package]]
 name = "sp-std"
 version = "8.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53458e3c57df53698b3401ec0934bea8e8cfce034816873c0b0abbd83d7bac0d"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 
 [[package]]
 name = "sp-std"
@@ -7505,8 +7645,7 @@ source = "git+https://github.com/paritytech/polkadot-sdk#629506ce061db76d31d4f7a
 [[package]]
 name = "sp-storage"
 version = "13.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94294be83f11d4958cfea89ed5798f0b6605f5defc3a996948848458abbcc18e"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "impl-serde",
  "parity-scale-codec",
@@ -7545,8 +7684,7 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "10.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357f7591980dd58305956d32f8f6646d0a8ea9ea0e7e868e46f53b68ddf00cec"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "parity-scale-codec",
  "sp-std 8.0.0",
@@ -7582,8 +7720,7 @@ dependencies = [
 [[package]]
 name = "sp-trie"
 version = "22.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48e4eeb7ef23f79eba8609db79ef9cef242f994f1f87a3c0387b4b5f177fda74"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "ahash 0.8.7",
  "hash-db",
@@ -7629,8 +7766,8 @@ dependencies = [
 
 [[package]]
 name = "sp-version"
-version = "29.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "22.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "impl-serde",
  "parity-scale-codec",
@@ -7646,12 +7783,13 @@ dependencies = [
 
 [[package]]
 name = "sp-version-proc-macro"
-version = "13.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "8.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "parity-scale-codec",
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -7665,14 +7803,15 @@ dependencies = [
  "impl-trait-for-tuples",
  "log",
  "parity-scale-codec",
- "sp-std 8.0.0",
- "wasmtime",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.52",
 ]
 
 [[package]]
 name = "sp-wasm-interface"
-version = "20.0.0"
-source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch#b66ca4dfd5e244b70458d12ae37b5461739bee31"
+version = "14.0.0"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -7698,8 +7837,7 @@ dependencies = [
 [[package]]
 name = "sp-weights"
 version = "20.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45d084c735544f70625b821c3acdbc7a2fc1893ca98b85f1942631284692c75b"
+source = "git+https://github.com/availproject/substrate.git?branch=goldberg#da7b751f925fdd1e64d78682f01d1d4bfb13938c"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -7889,6 +8027,7 @@ dependencies = [
  "scale-info",
  "subxt-metadata",
  "syn 2.0.52",
+ "syn 2.0.52",
  "thiserror",
  "tokio",
 ]
@@ -7902,6 +8041,7 @@ dependencies = [
  "darling 0.20.3",
  "proc-macro-error",
  "subxt-codegen",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -7932,7 +8072,9 @@ dependencies = [
 [[package]]
 name = "syn"
 version = "2.0.52"
+version = "2.0.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b699d15b36d1f02c3e7c69f8ffef53de37aefae075d8488d4ba1a7788d574a07"
 checksum = "b699d15b36d1f02c3e7c69f8ffef53de37aefae075d8488d4ba1a7788d574a07"
 dependencies = [
  "proc-macro2",
@@ -8038,6 +8180,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -8048,6 +8191,7 @@ checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
  "test-case-core",
 ]
@@ -8078,6 +8222,7 @@ checksum = "fa0faa943b50f3db30a20aa7e265dbc66076993efed8463e8de414e5d06d3471"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -8249,6 +8394,7 @@ checksum = "5b8a1e28f2deaa14e508979454cb3a223b10b938b45af148bc0986de36f1923b"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -8468,6 +8614,7 @@ checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
@@ -8804,6 +8951,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -8985,6 +9133,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
  "wasm-bindgen-shared",
 ]
 
@@ -9018,6 +9167,7 @@ checksum = "bae1abb6806dc1ad9e560ed242107c0f6c84335f1749dd4e8ddb012ebd5e25a7"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
@@ -9230,6 +9380,7 @@ version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca229916c5ee38c2f2bc1e9d8f04df975b4bd93f9955dc69fabb5d91270045c9"
 dependencies = [
+ "windows-core",
  "windows-core",
  "windows-targets 0.48.5",
 ]
@@ -9629,6 +9780,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.52",
+ "syn 2.0.52",
 ]
 
 [[package]]
@@ -9648,6 +9800,7 @@ checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.52",
  "syn 2.0.52",
 ]
 
