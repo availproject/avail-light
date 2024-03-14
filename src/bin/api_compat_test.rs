@@ -1,10 +1,10 @@
 use avail_light::{
-	data,
-	network::rpc::{self},
+	data::rocks_db::RocksDB,
+	network::rpc,
 	types::{ExponentialConfig, RetryConfig, State},
 };
 use clap::Parser;
-use color_eyre::Result;
+use color_eyre::{eyre::Context, Result};
 use kate_recovery::matrix::Position;
 use std::sync::{Arc, Mutex};
 
@@ -21,7 +21,9 @@ async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
 	println!("Using URL: {}", command_args.url);
 	println!("Using Path: {}", command_args.avail_path);
-	let db = data::init_db(&command_args.avail_path)?;
+	let db = RocksDB::open(&command_args.avail_path)
+		.wrap_err("API Compatibility Test could not initialize database")?;
+
 	let state = Arc::new(Mutex::new(State::default()));
 	let retry_cfg = RetryConfig::Exponential(ExponentialConfig {
 		base: 10,

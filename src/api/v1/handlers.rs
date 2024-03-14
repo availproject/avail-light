@@ -1,7 +1,7 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{get_confidence_from_db, get_decoded_data_from_db},
+	data::{Database, Key},
 	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
@@ -13,7 +13,6 @@ use base64::{engine::general_purpose, Engine};
 use codec::Decode;
 use color_eyre::{eyre::WrapErr, Result};
 use num::{BigUint, FromPrimitive};
-use rocksdb::DB;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
@@ -30,11 +29,11 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 
 pub fn confidence(
 	block_num: u32,
-	db: Arc<DB>,
+	db: impl Database,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
-	let res = match get_confidence_from_db(db, block_num) {
+	let res = match db.get(Key::VerifiedCellCount(block_num)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			let serialised_confidence = serialised_confidence(block_num, confidence);
@@ -66,13 +65,13 @@ pub fn confidence(
 pub fn status(
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
-	db: Arc<DB>,
+	db: impl Database,
 ) -> ClientResponse<Status> {
 	let state = state.lock().unwrap();
 	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
 	};
-	let res = match get_confidence_from_db(db, last) {
+	let res = match db.get(Key::VerifiedCellCount(last)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
@@ -101,7 +100,7 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 pub fn appdata(
 	block_num: u32,
 	query: AppDataQuery,
-	db: Arc<DB>,
+	db: impl Database,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
@@ -130,11 +129,9 @@ pub fn appdata(
 	let state = state.lock().unwrap();
 	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
-	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
-		db,
-		app_id.unwrap_or(0u32),
-		block_num,
-	)) {
+	let res = match decode_app_data_to_extrinsics(
+		db.get(Key::AppData(app_id.unwrap_or(0u32), block_num)),
+	) {
 		Ok(Some(data)) => {
 			if !decode {
 				ClientResponse::Normal(ExtrinsicsDataResponse {

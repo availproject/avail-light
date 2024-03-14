@@ -10,9 +10,11 @@ use super::{
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
 	data::Database,
+	data::Key,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
+use avail_subxt::primitives;
 use color_eyre::{eyre::eyre, Result};
 use hyper::StatusCode;
 use std::{
@@ -100,7 +102,7 @@ pub async fn block(
 	};
 
 	let confidence = db
-		.get_confidence(block_number)
+		.get(Key::VerifiedCellCount(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 
@@ -126,7 +128,7 @@ pub async fn block_header(
 		return Err(Error::bad_request_unknown("Block header is not available"));
 	};
 
-	db.get_header(block_number)
+	db.get::<primitives::Header>(Key::BlockHeader(block_number))
 		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
@@ -154,7 +156,7 @@ pub async fn block_data(
 	};
 
 	let data = db
-		.get_data(app_id, block_number)
+		.get::<Vec<Vec<u8>>>(Key::AppData(app_id, block_number))
 		.map_err(Error::internal_server_error)?;
 
 	let Some(data) = data else {

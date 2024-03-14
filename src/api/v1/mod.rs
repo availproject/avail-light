@@ -1,7 +1,6 @@
-use crate::types::State;
+use crate::{data::Database, types::State};
 
 use self::types::AppDataQuery;
-use rocksdb::DB;
 use std::{
 	convert::Infallible,
 	sync::{Arc, Mutex},
@@ -17,7 +16,9 @@ fn with_state(
 	warp::any().map(move || state.clone())
 }
 
-fn with_db(db: Arc<DB>) -> impl Filter<Extract = (Arc<DB>,), Error = Infallible> + Clone {
+fn with_db<T: Database + Clone + Send>(
+	db: T,
+) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
 	warp::any().map(move || db.clone())
 }
 
@@ -28,7 +29,7 @@ fn with_app_id(
 }
 
 pub fn routes(
-	db: Arc<DB>,
+	db: impl Database + Clone + Send,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
