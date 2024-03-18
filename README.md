@@ -65,26 +65,6 @@ docker run avail-light
 
 ## Usage
 
-### Testnet
-
-The quickest way to run the Avail Light Client is to connect it to Avail testnet, using `--network` flag.
-
-```sh
-./avail-light --network goldberg
-```
-
-You can also specify a configuration file to supplement the default configuration:
-
-```sh
-./avail-light --config config.yaml --network goldberg
-```
-
-In case when location of the identity file is not the directory in which is the light client started, use `--identity` option:
-
-```sh
-./avail-light --config config.yaml --identity '../custom.toml'  --network goldberg
-```
-
 ### Local development
 
 For local development, a couple of prerequisites have to be met.
@@ -138,8 +118,6 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 ## Options
 
 - `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
-  - `biryani`: Biryani Devnet
-  - `goldberg`: Goldberg Testnet
   - `local`: Local development
 - `--config`: Location of the configuration file
 - `--identity`: Location of the identity file
@@ -264,7 +242,7 @@ max_kad_provided_keys = 1024
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
 - `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).
 - When an LC is freshly connected to a network, block finality is synced from the first block. If the LC is connected to a non-archive node on a long running network, initial validator sets won't be available and the finality checks will fail. In that case we recommend disabling the `sync_finality_enable` flag
-- When switching between the networks (i.e. Goldberg and local devnet), LC state in the `avail_path` directory has to be cleared
+- When switching between the networks (i.e. local devnet), LC state in the `avail_path` directory has to be cleared
 - OpenTelemetry push metrics are used for light client observability
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
 
