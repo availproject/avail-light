@@ -1,19 +1,4 @@
-# API Version 2
-
-API version 2 is still under development and under the **api-v2** feature toggle.\
-To access new endpoints, light client has to be run with:
-
-```sh
-cargo run --release --features api-v2
-```
-
-Since entire module is under the feature toggle, tests has to be run with:
-
-```sh
-cargo test --features api-v2
-```
-
-# API reference
+# API Version 2 reference
 
 ## **GET** `/v2/version`
 
