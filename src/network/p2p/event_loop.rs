@@ -417,7 +417,7 @@ impl EventLoop {
 					// if so, create reservation request with relay
 					if new == NatStatus::Private || old == NatStatus::Private {
 						info!("[AutoNat] Autonat says we're still private.");
-						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
+						// Fat clients should always be in Kademlia server mode, no need to do NAT traversal
 						if !self.event_loop_config.is_fat_client {
 							// select a relay, try to dial it
 							self.select_and_dial_relay();
