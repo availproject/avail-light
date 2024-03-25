@@ -73,6 +73,12 @@ pub struct CliOpts {
 	/// Avail secret seed phrase password
 	#[arg(long)]
 	pub avail_passphrase: Option<String>,
+	/// Seed string for libp2p keypair generation
+	#[arg(long)]
+	pub seed: Option<String>,
+	/// ed25519 private key for libp2p keypair generation
+	#[arg(long)]
+	pub private_key: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -931,6 +937,17 @@ impl RuntimeConfig {
 		self.sync_finality_enable |= opts.finality_sync_enable;
 		self.app_id = opts.app_id.or(self.app_id);
 		self.ws_transport_enable |= opts.ws_transport_enable;
+		if let Some(secret_key) = &opts.private_key {
+			self.secret_key = Some(SecretKey::Key {
+				key: secret_key.to_string(),
+			});
+		}
+
+		if let Some(seed) = &opts.seed {
+			self.secret_key = Some(SecretKey::Seed {
+				seed: seed.to_string(),
+			})
+		}
 
 		Ok(())
 	}
