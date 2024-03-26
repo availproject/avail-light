@@ -115,6 +115,12 @@ impl From<Base64> for Vec<u8> {
 	}
 }
 
+impl From<&Base64> for Vec<u8> {
+	fn from(val: &Base64) -> Self {
+		val.0.clone()
+	}
+}
+
 impl TryFrom<String> for Base64 {
 	type Error = DecodeError;
 
