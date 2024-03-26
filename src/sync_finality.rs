@@ -15,7 +15,7 @@ use std::{
 	iter::zip,
 	sync::{Arc, Mutex},
 };
-use subxt::{storage::StorageKey, utils::AccountId32};
+use subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32};
 use tracing::{error, info, trace};
 
 use crate::{
@@ -35,9 +35,8 @@ pub trait Client {
 	async fn get_paged_storage_keys(
 		&self,
 		key: Vec<u8>,
-		count: u32,
-		start_key: Option<Vec<u8>>,
-		hash: Option<H256>,
+		count: usize,
+		hash: H256,
 	) -> Result<Vec<StorageKey>>;
 	async fn get_genesis_hash(&self) -> Result<H256>;
 	async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64>;
@@ -68,12 +67,11 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 	async fn get_paged_storage_keys(
 		&self,
 		key: Vec<u8>,
-		count: u32,
-		start_key: Option<Vec<u8>>,
-		hash: Option<H256>,
+		count: usize,
+		hash: H256,
 	) -> Result<Vec<StorageKey>> {
 		self.rpc_client
-			.get_paged_storage_keys(key, count, start_key, hash)
+			.get_paged_storage_keys(key, count, hash)
 			.await
 			.wrap_err("Finality Sync Client failed to get paged Storage Keys")
 	}
@@ -173,12 +171,12 @@ async fn get_valset_at_genesis(
 	let grandpa_keys = client
 		// get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
 		// perhaps there is a better way, but I don't know it
-		.get_paged_storage_keys(k1.clone(), 1000, None, Some(genesis_hash))
+		.get_paged_storage_keys(k1.clone(), 1000, genesis_hash)
 		.await
 		.wrap_err("Couldn't get storage keys associated with key owners!")?
 		.into_iter()
 		// throw away the beginning, we don't need it
-		.map(|e| e.0[k1.len()..].to_vec())
+		.map(|e| e[k1.len()..].to_vec())
 		.filter(|e| {
 			// exclude the actual key (at the end of the storage key) from search, we may find "gran" by accident
 			e[..(e.len() - GRANDPA_KEY_LEN)]

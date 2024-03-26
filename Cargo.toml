@@ -19,11 +19,12 @@ bench = false
 
 [dependencies]
 # TODO: Remove direct dependency after relevant traits are implemented in avail-subxt
-subxt = "0.29"
+# subxt = { version = "0.34", features = [ "substrate-compat" ] }
+subxt = { version = "0.34" }
 
 # Internal deps
-avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", branch = "main" }
-avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", branch = "main" }
+avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", branch = "main" }
+avail-subxt = { version = "0.5", git = "https://github.com/availproject/avail.git", branch = "main" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", branch = "main" }
 
@@ -57,10 +58,10 @@ rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
 smallvec = "1.6.1"
-sp-core = { version = "21.0.0" }
+sp-core = { version = "21.0.0", features = [ "serde" ] }
 strip-ansi-escapes = "0.2.0"
 threadpool = "1.8.1"
-tiny-bip39 = "1.0.0"
+# tiny-bip39 = "1.0.0"
 tokio = { version = "1.35", features = ["full"] }
 tokio-retry = "0.3"
 tokio-stream = { version = "0.1.14", features = ["sync"] }
@@ -70,12 +71,14 @@ tracing-subscriber = { version = "0.3.15", features = ["json", "env-filter"] }
 uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
 void = "1.0.2"
 warp = "0.3.6"
+jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 
 # OpenTelemetry
 opentelemetry = "0.20.0"
 opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] }
 opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
+subxt-signer = "0.34.0"
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
 [patch.crates-io]
@@ -104,7 +107,7 @@ debug = true
 [profile.dev]
 
 [profile.release]
-incremental = false
+cincremental = false
 
 [profile.maxperf]
 inherits = "release"

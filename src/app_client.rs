@@ -201,7 +201,7 @@ impl Client for AppClient {
 			.zip(self.rpc_client.request_kate_rows(rows, block_hash).await?);
 		let mut result = vec![None; dimensions.extended_rows() as usize];
 		for (i, row) in rows {
-			result[i as usize] = row;
+			result[i as usize] = Some(row);
 		}
 		Ok(result)
 	}

@@ -5,7 +5,6 @@ use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
-use bip39::{Language, Mnemonic, MnemonicType};
 use clap::Parser;
 use codec::{Decode, Encode};
 use color_eyre::{
@@ -27,7 +26,8 @@ use std::num::{NonZeroU8, NonZeroUsize};
 use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
+use subxt_signer::bip39::{Language, Mnemonic};
+use subxt_signer::sr25519::Keypair;
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 
@@ -79,18 +79,6 @@ pub struct CliOpts {
 	/// ed25519 private key for libp2p keypair generation
 	#[arg(long)]
 	pub private_key: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct RuntimeVersion {
-	apis: Vec<(String, u32)>,
-	authoring_version: u32,
-	impl_name: String,
-	pub impl_version: u32,
-	pub spec_name: String,
-	pub spec_version: u32,
-	transaction_version: u32,
 }
 
 /// Light to app client channel message struct
@@ -955,7 +943,7 @@ impl RuntimeConfig {
 
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
-	pub avail_key_pair: Pair,
+	pub avail_key_pair: Keypair,
 	/// Avail ss58 address
 	pub avail_address: String,
 }
@@ -970,17 +958,19 @@ impl IdentityConfig {
 		let mut config: Config = confy::load_path(path)?;
 
 		let phrase = match config.avail_secret_seed_phrase.as_ref() {
-			None => Mnemonic::new(MnemonicType::Words24, Language::English).into_phrase(),
-			Some(phrase) => phrase.to_owned(),
+			None => Mnemonic::generate_in(Language::English, 24)?,
+			Some(phrase) => Mnemonic::parse_in(Language::English, phrase)
+				.map_err(|error| eyre!("TODO: {error}"))?,
 		};
 
 		if config.avail_secret_seed_phrase.is_none() {
-			config.avail_secret_seed_phrase = Some(phrase.clone());
+			config.avail_secret_seed_phrase = Some(phrase.to_string());
 			confy::store_path(path, &config)?;
 		}
 
-		let (avail_key_pair, _) = Pair::from_string_with_seed(&phrase, password)?;
-		let avail_address = avail_key_pair.public().to_ss58check();
+		let avail_key_pair = Keypair::from_phrase(&phrase, password)?;
+		let avail_address = avail_key_pair.public_key().to_account_id();
+		let avail_address = sp_core::crypto::AccountId32::from(avail_address.0).to_ss58check();
 
 		Ok(IdentityConfig {
 			avail_key_pair,

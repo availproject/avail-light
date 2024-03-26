@@ -1,8 +1,7 @@
 use async_trait::async_trait;
-use avail_subxt::{api, primitives::AvailExtrinsicParams, AvailConfig};
+use avail_core::AppId;
 use color_eyre::Result;
-use sp_core::sr25519::Pair;
-use subxt::tx::PairSigner;
+use subxt_signer::sr25519::Keypair;
 
 use super::types::{SubmitResponse, Transaction};
 use crate::network::rpc;
@@ -16,7 +15,7 @@ pub trait Submit {
 pub struct Submitter {
 	pub rpc_client: rpc::Client,
 	pub app_id: u32,
-	pub pair_signer: PairSigner<AvailConfig, Pair>,
+	pub pair_signer: Keypair,
 }
 
 #[async_trait]
@@ -24,10 +23,12 @@ impl Submit for Submitter {
 	async fn submit(&self, transaction: Transaction) -> Result<SubmitResponse> {
 		let ex_event = match transaction {
 			Transaction::Data(data) => {
-				let extrinsic = api::tx().data_availability().submit_data(data.into());
-				let params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
 				self.rpc_client
-					.submit_signed_and_wait_for_finalized(&extrinsic, &self.pair_signer, params)
+					.submit_signed_and_wait_for_finalized(
+						data.into(),
+						&self.pair_signer,
+						AppId(self.app_id),
+					)
 					.await?
 			},
 			Transaction::Extrinsic(extrinsic) => {

@@ -84,7 +84,6 @@ impl<'de> Deserialize<'de> for WrappedProof {
 pub struct Node {
 	pub host: String,
 	pub system_version: String,
-	pub spec_name: String,
 	pub spec_version: u32,
 	pub genesis_hash: H256,
 }
@@ -93,14 +92,12 @@ impl Node {
 	pub fn new(
 		host: String,
 		system_version: String,
-		spec_name: String,
 		spec_version: u32,
 		genesis_hash: H256,
 	) -> Self {
 		Self {
 			host,
 			system_version,
-			spec_name,
 			spec_version,
 			genesis_hash,
 		}
@@ -108,10 +105,9 @@ impl Node {
 
 	pub fn network(&self) -> String {
 		format!(
-			"{host}/{system_version}/{spec_name}/{spec_version}",
+			"{host}/{system_version}/{spec_version}",
 			host = self.host,
 			system_version = self.system_version,
-			spec_name = self.spec_name,
 			spec_version = self.spec_version,
 		)
 	}
@@ -122,7 +118,6 @@ impl Default for Node {
 		Self {
 			host: "{host}".to_string(),
 			system_version: "{system_version}".to_string(),
-			spec_name: "data-avail".to_string(),
 			spec_version: 0,
 			genesis_hash: Default::default(),
 		}
@@ -131,7 +126,7 @@ impl Default for Node {
 
 impl Display for Node {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "v{}/{}", self.system_version, self.spec_name)
+		write!(f, "v{}", self.system_version)
 	}
 }
 
@@ -147,7 +142,6 @@ impl Nodes {
 			list: candidates
 				.iter()
 				.map(|s| Node {
-					spec_name: Default::default(),
 					genesis_hash: Default::default(),
 					spec_version: Default::default(),
 					system_version: Default::default(),
