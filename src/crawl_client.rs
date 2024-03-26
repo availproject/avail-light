@@ -78,6 +78,11 @@ pub async fn run(
 			},
 		};
 
+		let Some(extension) = &block.extension else {
+			info!("Skipping block without header extension");
+			continue;
+		};
+
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
@@ -91,7 +96,7 @@ pub async fn run(
 		let start = Instant::now();
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let positions = block
+			let positions = extension
 				.dimensions
 				.iter_extended_partition_positions(&partition)
 				.collect::<Vec<_>>();
@@ -115,7 +120,7 @@ pub async fn run(
 		}
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let dimensions = block.dimensions;
+			let dimensions = extension.dimensions;
 			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
 			let total = rows.len();
 			let fetched = network_client

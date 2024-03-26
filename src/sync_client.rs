@@ -22,7 +22,7 @@ use crate::{
 		rpc::{self, Client as RpcClient},
 	},
 	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
-	utils::{calculate_confidence, extract_app_lookup, extract_kate},
+	utils::{calculate_confidence, extract_kate},
 };
 
 use async_trait::async_trait;
@@ -120,39 +120,45 @@ async fn process_block(
 	let block_number = header.number;
 	let begin = Instant::now();
 
-	let app_lookup = extract_app_lookup(&header.extension);
-
-	info!(block_number, "App index {:?}", app_lookup);
 	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
 
-	let (rows, cols, _, commitment) = extract_kate(&header.extension);
-	let dimensions = Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
+	let (required, verified, unverified) = match extract_kate(&header.extension) {
+		None => {
+			info!("Skipping block without header extension");
+			(0, 0, 0)
+		},
+		Some((rows, cols, _, commitment)) => {
+			let dimensions =
+				Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
 
-	let commitments = commitments::from_slice(&commitment)?;
+			let commitments = commitments::from_slice(&commitment)?;
 
-	// now this is in `u64`
-	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-	let positions = rpc::generate_random_cells(dimensions, cell_count);
+			// now this is in `u64`
+			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
+			let positions = rpc::generate_random_cells(dimensions, cell_count);
 
-	let (fetched, unfetched, _fetch_stats) = network_client
-		.fetch_verified(
-			block_number,
-			header_hash,
-			dimensions,
-			&commitments,
-			&positions,
-		)
-		.await?;
+			let (fetched, unfetched, _fetch_stats) = network_client
+				.fetch_verified(
+					block_number,
+					header_hash,
+					dimensions,
+					&commitments,
+					&positions,
+				)
+				.await?;
+			(positions.len(), fetched.len(), unfetched.len())
+		},
+	};
 
-	if positions.len() > fetched.len() {
-		error!(block_number, "Failed to fetch {} cells", unfetched.len());
+	if required > verified {
+		error!(block_number, "Failed to fetch {} cells", unverified);
 		return Ok(());
 	}
 
 	// write confidence factor into on-disk database
-	client.store_confidence(fetched.len().try_into()?, block_number)?;
+	client.store_confidence(verified.try_into()?, block_number)?;
 
-	let confidence = Some(calculate_confidence(fetched.len() as u32));
+	let confidence = Some(calculate_confidence(verified as u32));
 	let client_msg =
 		BlockVerified::try_from((header, confidence)).wrap_err("converting to message failed")?;
 
