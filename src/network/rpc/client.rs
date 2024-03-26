@@ -1,40 +1,44 @@
+use avail_core::AppId;
 use avail_subxt::{
 	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
-	avail::{self, Pair},
-	build_client,
+	avail::{Cells, GProof, GRawScalar},
 	primitives::Header,
+	rpc::KateRpcClient,
+	submit::submit_data,
+	tx,
 	utils::H256,
-	AvailConfig,
+	AvailClient, AvailConfig, RpcParams,
 };
-use color_eyre::{eyre::eyre, Report, Result};
+use color_eyre::{
+	eyre::{eyre, Context},
+	Report, Result,
+};
 use futures::{Stream, TryFutureExt, TryStreamExt};
 use kate_recovery::{data::Cell, matrix::Position};
-use sp_core::{
-	bytes::from_hex,
-	ed25519::{self, Public},
-};
+use sp_core::{bytes::from_hex, ed25519::Public, U256};
 use std::sync::{Arc, Mutex};
 use subxt::{
-	rpc::{types::BlockNumber, RpcParams},
+	backend::legacy::rpc_methods::{BlockNumber, StorageKey},
 	rpc_params,
-	storage::StorageKey,
-	tx::{PairSigner, SubmittableExtrinsic},
+	tx::SubmittableExtrinsic,
 	utils::AccountId32,
 };
+use subxt_signer::sr25519::Keypair;
 use tokio::sync::RwLock;
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use super::{Node, Nodes, Subscription, WrappedProof, CELL_WITH_PROOF_SIZE};
+use super::{Node, Nodes, Subscription, WrappedProof};
 use crate::{
+	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
 	types::{RetryConfig, RuntimeVersion, State, DEV_FLAG_GENHASH},
 };
 
 #[derive(Clone)]
 pub struct Client {
-	subxt_client: Arc<RwLock<avail::Client>>,
+	subxt_client: Arc<RwLock<Arc<AvailClient>>>,
 	state: Arc<Mutex<State>>,
 	nodes: Nodes,
 	retry_config: RetryConfig,
@@ -77,8 +81,8 @@ impl Client {
 		host: &str,
 		expected_node: ExpectedNodeVariant,
 		expected_genesis_hash: &str,
-	) -> Result<(avail::Client, Node)> {
-		let (client, _) = build_client(host, false).await.map_err(|e| eyre!(e))?;
+	) -> Result<(AvailClient, Node)> {
+		let client = AvailClient::new(host).await.map_err(|e| eyre!(e))?;
 
 		// check genesis hash
 		let genesis_hash = client.genesis_hash();
@@ -102,7 +106,7 @@ impl Client {
 		};
 
 		// check system and runtime versions
-		let system_version = client.rpc().system_version().await?;
+		let system_version = client.legacy_rpc().system_version().await?;
 		let runtime_version: RuntimeVersion = client
 			.rpc()
 			.request("state_getRuntimeVersion", RpcParams::new())
@@ -134,9 +138,9 @@ impl Client {
 		expected_node: ExpectedNodeVariant,
 		expected_genesis_hash: &str,
 		mut f: F,
-	) -> Result<(avail::Client, Node, T)>
+	) -> Result<(Arc<AvailClient>, Node, T)>
 	where
-		F: FnMut(avail::Client) -> Fut + Copy,
+		F: FnMut(Arc<AvailClient>) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		// go through the provided list of Nodes to try and find and appropriate one,
@@ -145,7 +149,8 @@ impl Client {
 			let result =
 				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
 					.and_then(move |(client, node)| {
-						f(client.clone()).map_ok(|res| (client, node, res))
+						let client = Arc::new(client);
+						f(client.clone()).map_ok(move |res| (client, node, res))
 					})
 					.await;
 
@@ -160,8 +165,8 @@ impl Client {
 
 	async fn with_retries<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
-		F: FnMut(avail::Client) -> Fut + Copy,
-		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
+		F: FnMut(Arc<AvailClient>) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T, jsonrpsee_core::client::Error>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
 		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
@@ -203,13 +208,13 @@ impl Client {
 	}
 
 	async fn create_subxt_subscriptions(
-		client: avail::Client,
+		client: Arc<AvailClient>,
 	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>, subxt::error::Error>
 	{
 		// create Header subscription
-		let header_subscription = client.rpc().subscribe_finalized_block_headers().await?;
+		let header_subscription = client.backend().stream_finalized_block_headers().await?;
 		// map Header subscription to the same type for later matching
-		let headers = header_subscription.map_ok(Subscription::Header);
+		let headers = header_subscription.map_ok(|(header, _)| Subscription::Header(header));
 
 		let justification_subscription = client
 			.rpc()
@@ -229,7 +234,9 @@ impl Client {
 		async_stream::stream! {
 			'outer: loop{
 				let mut stream = match self.with_retries(|client| async move{
-					Self::create_subxt_subscriptions(client).await
+					Self::create_subxt_subscriptions(client)
+						.await
+						.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 				}).await {
 					Ok(s) => s,
 					Err(err) => {
@@ -257,7 +264,7 @@ impl Client {
 		}
 	}
 
-	pub async fn current_client(&self) -> avail::Client {
+	pub async fn current_client(&self) -> Arc<AvailClient> {
 		self.subxt_client.read().await.clone()
 	}
 
@@ -265,9 +272,10 @@ impl Client {
 		let hash = self
 			.with_retries(|client| async move {
 				client
-					.rpc()
-					.block_hash(Some(BlockNumber::from(block_number)))
+					.legacy_rpc()
+					.chain_get_block_hash(Some(BlockNumber::from(block_number)))
 					.await
+					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 			})
 			.await?
 			.ok_or_else(|| eyre!("Block with number: {} not found", block_number))?;
@@ -276,12 +284,24 @@ impl Client {
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
-		let header = self
-			.with_retries(|client| async move { client.rpc().header(Some(block_hash)).await })
-			.await?
-			.ok_or_else(|| eyre!("Block Header with hash: {:?} not found", block_hash))?;
-
-		Ok(header)
+		self.with_retries(|client| async move {
+			client
+				.backend()
+				.block_header(block_hash)
+				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+				.await?
+				.ok_or_else(|| {
+					jsonrpsee_core::client::Error::Custom(format!(
+						"Block Header with hash: {:?} not found",
+						block_hash
+					))
+				})
+		})
+		.await
+		.wrap_err(format!(
+			"Block Header with hash: {:?} not found",
+			block_hash
+		))
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
@@ -292,6 +312,7 @@ impl Client {
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
 					.await
+					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 			})
 			.await?
 			.iter()
@@ -303,7 +324,13 @@ impl Client {
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
-			.with_retries(|client| async move { client.rpc().finalized_head().await })
+			.with_retries(|client| async move {
+				client
+					.legacy_rpc()
+					.chain_get_finalized_head()
+					.await
+					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+			})
 			.await?;
 
 		Ok(head)
@@ -326,7 +353,10 @@ impl Client {
 		let res: Vec<Option<Vec<u8>>> = self
 			.with_retries(|client| {
 				let params = params.clone();
-				async move { client.rpc().request("kate_queryRows", params).await }
+				async move {
+					let runtime_apis = client.runtime_api().at_latest().await?;
+					runtime_apis.call_raw("kate_queryRows", Some(params)).await
+				}
 			})
 			.await?;
 
@@ -338,28 +368,45 @@ impl Client {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		let mut params = RpcParams::new();
-		params.push(positions)?;
-		params.push(block_hash)?;
+		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
+			let proof: Vec<u8> = proof.into();
+			if proof.len() != 48 {
+				return Err(eyre!("Invalid proof length"));
+			}
 
-		let proofs: Vec<u8> = self
-			.with_retries(|client| {
-				let params = params.clone();
-				async move { client.rpc().request("kate_queryProof", params).await }
-			})
-			.await?;
+			let mut result = [0u8; 80];
+			scalar.to_big_endian(&mut result);
+			result[32..80].copy_from_slice(&proof);
+			Ok(result)
+		}
 
-		let i = proofs
-			.chunks_exact(CELL_WITH_PROOF_SIZE)
-			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"));
-
-		let proof = positions
+		let cells: Cells = positions
 			.iter()
-			.zip(i)
-			.map(|(&position, &content)| Cell { position, content })
-			.collect::<Vec<_>>();
+			.map(|p| avail_subxt::Cell {
+				row: p.row,
+				col: p.col as u32,
+			})
+			.collect::<Vec<_>>()
+			.try_into()
+			.map_err(|_| eyre!("Failed to convert to cells"))?;
 
-		Ok(proof)
+		let proofs: Vec<(GRawScalar, GProof)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move { client.rpc_methods().query_proof(cells, block_hash).await }
+			})
+			.await
+			.map_err(Report::from)?;
+
+		let contents = proofs
+			.into_iter()
+			.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
+
+		Ok(positions
+			.iter()
+			.zip(contents)
+			.map(|(&position, content)| Cell { position, content })
+			.collect::<Vec<_>>())
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
@@ -392,7 +439,14 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let set_id_key = api::storage().grandpa().current_set_id();
-				async move { client.storage().at(block_hash).fetch(&set_id_key).await }
+				async move {
+					client
+						.storage()
+						.at(block_hash)
+						.fetch(&set_id_key)
+						.await
+						.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+				}
 			})
 			.await?
 			.ok_or_else(|| eyre!("The set_id should exist"))?;
@@ -426,26 +480,14 @@ impl Client {
 
 	pub async fn submit_signed_and_wait_for_finalized<Call: subxt::tx::TxPayload>(
 		&self,
-		call: &Call,
-		signer: &PairSigner<AvailConfig, Pair>,
-		other_params: avail_subxt::primitives::AvailExtrinsicParams,
+		data: Base64,
+		signer: Keypair,
+		app_id: AppId,
 	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
-		let tx_progress = self
-			.with_retries(|client| {
-				let other_params = other_params.clone();
-				async move {
-					client
-						.tx()
-						.sign_and_submit_then_watch(call, signer, other_params)
-						.await
-				}
-			})
-			.await?;
-
-		tx_progress
-			.wait_for_finalized_success()
-			.await
-			.map_err(Report::from)
+		self.with_retries(|client| {
+			tx::in_finalized(submit_data(&self.subxt_client, &signer, data, app_id))
+		})
+		.await
 	}
 
 	pub async fn submit_from_bytes_and_wait_for_finalized(
@@ -456,9 +498,8 @@ impl Client {
 			.with_retries(|client| {
 				let tx_bytes = tx_bytes.clone();
 				async move {
-					SubmittableExtrinsic::from_bytes(client, tx_bytes)
-						.submit_and_watch()
-						.await
+					let extrinsic = SubmittableExtrinsic::from_bytes(client.online(), tx_bytes);
+					extrinsic.submit_and_watch().await
 				}
 			})
 			.await?;
@@ -474,31 +515,22 @@ impl Client {
 	pub async fn get_paged_storage_keys(
 		&self,
 		key: Vec<u8>,
-		count: u32,
-		start_key: Option<Vec<u8>>,
-		hash: Option<H256>,
+		count: usize,
+		hash: H256,
 	) -> Result<Vec<StorageKey>> {
-		let res = self
-			.with_retries(|client| {
-				let key = &key;
-				let start_key = start_key.clone();
-				async move {
-					client
-						.rpc()
-						.storage_keys_paged(key, count, start_key.as_deref(), hash)
-						.await
-				}
-			})
-			.await
-			.map_err(Report::from)?;
-
-		Ok(res)
+		self.with_retries(|client| async move {
+			let storage = client.storage().at(hash);
+			let raw_keys = storage.fetch_raw_keys(key).await?;
+			raw_keys.take(count).collect::<Result<Vec<_>, _>>().await
+		})
+		.await
+		.map_err(Report::from)
 	}
 
 	pub async fn get_session_key_owner_at(
 		&self,
 		block_hash: H256,
-		public_key: ed25519::Public,
+		public_key: Public,
 	) -> Result<Option<AccountId32>> {
 		let res = self
 			.with_retries(|client| {
@@ -525,9 +557,9 @@ impl Client {
 		params.push(block_number)?;
 
 		let res: WrappedProof = self
-			.with_retries(|client| {
-				let params = params.clone();
-				async move { client.rpc().request("grandpa_proveFinality", params).await }
+			.with_retries(|client| async move {
+				let api = client.runtime_api().at_latest().await?;
+				api.call_raw("grandpa_proveFinality", Some(params)).await
 			})
 			.await
 			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;

@@ -121,7 +121,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
   - `local`: Local development
 - `--config`: Location of the configuration file
 - `--identity`: Location of the identity file
-- `--appId`: The `appID` parameter for the application client
+- `--app-id`: The `appID` parameter for the application client
 - `--port`: LibP2P listener port
 - `--verbosity`: Log level. Possible values are:
   - `trace`

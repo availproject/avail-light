@@ -15,7 +15,7 @@ use std::{
 	iter::zip,
 	sync::{Arc, Mutex},
 };
-use subxt::{storage::StorageKey, utils::AccountId32};
+use subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32};
 use tracing::{error, info, trace};
 
 use crate::{
@@ -36,7 +36,6 @@ pub trait Client {
 		&self,
 		key: Vec<u8>,
 		count: u32,
-		start_key: Option<Vec<u8>>,
 		hash: Option<H256>,
 	) -> Result<Vec<StorageKey>>;
 	async fn get_genesis_hash(&self) -> Result<H256>;
@@ -69,11 +68,10 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 		&self,
 		key: Vec<u8>,
 		count: u32,
-		start_key: Option<Vec<u8>>,
 		hash: Option<H256>,
 	) -> Result<Vec<StorageKey>> {
 		self.rpc_client
-			.get_paged_storage_keys(key, count, start_key, hash)
+			.get_paged_storage_keys(key, count, hash)
 			.await
 			.wrap_err("Finality Sync Client failed to get paged Storage Keys")
 	}

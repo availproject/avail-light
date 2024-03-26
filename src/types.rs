@@ -27,7 +27,7 @@ use std::num::{NonZeroU8, NonZeroUsize};
 use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
+use subxt_signer::sr25519::Keypair;
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 
@@ -938,7 +938,7 @@ impl RuntimeConfig {
 
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
-	pub avail_key_pair: Pair,
+	pub avail_key_pair: Keypair,
 	/// Avail ss58 address
 	pub avail_address: String,
 }
@@ -953,17 +953,19 @@ impl IdentityConfig {
 		let mut config: Config = confy::load_path(path)?;
 
 		let phrase = match config.avail_secret_seed_phrase.as_ref() {
-			None => Mnemonic::new(MnemonicType::Words24, Language::English).into_phrase(),
-			Some(phrase) => phrase.to_owned(),
+			None => Mnemonic::new(MnemonicType::Words24, Language::English),
+			Some(phrase) => Mnemonic::from_phrase(phrase, Language::English)
+				.map_err(|error| eyre!("TODO: {error}"))?,
 		};
 
 		if config.avail_secret_seed_phrase.is_none() {
-			config.avail_secret_seed_phrase = Some(phrase.clone());
+			config.avail_secret_seed_phrase = Some(phrase.into_phrase());
 			confy::store_path(path, &config)?;
 		}
 
-		let (avail_key_pair, _) = Pair::from_string_with_seed(&phrase, password)?;
-		let avail_address = avail_key_pair.public().to_ss58check();
+		let avail_key_pair = Keypair::from_phrase(phrase, password)?;
+
+		let avail_address = avail_key_pair.public_key().to_ss58check();
 
 		Ok(IdentityConfig {
 			avail_key_pair,
