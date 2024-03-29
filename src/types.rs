@@ -50,7 +50,7 @@ pub struct CliOpts {
 	#[arg(short, long, value_name = "FILE", default_value = "identity.toml")]
 	pub identity: String,
 	/// AppID for application client
-	#[arg(long, value_name = "appId")]
+	#[arg(long, value_name = "app-id")]
 	pub app_id: Option<u32>,
 	/// Testnet or devnet selection
 	#[arg(short, long, value_name = "network")]
