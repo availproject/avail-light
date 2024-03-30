@@ -72,7 +72,7 @@ jobs:
               path: target/maxperf/avail-light-apple-arm64.tar.gz
 
   binary_apple_x86_64:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
           - uses: actions/checkout@v4
           - name: install cargo deps and build avail
