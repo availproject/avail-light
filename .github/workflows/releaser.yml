@@ -12,7 +12,7 @@ jobs:
   binary_linux_amd64:
     runs-on: ubuntu-20.04
     steps:
-         - uses: actions/checkout@v2
+         - uses: actions/checkout@v4
          - name: install cargo deps and build avail
            shell: bash
            run: |
@@ -32,7 +32,7 @@ jobs:
   binary_linux_arm64:
     runs-on: ubuntu-20.04
     steps:
-         - uses: actions/checkout@v2
+         - uses: actions/checkout@v4
          - name: install cargo deps and build avail
            shell: bash
            run: |
@@ -54,7 +54,7 @@ jobs:
   binary_apple_arm64:
     runs-on: macos-14
     steps:
-          - uses: actions/checkout@v2
+          - uses: actions/checkout@v4
           - name: install cargo deps and build avail
             shell: bash
             run: |
@@ -74,7 +74,7 @@ jobs:
   binary_apple_x86_64:
     runs-on: macos-latest
     steps:
-          - uses: actions/checkout@v2
+          - uses: actions/checkout@v4
           - name: install cargo deps and build avail
             shell: bash
             run: |
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
