@@ -12,13 +12,9 @@ on:
 jobs:
   build_and_test:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-
-        # A repository can have up to 10GB of caches.
-        # Check https://github.com/actions/cache for details.
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
