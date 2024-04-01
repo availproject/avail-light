@@ -27,7 +27,7 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt_signer::bip39::{Language, Mnemonic};
-use subxt_signer::sr25519::Keypair;
+use subxt_signer::sr25519::{dev, Keypair};
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 
@@ -79,6 +79,8 @@ pub struct CliOpts {
 	/// ed25519 private key for libp2p keypair generation
 	#[arg(long)]
 	pub private_key: Option<String>,
+	#[arg(long)]
+	pub alice: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -133,7 +135,6 @@ impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
 			return Ok(block);
 		};
 
-		if !commitment.is_empty() {
 		if !lookup.is_empty() {
 			block.extension = Some(Extension {
 				dimensions: Dimensions::new(rows, cols)
@@ -978,6 +979,16 @@ pub struct IdentityConfig {
 }
 
 impl IdentityConfig {
+	pub fn alice() -> Result<Self> {
+		let avail_key_pair = dev::alice();
+		let avail_address = avail_key_pair.public_key().to_account_id();
+		let avail_address = sp_core::crypto::AccountId32::from(avail_address.0).to_ss58check();
+
+		Ok(IdentityConfig {
+			avail_key_pair,
+			avail_address,
+		})
+	}
 	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
 		#[derive(Default, Serialize, Deserialize)]
 		struct Config {

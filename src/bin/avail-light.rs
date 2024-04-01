@@ -86,8 +86,10 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			.expect("global default subscriber is set")
 	}
 
-	let identity_cfg =
-		IdentityConfig::load_or_init(&opts.identity, opts.avail_passphrase.as_deref())?;
+	let identity_cfg = match opts.alice {
+		true => IdentityConfig::alice()?,
+		false => IdentityConfig::load_or_init(&opts.identity, opts.avail_passphrase.as_deref())?,
+	};
 	info!("Identity loaded from {}", &opts.identity);
 
 	let client_role = if cfg.is_fat_client() {
