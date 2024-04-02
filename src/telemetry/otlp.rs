@@ -1,22 +1,18 @@
 use async_trait::async_trait;
 use color_eyre::Result;
-use opentelemetry_api::{
-	global,
-	metrics::{Counter, Meter},
-	KeyValue,
-};
+use opentelemetry_api::{global, metrics::Meter, KeyValue};
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio::sync::RwLock;
 
-use super::MetricCounter;
+// use super::MetricCounter;
 
 const ATTRIBUTE_NUMBER: usize = 9;
 
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	counters: HashMap<String, Counter<u64>>,
+	// counters: HashMap<String, Counter<u64>>,
 	attributes: MetricAttributes,
 }
 
@@ -60,6 +56,7 @@ impl Metrics {
 		Ok(())
 	}
 
+	#[allow(dead_code)]
 	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
 		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
 		let attributes = self.attributes().await;
@@ -83,75 +80,75 @@ impl Metrics {
 
 #[async_trait]
 impl super::Metrics for Metrics {
-	async fn count(&self, counter: super::MetricCounter) {
-		__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
+	async fn count(&self, _counter: super::MetricCounter) {
+		// __self.counters[&counter.to_string()].add(1, &__self.attributes().await);
 	}
 
 	async fn record(&self, value: super::MetricValue) -> Result<()> {
 		match value {
-			super::MetricValue::TotalBlockNumber(number) => {
-				self.record_u64("total_block_number", number.into()).await?;
+			super::MetricValue::TotalBlockNumber(_number) => {
+				// self.record_u64("total_block_number", number.into()).await?;
 			},
-			super::MetricValue::DHTFetched(number) => {
-				self.record_f64("dht_fetched", number).await?;
+			super::MetricValue::DHTFetched(_number) => {
+				// self.record_f64("dht_fetched", number).await?;
 			},
-			super::MetricValue::DHTFetchedPercentage(number) => {
-				self.record_f64("dht_fetched_percentage", number).await?;
+			super::MetricValue::DHTFetchedPercentage(_number) => {
+				// self.record_f64("dht_fetched_percentage", number).await?;
 			},
-			super::MetricValue::DHTFetchDuration(number) => {
-				self.record_f64("dht_fetch_duration", number).await?;
+			super::MetricValue::DHTFetchDuration(_number) => {
+				// self.record_f64("dht_fetch_duration", number).await?;
 			},
-			super::MetricValue::NodeRPCFetched(number) => {
-				self.record_f64("node_rpc_fetched", number).await?;
+			super::MetricValue::NodeRPCFetched(_number) => {
+				// self.record_f64("node_rpc_fetched", number).await?;
 			},
-			super::MetricValue::NodeRPCFetchDuration(number) => {
-				self.record_f64("node_rpc_fetch_duration", number).await?;
+			super::MetricValue::NodeRPCFetchDuration(_number) => {
+				// self.record_f64("node_rpc_fetch_duration", number).await?;
 			},
-			super::MetricValue::BlockConfidence(number) => {
-				self.record_f64("block_confidence", number).await?;
+			super::MetricValue::BlockConfidence(_number) => {
+				// self.record_f64("block_confidence", number).await?;
 			},
-			super::MetricValue::BlockConfidenceTreshold(number) => {
-				self.record_f64("block_confidence_treshold", number).await?;
+			super::MetricValue::BlockConfidenceTreshold(_number) => {
+				// self.record_f64("block_confidence_treshold", number).await?;
 			},
-			super::MetricValue::RPCCallDuration(number) => {
-				self.record_f64("rpc_call_duration", number).await?;
+			super::MetricValue::RPCCallDuration(_number) => {
+				// self.record_f64("rpc_call_duration", number).await?;
 			},
-			super::MetricValue::DHTPutDuration(number) => {
-				self.record_f64("dht_put_duration", number).await?;
+			super::MetricValue::DHTPutDuration(_number) => {
+				// self.record_f64("dht_put_duration", number).await?;
 			},
-			super::MetricValue::DHTPutSuccess(number) => {
-				self.record_f64("dht_put_success", number).await?;
+			super::MetricValue::DHTPutSuccess(_number) => {
+				// self.record_f64("dht_put_success", number).await?;
 			},
-			super::MetricValue::KadRoutingPeerNum(number) => {
-				self.record_u64("kad_routing_table_peer_num", number as u64)
-					.await?;
+			super::MetricValue::KadRoutingPeerNum(_number) => {
+				// self.record_u64("kad_routing_table_peer_num", number as u64)
+				// 	.await?;
 			},
 			super::MetricValue::HealthCheck() => {
 				self.record_u64("up", 1).await?;
 			},
-			super::MetricValue::BlockProcessingDelay(number) => {
-				self.record_f64("block_processing_delay", number).await?;
+			super::MetricValue::BlockProcessingDelay(_number) => {
+				// self.record_f64("block_processing_delay", number).await?;
 			},
-			super::MetricValue::ReplicationFactor(number) => {
-				self.record_f64("replication_factor", number as f64).await?;
+			super::MetricValue::ReplicationFactor(_number) => {
+				// self.record_f64("replication_factor", number as f64).await?;
 			},
-			super::MetricValue::QueryTimeout(number) => {
-				self.record_f64("query_timeout", number as f64).await?;
+			super::MetricValue::QueryTimeout(_number) => {
+				// self.record_f64("query_timeout", number as f64).await?;
 			},
-			super::MetricValue::PingLatency(number) => {
-				self.record_f64("ping_latency", number).await?;
-			},
-			#[cfg(feature = "crawl")]
-			super::MetricValue::CrawlCellsSuccessRate(number) => {
-				self.record_f64("crawl_cells_success_rate", number).await?;
+			super::MetricValue::PingLatency(_number) => {
+				// self.record_f64("ping_latency", number).await?;
 			},
 			#[cfg(feature = "crawl")]
-			super::MetricValue::CrawlRowsSuccessRate(number) => {
-				self.record_f64("crawl_rows_success_rate", number).await?;
+			super::MetricValue::CrawlCellsSuccessRate(_number) => {
+				// self.record_f64("crawl_cells_success_rate", number).await?;
 			},
 			#[cfg(feature = "crawl")]
-			super::MetricValue::CrawlBlockDelay(number) => {
-				self.record_f64("crawl_block_delay", number).await?;
+			super::MetricValue::CrawlRowsSuccessRate(_number) => {
+				// self.record_f64("crawl_rows_success_rate", number).await?;
+			},
+			#[cfg(feature = "crawl")]
+			super::MetricValue::CrawlBlockDelay(_number) => {
+				// self.record_f64("crawl_block_delay", number).await?;
 			},
 		};
 		Ok(())
@@ -190,10 +187,10 @@ pub fn initialize(endpoint: String, attributes: MetricAttributes) -> Result<Metr
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let initialized_counters = MetricCounter::init_counters(meter.clone());
+	// let initialized_counters = MetricCounter::init_counters(meter.clone());
 	Ok(Metrics {
 		meter,
 		attributes,
-		counters: initialized_counters,
+		// counters: initialized_counters,
 	})
 }

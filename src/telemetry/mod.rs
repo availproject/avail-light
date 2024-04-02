@@ -1,12 +1,12 @@
 use std::{
-	collections::HashMap,
+	// collections::HashMap,
 	fmt::{self, Display, Formatter},
 };
 
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;
-use opentelemetry_api::metrics::{Counter, Meter};
+// use opentelemetry_api::metrics::{Counter, Meter};
 
 pub mod otlp;
 
@@ -34,26 +34,26 @@ impl Display for MetricCounter {
 	}
 }
 
-impl MetricCounter {
-	fn init_counters(meter: Meter) -> HashMap<String, Counter<u64>> {
-		let mut counter_map: HashMap<String, Counter<u64>> = Default::default();
-		for counter in [
-			MetricCounter::SessionBlock,
-			MetricCounter::OutgoingConnectionError,
-			MetricCounter::IncomingConnectionError,
-			MetricCounter::IncomingConnection,
-			MetricCounter::ConnectionEstablished,
-			MetricCounter::IncomingPutRecord,
-			MetricCounter::IncomingGetRecord,
-		] {
-			counter_map.insert(
-				counter.to_string(),
-				meter.u64_counter(counter.to_string()).init(),
-			);
-		}
-		counter_map
-	}
-}
+// impl MetricCounter {
+// 	fn init_counters(meter: Meter) -> HashMap<String, Counter<u64>> {
+// 		let mut counter_map: HashMap<String, Counter<u64>> = Default::default();
+// 		for counter in [
+// 			MetricCounter::SessionBlock,
+// 			MetricCounter::OutgoingConnectionError,
+// 			MetricCounter::IncomingConnectionError,
+// 			MetricCounter::IncomingConnection,
+// 			MetricCounter::ConnectionEstablished,
+// 			MetricCounter::IncomingPutRecord,
+// 			MetricCounter::IncomingGetRecord,
+// 		] {
+// 			counter_map.insert(
+// 				counter.to_string(),
+// 				meter.u64_counter(counter.to_string()).init(),
+// 			);
+// 		}
+// 		counter_map
+// 	}
+// }
 
 pub enum MetricValue {
 	TotalBlockNumber(u32),
