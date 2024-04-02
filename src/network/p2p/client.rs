@@ -738,12 +738,12 @@ impl Client {
 		self.insert_into_dht(records, block).await
 	}
 
-	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
+	pub async fn get_ip(&self) -> Result<String> {
 		let addr = self.get_multiaddress().await?;
 		for protocol in &addr {
 			match protocol {
-				Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
-				Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
+				Protocol::Ip4(ip) => return Ok(ip.to_string()),
+				Protocol::Ip6(ip) => return Ok(ip.to_string()),
 				_ => continue,
 			}
 		}

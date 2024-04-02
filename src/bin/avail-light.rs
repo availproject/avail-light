@@ -8,7 +8,7 @@ use avail_light::{
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
-	telemetry::{self, otlp::MetricAttributes},
+	telemetry::{self, otlp::MetricAttributes, MetricValue, Metrics},
 	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
 };
 use clap::Parser;
@@ -98,7 +98,10 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
 	info!("Running Avail light client version: {version}. Role: {client_role}.");
 	info!("Using config: {cfg:?}");
-	info!("Avail address is: {}", &identity_cfg.avail_address);
+	info!(
+		"Avail ss58 address: {}, public key: {}",
+		&identity_cfg.avail_address, &identity_cfg.avail_public_key
+	);
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
@@ -124,7 +127,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		ip: RwLock::new("".to_string()),
 		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update,
 		origin: cfg.origin.clone(),
-		avail_address: identity_cfg.avail_address.clone(),
+		avail_address: identity_cfg.avail_public_key.clone(),
 		operating_mode: cfg.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
@@ -230,6 +233,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			result
 		},
 	)));
+	ot_metrics.record(MetricValue::HealthCheck()).await?;
 
 	info!("Waiting for first finalized header...");
 	let block_header = match shutdown
