@@ -473,6 +473,31 @@ impl EventLoop {
 					SwarmEvent::IncomingConnectionError { .. } => {
 						metrics.count(MetricCounter::IncomingConnectionError).await;
 					},
+					SwarmEvent::ExternalAddrConfirmed { address } => {
+						info!(
+							"External reachability confirmed on address: {}",
+							address.to_string()
+						);
+						if let Some(multiaddress) = self
+							.swarm
+							.external_addresses()
+							.find(|&external| external == &address)
+						{
+							debug!("External address confirmed: setting metrics multiaddress to {multiaddress}");
+							metrics.set_multiaddress(multiaddress.to_string()).await;
+						}
+					},
+					SwarmEvent::ExternalAddrExpired { address } => {
+						if metrics.get_multiaddress().await == address.to_string() {
+							if let Some(multiaddress) = self.swarm.external_addresses().last() {
+								debug!("External address expired: setting metrics multiaddress to {multiaddress}");
+								metrics.set_multiaddress(multiaddress.to_string()).await;
+							} else {
+								debug!("External address expired: clearing multiaddress");
+								metrics.set_multiaddress("".to_string()).await;
+							}
+						}
+					},
 					SwarmEvent::ConnectionEstablished { peer_id, .. } => {
 						metrics.count(MetricCounter::ConnectionEstablished).await;
 						// Notify the connections we're waiting on that we've connected successfully

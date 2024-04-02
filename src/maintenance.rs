@@ -33,8 +33,7 @@ pub async fn process_block(
 		.await
 		.wrap_err("Unable to get Kademlia map size")?;
 
-	if let Ok((multiaddr, ip)) = p2p_client.get_multiaddress_and_ip().await {
-		metrics.set_multiaddress(multiaddr).await;
+	if let Ok(ip) = p2p_client.get_ip().await {
 		metrics.set_ip(ip).await;
 	}
 

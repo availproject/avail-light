@@ -164,6 +164,10 @@ impl super::Metrics for Metrics {
 	async fn set_ip(&self, ip: String) {
 		self.set_ip(ip).await;
 	}
+
+	async fn get_multiaddress(&self) -> String {
+		self.attributes.multiaddress.read().await.to_string()
+	}
 }
 
 pub fn initialize(endpoint: String, attributes: MetricAttributes) -> Result<Metrics> {
