@@ -87,4 +87,5 @@ pub trait Metrics {
 	async fn count(&self, counter: MetricCounter);
 	async fn record(&self, value: MetricValue) -> Result<()>;
 	async fn set_multiaddress(&self, multiaddr: String);
+	async fn get_multiaddress(&self) -> String;
 }
