@@ -937,6 +937,8 @@ pub struct IdentityConfig {
 	pub avail_key_pair: Pair,
 	/// Avail ss58 address
 	pub avail_address: String,
+	/// Avail public key
+	pub avail_public_key: String,
 }
 
 impl IdentityConfig {
@@ -960,10 +962,12 @@ impl IdentityConfig {
 
 		let (avail_key_pair, _) = Pair::from_string_with_seed(&phrase, password)?;
 		let avail_address = avail_key_pair.public().to_ss58check();
+		let avail_public_key = hex::encode(avail_key_pair.public().0);
 
 		Ok(IdentityConfig {
 			avail_key_pair,
 			avail_address,
+			avail_public_key,
 		})
 	}
 }
