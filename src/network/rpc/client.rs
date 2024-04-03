@@ -85,7 +85,9 @@ impl Client {
 		expected_node: ExpectedNodeVariant,
 		expected_genesis_hash: &str,
 	) -> Result<(AvailClient, Node)> {
-		let client = AvailClient::new(host).await.map_err(|e| eyre!(e))?;
+		let client = AvailClient::new_insecure(host)
+			.await
+			.map_err(|e| eyre!(e))?;
 
 		// check genesis hash
 		let genesis_hash = client.genesis_hash();
