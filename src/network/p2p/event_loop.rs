@@ -20,6 +20,7 @@ use libp2p::{
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
+	signal::ctrl_c,
 	sync::oneshot,
 	time::{interval_at, Instant, Interval},
 };
@@ -173,6 +174,10 @@ impl EventLoop {
 				// break the loop immediately, proceed to the cleanup phase
 				_ = self.shutdown.triggered_shutdown() => {
 					info!("Shutdown triggered, exiting the network event loop");
+					break;
+				}
+				_ = ctrl_c() => {
+					info!("SIGINT triggered, exiting the network event loop");
 					break;
 				}
 			}

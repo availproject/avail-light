@@ -1,7 +1,4 @@
-use std::{
-	// collections::HashMap,
-	fmt::{self, Display, Formatter},
-};
+use std::fmt::{self, Display, Formatter};
 
 use async_trait::async_trait;
 use color_eyre::Result;
