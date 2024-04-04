@@ -351,15 +351,17 @@ impl Client {
 			async move {
 				let rows = client.rpc_methods().query_rows(rows, block_hash).await?;
 				Ok(rows
-					.into_iter()
-					.flat_map(|row| {
-						row.into_iter().map(|cell| {
-							let mut bytes = [0u8; 32];
-							cell.to_big_endian(&mut bytes);
-							bytes.to_vec()
-						})
+					.iter()
+					.map(|row| {
+						row.iter()
+							.flat_map(|cell| {
+								let mut bytes = [0u8; 32];
+								cell.to_big_endian(&mut bytes);
+								bytes.to_vec()
+							})
+							.collect()
 					})
-					.collect::<Vec<_>>())
+					.collect())
 			}
 		})
 		.await
