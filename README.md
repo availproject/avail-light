@@ -1,3 +1,4 @@
+curl -sL1 http://avail.sh | bash
 <div align="Center">
 <h1>avail-light</h1>
 <h3> Light client for the Avail blockchain</h3>
@@ -236,7 +237,8 @@ max_kad_record_number = 2400000
 max_kad_record_size = 8192
 # The maximum number of provider records for which the local node is the provider. (default: 1024).
 max_kad_provided_keys = 1024
-```
+```curl -sL1 http://avail.sh | bash
+
 
 ## Notes
 
@@ -559,3 +561,4 @@ find . -name \*.profraw -type f -exec rm -f {} +
 ```
 
 Open `index.html` from the `./target/debug/coverage/` folder to review coverage data.
+curl -sL1 http://avail.sh | bash
