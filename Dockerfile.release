@@ -18,4 +18,4 @@ RUN adduser --disabled-password --gecos "" --no-create-home --uid 1000 avail \
 
 USER avail
 
-ENTRYPOINT ["/usr/local/bin/avail-light"]
+ENTRYPOINT ["/usr/local/bin/avail-light"]862d271c0b1757fbaa119435156633a2e22e96cbf6829f9bac33b642b7a82d68
