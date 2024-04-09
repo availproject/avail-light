@@ -11,7 +11,7 @@ use avail_light::{
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes},
-	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
+	types::{CliOpts, IdentityConfig, LibP2PConfig, Mode, RuntimeConfig, State},
 };
 use clap::Parser;
 use color_eyre::{
@@ -288,23 +288,26 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
 
-	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
-		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		tokio::task::spawn(shutdown.with_cancel(avail_light::app_client::run(
-			(&cfg).into(),
-			db.clone(),
-			p2p_client.clone(),
-			rpc_client.clone(),
-			app_id,
-			block_tx.subscribe(),
-			pp.clone(),
-			state.clone(),
-			sync_range.clone(),
-			data_tx,
-			shutdown.clone(),
-		)));
-		data_rx
-	});
+	let data_rx = match cfg.app_id.into() {
+		Mode::AppClient(app_id) => {
+			let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
+			tokio::task::spawn(shutdown.with_cancel(avail_light::app_client::run(
+				(&cfg).into(),
+				db.clone(),
+				p2p_client.clone(),
+				rpc_client.clone(),
+				AppId(app_id),
+				block_tx.subscribe(),
+				pp.clone(),
+				state.clone(),
+				sync_range.clone(),
+				data_tx,
+				shutdown.clone(),
+			)));
+			Some(data_rx)
+		},
+		_ => None,
+	};
 
 	tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
 		api::v2::types::Topic::HeaderVerified,
