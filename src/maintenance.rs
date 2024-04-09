@@ -42,14 +42,8 @@ pub async fn process_block(
 		.await
 		.wrap_err("Unable to get Kademlia map size")?;
 
-	// Get last confirmed external multiaddress
-	if let Ok(multiaddrs) = p2p_client.get_multiaddress_and_ip().await {
-		debug!("Confirmed external multiaddresses: {:?}", multiaddrs);
-		if let Some(last_confirmed_ma) = multiaddrs.last() {
-			metrics
-				.set_multiaddress(last_confirmed_ma.to_string())
-				.await;
-		}
+	if let Ok(ip) = p2p_client.get_ip().await {
+		metrics.set_ip(ip).await;
 	}
 
 	let peers_num = p2p_client.count_dht_entries().await?;

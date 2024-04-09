@@ -11,6 +11,7 @@ use kate_recovery::{
 };
 use libp2p::{
 	kad::{PeerRecord, Quorum, Record, RecordKey},
+	multiaddr::Protocol,
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
@@ -808,14 +809,17 @@ impl Client {
 		self.insert_into_dht(records, block).await
 	}
 
-	pub async fn get_multiaddress_and_ip(&self) -> Result<Vec<String>> {
-		let addr = self
-			.get_multiaddress()
-			.await?
-			.into_iter()
-			.map(|addr| addr.to_string())
-			.collect::<Vec<_>>();
-
-		Ok(addr)
+	pub async fn get_ip(&self) -> Result<String> {
+		let addrs = self.get_multiaddress().await?;
+		for addr in &addrs {
+			for protocol in addr {
+				match protocol {
+					Protocol::Ip4(ip) => return Ok(ip.to_string()),
+					Protocol::Ip6(ip) => return Ok(ip.to_string()),
+					_ => continue,
+				}
+			}
+		}
+		Err(eyre!("No IP Address was present in Multiaddress"))
 	}
 }
