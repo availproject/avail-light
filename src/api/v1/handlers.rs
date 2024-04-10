@@ -2,7 +2,7 @@ use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlock
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{Database, Key},
-	types::{Mode, OptionBlockRange, State},
+	types::{AppId, Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
 use avail_subxt::{
@@ -23,7 +23,7 @@ fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
 	Some(shifted.to_str_radix(10))
 }
 
-pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
+pub fn mode(app_id: Option<AppId>) -> ClientResponse<Mode> {
 	ClientResponse::Normal(Mode::from(app_id))
 }
 
@@ -63,7 +63,7 @@ pub fn confidence(
 }
 
 pub fn status(
-	app_id: Option<u32>,
+	app_id: Option<AppId>,
 	state: Arc<Mutex<State>>,
 	db: impl Database,
 ) -> ClientResponse<Status> {
@@ -101,7 +101,7 @@ pub fn appdata(
 	block_num: u32,
 	query: AppDataQuery,
 	db: impl Database,
-	app_id: Option<u32>,
+	app_id: Option<AppId>,
 	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
@@ -129,9 +129,10 @@ pub fn appdata(
 	let state = state.lock().unwrap();
 	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
-	let res = match decode_app_data_to_extrinsics(
-		db.get(Key::AppData(app_id.unwrap_or(0u32), block_num)),
-	) {
+	let Some(app_id) = app_id else {
+		return ClientResponse::NotFound;
+	};
+	let res = match decode_app_data_to_extrinsics(db.get(Key::AppData(app_id, block_num))) {
 		Ok(Some(data)) => {
 			if !decode {
 				ClientResponse::Normal(ExtrinsicsDataResponse {

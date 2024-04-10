@@ -27,7 +27,8 @@ use warp::{
 use crate::{
 	network::rpc::Event as RpcEvent,
 	types::{
-		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
+		self, block_matrix_partition_format, AppId, BlockVerified, OptionBlockRange, RuntimeConfig,
+		State,
 	},
 	utils::decode_app_data,
 };
@@ -88,7 +89,7 @@ pub struct Blocks {
 pub struct Status {
 	pub modes: Vec<Mode>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub app_id: Option<u32>,
+	pub app_id: Option<AppId>,
 	pub genesis_hash: String,
 	pub network: String,
 	pub blocks: Blocks,

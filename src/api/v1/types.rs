@@ -1,3 +1,4 @@
+use crate::types::AppId;
 use avail_subxt::primitives::AppUncheckedExtrinsic;
 use color_eyre::Report;
 use hyper::StatusCode;
@@ -44,7 +45,7 @@ pub struct LatestBlockResponse {
 pub struct Status {
 	pub block_num: u32,
 	pub confidence: f64,
-	pub app_id: Option<u32>,
+	pub app_id: Option<AppId>,
 }
 
 #[derive(Deserialize, Serialize)]

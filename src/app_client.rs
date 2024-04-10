@@ -12,7 +12,6 @@
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 use async_trait::async_trait;
-use avail_core::AppId;
 use avail_subxt::utils::H256;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -45,7 +44,7 @@ use crate::{
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
-	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
+	types::{AppClientConfig, AppId, BlockVerified, OptionBlockRange, State},
 };
 
 #[async_trait]
@@ -285,7 +284,7 @@ async fn process_block(
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = block.dimensions;
-
+	let app_id = app_id.into();
 	let commitments = &block.commitments;
 
 	let app_rows = app_specific_rows(lookup, dimensions, app_id);
@@ -302,7 +301,6 @@ async fn process_block(
 
 	let dht_rows_count = dht_rows.iter().flatten().count();
 	debug!(block_number, "Fetched {dht_rows_count} app rows from DHT");
-
 	let (dht_verified_rows, dht_missing_rows) =
 		commitments::verify_equality(&pp, commitments, &dht_rows, lookup, dimensions, app_id)?;
 	debug!(
@@ -393,7 +391,7 @@ async fn process_block(
 	debug!(block_number, "Storing data into database");
 
 	// store encoded App Data into the database
-	db.put(Key::AppData(app_id.0, block_number), data.clone())
+	db.put(Key::AppData(app_id.0.into(), block_number), data.clone())
 		.wrap_err("App Client failed to store App Data into database")?;
 
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
@@ -459,7 +457,7 @@ pub async fn run(
 
 		info!(block_number, "Block available: {dimensions:?}");
 
-		if block.lookup.range_of(app_id).is_none() {
+		if block.lookup.range_of(app_id.into()).is_none() {
 			info!(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
@@ -497,7 +495,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		data::mem_db,
-		types::{AppClientConfig, RuntimeConfig},
+		types::{AppClientConfig, AppId, RuntimeConfig},
 	};
 	use avail_core::DataLookup;
 	use hex_literal::hex;
@@ -553,7 +551,7 @@ mod tests {
 			.expect_reconstruct_rows_from_dht()
 			.returning(|_, _, _, _, _| Box::pin(async move { Ok(vec![]) }));
 
-		process_block(mock_client, db, &cfg, AppId(1), &block, pp)
+		process_block(mock_client, db, &cfg, AppId::Application(1), &block, pp)
 			.await
 			.unwrap();
 	}
@@ -615,7 +613,7 @@ mod tests {
 			.expect_reconstruct_rows_from_dht()
 			.returning(|_, _, _, _, _| Box::pin(async move { Ok(vec![]) }));
 
-		process_block(mock_client, db, &cfg, AppId(1), &block, pp)
+		process_block(mock_client, db, &cfg, AppId::Application(1), &block, pp)
 			.await
 			.unwrap();
 	}

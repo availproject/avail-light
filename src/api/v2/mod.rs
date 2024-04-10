@@ -236,7 +236,7 @@ mod tests {
 		},
 		data::Key,
 		data::{mem_db, Database},
-		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
+		types::{AppId, BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
 	use avail_subxt::utils::H256;
@@ -304,7 +304,7 @@ mod tests {
 	#[tokio::test]
 	async fn status_route() {
 		let runtime_config = RuntimeConfig {
-			app_id: Some(1),
+			app_id: Some(AppId::Application(1)),
 			sync_start_block: Some(10),
 			block_matrix_partition: Some(Partition {
 				number: 1,
@@ -481,7 +481,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_data_route_bad_request(block_number: u32, expected: &str) {
 		let config = RuntimeConfig {
-			app_id: Some(1),
+			app_id: Some(AppId::Application(1)),
 			sync_start_block: Some(1),
 			..Default::default()
 		};
@@ -524,7 +524,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_data_route_ok_empty() {
 		let config = RuntimeConfig {
-			app_id: Some(1),
+			app_id: Some(AppId::Application(1)),
 			..Default::default()
 		};
 		let state = Arc::new(Mutex::new(State {
@@ -551,7 +551,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_data_route_ok() {
 		let config = RuntimeConfig {
-			app_id: Some(1),
+			app_id: Some(AppId::Application(1)),
 			..Default::default()
 		};
 		let state = Arc::new(Mutex::new(State {
@@ -563,7 +563,7 @@ mod tests {
 		}));
 		let db = mem_db::MemoryDB::default();
 		_ = db.put(
-			Key::AppData(1, 5),
+			Key::AppData(AppId::Application(1), 5),
 			vec![vec![
 				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
 				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
@@ -726,7 +726,7 @@ mod tests {
 	#[tokio::test]
 	async fn ws_route_status() {
 		let config = RuntimeConfig {
-			app_id: Some(1),
+			app_id: Some(AppId::Application(1)),
 			sync_start_block: Some(10),
 			block_matrix_partition: Some(Partition {
 				number: 1,

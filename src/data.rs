@@ -1,3 +1,4 @@
+use crate::types::AppId;
 use codec::{Decode, Encode};
 use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,7 @@ const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
 #[derive(Clone)]
 pub enum Key {
-	AppData(u32, u32),
+	AppData(AppId, u32),
 	BlockHeader(u32),
 	VerifiedCellCount(u32),
 	FinalitySyncCheckpoint,

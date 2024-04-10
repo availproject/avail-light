@@ -1,6 +1,5 @@
 #![doc = include_str!("../../README.md")]
 
-use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
@@ -288,7 +287,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
 
-	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
+	let data_rx = cfg.app_id.map(|app_id| {
 		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
 		tokio::task::spawn(shutdown.with_cancel(avail_light::app_client::run(
 			(&cfg).into(),

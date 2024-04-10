@@ -1,11 +1,10 @@
+use super::types::{SubmitResponse, Transaction};
+use crate::{network::rpc, types::AppId};
 use async_trait::async_trait;
 use avail_subxt::{api, primitives::AvailExtrinsicParams, AvailConfig};
 use color_eyre::Result;
 use sp_core::sr25519::Pair;
 use subxt::tx::PairSigner;
-
-use super::types::{SubmitResponse, Transaction};
-use crate::network::rpc;
 
 #[async_trait]
 pub trait Submit {
@@ -15,7 +14,7 @@ pub trait Submit {
 #[derive(Clone)]
 pub struct Submitter {
 	pub rpc_client: rpc::Client,
-	pub app_id: u32,
+	pub app_id: AppId,
 	pub pair_signer: PairSigner<AvailConfig, Pair>,
 }
 

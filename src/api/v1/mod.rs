@@ -1,4 +1,7 @@
-use crate::{data::Database, types::State};
+use crate::{
+	data::Database,
+	types::{AppId, State},
+};
 
 use self::types::AppDataQuery;
 use std::{
@@ -23,14 +26,14 @@ fn with_db<T: Database + Clone + Send>(
 }
 
 fn with_app_id(
-	app_id: Option<u32>,
-) -> impl Filter<Extract = (Option<u32>,), Error = Infallible> + Clone {
+	app_id: Option<AppId>,
+) -> impl Filter<Extract = (Option<AppId>,), Error = Infallible> + Clone {
 	warp::any().map(move || app_id)
 }
 
 pub fn routes(
 	db: impl Database + Clone + Send,
-	app_id: Option<u32>,
+	app_id: Option<AppId>,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let mode = warp::path!("v1" / "mode")

@@ -23,7 +23,7 @@ use sp_core::crypto::Ss58Codec;
 use sp_core::{blake2_256, bytes, ed25519};
 use std::fmt::{self, Display, Formatter};
 use std::fs;
-use std::num::{NonZeroU8, NonZeroUsize};
+use std::num::{NonZeroU8, NonZeroUsize, ParseIntError};
 use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -51,7 +51,7 @@ pub struct CliOpts {
 	pub identity: String,
 	/// AppID for application client
 	#[arg(long, value_name = "app-id")]
-	pub app_id: Option<u32>,
+	pub app_id: Option<AppId>,
 	/// Testnet or devnet selection
 	#[arg(short, long, value_name = "network")]
 	pub network: Option<Network>,
@@ -79,6 +79,57 @@ pub struct CliOpts {
 	/// ed25519 private key for libp2p keypair generation
 	#[arg(long)]
 	pub private_key: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(from = "u32", into = "u32")]
+pub enum AppId {
+	System,
+	Application(u32),
+}
+
+impl FromStr for AppId {
+	type Err = ParseIntError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		s.parse::<u32>().map(Into::into)
+	}
+}
+
+impl Display for AppId {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		write!(f, "{}", <u32>::from(*self))
+	}
+}
+
+impl From<AppId> for u32 {
+	fn from(value: AppId) -> Self {
+		match value {
+			AppId::System => 0,
+			AppId::Application(app_id) => app_id,
+		}
+	}
+}
+
+impl From<u32> for AppId {
+	fn from(value: u32) -> Self {
+		match value {
+			0 => AppId::System,
+			app_id => AppId::Application(app_id),
+		}
+	}
+}
+
+impl From<AppId> for avail_subxt::AppId {
+	fn from(value: AppId) -> Self {
+		value.into()
+	}
+}
+
+impl From<AppId> for avail_core::AppId {
+	fn from(value: AppId) -> Self {
+		avail_core::AppId(value.into())
+	}
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -179,12 +230,12 @@ pub enum Mode {
 	AppClient(u32),
 }
 
-impl From<Option<u32>> for Mode {
-	fn from(app_id: Option<u32>) -> Self {
+impl From<Option<AppId>> for Mode {
+	fn from(app_id: Option<AppId>) -> Self {
 		match app_id {
 			None => Mode::LightClient,
-			Some(0) => Mode::LightClient,
-			Some(app_id) => Mode::AppClient(app_id),
+			Some(AppId::System) => Mode::AppClient(0),
+			Some(AppId::Application(app_id)) => Mode::AppClient(app_id),
 		}
 	}
 }
@@ -356,8 +407,8 @@ pub struct RuntimeConfig {
 	pub full_node_ws: Vec<String>,
 	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
 	pub genesis_hash: String,
-	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
-	pub app_id: Option<u32>,
+	/// ID of application used to start application client. If app_id is not set, application client is not started.
+	pub app_id: Option<AppId>,
 	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
 	pub confidence: f64,
 	/// File system path where RocksDB used by light client, stores its data.
