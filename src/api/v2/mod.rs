@@ -198,13 +198,12 @@ pub fn routes(
 	};
 
 	let app_id = config.app_id.as_ref();
-	let pair_signer = identity_config.avail_key_pair;
 
 	let submitter = app_id.map(|&app_id| {
 		Arc::new(transactions::Submitter {
 			rpc_client,
 			app_id,
-			pair_signer,
+			signer: identity_config.avail_key_pair,
 		})
 	});
 
@@ -263,7 +262,7 @@ mod tests {
 		}
 	}
 
-	const NETWORK: &str = "{host}/{system_version}/data-avail/0";
+	const NETWORK: &str = "{host}/{system_version}/0";
 
 	#[tokio::test]
 	async fn version_route() {

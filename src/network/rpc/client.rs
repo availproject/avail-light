@@ -165,7 +165,7 @@ impl Client {
 	async fn with_retries<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
 		F: FnMut(Arc<AvailClient>) -> Fut + Copy,
-		Fut: std::future::Future<Output = Result<T, jsonrpsee_core::client::Error>>,
+		Fut: std::future::Future<Output = Result<T, subxt::Error>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
 		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
@@ -235,7 +235,6 @@ impl Client {
 				let mut stream = match self.with_retries(|client| async move{
 					Self::create_subxt_subscriptions(client)
 						.await
-						.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 				}).await {
 					Ok(s) => s,
 					Err(err) => {
@@ -274,7 +273,6 @@ impl Client {
 					.legacy_rpc()
 					.chain_get_block_hash(Some(BlockNumber::from(block_number)))
 					.await
-					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 			})
 			.await?
 			.ok_or_else(|| eyre!("Block with number: {} not found", block_number))?;
@@ -287,13 +285,11 @@ impl Client {
 			client
 				.backend()
 				.block_header(block_hash)
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 				.await?
 				.ok_or_else(|| {
-					jsonrpsee_core::client::Error::Custom(format!(
-						"Block Header with hash: {:?} not found",
-						block_hash
-					))
+					subxt::Error::Other(
+						format!("Block Header with hash: {block_hash:?} not found",),
+					)
 				})
 		})
 		.await
@@ -311,7 +307,6 @@ impl Client {
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
 					.await
-					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 			})
 			.await?
 			.iter()
@@ -323,13 +318,9 @@ impl Client {
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
-			.with_retries(|client| async move {
-				client
-					.legacy_rpc()
-					.chain_get_finalized_head()
-					.await
-					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
-			})
+			.with_retries(
+				|client| async move { client.legacy_rpc().chain_get_finalized_head().await },
+			)
 			.await?;
 
 		Ok(head)
@@ -349,7 +340,11 @@ impl Client {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = client.rpc_methods().query_rows(rows, block_hash).await?;
+				let rows = client
+					.rpc_methods()
+					.query_rows(rows, block_hash)
+					.await
+					.map_err(|error| subxt::Error::Other(format!("{error}")))?;
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -397,7 +392,13 @@ impl Client {
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
-				async move { client.rpc_methods().query_proof(cells, block_hash).await }
+				async move {
+					client
+						.rpc_methods()
+						.query_proof(cells, block_hash)
+						.await
+						.map_err(|error| subxt::Error::Other(format!("{error}")))
+				}
 			})
 			.await
 			.map_err(Report::from)?;
@@ -415,13 +416,7 @@ impl Client {
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let res = self
-			.with_retries(|client| async move {
-				client
-					.legacy_rpc()
-					.system_version()
-					.await
-					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
-			})
+			.with_retries(|client| async move { client.legacy_rpc().system_version().await })
 			.await?;
 
 		Ok(res)
@@ -441,14 +436,7 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let set_id_key = api::storage().grandpa().current_set_id();
-				async move {
-					client
-						.storage()
-						.at(block_hash)
-						.fetch(&set_id_key)
-						.await
-						.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
-				}
+				async move { client.storage().at(block_hash).fetch(&set_id_key).await }
 			})
 			.await?
 			.ok_or_else(|| eyre!("The set_id should exist"))?;
@@ -472,14 +460,7 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let validators_key = api::storage().session().validators();
-				async move {
-					client
-						.storage()
-						.at(block_hash)
-						.fetch(&validators_key)
-						.await
-						.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
-				}
+				async move { client.storage().at(block_hash).fetch(&validators_key).await }
 			})
 			.await
 			.map_err(Report::from)?;
@@ -497,18 +478,10 @@ impl Client {
 		self.with_retries(|client| {
 			let data = data.clone();
 			async move {
-				tx::in_finalized(
-					submit_data(&client, signer, data.as_ref(), app_id)
-						.await
-						.map_err(|error| {
-							jsonrpsee_core::client::Error::Custom(format!("{error}"))
-						})?,
-				)
-				.await
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))?
-				.wait_for_success()
-				.await
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+				tx::in_finalized(submit_data(&client, signer, data.as_ref(), app_id).await?)
+					.await?
+					.wait_for_success()
+					.await
 			}
 		})
 		.await
@@ -522,16 +495,10 @@ impl Client {
 			let extrinsic =
 				SubmittableExtrinsic::from_bytes(client.online().clone(), tx_bytes.clone());
 			async move {
-				tx::in_finalized(
-					extrinsic.submit_and_watch().await.map_err(|error| {
-						jsonrpsee_core::client::Error::Custom(format!("{error}"))
-					})?,
-				)
-				.await
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))?
-				.wait_for_success()
-				.await
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+				tx::in_finalized(extrinsic.submit_and_watch().await?)
+					.await?
+					.wait_for_success()
+					.await
 			}
 		})
 		.await
@@ -546,15 +513,8 @@ impl Client {
 		let key = &key;
 		self.with_retries(|client| async move {
 			let storage = client.storage().at(hash);
-			let raw_keys = storage
-				.fetch_raw_keys(key.to_vec())
-				.await
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))?;
-			raw_keys
-				.take(count)
-				.collect::<Result<Vec<_>, _>>()
-				.await
-				.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
+			raw_keys.take(count).collect::<Result<Vec<_>, _>>().await
 		})
 		.await
 		.map_err(Report::from)
@@ -577,7 +537,6 @@ impl Client {
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
 						.await
-						.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
 				}
 			})
 			.await
@@ -593,14 +552,8 @@ impl Client {
 		let params = params.as_ref().map(String::as_bytes);
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
-				let api =
-					client.runtime_api().at_latest().await.map_err(|error| {
-						jsonrpsee_core::client::Error::Custom(format!("{error}"))
-					})?;
-
-				api.call_raw("grandpa_proveFinality", params)
-					.await
-					.map_err(|error| jsonrpsee_core::client::Error::Custom(format!("{error}")))
+				let api = client.runtime_api().at_latest().await?;
+				api.call_raw("grandpa_proveFinality", params).await
 			})
 			.await
 			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;

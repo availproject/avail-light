@@ -15,7 +15,7 @@ pub trait Submit {
 pub struct Submitter {
 	pub rpc_client: rpc::Client,
 	pub app_id: u32,
-	pub pair_signer: Keypair,
+	pub signer: Keypair,
 }
 
 #[async_trait]
@@ -24,11 +24,7 @@ impl Submit for Submitter {
 		let ex_event = match transaction {
 			Transaction::Data(data) => {
 				self.rpc_client
-					.submit_signed_and_wait_for_finalized(
-						data.into(),
-						&self.pair_signer,
-						AppId(self.app_id),
-					)
+					.submit_signed_and_wait_for_finalized(data, &self.signer, AppId(self.app_id))
 					.await?
 			},
 			Transaction::Extrinsic(extrinsic) => {
