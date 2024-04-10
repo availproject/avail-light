@@ -32,7 +32,7 @@ use crate::{
 	data::{Database, Key},
 	network::{
 		self,
-		rpc::{self, Event},
+		rpc::{self, cell_count_for_confidence, Event},
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
@@ -62,7 +62,7 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let (required, verified, unverified) = match extract_kate(&header.extension) {
+	let (required, mut verified, unverified) = match extract_kate(&header.extension) {
 		None => {
 			info!("Skipping block without header extension");
 			(0, 0, 0)
@@ -135,6 +135,10 @@ pub async fn process_block(
 	if required > verified {
 		error!(block_number, "Failed to fetch {} cells", unverified);
 		return Ok(None);
+	}
+
+	if required == 0 {
+		verified = cell_count_for_confidence(cfg.confidence) as usize
 	}
 
 	// write confidence factor into on-disk database

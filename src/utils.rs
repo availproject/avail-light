@@ -51,10 +51,7 @@ impl OptionalExtension for HeaderExtension {
 
 /// Extract fields from extension header
 pub(crate) fn extract_kate(extension: &HeaderExtension) -> Option<(u16, u16, H256, Vec<u8>)> {
-	let Some(extension) = extension.option() else {
-		return None;
-	};
-	match &extension {
+	match &extension.option()? {
 		HeaderExtension::V3(v3::HeaderExtension {
 			commitment: kate, ..
 		}) => Some((
