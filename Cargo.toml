@@ -19,8 +19,7 @@ bench = false
 
 [dependencies]
 # TODO: Remove direct dependency after relevant traits are implemented in avail-subxt
-# subxt = { version = "0.34", features = [ "substrate-compat" ] }
-subxt = { version = "0.34" }
+subxt = "0.34"
 
 # Internal deps
 avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", branch = "main" }
@@ -61,7 +60,6 @@ smallvec = "1.6.1"
 sp-core = { version = "21.0.0", features = [ "serde" ] }
 strip-ansi-escapes = "0.2.0"
 threadpool = "1.8.1"
-# tiny-bip39 = "1.0.0"
 tokio = { version = "1.35", features = ["full"] }
 tokio-retry = "0.3"
 tokio-stream = { version = "0.1.14", features = ["sync"] }
