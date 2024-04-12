@@ -1,6 +1,5 @@
 use avail_core::{
-	data_lookup::compact::{CompactDataLookup, DataLookupItem},
-	AppId, DataLookup,
+	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 };
 use avail_subxt::{
 	api::runtime_types::{
@@ -45,7 +44,7 @@ pub trait OptionalExtension {
 impl OptionalExtension for HeaderExtension {
 	fn option(&self) -> Option<&Self> {
 		let HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) = self;
-		(!app_lookup.index.is_empty()).then_some(self)
+		(app_lookup.size > 0).then_some(self)
 	}
 }
 
