@@ -10,7 +10,7 @@ use avail_light::{
 	shutdown::Controller,
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
-	telemetry::{self, otlp::MetricAttributes},
+	telemetry::{self, otlp::MetricAttributes, MetricValue, Metrics},
 	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
 };
 use clap::Parser;
@@ -239,6 +239,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			result
 		},
 	)));
+	ot_metrics.record(MetricValue::HealthCheck()).await?;
 
 	info!("Waiting for first finalized header...");
 	let block_header = match shutdown
