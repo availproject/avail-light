@@ -344,38 +344,6 @@ impl Command for GetCellsInDHTPerBlock {
 	}
 }
 
-struct GetMultiaddress {
-	response_sender: Option<oneshot::Sender<Result<Vec<Multiaddr>>>>,
-}
-
-impl Command for GetMultiaddress {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		let last_address = entries
-			.swarm()
-			.external_addresses()
-			.cloned()
-			.collect::<Vec<_>>();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(last_address))
-			.expect("GetMultiaddress receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("GetMultiaddress receiver dropped");
-	}
-}
-
 struct ReduceKademliaMapSize {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
@@ -610,15 +578,6 @@ impl Client {
 		.await
 	}
 
-	async fn get_multiaddress(&self) -> Result<Vec<Multiaddr>> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetMultiaddress {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
-	}
-
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.execute_sync(|response_sender| {
@@ -806,16 +765,5 @@ impl Client {
 			.collect::<Vec<_>>();
 
 		self.insert_into_dht(records, block).await
-	}
-
-	pub async fn get_multiaddress_and_ip(&self) -> Result<Vec<String>> {
-		let addr = self
-			.get_multiaddress()
-			.await?
-			.into_iter()
-			.map(|addr| addr.to_string())
-			.collect::<Vec<_>>();
-
-		Ok(addr)
 	}
 }

@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 use super::MetricCounter;
 
-const ATTRIBUTE_NUMBER: usize = 8;
+const ATTRIBUTE_NUMBER: usize = 7;
 
 #[derive(Debug)]
 pub struct Metrics {
@@ -25,7 +25,6 @@ pub struct MetricAttributes {
 	pub role: String,
 	pub peer_id: String,
 	pub ip: RwLock<String>,
-	pub multiaddress: RwLock<String>,
 	pub origin: String,
 	pub avail_address: String,
 	pub operating_mode: String,
@@ -39,10 +38,6 @@ impl Metrics {
 			KeyValue::new("role", self.attributes.role.clone()),
 			KeyValue::new("origin", self.attributes.origin.clone()),
 			KeyValue::new("peerID", self.attributes.peer_id.clone()),
-			KeyValue::new(
-				"multiaddress",
-				self.attributes.multiaddress.read().await.clone(),
-			),
 			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
 			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
@@ -67,11 +62,6 @@ impl Metrics {
 				observer.observe_f64(&instrument, value, &attributes)
 			})?;
 		Ok(())
-	}
-
-	async fn set_multiaddress(&self, multiaddr: String) {
-		let mut m = self.attributes.multiaddress.write().await;
-		*m = multiaddr;
 	}
 }
 
@@ -149,10 +139,6 @@ impl super::Metrics for Metrics {
 			},
 		};
 		Ok(())
-	}
-
-	async fn set_multiaddress(&self, multiaddr: String) {
-		self.set_multiaddress(multiaddr).await;
 	}
 }
 
