@@ -100,7 +100,10 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
 	info!("Running Avail light client version: {version}. Role: {client_role}.");
 	info!("Using config: {cfg:?}");
-	info!("Avail address is: {}", &identity_cfg.avail_address);
+	info!(
+		"Avail ss58 address: {}, public key: {}",
+		&identity_cfg.avail_address, &identity_cfg.avail_public_key
+	);
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
@@ -126,7 +129,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		peer_id,
 		ip: RwLock::new("".to_string()),
 		origin: cfg.origin.clone(),
-		avail_address: identity_cfg.avail_address.clone(),
+		avail_address: identity_cfg.avail_public_key.clone(),
 		operating_mode: cfg.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
