@@ -27,7 +27,8 @@ use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt_signer::bip39::{Language, Mnemonic};
-use subxt_signer::sr25519::{dev, Keypair};
+use subxt_signer::sr25519::Keypair;
+use subxt_signer::{SecretString, SecretUri};
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 
@@ -70,7 +71,7 @@ pub struct CliOpts {
 	/// Log level
 	#[arg(long)]
 	pub verbosity: Option<LogLevel>,
-	/// Avail secret seed phrase password
+	/// Avail secret seed phrase password, overrides password from identity file
 	#[arg(long)]
 	pub avail_passphrase: Option<String>,
 	/// Seed string for libp2p keypair generation
@@ -79,8 +80,6 @@ pub struct CliOpts {
 	/// ed25519 private key for libp2p keypair generation
 	#[arg(long)]
 	pub private_key: Option<String>,
-	#[arg(long)]
-	pub alice: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -979,16 +978,6 @@ pub struct IdentityConfig {
 }
 
 impl IdentityConfig {
-	pub fn alice() -> Result<Self> {
-		let avail_key_pair = dev::alice();
-		let avail_address = avail_key_pair.public_key().to_account_id();
-		let avail_address = sp_core::crypto::AccountId32::from(avail_address.0).to_ss58check();
-
-		Ok(IdentityConfig {
-			avail_key_pair,
-			avail_address,
-		})
-	}
 	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
 		#[derive(Default, Serialize, Deserialize)]
 		struct Config {
@@ -997,18 +986,21 @@ impl IdentityConfig {
 
 		let mut config: Config = confy::load_path(path)?;
 
-		let phrase = match config.avail_secret_seed_phrase.as_ref() {
-			None => Mnemonic::generate_in(Language::English, 24)?,
-			Some(phrase) => Mnemonic::parse_in(Language::English, phrase)
-				.map_err(|error| eyre!("TODO: {error}"))?,
+		let secret = match config.avail_secret_seed_phrase {
+			None => {
+				let mnemonic = Mnemonic::generate_in(Language::English, 24)?;
+				config.avail_secret_seed_phrase = Some(mnemonic.to_string());
+				confy::store_path(path, &config)?;
+				mnemonic.to_string()
+			},
+			Some(suri) => suri,
 		};
 
-		if config.avail_secret_seed_phrase.is_none() {
-			config.avail_secret_seed_phrase = Some(phrase.to_string());
-			confy::store_path(path, &config)?;
+		let mut suri = SecretUri::from_str(&secret)?;
+		if let Some(password) = password {
+			suri.password = Some(SecretString::from_str(password)?);
 		}
-
-		let avail_key_pair = Keypair::from_phrase(&phrase, password)?;
+		let avail_key_pair = Keypair::from_uri(&suri)?;
 		let avail_address = avail_key_pair.public_key().to_account_id();
 		let avail_address = sp_core::crypto::AccountId32::from(avail_address.0).to_ss58check();
 
