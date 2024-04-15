@@ -975,6 +975,8 @@ pub struct IdentityConfig {
 	pub avail_key_pair: Keypair,
 	/// Avail ss58 address
 	pub avail_address: String,
+	/// Avail public key
+	pub avail_public_key: String,
 }
 
 impl IdentityConfig {
@@ -1000,13 +1002,16 @@ impl IdentityConfig {
 		if let Some(password) = password {
 			suri.password = Some(SecretString::from_str(password)?);
 		}
+
 		let avail_key_pair = Keypair::from_uri(&suri)?;
 		let avail_address = avail_key_pair.public_key().to_account_id();
 		let avail_address = sp_core::crypto::AccountId32::from(avail_address.0).to_ss58check();
+		let avail_public_key = hex::encode(avail_key_pair.public_key());
 
 		Ok(IdentityConfig {
 			avail_key_pair,
 			avail_address,
+			avail_public_key,
 		})
 	}
 }
