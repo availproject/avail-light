@@ -19,7 +19,7 @@ use crate::{
 	data::{Database, Key},
 	network::{
 		self,
-		rpc::{self, Client as RpcClient},
+		rpc::{self, cell_count_for_confidence, Client as RpcClient},
 	},
 	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
 	utils::{calculate_confidence, extract_kate},
@@ -122,7 +122,7 @@ async fn process_block(
 
 	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
 
-	let (required, verified, unverified) = match extract_kate(&header.extension) {
+	let (required, mut verified, unverified) = match extract_kate(&header.extension) {
 		None => {
 			info!("Skipping block without header extension");
 			(0, 0, 0)
@@ -153,6 +153,10 @@ async fn process_block(
 	if required > verified {
 		error!(block_number, "Failed to fetch {} cells", unverified);
 		return Ok(());
+	}
+
+	if required == 0 {
+		verified = cell_count_for_confidence(cfg.confidence) as usize
 	}
 
 	// write confidence factor into on-disk database
