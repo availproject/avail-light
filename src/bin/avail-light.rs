@@ -125,7 +125,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		role: client_role.into(),
 		peer_id,
 		ip: RwLock::new("".to_string()),
-		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_address.clone(),
 		operating_mode: cfg.operation_mode.to_string(),

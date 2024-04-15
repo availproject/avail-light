@@ -353,7 +353,6 @@ mod tests {
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
 		mock_metrics.expect_record().returning(|_| Ok(()));
-		mock_metrics.expect_set_multiaddress().returning(|_| ());
 		process_block(
 			db,
 			&mock_network_client,
