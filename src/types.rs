@@ -372,7 +372,7 @@ pub struct RuntimeConfig {
 	pub full_node_ws: Vec<String>,
 	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
 	pub genesis_hash: String,
-	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
+	/// If set, application client is started with given app_id (default: None).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
 	pub confidence: f64,
