@@ -200,7 +200,6 @@ impl From<Option<u32>> for Mode {
 	fn from(app_id: Option<u32>) -> Self {
 		match app_id {
 			None => Mode::LightClient,
-			Some(0) => Mode::LightClient,
 			Some(app_id) => Mode::AppClient(app_id),
 		}
 	}
