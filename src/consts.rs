@@ -2,7 +2,7 @@
 
 /// Expected network Node versions. First version should be the main supported version,
 /// while all subsequent versions should be for backward compatibility/fallback/future-proofing versions.
-pub const EXPECTED_SYSTEM_VERSION: &[&str] = &["2.0"];
+pub const EXPECTED_SYSTEM_VERSION: &[&str] = &["2.1"];
 
 #[derive(Clone)]
 pub struct ExpectedNodeVariant {
