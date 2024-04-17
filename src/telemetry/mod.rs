@@ -20,6 +20,16 @@ pub enum MetricCounter {
 	IncomingGetRecord,
 }
 
+impl MetricCounter {
+	fn is_allowed(&self, detailed_metrics: bool) -> bool {
+		// TODO: Specify counter filters
+		if !detailed_metrics {
+			return false;
+		}
+		true
+	}
+}
+
 impl Display for MetricCounter {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match self {
@@ -35,8 +45,11 @@ impl Display for MetricCounter {
 }
 
 impl MetricCounter {
-	fn init_counters(meter: Meter) -> HashMap<String, Counter<u64>> {
+	fn init_counters(meter: Meter, detailed_metrics: bool) -> HashMap<String, Counter<u64>> {
 		let mut counter_map: HashMap<String, Counter<u64>> = Default::default();
+		if !detailed_metrics {
+			return counter_map;
+		}
 		for counter in [
 			MetricCounter::SessionBlock,
 			MetricCounter::OutgoingConnectionError,
@@ -79,6 +92,23 @@ pub enum MetricValue {
 	CrawlRowsSuccessRate(f64),
 	#[cfg(feature = "crawl")]
 	CrawlBlockDelay(f64),
+}
+
+impl MetricValue {
+	// Metric filter for external peers
+	// Only the metrics we wish to send to OTel should be in this list
+	fn is_allowed(&self, detailed_metrics: bool) -> bool {
+		// No filtering for detailed metrics
+		if detailed_metrics {
+			return true;
+		}
+		matches!(
+			self,
+			MetricValue::DHTFetchedPercentage(_)
+				| MetricValue::BlockConfidence(_)
+				| MetricValue::HealthCheck()
+		)
+	}
 }
 
 #[automock]

@@ -26,7 +26,7 @@ use std::{
 	path::Path,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
@@ -127,7 +127,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	let metric_attributes = MetricAttributes {
 		role: client_role.into(),
 		peer_id,
-		ip: RwLock::new("".to_string()),
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
 		operating_mode: cfg.operation_mode.to_string(),
@@ -148,8 +147,12 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), metric_attributes)
-			.wrap_err("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			cfg.ot_collector_endpoint.clone(),
+			metric_attributes,
+			cfg.origin.clone(),
+		)
+		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
 	// Create sender channel for P2P event loop commands
