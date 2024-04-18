@@ -23,7 +23,7 @@ pub enum MetricCounter {
 }
 
 impl MetricCounter {
-	fn is_allowed(&self, origin: Origin) -> bool {
+	fn is_allowed(&self, origin: &Origin) -> bool {
 		// TODO: Specify counter filters
 		match origin {
 			Origin::External => false,
@@ -99,7 +99,7 @@ pub enum MetricValue {
 impl MetricValue {
 	// Metric filter for external peers
 	// Only the metrics we wish to send to OTel should be in this list
-	fn is_allowed(&self, origin: Origin) -> bool {
+	fn is_allowed(&self, origin: &Origin) -> bool {
 		match origin {
 			Origin::External => matches!(
 				self,

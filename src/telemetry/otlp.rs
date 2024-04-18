@@ -68,13 +68,13 @@ impl Metrics {
 #[async_trait]
 impl super::Metrics for Metrics {
 	async fn count(&self, counter: super::MetricCounter) {
-		if counter.is_allowed(self.attributes.origin.clone()) {
+		if counter.is_allowed(&self.attributes.origin) {
 			__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
 		}
 	}
 
 	async fn record(&self, value: super::MetricValue) -> Result<()> {
-		if value.is_allowed(self.attributes.origin.clone()) {
+		if value.is_allowed(&self.attributes.origin) {
 			match value {
 				super::MetricValue::TotalBlockNumber(number) => {
 					self.record_u64("total_block_number", number.into()).await?;
