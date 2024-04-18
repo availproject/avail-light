@@ -25,10 +25,7 @@ pub enum MetricCounter {
 impl MetricCounter {
 	fn is_allowed(&self, origin: &Origin) -> bool {
 		// TODO: Specify counter filters
-		match origin {
-			Origin::External => false,
-			_ => true,
-		}
+		!matches!(origin, Origin::External)
 	}
 }
 
