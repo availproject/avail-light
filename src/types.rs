@@ -205,6 +205,39 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(try_from = "String")]
+pub enum Origin {
+	Internal,
+	FatClient,
+	External,
+	Other(String),
+}
+
+impl TryFrom<String> for Origin {
+	type Error = color_eyre::Report;
+
+	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+		match value.to_lowercase().as_str() {
+			"internal" => Ok(Origin::Internal),
+			"fatclient" => Ok(Origin::FatClient),
+			"external" => Ok(Origin::External),
+			_ => Ok(Origin::Other(value.to_lowercase())),
+		}
+	}
+}
+
+impl ToString for Origin {
+	fn to_string(&self) -> String {
+		match self {
+			Origin::Internal => "internal".to_string(),
+			Origin::FatClient => "fatclient".to_string(),
+			Origin::External => "external".to_string(),
+			Origin::Other(val) => val.to_string(),
+		}
+	}
+}
+
 pub mod block_matrix_partition_format {
 	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
@@ -380,7 +413,7 @@ pub struct RuntimeConfig {
 	pub avail_path: String,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
 	pub log_level: String,
-	pub origin: String,
+	pub origin: Origin,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
 	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
@@ -819,7 +852,7 @@ impl Default for RuntimeConfig {
 			max_kad_provided_keys: 1024,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
-			origin: "external".to_string(),
+			origin: Origin::External,
 			operation_mode: KademliaMode::Client,
 			retry_config: RetryConfig::Fibonacci(FibonacciConfig {
 				base: 1,

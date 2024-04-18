@@ -8,6 +8,8 @@ use color_eyre::Result;
 use mockall::automock;
 use opentelemetry_api::metrics::{Counter, Meter};
 
+use crate::types::Origin;
+
 pub mod otlp;
 
 pub enum MetricCounter {
@@ -18,6 +20,13 @@ pub enum MetricCounter {
 	ConnectionEstablished,
 	IncomingPutRecord,
 	IncomingGetRecord,
+}
+
+impl MetricCounter {
+	fn is_allowed(&self, origin: &Origin) -> bool {
+		// TODO: Specify counter filters
+		!matches!(origin, Origin::External)
+	}
 }
 
 impl Display for MetricCounter {
@@ -35,8 +44,11 @@ impl Display for MetricCounter {
 }
 
 impl MetricCounter {
-	fn init_counters(meter: Meter) -> HashMap<String, Counter<u64>> {
+	fn init_counters(meter: Meter, origin: Origin) -> HashMap<String, Counter<u64>> {
 		let mut counter_map: HashMap<String, Counter<u64>> = Default::default();
+		if origin == Origin::External {
+			return counter_map;
+		}
 		for counter in [
 			MetricCounter::SessionBlock,
 			MetricCounter::OutgoingConnectionError,
@@ -79,6 +91,22 @@ pub enum MetricValue {
 	CrawlRowsSuccessRate(f64),
 	#[cfg(feature = "crawl")]
 	CrawlBlockDelay(f64),
+}
+
+impl MetricValue {
+	// Metric filter for external peers
+	// Only the metrics we wish to send to OTel should be in this list
+	fn is_allowed(&self, origin: &Origin) -> bool {
+		match origin {
+			Origin::External => matches!(
+				self,
+				MetricValue::DHTFetchedPercentage(_)
+					| MetricValue::BlockConfidence(_)
+					| MetricValue::HealthCheck()
+			),
+			_ => true,
+		}
+	}
 }
 
 #[automock]
