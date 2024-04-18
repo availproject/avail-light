@@ -19,7 +19,6 @@ pub struct Metrics {
 	meter: Meter,
 	counters: HashMap<String, Counter<u64>>,
 	attributes: MetricAttributes,
-	detailed_metrics: bool,
 }
 
 #[derive(Debug)]
@@ -69,13 +68,13 @@ impl Metrics {
 #[async_trait]
 impl super::Metrics for Metrics {
 	async fn count(&self, counter: super::MetricCounter) {
-		if counter.is_allowed(self.detailed_metrics) {
+		if counter.is_allowed(self.attributes.origin.clone()) {
 			__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
 		}
 	}
 
 	async fn record(&self, value: super::MetricValue) -> Result<()> {
-		if value.is_allowed(self.detailed_metrics) {
+		if value.is_allowed(self.attributes.origin.clone()) {
 			match value {
 				super::MetricValue::TotalBlockNumber(number) => {
 					self.record_u64("total_block_number", number.into()).await?;
@@ -156,12 +155,10 @@ pub fn initialize(
 	// Default settings are for external clients
 	let mut export_period = Duration::from_secs(60);
 	let mut export_timeout = Duration::from_secs(65);
-	let mut detailed_metrics = false;
 
 	if origin != Origin::External {
 		export_period = Duration::from_secs(10);
 		export_timeout = Duration::from_secs(15);
-		detailed_metrics = true
 	}
 	let export_config = ExportConfig {
 		endpoint,
@@ -182,11 +179,10 @@ pub fn initialize(
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = MetricCounter::init_counters(meter.clone(), detailed_metrics);
+	let counters = MetricCounter::init_counters(meter.clone(), origin);
 	Ok(Metrics {
 		meter,
 		attributes,
 		counters,
-		detailed_metrics,
 	})
 }
