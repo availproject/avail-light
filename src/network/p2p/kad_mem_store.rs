@@ -25,6 +25,8 @@ use libp2p::kad::{KBucketKey, ProviderRecord, Record, RecordKey};
 use std::borrow::Cow;
 use std::collections::{hash_map, HashMap};
 use std::iter;
+
+#[cfg(not(feature = "kademlia-rocksdb"))]
 use tracing::trace;
 
 /// In-memory implementation of a `RecordStore`.
@@ -60,8 +62,8 @@ impl Default for MemoryStoreConfig {
 	}
 }
 
+#[cfg(not(feature = "kademlia-rocksdb"))]
 impl MemoryStore {
-	#[allow(dead_code)]
 	/// Creates a new `MemoryRecordStore` with a default configuration.
 	pub fn new(local_id: PeerId) -> Self {
 		Self::with_config(local_id, Default::default())
@@ -77,7 +79,6 @@ impl MemoryStore {
 		}
 	}
 
-	#[allow(dead_code)]
 	/// Retains the records satisfying a predicate.
 	pub fn retain<F>(&mut self, f: F)
 	where
@@ -155,6 +156,7 @@ impl RecordStore for MemoryStore {
 	}
 }
 
+#[cfg(not(feature = "kademlia-rocksdb"))]
 #[cfg(test)]
 mod tests {
 	use std::time::{Duration, Instant};

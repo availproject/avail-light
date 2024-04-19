@@ -118,7 +118,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let (db, _) =
+	let (db, _rocks_db) =
 		RocksDB::open(&cfg.avail_path).wrap_err("Avail Light could not initialize database")?;
 
 	let cfg_libp2p: LibP2PConfig = (&cfg).into();
@@ -164,6 +164,8 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
 		shutdown.clone(),
+		#[cfg(feature = "kademlia-rocksdb")]
+		_rocks_db,
 	);
 
 	tokio::spawn(

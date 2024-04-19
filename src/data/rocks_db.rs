@@ -1,11 +1,12 @@
-use crate::data::{self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
+use crate::data::{
+	self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, FINALITY_SYNC_CHECKPOINT_KEY,
+	KADEMLIA_STORE_CF, STATE_CF,
+};
 use codec::{Decode, Encode};
 use color_eyre::eyre::{eyre, Context, Result};
 use rocksdb::{ColumnFamilyDescriptor, Options};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
-use super::FINALITY_SYNC_CHECKPOINT_KEY;
 
 #[derive(Clone)]
 pub struct RocksDB {
@@ -19,6 +20,7 @@ impl RocksDB {
 			ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, Options::default()),
 			ColumnFamilyDescriptor::new(APP_DATA_CF, Options::default()),
 			ColumnFamilyDescriptor::new(STATE_CF, Options::default()),
+			ColumnFamilyDescriptor::new(KADEMLIA_STORE_CF, Options::default()),
 		];
 
 		let mut db_opts = Options::default();

@@ -27,7 +27,6 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-	network::p2p::kad_mem_store::MemoryStore,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{AgentVersion, IdentifyConfig, KademliaMode, LibP2PConfig, TimeToLive},
@@ -122,6 +121,11 @@ impl TryFrom<RecordKey> for DHTKey {
 	}
 }
 
+#[cfg(not(feature = "kademlia-rocksdb"))]
+type Store = super::kad_mem_store::MemoryStore;
+#[cfg(feature = "kademlia-rocksdb")]
+type Store = super::kad_rocksdb_store::RocksDBStore;
+
 impl EventLoop {
 	pub async fn new(
 		cfg: LibP2PConfig,
@@ -129,10 +133,16 @@ impl EventLoop {
 		is_fat_client: bool,
 		is_ws_transport: bool,
 		shutdown: Controller<String>,
+		#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_interval;
 		let peer_id = id_keys.public().to_peer_id();
-		let store = MemoryStore::with_config(peer_id, (&cfg).into());
+		let store = Store::with_config(
+			peer_id,
+			(&cfg).into(),
+			#[cfg(feature = "kademlia-rocksdb")]
+			db,
+		);
 
 		let swarm = build_swarm(&cfg, id_keys, store, is_ws_transport)
 			.await

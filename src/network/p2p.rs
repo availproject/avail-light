@@ -21,14 +21,16 @@ mod client;
 mod event_loop;
 mod kad_mem_providers;
 mod kad_mem_store;
+mod kad_rocksdb_store;
 
 use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
 pub use kad_mem_store::MemoryStoreConfig;
+pub use kad_rocksdb_store::RocksDBStoreConfig;
 
-use self::{client::BlockStat, kad_mem_store::MemoryStore};
+use self::client::BlockStat;
 use libp2p_allow_block_list as allow_block_list;
 
 #[derive(Debug)]
@@ -91,11 +93,16 @@ type SendableCommand = Box<dyn Command + Send + Sync>;
 type CommandSender = mpsc::UnboundedSender<SendableCommand>;
 type CommandReceiver = mpsc::UnboundedReceiver<SendableCommand>;
 
+#[cfg(not(feature = "kademlia-rocksdb"))]
+type Store = kad_mem_store::MemoryStore;
+#[cfg(feature = "kademlia-rocksdb")]
+type Store = kad_rocksdb_store::RocksDBStore;
+
 // Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
 pub struct Behaviour {
-	kademlia: kad::Behaviour<MemoryStore>,
+	kademlia: kad::Behaviour<Store>,
 	identify: identify::Behaviour,
 	ping: ping::Behaviour,
 	mdns: mdns::tokio::Behaviour,
@@ -118,7 +125,7 @@ fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p:
 async fn build_swarm(
 	cfg: &LibP2PConfig,
 	id_keys: &libp2p::identity::Keypair,
-	kad_store: MemoryStore,
+	kad_store: Store,
 	is_ws_transport: bool,
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config

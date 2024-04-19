@@ -247,6 +247,7 @@ max_kad_provided_keys = 1024
 - When switching between the networks (i.e. local devnet), LC state in the `avail_path` directory has to be cleared
 - OpenTelemetry push metrics are used for light client observability
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
+- To use RocksDB as persistent Kademlia store, compile `avail-light` binary with `--features "kademlia-rocksdb` on.
 
 ## Usage and examples
 
