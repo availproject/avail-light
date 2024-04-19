@@ -40,6 +40,9 @@ pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
 /// Column family for state
 pub const STATE_CF: &str = "avail_light_state_cf";
 
+/// Column family for Kademlia store
+pub const KADEMLIA_STORE_CF: &str = "avail_light_kademlia_store_cf";
+
 /// Sync finality checkpoint key name
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 

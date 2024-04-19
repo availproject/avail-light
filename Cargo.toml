@@ -87,6 +87,7 @@ sp-std = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polk
 
 [features]
 network-analysis = []
+kademlia-rocksdb = []
 crawl = []
 default = []
 
