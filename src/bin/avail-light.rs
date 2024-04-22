@@ -118,7 +118,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let db =
+	let (db, _) =
 		RocksDB::open(&cfg.avail_path).wrap_err("Avail Light could not initialize database")?;
 
 	let cfg_libp2p: LibP2PConfig = (&cfg).into();
