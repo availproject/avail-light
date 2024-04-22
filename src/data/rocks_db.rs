@@ -13,7 +13,7 @@ pub struct RocksDB {
 }
 
 impl RocksDB {
-	pub fn open(path: &str) -> Result<RocksDB> {
+	pub fn open(path: &str) -> Result<(RocksDB, Arc<rocksdb::DB>)> {
 		let cf_opts = vec![
 			ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, Options::default()),
 			ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, Options::default()),
@@ -25,8 +25,8 @@ impl RocksDB {
 		db_opts.create_if_missing(true);
 		db_opts.create_missing_column_families(true);
 
-		let db = rocksdb::DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
-		Ok(RocksDB { db: Arc::new(db) })
+		let db = Arc::new(rocksdb::DB::open_cf_descriptors(&db_opts, path, cf_opts)?);
+		Ok((RocksDB { db: db.clone() }, db))
 	}
 }
 
