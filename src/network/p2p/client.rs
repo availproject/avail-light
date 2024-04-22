@@ -10,7 +10,7 @@ use kate_recovery::{
 	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
-	kad::{PeerRecord, Quorum, Record, RecordKey},
+	kad::{store::RecordStore, PeerRecord, Quorum, Record, RecordKey},
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
@@ -89,9 +89,9 @@ impl Command for PruneExpiredRecords {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<(), Report> {
 		let store = entries.behavior_mut().kademlia.store_mut();
 
-		let before = store.records_iter().count();
+		let before = store.records().count();
 		store.retain(|_, record| !record.is_expired(self.now));
-		let after = store.records_iter().count();
+		let after = store.records().count();
 
 		self.response_sender
 			.take()
@@ -303,8 +303,8 @@ struct GetCellsInDHTPerBlock {
 impl Command for GetCellsInDHTPerBlock {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let mut occurrence_map = HashMap::new();
-		for record in entries.behavior_mut().kademlia.store_mut().records_iter() {
-			let vec_key = record.0.to_vec();
+		for record in entries.behavior_mut().kademlia.store_mut().records() {
+			let vec_key = record.key.to_vec();
 			let record_key = str::from_utf8(&vec_key);
 
 			let (block_num, _) = record_key
@@ -378,7 +378,7 @@ impl Command for GetKademliaMapSize {
 			.behavior_mut()
 			.kademlia
 			.store_mut()
-			.records_iter()
+			.records()
 			.count();
 
 		self.response_sender
