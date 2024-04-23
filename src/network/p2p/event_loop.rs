@@ -6,7 +6,8 @@ use libp2p::{
 	identify::{self, Info},
 	identity::Keypair,
 	kad::{
-		self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult, QueryStats, RecordKey,
+		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult,
+		QueryStats, RecordKey,
 	},
 	mdns,
 	multiaddr::Protocol,
