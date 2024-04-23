@@ -892,7 +892,7 @@ impl Network {
 	fn multiaddr(&self) -> &str {
 		match self {
 			Network::Local => "/ip4/127.0.0.1/tcp/39000",
-			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.tools/tcp/37000",
+			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
 		}
 	}
 
