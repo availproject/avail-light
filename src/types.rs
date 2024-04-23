@@ -1,6 +1,5 @@
 //! Shared light client structs and enums.
-
-use crate::network::p2p::MemoryStoreConfig;
+use crate::network::p2p::{MemoryStoreConfig, ProvidersConfig};
 use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
@@ -606,8 +605,10 @@ impl From<&LibP2PConfig> for MemoryStoreConfig {
 		MemoryStoreConfig {
 			max_records: cfg.kademlia.max_kad_record_number, // ~2hrs
 			max_value_bytes: cfg.kademlia.max_kad_record_size + 1,
-			max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs
-			max_provided_keys: cfg.kademlia.max_kad_provided_keys,
+			providers: ProvidersConfig {
+				max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs
+				max_provided_keys: cfg.kademlia.max_kad_provided_keys,
+			},
 		}
 	}
 }
