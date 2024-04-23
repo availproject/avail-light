@@ -19,11 +19,13 @@ use tracing::info;
 pub mod analyzer;
 mod client;
 mod event_loop;
+mod kad_mem_providers;
 mod kad_mem_store;
 
 use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 pub use event_loop::EventLoop;
+pub use kad_mem_providers::ProvidersConfig;
 pub use kad_mem_store::MemoryStoreConfig;
 
 use self::{client::BlockStat, kad_mem_store::MemoryStore};
