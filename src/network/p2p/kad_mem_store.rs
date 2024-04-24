@@ -25,6 +25,7 @@ use libp2p::kad::{KBucketKey, ProviderRecord, Record, RecordKey};
 use std::borrow::Cow;
 use std::collections::{hash_map, HashMap};
 use std::iter;
+use tracing::{instrument, Level};
 
 #[cfg(not(feature = "kademlia-rocksdb"))]
 use tracing::trace;
@@ -80,6 +81,7 @@ impl MemoryStore {
 	}
 
 	/// Retains the records satisfying a predicate.
+	#[instrument(level = Level::TRACE, skip(self, f))]
 	pub fn retain<F>(&mut self, f: F)
 	where
 		F: FnMut(&RecordKey, &mut Record) -> bool,
@@ -105,10 +107,12 @@ impl RecordStore for MemoryStore {
 
 	type ProvidedIter<'a> = ProviderIter<'a>;
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn get(&self, k: &RecordKey) -> Option<Cow<'_, Record>> {
 		self.records.get(k).map(Cow::Borrowed)
 	}
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn put(&mut self, r: Record) -> Result<()> {
 		if r.value.len() >= self.config.max_value_bytes {
 			return Err(Error::ValueTooLarge);
@@ -131,10 +135,12 @@ impl RecordStore for MemoryStore {
 		Ok(())
 	}
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn remove(&mut self, k: &RecordKey) {
 		self.records.remove(k);
 	}
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn records(&self) -> Self::RecordsIter<'_> {
 		self.records.values().map(Cow::Borrowed)
 	}
