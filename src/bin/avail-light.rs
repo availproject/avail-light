@@ -50,8 +50,8 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 
 fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
+		.json()
 		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
-		.event_format(format::json())
 		.finish()
 }
 
