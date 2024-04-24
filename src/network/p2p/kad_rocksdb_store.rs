@@ -11,8 +11,7 @@ use std::collections::hash_set;
 use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::error;
-
+use tracing::{error, instrument, Level};
 #[cfg(feature = "kademlia-rocksdb")]
 use {rocksdb::WriteBatch, tracing::info};
 
@@ -105,6 +104,7 @@ impl RocksDBStore {
 		}
 	}
 
+	#[instrument(level = Level::TRACE, skip(self, f))]
 	/// Retains records that satisfy a given predicate.
 	/// NOTE: This is a suboptimal implementation for store size optimization,
 	/// since its execution time scales linearly with the store size.
@@ -135,6 +135,7 @@ impl RocksDBStore {
 }
 
 impl RocksDBStore {
+	#[instrument(level = Level::TRACE, skip(self))]
 	pub fn get_cf(&self) -> Option<Arc<BoundColumnFamily>> {
 		let Some(cf) = self.records.cf_handle(KADEMLIA_STORE_CF) else {
 			error!("Couldn't get column family \"{KADEMLIA_STORE_CF}\" handle");
@@ -163,6 +164,7 @@ impl RecordStore for RocksDBStore {
 		fn(&'a ProviderRecord) -> Cow<'a, ProviderRecord>,
 	>;
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn get(&self, key: &RecordKey) -> Option<Cow<'_, Record>> {
 		match self.records.get_cf(&self.get_cf()?, key) {
 			Ok(record) => record
@@ -176,6 +178,7 @@ impl RecordStore for RocksDBStore {
 		}
 	}
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn put(&mut self, r: Record) -> Result<()> {
 		let cf = self.get_cf().ok_or(RocksDBStoreError)?;
 
@@ -193,6 +196,7 @@ impl RecordStore for RocksDBStore {
 			})
 	}
 
+	#[instrument(level = Level::TRACE, skip(self))]
 	fn remove(&mut self, k: &RecordKey) {
 		let Some(cf) = self.get_cf() else {
 			return;
@@ -203,6 +207,7 @@ impl RecordStore for RocksDBStore {
 		error!("Failed to delete record from database: {error}");
 	}
 
+	#[instrument(level = "trace", skip(self))]
 	fn records(&self) -> Self::RecordsIter<'_> {
 		let Some(cf) = self.get_cf() else {
 			return Box::new(iter::empty::<kad::Record>().map(Cow::Owned));
