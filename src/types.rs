@@ -867,14 +867,16 @@ impl Default for RuntimeConfig {
 #[derive(Clone)]
 pub enum Network {
 	Local,
+	Turing,
 }
 
 impl FromStr for Network {
 	type Err = String;
 
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-		match s {
+		match s.to_lowercase().as_str() {
 			"local" => Ok(Network::Local),
+			"turing" => Ok(Network::Turing),
 			_ => Err("valid values are: local".to_string()),
 		}
 	}
@@ -884,30 +886,35 @@ impl Network {
 	fn peer_id(&self) -> &str {
 		match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
+			Network::Turing => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		}
 	}
 
 	fn multiaddr(&self) -> &str {
 		match self {
 			Network::Local => "/ip4/127.0.0.1/tcp/39000",
+			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
 		}
 	}
 
 	fn full_node_ws(&self) -> &str {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
+			Network::Turing => "wss://turing-rpc.avail.so/ws:443",
 		}
 	}
 
 	fn ot_collector_endpoint(&self) -> &str {
 		match self {
 			Network::Local => "http://127.0.0.1:4317",
+			Network::Turing => "http://otel.lightclient.turing.avail.so:4317",
 		}
 	}
 
 	fn genesis_hash(&self) -> &str {
 		match self {
 			Network::Local => "DEV",
+			Network::Turing => "d3d2f3a3495dc597434a99d7d449ebad6616db45e4e4f178f31cc6fa14378b70",
 		}
 	}
 }
