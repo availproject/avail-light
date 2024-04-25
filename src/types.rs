@@ -912,7 +912,7 @@ impl Network {
 	fn full_node_ws(&self) -> &str {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
-			Network::Turing => "wss://turing-rpc.avail.so/ws:443",
+			Network::Turing => "wss://turing-rpc.avail.so/ws",
 		}
 	}
 
