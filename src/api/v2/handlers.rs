@@ -1,4 +1,5 @@
 use super::{
+	p2p_api::{MultiaddrResponse, P2PClient},
 	transactions,
 	types::{
 		block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse, DataTransaction,
@@ -40,6 +41,16 @@ pub async fn submit(
 ) -> Result<SubmitResponse, Error> {
 	submitter
 		.submit(transaction)
+		.await
+		.map_err(Error::internal_server_error)
+}
+
+pub async fn get_multiaddress(
+	peer_id: String,
+	p2p_client: P2PClient,
+) -> Result<MultiaddrResponse, Error> {
+	p2p_client
+		.get_multiaddress(peer_id)
 		.await
 		.map_err(Error::internal_server_error)
 }

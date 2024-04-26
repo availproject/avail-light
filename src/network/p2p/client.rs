@@ -345,17 +345,21 @@ impl Command for GetKademliaMapSize {
 
 struct DialPeer {
 	peer_id: PeerId,
-	peer_address: Multiaddr,
+	peer_address: Option<Multiaddr>,
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
 impl Command for DialPeer {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		entries.swarm().dial(
-			DialOpts::peer_id(self.peer_id)
-				.addresses(vec![self.peer_address.clone()])
-				.build(),
-		)?;
+		let opts = DialOpts::peer_id(self.peer_id)
+			.addresses(
+				self.peer_address
+					.clone()
+					.map_or_else(Vec::new, |addr| vec![addr]),
+			)
+			.build();
+
+		entries.swarm().dial(opts)?;
 
 		// insert response channel into Swarm Events pending map
 		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
@@ -440,7 +444,7 @@ impl Client {
 			.context("failed to add address to the routing table")
 	}
 
-	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
+	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Option<Multiaddr>) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(DialPeer {
 				peer_id,
@@ -473,7 +477,7 @@ impl Client {
 
 	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		for (peer, addr) in nodes {
-			self.dial_peer(peer, addr.clone())
+			self.dial_peer(peer, Some(addr.clone()))
 				.await
 				.wrap_err("Dialing Bootstrap peer failed.")?;
 			self.add_address(peer, addr.clone()).await?;

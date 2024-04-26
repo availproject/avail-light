@@ -10,6 +10,7 @@
 
 use crate::api::v2;
 use crate::data::Database;
+use crate::network::p2p;
 use crate::shutdown::Controller;
 use crate::types::IdentityConfig;
 use crate::{
@@ -37,6 +38,7 @@ pub struct Server<T: Database> {
 	pub node_client: rpc::Client,
 	pub ws_clients: v2::types::WsClients,
 	pub shutdown: Controller<String>,
+	pub p2p_client: p2p::Client,
 }
 
 fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
@@ -71,6 +73,7 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 			self.node_client.clone(),
 			self.ws_clients.clone(),
 			self.db.clone(),
+			self.p2p_client.clone(),
 		);
 
 		let cors = warp::cors()

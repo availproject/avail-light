@@ -9,17 +9,19 @@ use warp::{Filter, Rejection, Reply};
 
 use self::{
 	handlers::{handle_rejection, log_internal_server_error},
+	p2p_api::P2PClient,
 	types::{DataQuery, PublishMessage, Version, WsClients},
 };
 
 use crate::{
 	api::v2::types::Topic,
 	data::Database,
-	network::rpc::Client,
+	network::{p2p, rpc::Client},
 	types::{IdentityConfig, RuntimeConfig, State},
 };
 
 mod handlers;
+mod p2p_api;
 mod transactions;
 pub mod types;
 mod ws;
@@ -116,6 +118,16 @@ fn submit_route(
 		.map(log_internal_server_error)
 }
 
+fn get_multiaddress_route(
+	p2p_client: P2PClient,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "multiaddress" / String)
+		.and(warp::get())
+		.and(warp::any().map(move || p2p_client.clone()))
+		.then(handlers::get_multiaddress)
+		.map(log_internal_server_error)
+}
+
 fn subscriptions_route(
 	clients: WsClients,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -191,11 +203,14 @@ pub fn routes(
 	rpc_client: Client,
 	ws_clients: WsClients,
 	db: impl Database + Clone + Send,
+	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
 		version,
 		network_version,
 	};
+
+	let p2p_client = P2PClient { client: p2p_client };
 
 	let app_id = config.app_id.as_ref();
 
@@ -219,6 +234,7 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
+		.or(get_multiaddress_route(p2p_client))
 		.recover(handle_rejection)
 }
 
