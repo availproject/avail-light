@@ -1,4 +1,7 @@
-use crate::{data::Database, types::State};
+use crate::{
+	data::Database,
+	types::{RuntimeConfig, State},
+};
 
 use self::types::AppDataQuery;
 use std::{
@@ -28,10 +31,17 @@ fn with_app_id(
 	warp::any().map(move || app_id)
 }
 
+fn with_cfg(
+	cfg: RuntimeConfig,
+) -> impl Filter<Extract = (RuntimeConfig,), Error = Infallible> + Clone {
+	warp::any().map(move || cfg.clone())
+}
+
 pub fn routes(
 	db: impl Database + Clone + Send,
 	app_id: Option<u32>,
 	state: Arc<Mutex<State>>,
+	cfg: RuntimeConfig,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let mode = warp::path!("v1" / "mode")
 		.and(with_app_id(app_id))
@@ -44,6 +54,7 @@ pub fn routes(
 	let confidence = warp::path!("v1" / "confidence" / u32)
 		.and(with_db(db.clone()))
 		.and(with_state(state.clone()))
+		.and(with_cfg(cfg))
 		.map(handlers::confidence);
 
 	let appdata = (warp::path!("v1" / "appdata" / u32))

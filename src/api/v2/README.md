@@ -84,6 +84,9 @@ Content-Type: application/json
 - **app_data** - range of blocks with app data retrieved and verified
 - **historical_sync** - state for historical blocks syncing up to configured block (omitted if historical sync is not configured)
 
+Blocks without data transactions, or blocks that fails to commit to the data, are considered incomplete and commitments will be empty.
+Ranges of **available** and **app_data** blocks can contain **incomplete** blocks.
+
 ### Historical sync
 
 - **synced** - `true` if there are no historical blocks left to sync
@@ -101,7 +104,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "status": "unavailable|pending|verifying-header|verifying-confidence|verifying-data|finished",
+  "status": "unavailable|pending|verifying-header|verifying-confidence|verifying-data|incomplete|finished",
   "confidence": {confidence} // Optional
 }
 ```
@@ -120,6 +123,7 @@ Content-Type: application/json
 - **verifying-header** - block processing is started, and the header finality is being checked
 - **verifying-confidence** - block header is verified and available, confidence is being checked
 - **verifying-data** - confidence is achieved, and data is being fetched and verified (if configured)
+- **incomplete** - block header is available, but data availability cannot be verified
 - **finished** - block header is available, confidence is achieved, and data is available (if configured)
 
 This status does not give information on what is available. In the case of web sockets messages are already pushed, similar to case of the frequent polling, so header and confidence will be available if **verifying-header** and **verifying-confidence** has been successful.
@@ -134,7 +138,7 @@ HTTP/1.1 404 Not Found
 
 Gets the block header if it is available.
 
-If **block_status = "verifying-confidence|verifying-data|finished"**, the header is available, and the response is:
+If **block_status = "verifying-confidence|verifying-data|incomplete|finished"**, the header is available, and the response is:
 
 ```yaml
 HTTP/1.1 200 OK

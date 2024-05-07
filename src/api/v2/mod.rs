@@ -235,10 +235,10 @@ mod tests {
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
-	use avail_subxt::utils::H256;
+	use avail_subxt::{api::runtime_types::avail_core::AppId, utils::H256};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
-			data_lookup::compact::CompactDataLookup,
+			data_lookup::compact::{CompactDataLookup, DataLookupItem},
 			header::extension::{v3, HeaderExtension},
 			kate_commitment::v3::KateCommitment,
 		},
@@ -361,6 +361,32 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn block_route_incomplete() {
+		let config = RuntimeConfig::default();
+		let state = Arc::new(Mutex::new(State::default()));
+		{
+			let mut state = state.lock().unwrap();
+			state.latest = 10;
+			state.header_verified.set(10);
+			state.data_verified.set(10);
+		}
+		let db = mem_db::MemoryDB::default();
+		_ = db.put(Key::BlockHeader(10), incomplete_header());
+		let route = super::block_route(config, state, db);
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/10")
+			.reply(&route)
+			.await;
+
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			response.body(),
+			r#"{"status":"incomplete","confidence":null}"#
+		);
+	}
+
+	#[tokio::test]
 	async fn block_route_finished() {
 		let config = RuntimeConfig::default();
 		let state = Arc::new(Mutex::new(State::default()));
@@ -372,6 +398,7 @@ mod tests {
 		}
 		let db = mem_db::MemoryDB::default();
 		_ = db.put(Key::VerifiedCellCount(10), 4);
+		_ = db.put(Key::BlockHeader(10), header());
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -403,6 +430,7 @@ mod tests {
 		}));
 
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(Key::BlockHeader(block_number), header());
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -439,8 +467,28 @@ mod tests {
 			extension: HeaderExtension::V3(v3::HeaderExtension {
 				commitment: KateCommitment::default(),
 				app_lookup: CompactDataLookup {
-					size: 0,
+					size: 1,
 					index: vec![],
+				},
+			}),
+			digest: Digest { logs: vec![] },
+		}
+	}
+
+	fn incomplete_header() -> DaHeader {
+		DaHeader {
+			parent_hash: H256::default(),
+			number: 1,
+			state_root: H256::default(),
+			extrinsics_root: H256::default(),
+			extension: HeaderExtension::V3(v3::HeaderExtension {
+				commitment: KateCommitment::default(),
+				app_lookup: CompactDataLookup {
+					size: 0,
+					index: vec![DataLookupItem {
+						app_id: AppId(0),
+						start: 0,
+					}],
 				},
 			}),
 			digest: Digest { logs: vec![] },
@@ -465,7 +513,7 @@ mod tests {
 			.await;
 		assert_eq!(
 			response.body(),
-			r#"{"hash":"0xb4ab92948e78b5e3115d2ce5ff2207e7d713a7fb33f4a9240e413c00954f244b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":0,"index":[]}}}"#
+			r#"{"hash":"0xadf25a1a5d969bb9c9bb9b2e95fe74b0093f0a49ac61e96a1cf41783127f9d1b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":1,"index":[]}}}"#
 		);
 	}
 
@@ -490,6 +538,7 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(Key::BlockHeader(block_number), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -531,6 +580,7 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(Key::BlockHeader(5), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -570,6 +620,7 @@ mod tests {
 				10,
 			]],
 		);
+		_ = db.put(Key::BlockHeader(5), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
