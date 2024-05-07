@@ -32,7 +32,7 @@ use crate::{
 	data::{Database, Key},
 	network::{
 		self,
-		rpc::{self, cell_count_for_confidence, Event},
+		rpc::{self, Event},
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
@@ -62,10 +62,16 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let (required, mut verified, unverified) = match extract_kate(&header.extension) {
+	let (required, verified, unverified) = match extract_kate(&header.extension) {
 		None => {
 			info!("Skipping block without header extension");
-			(0, 0, 0)
+
+			state.lock().unwrap().confidence_achieved.set(block_number);
+
+			db.put(Key::BlockHeader(block_number), header)
+				.wrap_err("Light Client failed to store Block Header")?;
+
+			return Ok(None);
 		},
 		Some((rows, cols, _, commitment)) => {
 			let Some(dimensions) = Dimensions::new(rows, cols) else {
@@ -135,10 +141,6 @@ pub async fn process_block(
 	if required > verified {
 		error!(block_number, "Failed to fetch {} cells", unverified);
 		return Ok(None);
-	}
-
-	if required == 0 {
-		verified = cell_count_for_confidence(cfg.confidence) as usize
 	}
 
 	// write confidence factor into on-disk database

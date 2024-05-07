@@ -2,7 +2,8 @@ use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlock
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{Database, Key},
-	types::{Mode, OptionBlockRange, State},
+	network::rpc::cell_count_for_confidence,
+	types::{Mode, OptionBlockRange, RuntimeConfig, State},
 	utils::calculate_confidence,
 };
 use avail_subxt::{
@@ -31,35 +32,35 @@ pub fn confidence(
 	block_num: u32,
 	db: impl Database,
 	state: Arc<Mutex<State>>,
+	cfg: RuntimeConfig,
 ) -> ClientResponse<ConfidenceResponse> {
+	fn is_synced(block_num: u32, state: Arc<Mutex<State>>) -> bool {
+		let state = state.lock().unwrap();
+		match &state.confidence_achieved {
+			Some(range) => block_num <= range.last,
+			None => false,
+		}
+	}
+
 	info!("Got request for confidence for block {block_num}");
-	let res = match db.get(Key::VerifiedCellCount(block_num)) {
-		Ok(Some(count)) => {
-			let confidence = calculate_confidence(count);
-			let serialised_confidence = serialised_confidence(block_num, confidence);
-			ClientResponse::Normal(ConfidenceResponse {
-				block: block_num,
-				confidence,
-				serialised_confidence,
-			})
-		},
-		Ok(None) => {
-			let state = state.lock().unwrap();
-			if state
-				.confidence_achieved
-				.as_ref()
-				.map(|range| block_num < range.last)
-				.unwrap_or(false)
-			{
-				return ClientResponse::NotFinalized;
-			} else {
-				return ClientResponse::NotFound;
-			}
-		},
-		Err(e) => ClientResponse::Error(e),
+
+	let count = match db.get(Key::VerifiedCellCount(block_num)) {
+		Ok(Some(count)) => count,
+		Ok(None) if is_synced(block_num, state) => cell_count_for_confidence(cfg.confidence),
+		Ok(None) => return ClientResponse::NotFinalized,
+		Err(error) => return ClientResponse::Error(error),
 	};
-	info!("Returning confidence: {res:?}");
-	res
+
+	let confidence = calculate_confidence(count);
+	let serialised_confidence = serialised_confidence(block_num, confidence);
+
+	let response = ClientResponse::Normal(ConfidenceResponse {
+		block: block_num,
+		confidence,
+		serialised_confidence,
+	});
+	info!("Returning confidence: {response:?}");
+	response
 }
 
 pub fn status(

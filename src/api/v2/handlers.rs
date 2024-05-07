@@ -96,10 +96,14 @@ pub async fn block(
 	db: impl Database,
 ) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
+	let sync_start_block = &config.sync_start_block;
 
-	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
-		return Err(Error::not_found());
-	};
+	let block_status = db
+		.get(Key::BlockHeader(block_number))
+		.map_err(Error::internal_server_error)?
+		.map(|primitives::Header { extension, .. }| extension)
+		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
+		.ok_or(Error::not_found())?;
 
 	let confidence = db
 		.get(Key::VerifiedCellCount(block_number))
@@ -116,10 +120,14 @@ pub async fn block_header(
 	db: impl Database,
 ) -> Result<Header, Error> {
 	let state = state.lock().expect("Lock should be acquired");
+	let sync_start_block = &config.sync_start_block;
 
-	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
-		return Err(Error::not_found());
-	};
+	let block_status = db
+		.get(Key::BlockHeader(block_number))
+		.map_err(Error::internal_server_error)?
+		.map(|primitives::Header { extension, .. }| extension)
+		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
+		.ok_or(Error::not_found())?;
 
 	if matches!(
 		block_status,
@@ -143,13 +151,15 @@ pub async fn block_data(
 ) -> Result<DataResponse, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
-	let Some(app_id) = config.app_id else {
-		return Err(Error::not_found());
-	};
+	let app_id = config.app_id.ok_or(Error::not_found())?;
+	let sync_start_block = &config.sync_start_block;
 
-	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
-		return Err(Error::not_found());
-	};
+	let block_status = db
+		.get(Key::BlockHeader(block_number))
+		.map_err(Error::internal_server_error)?
+		.map(|primitives::Header { extension, .. }| extension)
+		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
+		.ok_or(Error::not_found())?;
 
 	if block_status != BlockStatus::Finished {
 		return Err(Error::bad_request_unknown("Block data is not available"));

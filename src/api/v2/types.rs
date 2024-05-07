@@ -29,7 +29,7 @@ use crate::{
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
-	utils::decode_app_data,
+	utils::{decode_app_data, OptionalExtension},
 };
 
 #[derive(Debug)]
@@ -256,6 +256,7 @@ pub enum BlockStatus {
 	VerifyingHeader,
 	VerifyingConfidence,
 	VerifyingData,
+	Incomplete,
 	Finished,
 }
 
@@ -263,17 +264,22 @@ pub fn block_status(
 	sync_start_block: &Option<u32>,
 	state: &State,
 	block_number: u32,
+	extension: impl OptionalExtension,
 ) -> Option<BlockStatus> {
 	if block_number > state.latest {
 		return None;
-	}
+	};
 
 	let first_block = state.header_verified.first().unwrap_or(state.latest);
 	let first_sync_block = sync_start_block.unwrap_or(first_block);
 
 	if block_number < first_sync_block {
 		return Some(BlockStatus::Unavailable);
-	}
+	};
+
+	if extension.option().is_none() {
+		return Some(BlockStatus::Incomplete);
+	};
 
 	if block_number < first_block {
 		if state.sync_data_verified.contains(block_number) {
@@ -813,6 +819,7 @@ mod tests {
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		types::{OptionBlockRange, State},
+		utils::OptionalExtension,
 	};
 
 	use super::{
@@ -937,13 +944,29 @@ mod tests {
 		};
 	}
 
+	struct ExtensionNone;
+
+	impl OptionalExtension for ExtensionNone {
+		fn option(&self) -> Option<&Self> {
+			None
+		}
+	}
+
+	struct ExtensionSome;
+
+	impl OptionalExtension for ExtensionSome {
+		fn option(&self) -> Option<&Self> {
+			Some(self)
+		}
+	}
+
 	#[test]
 	fn block_status_none() {
 		let mut state = State::default();
-		assert_eq!(block_status(&None, &state, 1), None);
+		assert_eq!(block_status(&None, &state, 1, ExtensionNone), None);
 		state.latest = 10;
-		assert_ne!(block_status(&None, &state, 1), None);
-		assert_eq!(block_status(&None, &state, 11), None);
+		assert_ne!(block_status(&None, &state, 1, ExtensionNone), None);
+		assert_eq!(block_status(&None, &state, 11, ExtensionNone), None);
 	}
 
 	#[test]
@@ -953,10 +976,22 @@ mod tests {
 			..Default::default()
 		};
 		let unavailable = Some(BlockStatus::Unavailable);
-		assert_eq!(block_status(&Some(1), &state, 0), unavailable);
-		assert_eq!(block_status(&Some(10), &state, 0), unavailable);
-		assert_eq!(block_status(&Some(10), &state, 9), unavailable);
-		assert_ne!(block_status(&Some(9), &state, 9), unavailable);
+		assert_eq!(
+			block_status(&Some(1), &state, 0, ExtensionNone),
+			unavailable
+		);
+		assert_eq!(
+			block_status(&Some(10), &state, 0, ExtensionNone),
+			unavailable
+		);
+		assert_eq!(
+			block_status(&Some(10), &state, 9, ExtensionNone),
+			unavailable
+		);
+		assert_ne!(
+			block_status(&Some(9), &state, 9, ExtensionNone),
+			unavailable
+		);
 	}
 
 	#[test]
@@ -966,33 +1001,54 @@ mod tests {
 			..Default::default()
 		};
 		let pending = Some(BlockStatus::Pending);
-		assert_eq!(block_status(&Some(0), &state, 0), pending);
-		assert_eq!(block_status(&Some(0), &state, 1), pending);
-		assert_eq!(block_status(&Some(0), &state, 4), pending);
-		assert_ne!(block_status(&Some(0), &state, 5), pending);
+		assert_eq!(block_status(&Some(0), &state, 0, ExtensionSome), pending);
+		assert_eq!(block_status(&Some(0), &state, 1, ExtensionSome), pending);
+		assert_eq!(block_status(&Some(0), &state, 4, ExtensionSome), pending);
+		assert_ne!(block_status(&Some(0), &state, 5, ExtensionSome), pending);
 	}
 
 	#[test]
 	fn block_status_verifying_header() {
 		let mut state = State::default();
 		let verifying_header = Some(BlockStatus::VerifyingHeader);
-		assert_eq!(block_status(&Some(0), &state, 0), verifying_header);
+		assert_eq!(
+			block_status(&Some(0), &state, 0, ExtensionSome),
+			verifying_header
+		);
 		state.latest = 1;
-		assert_eq!(block_status(&Some(0), &state, 1), verifying_header);
+		assert_eq!(
+			block_status(&Some(0), &state, 1, ExtensionSome),
+			verifying_header
+		);
 		state.latest = 10;
-		assert_eq!(block_status(&Some(0), &state, 10), verifying_header);
+		assert_eq!(
+			block_status(&Some(0), &state, 10, ExtensionSome),
+			verifying_header
+		);
 		state.latest = 11;
-		assert_ne!(block_status(&Some(10), &state, 10), verifying_header);
+		assert_ne!(
+			block_status(&Some(10), &state, 10, ExtensionSome),
+			verifying_header
+		);
 
 		let mut state = State {
 			latest: 5,
 			sync_latest: Some(1),
 			..Default::default()
 		};
-		assert_eq!(block_status(&Some(1), &state, 1), verifying_header);
+		assert_eq!(
+			block_status(&Some(1), &state, 1, ExtensionSome),
+			verifying_header
+		);
 		state.sync_latest = Some(2);
-		assert_eq!(block_status(&Some(1), &state, 2), verifying_header);
-		assert_ne!(block_status(&Some(1), &state, 3), verifying_header);
+		assert_eq!(
+			block_status(&Some(1), &state, 2, ExtensionSome),
+			verifying_header
+		);
+		assert_ne!(
+			block_status(&Some(1), &state, 3, ExtensionSome),
+			verifying_header
+		);
 	}
 
 	#[test]
@@ -1001,26 +1057,50 @@ mod tests {
 		let verifying_confidence = Some(BlockStatus::VerifyingConfidence);
 		state.latest = 10;
 		state.header_verified.set(1);
-		assert_eq!(block_status(&None, &state, 1), verifying_confidence);
+		assert_eq!(
+			block_status(&None, &state, 1, ExtensionSome),
+			verifying_confidence
+		);
 		state.confidence_achieved.set(1);
 		state.header_verified.set(5);
 		state.confidence_achieved.set(4);
-		assert_eq!(block_status(&None, &state, 5), verifying_confidence);
-		assert_ne!(block_status(&None, &state, 4), verifying_confidence);
-		assert_ne!(block_status(&None, &state, 6), verifying_confidence);
+		assert_eq!(
+			block_status(&None, &state, 5, ExtensionSome),
+			verifying_confidence
+		);
+		assert_ne!(
+			block_status(&None, &state, 4, ExtensionSome),
+			verifying_confidence
+		);
+		assert_ne!(
+			block_status(&None, &state, 6, ExtensionSome),
+			verifying_confidence
+		);
 
 		let mut state = State {
 			latest: 10,
 			..Default::default()
 		};
 		state.sync_header_verified.set(1);
-		assert_eq!(block_status(&Some(1), &state, 1), verifying_confidence);
+		assert_eq!(
+			block_status(&Some(1), &state, 1, ExtensionSome),
+			verifying_confidence
+		);
 		state.sync_confidence_achieved.set(1);
 		state.sync_header_verified.set(5);
 		state.sync_confidence_achieved.set(4);
-		assert_eq!(block_status(&Some(1), &state, 5), verifying_confidence);
-		assert_ne!(block_status(&Some(1), &state, 4), verifying_confidence);
-		assert_ne!(block_status(&Some(1), &state, 6), verifying_confidence);
+		assert_eq!(
+			block_status(&Some(1), &state, 5, ExtensionSome),
+			verifying_confidence
+		);
+		assert_ne!(
+			block_status(&Some(1), &state, 4, ExtensionSome),
+			verifying_confidence
+		);
+		assert_ne!(
+			block_status(&Some(1), &state, 6, ExtensionSome),
+			verifying_confidence
+		);
 	}
 
 	#[test]
@@ -1030,14 +1110,26 @@ mod tests {
 		state.latest = 10;
 		state.header_verified.set(1);
 		state.confidence_achieved.set(1);
-		assert_eq!(block_status(&None, &state, 1), verifying_data);
+		assert_eq!(
+			block_status(&None, &state, 1, ExtensionSome),
+			verifying_data
+		);
 		state.data_verified.set(1);
 		state.header_verified.set(5);
 		state.confidence_achieved.set(5);
 		state.data_verified.set(4);
-		assert_eq!(block_status(&None, &state, 5), verifying_data);
-		assert_ne!(block_status(&None, &state, 4), verifying_data);
-		assert_ne!(block_status(&None, &state, 6), verifying_data);
+		assert_eq!(
+			block_status(&None, &state, 5, ExtensionSome),
+			verifying_data
+		);
+		assert_ne!(
+			block_status(&None, &state, 4, ExtensionSome),
+			verifying_data
+		);
+		assert_ne!(
+			block_status(&None, &state, 6, ExtensionSome),
+			verifying_data
+		);
 
 		let mut state = State {
 			latest: 10,
@@ -1045,14 +1137,26 @@ mod tests {
 		};
 		state.sync_header_verified.set(1);
 		state.sync_confidence_achieved.set(1);
-		assert_eq!(block_status(&Some(1), &state, 1), verifying_data);
+		assert_eq!(
+			block_status(&Some(1), &state, 1, ExtensionSome),
+			verifying_data
+		);
 		state.sync_data_verified.set(1);
 		state.sync_header_verified.set(5);
 		state.sync_confidence_achieved.set(5);
 		state.sync_data_verified.set(4);
-		assert_eq!(block_status(&Some(1), &state, 5), verifying_data);
-		assert_ne!(block_status(&Some(1), &state, 4), verifying_data);
-		assert_ne!(block_status(&Some(1), &state, 6), verifying_data);
+		assert_eq!(
+			block_status(&Some(1), &state, 5, ExtensionSome),
+			verifying_data
+		);
+		assert_ne!(
+			block_status(&Some(1), &state, 4, ExtensionSome),
+			verifying_data
+		);
+		assert_ne!(
+			block_status(&Some(1), &state, 6, ExtensionSome),
+			verifying_data
+		);
 	}
 
 	#[test]
@@ -1062,12 +1166,12 @@ mod tests {
 		state.latest = 10;
 		state.header_verified.set(1);
 		state.data_verified.set(1);
-		assert_eq!(block_status(&None, &state, 1), finished);
+		assert_eq!(block_status(&None, &state, 1, ExtensionSome), finished);
 		state.header_verified.set(5);
 		state.data_verified.set(5);
-		assert_eq!(block_status(&None, &state, 4), finished);
-		assert_eq!(block_status(&None, &state, 5), finished);
-		assert_ne!(block_status(&None, &state, 6), finished);
+		assert_eq!(block_status(&None, &state, 4, ExtensionSome), finished);
+		assert_eq!(block_status(&None, &state, 5, ExtensionSome), finished);
+		assert_ne!(block_status(&None, &state, 6, ExtensionSome), finished);
 
 		let mut state = State {
 			latest: 10,
@@ -1075,11 +1179,11 @@ mod tests {
 		};
 		state.sync_header_verified.set(1);
 		state.sync_data_verified.set(1);
-		assert_eq!(block_status(&Some(1), &state, 1), finished);
+		assert_eq!(block_status(&Some(1), &state, 1, ExtensionSome), finished);
 		state.sync_header_verified.set(5);
 		state.sync_data_verified.set(5);
-		assert_eq!(block_status(&Some(1), &state, 4), finished);
-		assert_eq!(block_status(&Some(1), &state, 5), finished);
-		assert_ne!(block_status(&Some(1), &state, 6), finished);
+		assert_eq!(block_status(&Some(1), &state, 4, ExtensionSome), finished);
+		assert_eq!(block_status(&Some(1), &state, 5, ExtensionSome), finished);
+		assert_ne!(block_status(&Some(1), &state, 6, ExtensionSome), finished);
 	}
 }
