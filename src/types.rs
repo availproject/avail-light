@@ -226,14 +226,14 @@ impl TryFrom<String> for Origin {
 	}
 }
 
-impl ToString for Origin {
-	fn to_string(&self) -> String {
-		match self {
-			Origin::Internal => "internal".to_string(),
-			Origin::FatClient => "fatclient".to_string(),
-			Origin::External => "external".to_string(),
-			Origin::Other(val) => val.to_string(),
-		}
+impl Display for Origin {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		f.write_str(match self {
+			Origin::Internal => "internal",
+			Origin::FatClient => "fatclient",
+			Origin::External => "external",
+			Origin::Other(val) => val,
+		})
 	}
 }
 
@@ -955,15 +955,15 @@ impl FromStr for LogLevel {
 	}
 }
 
-impl ToString for LogLevel {
-	fn to_string(&self) -> String {
-		match self {
-			LogLevel::Info => "INFO".to_string(),
-			LogLevel::Debug => "DEBUG".to_string(),
-			LogLevel::Trace => "TRACE".to_string(),
-			LogLevel::Warn => "WARN".to_string(),
-			LogLevel::Error => "ERROR".to_string(),
-		}
+impl Display for LogLevel {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		f.write_str(match self {
+			LogLevel::Info => "INFO",
+			LogLevel::Debug => "DEBUG",
+			LogLevel::Trace => "TRACE",
+			LogLevel::Warn => "WARN",
+			LogLevel::Error => "ERROR",
+		})
 	}
 }
 

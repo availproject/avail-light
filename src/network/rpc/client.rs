@@ -60,7 +60,7 @@ impl Client {
 		let (client, node, _) = Retry::spawn(retry_config.clone(), || async {
 			Self::try_connect_and_execute(
 				nodes.shuffle(Default::default()),
-				ExpectedNodeVariant::new(),
+				ExpectedNodeVariant::default(),
 				expected_genesis_hash,
 				|_| futures::future::ok(()),
 			)
@@ -190,7 +190,7 @@ impl Client {
 			async move {
 				Self::try_connect_and_execute(
 					nodes,
-					ExpectedNodeVariant::new(),
+					ExpectedNodeVariant::default(),
 					&self.expected_genesis_hash,
 					move |client| f(client).map_err(Report::from),
 				)
