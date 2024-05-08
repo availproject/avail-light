@@ -1,7 +1,4 @@
-use std::str::FromStr;
-
 use color_eyre::Result;
-use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use warp::reply::Reply;
 
@@ -14,7 +11,7 @@ pub struct P2PClient {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultiaddrResponse {
-	pub multiaddr: String,
+	pub multiaddresses: Vec<String>,
 }
 
 impl Reply for MultiaddrResponse {
@@ -24,11 +21,8 @@ impl Reply for MultiaddrResponse {
 }
 
 impl P2PClient {
-	pub async fn get_multiaddress(&self, peer_id: String) -> Result<MultiaddrResponse> {
-		let peer_id = PeerId::from_str(peer_id.as_str())?;
-		let _ = self.client.dial_peer(peer_id, None).await;
-		Ok(MultiaddrResponse {
-			multiaddr: "test1234".to_string(),
-		})
+	pub async fn get_local_multiaddress(&self) -> Result<MultiaddrResponse> {
+		let multiaddresses = self.client.get_local_multiaddresses().await?;
+		Ok(MultiaddrResponse { multiaddresses })
 	}
 }

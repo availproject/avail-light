@@ -260,6 +260,42 @@ impl Command for CountConnectedPeers {
 	}
 }
 
+struct GetLocalMultiaddresses {
+	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
+}
+
+impl Command for GetLocalMultiaddresses {
+	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
+		let multiaddresses = entries
+			.swarm
+			.external_addresses()
+			.map(|entry| entry.to_string())
+			.collect();
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(multiaddresses))
+			.expect("CountDHTPeers receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: Report) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("CountDHTPeers receiver dropped");
+	}
+}
+
+// Command::GetMultiaddress { response_sender } => {
+// 	let last_address = self.swarm.external_addresses().last();
+// 	_ = response_sender.send(last_address.cloned());
+// }
+
 struct ListConnectedPeers {
 	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
 }
@@ -524,6 +560,15 @@ impl Client {
 	pub async fn list_connected_peers(&self) -> Result<Vec<String>> {
 		self.execute_sync(|response_sender| {
 			Box::new(ListConnectedPeers {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn get_local_multiaddresses(&self) -> Result<Vec<String>> {
+		self.execute_sync(|response_sender| {
+			Box::new(GetLocalMultiaddresses {
 				response_sender: Some(response_sender),
 			})
 		})

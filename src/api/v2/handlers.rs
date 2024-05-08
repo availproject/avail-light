@@ -45,12 +45,9 @@ pub async fn submit(
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn get_multiaddress(
-	peer_id: String,
-	p2p_client: P2PClient,
-) -> Result<MultiaddrResponse, Error> {
+pub async fn get_local_multiaddress(p2p_client: P2PClient) -> Result<MultiaddrResponse, Error> {
 	p2p_client
-		.get_multiaddress(peer_id)
+		.get_local_multiaddress()
 		.await
 		.map_err(Error::internal_server_error)
 }

@@ -118,13 +118,13 @@ fn submit_route(
 		.map(log_internal_server_error)
 }
 
-fn get_multiaddress_route(
+fn get_local_multiaddress_route(
 	p2p_client: P2PClient,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "multiaddress" / String)
+	warp::path!("v2" / "p2p" / "local" / "multiaddress")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.then(handlers::get_multiaddress)
+		.then(handlers::get_local_multiaddress)
 		.map(log_internal_server_error)
 }
 
@@ -234,7 +234,7 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
-		.or(get_multiaddress_route(p2p_client))
+		.or(get_local_multiaddress_route(p2p_client))
 		.recover(handle_rejection)
 }
 
