@@ -14,11 +14,7 @@ use libp2p::{
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
-use std::str;
-use std::{
-	collections::HashMap,
-	time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tracing::{debug, trace};
 
@@ -293,54 +289,6 @@ impl Command for ListConnectedPeers {
 			.unwrap()
 			.send(Err(error))
 			.expect("CountDHTPeers receiver dropped");
-	}
-}
-
-struct GetCellsInDHTPerBlock {
-	response_sender: Option<oneshot::Sender<Result<()>>>,
-}
-
-impl Command for GetCellsInDHTPerBlock {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		let mut occurrence_map = HashMap::new();
-		for record in entries.behavior_mut().kademlia.store_mut().records() {
-			let vec_key = record.key.to_vec();
-			let record_key = str::from_utf8(&vec_key);
-
-			let (block_num, _) = record_key
-				.expect("unable to cast key to string")
-				.split_once(':')
-				.expect("unable to split the key string");
-
-			let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
-			*count += 1;
-		}
-		let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
-		sorted.sort_by(|a, b| a.0.cmp(b.0));
-		for (block_number, cell_count) in sorted {
-			trace!(
-				"Number of cells in DHT for block {:?}: {}",
-				block_number,
-				cell_count
-			);
-		}
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(()))
-			.expect("GetCellsInDHTPerBlock receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("GetCellsInDHTPerBlock receiver dropped");
 	}
 }
 

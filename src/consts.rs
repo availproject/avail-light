@@ -8,13 +8,8 @@ pub const EXPECTED_SYSTEM_VERSION: &[&str] = &["2.1"];
 pub struct ExpectedNodeVariant {
 	pub system_version: &'static [&'static str],
 }
-impl ExpectedNodeVariant {
-	pub const fn new() -> Self {
-		Self {
-			system_version: EXPECTED_SYSTEM_VERSION,
-		}
-	}
 
+impl ExpectedNodeVariant {
 	/// Checks if any of the expected versions matches provided network version.
 	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
 	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
@@ -28,5 +23,13 @@ impl ExpectedNodeVariant {
 			}
 		}
 		false
+	}
+}
+
+impl Default for ExpectedNodeVariant {
+	fn default() -> Self {
+		Self {
+			system_version: EXPECTED_SYSTEM_VERSION,
+		}
 	}
 }
