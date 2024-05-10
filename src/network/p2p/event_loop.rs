@@ -2,6 +2,7 @@ use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
+	core::ConnectedPoint,
 	dcutr,
 	identify::{self, Info},
 	identity::Keypair,
@@ -83,12 +84,20 @@ struct EventLoopConfig {
 	kad_record_ttl: TimeToLive,
 }
 
+#[derive(Debug)]
+pub struct ConnectionEstablishedInfo {
+	pub peer_id: PeerId,
+	pub endpoint: ConnectedPoint,
+	pub established_in: Duration,
+	pub num_established: u32,
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	// Tracking Kademlia events
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
-	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	/// Blocks we monitor for PUT success rate
@@ -500,11 +509,23 @@ impl EventLoop {
 							address.to_string()
 						);
 					},
-					SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+					SwarmEvent::ConnectionEstablished {
+						peer_id,
+						endpoint,
+						established_in,
+						num_established,
+						..
+					} => {
 						metrics.count(MetricCounter::ConnectionEstablished).await;
+						endpoint.get_remote_address();
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
-							_ = ch.send(Ok(()));
+							_ = ch.send(Ok(ConnectionEstablishedInfo {
+								peer_id,
+								endpoint,
+								established_in,
+								num_established: num_established.into(),
+							}));
 						}
 						self.establish_relay_circuit(peer_id);
 					},

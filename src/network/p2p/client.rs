@@ -1,4 +1,7 @@
-use super::{Command, CommandSender, EventLoopEntries, QueryChannel, SendableCommand};
+use super::{
+	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, QueryChannel,
+	SendableCommand,
+};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
@@ -291,11 +294,6 @@ impl Command for GetLocalMultiaddresses {
 	}
 }
 
-// Command::GetMultiaddress { response_sender } => {
-// 	let last_address = self.swarm.external_addresses().last();
-// 	_ = response_sender.send(last_address.cloned());
-// }
-
 struct ListConnectedPeers {
 	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
 }
@@ -382,7 +380,7 @@ impl Command for GetKademliaMapSize {
 struct DialPeer {
 	peer_id: PeerId,
 	peer_address: Option<Multiaddr>,
-	response_sender: Option<oneshot::Sender<Result<()>>>,
+	response_sender: Option<oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 }
 
 impl Command for DialPeer {
@@ -480,7 +478,11 @@ impl Client {
 			.context("failed to add address to the routing table")
 	}
 
-	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Option<Multiaddr>) -> Result<()> {
+	pub async fn dial_peer(
+		&self,
+		peer_id: PeerId,
+		peer_address: Option<Multiaddr>,
+	) -> Result<ConnectionEstablishedInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(DialPeer {
 				peer_id,
