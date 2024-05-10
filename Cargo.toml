@@ -17,6 +17,11 @@ name = "avail-light"
 test = false
 bench = false
 
+[[bin]]
+name = "avail-light-launcher"
+test = false
+bench = false
+
 [dependencies]
 # TODO: Remove direct dependency after relevant traits are implemented in avail-subxt
 subxt = "0.34"
@@ -76,6 +81,8 @@ opentelemetry = "0.20.0"
 opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] }
 opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
+reqwest = { version = "0.12.4", features = ["json"] }
+semver = "1.0.23"
 subxt-signer = "0.34.0"
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
