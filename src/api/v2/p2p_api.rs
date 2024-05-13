@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use color_eyre::Result;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
@@ -7,10 +5,7 @@ use warp::reply::Reply;
 
 use crate::network::p2p;
 
-#[derive(Clone)]
-pub struct P2PClient {
-	pub client: p2p::Client,
-}
+use super::types::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultiaddrResponse {
@@ -37,21 +32,27 @@ impl Reply for RemoteMultiaddrResponse {
 	}
 }
 
-impl P2PClient {
-	pub async fn get_local_multiaddress(&self) -> Result<MultiaddrResponse> {
-		let multiaddresses = self.client.get_local_multiaddresses().await?;
-		Ok(MultiaddrResponse { multiaddresses })
-	}
+pub async fn get_local_multiaddress(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
+	p2p_client
+		.get_local_multiaddresses()
+		.await
+		.map(|multiaddresses| MultiaddrResponse { multiaddresses })
+		.map_err(Error::internal_server_error)
+}
 
-	pub async fn get_peer_multiaddress(&self, peer_id: String) -> Result<RemoteMultiaddrResponse> {
-		let peer_id = PeerId::from_str(&peer_id)?;
-		let res = self.client.dial_peer(peer_id, None).await?;
-
-		Ok(RemoteMultiaddrResponse {
-			peer_id: res.peer_id.to_string(),
-			multiaddress: res.endpoint.get_remote_address().to_string(),
-			established_in: res.established_in.as_secs().to_string(),
-			num_established: res.num_established,
+pub async fn get_peer_multiaddress(
+	peer_id: PeerId,
+	p2p_client: p2p::Client,
+) -> Result<RemoteMultiaddrResponse, Error> {
+	// let peer_id = PeerId::from_str(&peer_id)?;
+	p2p_client
+		.dial_peer(peer_id, None)
+		.await
+		.map(|connection_info| RemoteMultiaddrResponse {
+			peer_id: connection_info.peer_id.to_string(),
+			multiaddress: connection_info.endpoint.get_remote_address().to_string(),
+			established_in: connection_info.established_in.as_secs().to_string(),
+			num_established: connection_info.num_established,
 		})
-	}
+		.map_err(Error::internal_server_error)
 }

@@ -1,5 +1,4 @@
 use super::{
-	p2p_api::{MultiaddrResponse, P2PClient, RemoteMultiaddrResponse},
 	transactions,
 	types::{
 		block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse, DataTransaction,
@@ -10,8 +9,7 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::Database,
-	data::Key,
+	data::{Database, Key},
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -45,22 +43,21 @@ pub async fn submit(
 		.map_err(Error::internal_server_error)
 }
 
-pub async fn get_local_multiaddress(p2p_client: P2PClient) -> Result<MultiaddrResponse, Error> {
-	p2p_client
-		.get_local_multiaddress()
-		.await
-		.map_err(Error::internal_server_error)
-}
+// pub async fn get_local_multiaddress(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
+// 	get_local_multiaddress(p2p_client)
+// 		.await
+// 		.map_err(Error::internal_server_error)
+// }
 
-pub async fn get_peer_multiaddress(
-	peer_id: String,
-	p2p_client: P2PClient,
-) -> Result<RemoteMultiaddrResponse, Error> {
-	p2p_client
-		.get_peer_multiaddress(peer_id)
-		.await
-		.map_err(Error::internal_server_error)
-}
+// pub async fn get_peer_multiaddress(
+// 	p2p_client: p2p::Client,
+// 	peer_id: String,
+// ) -> Result<RemoteMultiaddrResponse, Error> {
+// 	p2p_client
+// 		.get_peer_multiaddress(peer_id)
+// 		.await
+// 		.map_err(Error::internal_server_error)
+// }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn ws(

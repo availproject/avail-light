@@ -1,3 +1,4 @@
+use libp2p::PeerId;
 use std::{
 	convert::Infallible,
 	fmt::Display,
@@ -9,7 +10,6 @@ use warp::{Filter, Rejection, Reply};
 
 use self::{
 	handlers::{handle_rejection, log_internal_server_error},
-	p2p_api::P2PClient,
 	types::{DataQuery, PublishMessage, Version, WsClients},
 };
 
@@ -119,22 +119,22 @@ fn submit_route(
 }
 
 fn get_local_multiaddress_route(
-	p2p_client: P2PClient,
+	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "p2p" / "local" / "multi-address")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.then(handlers::get_local_multiaddress)
+		.then(p2p_api::get_local_multiaddress)
 		.map(log_internal_server_error)
 }
 
 fn get_peer_multiaddress_route(
-	p2p_client: P2PClient,
+	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "peers" / String / "multi-address")
+	warp::path!("v2" / "p2p" / "peers" / PeerId / "multi-address")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.then(handlers::get_peer_multiaddress)
+		.then(p2p_api::get_peer_multiaddress)
 		.map(log_internal_server_error)
 }
 
@@ -219,8 +219,6 @@ pub fn routes(
 		version,
 		network_version,
 	};
-
-	let p2p_client = P2PClient { client: p2p_client };
 
 	let app_id = config.app_id.as_ref();
 
