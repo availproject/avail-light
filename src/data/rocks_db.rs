@@ -1,6 +1,9 @@
-use crate::data::{
-	self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, FINALITY_SYNC_CHECKPOINT_KEY,
-	KADEMLIA_STORE_CF, STATE_CF,
+use crate::{
+	data::{
+		self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF,
+		FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF, STATE_CF,
+	},
+	network::p2p::ExpirationCompactionFilterFactory,
 };
 use codec::{Decode, Encode};
 use color_eyre::eyre::{eyre, Context, Result};
@@ -15,12 +18,15 @@ pub struct RocksDB {
 
 impl RocksDB {
 	pub fn open(path: &str) -> Result<(RocksDB, Arc<rocksdb::DB>)> {
+		let mut kademlia_store_cf_opts = Options::default();
+		kademlia_store_cf_opts
+			.set_compaction_filter_factory(ExpirationCompactionFilterFactory::default());
 		let cf_opts = vec![
 			ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, Options::default()),
 			ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, Options::default()),
 			ColumnFamilyDescriptor::new(APP_DATA_CF, Options::default()),
 			ColumnFamilyDescriptor::new(STATE_CF, Options::default()),
-			ColumnFamilyDescriptor::new(KADEMLIA_STORE_CF, Options::default()),
+			ColumnFamilyDescriptor::new(KADEMLIA_STORE_CF, kademlia_store_cf_opts),
 		];
 
 		let mut db_opts = Options::default();
