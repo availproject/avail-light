@@ -145,7 +145,7 @@ impl RocksDBStore {
 	}
 }
 
-fn into_kad_record(record: (Vec<u8>, Vec<u8>)) -> kad::Record {
+pub fn into_kad_record(record: (Vec<u8>, Vec<u8>)) -> kad::Record {
 	let (key, value) = record;
 	KadRecord::decode(&mut &value[..])
 		.map(|record| Entry(key, record).into())
@@ -242,5 +242,66 @@ impl RecordStore for RocksDBStore {
 
 	fn remove_provider(&mut self, key: &RecordKey, provider: &PeerId) {
 		self.providers.remove_provider(key, provider)
+	}
+}
+
+pub use ttl::ExpirationCompactionFilterFactory;
+
+mod ttl {
+	use super::into_kad_record;
+	use rocksdb::{
+		compaction_filter::CompactionFilter,
+		compaction_filter_factory::{CompactionFilterContext, CompactionFilterFactory},
+		CompactionDecision,
+	};
+	use std::{ffi::CString, time::Instant};
+
+	pub struct ExpirationCompactionFilter {
+		now: Instant,
+		name: CString,
+	}
+
+	impl CompactionFilter for ExpirationCompactionFilter {
+		fn filter(&mut self, _level: u32, key: &[u8], value: &[u8]) -> CompactionDecision {
+			let record = into_kad_record((key.to_vec(), value.to_vec()));
+			match record.is_expired(self.now) {
+				true => CompactionDecision::Remove,
+				false => CompactionDecision::Keep,
+			}
+		}
+
+		fn name(&self) -> &std::ffi::CStr {
+			&self.name
+		}
+	}
+
+	pub struct ExpirationCompactionFilterFactory {
+		name: CString,
+	}
+
+	impl Default for ExpirationCompactionFilterFactory {
+		fn default() -> Self {
+			let name = CString::new("kademlia_store_expiration_compaction_filter_factory")
+				.expect("CString::new failed");
+
+			ExpirationCompactionFilterFactory { name }
+		}
+	}
+
+	impl CompactionFilterFactory for ExpirationCompactionFilterFactory {
+		type Filter = ExpirationCompactionFilter;
+
+		fn create(&mut self, _context: CompactionFilterContext) -> Self::Filter {
+			let name =
+				CString::new("kademlia_store_expiration_compaction_filter").expect("valid CString");
+			ExpirationCompactionFilter {
+				now: Instant::now(),
+				name,
+			}
+		}
+
+		fn name(&self) -> &std::ffi::CStr {
+			&self.name
+		}
 	}
 }

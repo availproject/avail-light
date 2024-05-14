@@ -80,10 +80,12 @@ impl BlockStat {
 }
 
 struct PruneExpiredRecords {
+	#[allow(dead_code)]
 	now: Instant,
 	response_sender: Option<oneshot::Sender<Result<usize>>>,
 }
 
+#[cfg(not(feature = "kademlia-rocksdb"))]
 impl Command for PruneExpiredRecords {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<(), Report> {
 		let store = entries.behavior_mut().kademlia.store_mut();
@@ -96,6 +98,22 @@ impl Command for PruneExpiredRecords {
 			.take()
 			.unwrap()
 			.send(Ok(before - after))
+			.expect("PruneExpiredRecords receiver dropped");
+
+		Ok(())
+	}
+
+	fn abort(&mut self, _: Report) {}
+}
+
+#[cfg(feature = "kademlia-rocksdb")]
+impl Command for PruneExpiredRecords {
+	fn run(&mut self, _: EventLoopEntries) -> Result<(), Report> {
+		// Skip iterating all records from RocksDB, since TTL will be handled during compaction phase
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(0))
 			.expect("PruneExpiredRecords receiver dropped");
 
 		Ok(())

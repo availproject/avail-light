@@ -28,6 +28,7 @@ pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
 pub use kad_mem_store::MemoryStoreConfig;
+pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
 pub use kad_rocksdb_store::RocksDBStoreConfig;
 
 use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};

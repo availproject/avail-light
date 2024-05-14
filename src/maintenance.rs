@@ -1,7 +1,9 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info};
+#[cfg(not(feature = "kademlia-rocksdb"))]
+use tracing::error;
+use tracing::{debug, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -24,6 +26,7 @@ pub async fn process_block(
 	static_config_params: StaticConfigParams,
 	metrics: &Arc<impl Metrics>,
 ) -> Result<()> {
+	#[cfg(not(feature = "kademlia-rocksdb"))]
 	if block_number % static_config_params.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
 		match p2p_client.prune_expired_records().await {
