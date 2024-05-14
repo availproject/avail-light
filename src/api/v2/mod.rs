@@ -1,4 +1,3 @@
-use libp2p::PeerId;
 use std::{
 	convert::Infallible,
 	fmt::Display,
@@ -151,9 +150,10 @@ fn get_local_peer_id(
 fn get_peer_multiaddress_route(
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "peers" / PeerId / "multi-address")
-		.and(warp::get())
+	warp::path!("v2" / "p2p" / "peers" / "dial")
+		.and(warp::post())
 		.and(warp::any().map(move || p2p_client.clone()))
+		.and(warp::body::json())
 		.then(p2p_api::get_peer_multiaddress)
 		.map(log_internal_server_error)
 }

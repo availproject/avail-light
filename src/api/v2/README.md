@@ -243,6 +243,82 @@ If **app** mode is not active (or signing key is not configured and `data` is su
 HTTP/1.1 404 Not found
 ```
 
+# P2P Diagnostics API
+
+This API is intended to be used for P2P network observability and diagnostics.
+
+## **GET** `/v2/p2p/local/listeners`
+
+Returns a list of addresses the peer is listening on.
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "multiaddresses": [
+    "/ip4/127.0.0.1/tcp/37000",
+    "/ip4/192.168.50.110/tcp/37000"
+  ]
+}
+```
+
+## **GET** `/v2/p2p/local/external-addresses`
+
+Returns a list of **confirmed** external multi-addresses, in other words - the listener addresses of the client that the external peers are observing. If the client is not publicly reachable, the endpoint returns an empty list.
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "multiaddresses": [
+    "/ip4/1.2.3.4/tcp/37000"
+  ]
+}
+```
+
+## **GET** `/v2/p2p/local/peer-id`
+
+Returns client `peerID`.
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "peer_id": "12D3KooWMtLzEiggxj2NWi1oECuYfpkAkXwKcE6iucmdSizY31nY"
+}
+```
+
+## **POST** `/v2/p2p/peers/dial`
+
+Dials a peer on the light client P2P network.
+
+Request:
+
+```yaml
+POST /v2/p2p/peers/dial HTTP/1.1
+{
+  "multiaddress": "{target-peers-multi-address}"
+  "peer_id": "{target-peers-peer-id}"
+}
+```
+
+Response:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "peer_id": {peer_id},
+  "multiaddress": "{multiaddress}",
+  "established_in": "{established_in}", # Time needed for connection establish (in seconds)
+  "num_established": {num_established} # Number of concurrent connections established with the peer
+}
+```
+
 ## Errors
 
 In case of an error, endpoints will return a response with `500 Internal Server Error` status code, and a descriptive error message:
@@ -498,13 +574,13 @@ When high confidence in data availability is achieved, the message is pushed to 
 
 ```json
 {
-	"topic": "data-verified",
-	"message": {
-		"block_number": {block-number},
-		"data_transactions": [{
-			"data": "{base-64-encoded-data}", // Optional
-			"extrinsic": "{base-64-encoded-extrinsic}" // Optional
-		}]
-	}
+ "topic": "data-verified",
+ "message": {
+  "block_number": {block-number},
+  "data_transactions": [{
+   "data": "{base-64-encoded-data}", // Optional
+   "extrinsic": "{base-64-encoded-extrinsic}" // Optional
+  }]
+ }
 }
 ```
