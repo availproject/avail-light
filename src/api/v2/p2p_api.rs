@@ -89,18 +89,28 @@ pub async fn get_peer_multiaddress(
 			let root_err = err.root_cause();
 			if let Some(dial_error) = root_err.downcast_ref::<DialError>() {
 				match dial_error {
-					DialError::LocalPeerId { .. } => Error::bad_request_unknown("Can't dial yourself!"),
+					DialError::LocalPeerId { .. } => {
+						Error::bad_request_unknown("Can't dial yourself!")
+					},
 					DialError::NoAddresses => Error::bad_request_unknown("Address not provided."),
 					DialError::DialPeerConditionFalse(_) => Error::internal_server_error(err),
 					DialError::Aborted => Error::bad_request_unknown("Peer dial aborted."),
-					DialError::WrongPeerId { obtained, endpoint } => 
-						Error::bad_request_unknown(format!("The peerID obtained on the connection is not matching the one provided. User provided peerID: {}. Observed: {}", obtained.to_owned(), endpoint.get_remote_address()).as_str())
-					,
-					DialError::Denied { cause } => {
-						Error::bad_request_unknown(format!("Connection denied. Reason: {}", cause.to_string()).as_str())
+					DialError::WrongPeerId { obtained, endpoint } => {
+						let message = "The peerID obtained on the connection is not matching the one provided";
+						Error::bad_request_unknown(&format!(
+							"{message}. User provided peerID: {}. Observed: {}",
+							obtained.to_owned(),
+							endpoint.get_remote_address()
+						))
 					},
+					DialError::Denied { cause } => Error::bad_request_unknown(&format!(
+						"Connection denied. Reason: {}",
+						cause.to_string()
+					)),
 					DialError::Transport(_) => {
-						Error::bad_request_unknown(format!("An error occurred while negotiating the transport protocol(s) on a connection. Cause: {}", dial_error).as_str())},
+						let message = "An error occurred while negotiating the transport protocol(s) on a connection";
+						Error::bad_request_unknown(&format!("{message}. Cause: {}", dial_error))
+					},
 				}
 			} else {
 				Error::internal_server_error(err)
