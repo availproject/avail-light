@@ -19,6 +19,17 @@ impl Reply for MultiaddrResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PeerIDResponse {
+	pub peer_id: String,
+}
+
+impl Reply for PeerIDResponse {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RemoteMultiaddrResponse {
 	pub peer_id: String,
 	pub multiaddress: String,
@@ -32,11 +43,27 @@ impl Reply for RemoteMultiaddrResponse {
 	}
 }
 
-pub async fn get_local_multiaddress(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
+pub async fn get_local_listeners(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
 	p2p_client
-		.get_local_multiaddresses()
+		.get_local_listeners()
 		.await
 		.map(|multiaddresses| MultiaddrResponse { multiaddresses })
+		.map_err(Error::internal_server_error)
+}
+
+pub async fn get_external_addresses(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
+	p2p_client
+		.get_external_addresses()
+		.await
+		.map(|multiaddresses| MultiaddrResponse { multiaddresses })
+		.map_err(Error::internal_server_error)
+}
+
+pub async fn get_local_peer_id(p2p_client: p2p::Client) -> Result<PeerIDResponse, Error> {
+	p2p_client
+		.get_local_peer_id()
+		.await
+		.map(|peer_id| PeerIDResponse { peer_id })
 		.map_err(Error::internal_server_error)
 }
 
@@ -44,7 +71,6 @@ pub async fn get_peer_multiaddress(
 	peer_id: PeerId,
 	p2p_client: p2p::Client,
 ) -> Result<RemoteMultiaddrResponse, Error> {
-	// let peer_id = PeerId::from_str(&peer_id)?;
 	p2p_client
 		.dial_peer(peer_id, None)
 		.await
