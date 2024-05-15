@@ -30,6 +30,7 @@ use subxt_signer::sr25519::Keypair;
 use subxt_signer::{SecretString, SecretUri};
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
+use tracing::warn;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -70,9 +71,13 @@ pub struct CliOpts {
 	/// Log level
 	#[arg(long)]
 	pub verbosity: Option<LogLevel>,
+	// TODO: Deprecated since 1.9.0, remove it once it is safe
 	/// Avail secret seed phrase password, overrides password from identity file
 	#[arg(long)]
 	pub avail_passphrase: Option<String>,
+	/// Avail secret URI, overrides parameter from identity file
+	#[arg(long)]
+	pub avail_suri: Option<String>,
 	/// Seed string for libp2p keypair generation
 	#[arg(long)]
 	pub seed: Option<String>,
@@ -1035,22 +1040,29 @@ impl IdentityConfig {
 	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
 		#[derive(Default, Serialize, Deserialize)]
 		struct Config {
+			pub avail_secret_uri: Option<String>,
+			// TODO: Deprecated since 1.9.0, remove it once it is safe
 			pub avail_secret_seed_phrase: Option<String>,
 		}
 
 		let mut config: Config = confy::load_path(path)?;
 
-		let secret = match config.avail_secret_seed_phrase {
+		if config.avail_secret_seed_phrase.is_some() {
+			warn!("Using deprecated configuration parameter `avail_secret_seed_phrase`, use `avail_secret_uri` instead.");
+		}
+
+		let avail_secret_uri = config.avail_secret_uri.as_ref();
+		let avail_secret_seed_phrase = config.avail_secret_seed_phrase.as_ref();
+		let mut suri = match avail_secret_uri.or(avail_secret_seed_phrase) {
 			None => {
 				let mnemonic = Mnemonic::generate_in(Language::English, 24)?;
-				config.avail_secret_seed_phrase = Some(mnemonic.to_string());
+				config.avail_secret_uri = Some(mnemonic.to_string());
 				confy::store_path(path, &config)?;
-				mnemonic.to_string()
+				SecretUri::from_str(&mnemonic.to_string())
 			},
-			Some(suri) => suri,
-		};
+			Some(suri) => SecretUri::from_str(suri),
+		}?;
 
-		let mut suri = SecretUri::from_str(&secret)?;
 		if let Some(password) = password {
 			suri.password = Some(SecretString::from_str(password)?);
 		}
