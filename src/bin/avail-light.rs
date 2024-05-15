@@ -87,8 +87,14 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			.expect("global default subscriber is set")
 	}
 
-	let identity_cfg =
-		IdentityConfig::load_or_init(&opts.identity, opts.avail_passphrase.as_deref())?;
+	if opts.avail_passphrase.is_some() {
+		warn!("Using deprecated CLI parameter `--avail-passphrase`, use `--avail-suri` instead.");
+	}
+
+	let identity_cfg = IdentityConfig::load_or_init(
+		&opts.identity,
+		opts.avail_suri.or(opts.avail_passphrase).as_deref(),
+	)?;
 	info!("Identity loaded from {}", &opts.identity);
 
 	let client_role = if cfg.is_fat_client() {
