@@ -117,44 +117,24 @@ fn submit_route(
 		.map(log_internal_server_error)
 }
 
-fn get_local_multiaddress_route(
+fn get_peer_info_route(
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "local" / "listeners")
+	warp::path!("v2" / "p2p" / "local" / "info")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.then(p2p_api::get_local_listeners)
+		.then(p2p_api::get_peer_info)
 		.map(log_internal_server_error)
 }
 
-fn get_external_addresses(
-	p2p_client: p2p::Client,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "local" / "external-addresses")
-		.and(warp::get())
-		.and(warp::any().map(move || p2p_client.clone()))
-		.then(p2p_api::get_external_addresses)
-		.map(log_internal_server_error)
-}
-
-fn get_local_peer_id(
-	p2p_client: p2p::Client,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "local" / "peer-id")
-		.and(warp::get())
-		.and(warp::any().map(move || p2p_client.clone()))
-		.then(p2p_api::get_local_peer_id)
-		.map(log_internal_server_error)
-}
-
-fn get_peer_multiaddress_route(
+fn dial_external_peer_route(
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "p2p" / "peers" / "dial")
 		.and(warp::post())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
-		.then(p2p_api::get_peer_multiaddress)
+		.then(p2p_api::dial_external_peer)
 		.map(log_internal_server_error)
 }
 
@@ -262,10 +242,8 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
-		.or(get_local_multiaddress_route(p2p_client.clone()))
-		.or(get_peer_multiaddress_route(p2p_client.clone()))
-		.or(get_external_addresses(p2p_client.clone()))
-		.or(get_local_peer_id(p2p_client))
+		.or(get_peer_info_route(p2p_client.clone()))
+		.or(dial_external_peer_route(p2p_client.clone()))
 		.recover(handle_rejection)
 }
 

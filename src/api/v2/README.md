@@ -247,53 +247,33 @@ HTTP/1.1 404 Not found
 
 This API is intended to be used for P2P network observability and diagnostics.
 
-## **GET** `/v2/p2p/local/listeners`
+## **GET** `/v2/p2p/local/info`
 
-Returns a list of addresses the peer is listening on.
-
-```yaml
-HTTP/1.1 200 OK
-Content-Type: application/json
-
-{
-  "multiaddresses": [
-    "/ip4/127.0.0.1/tcp/37000",
-    "/ip4/192.168.50.110/tcp/37000"
-  ]
-}
-```
-
-## **GET** `/v2/p2p/local/external-addresses`
-
-Returns a list of **confirmed** external multi-addresses, in other words - the listener addresses of the client that the external peers are observing. If the client is not publicly reachable, the endpoint returns an empty list.
+Returns `peer_id` and a list of listeners with both local and external addresses. External addresses are only populated once confirmed externally by the bootstrap.
 
 ```yaml
 HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "multiaddresses": [
-    "/ip4/1.2.3.4/tcp/37000"
-  ]
-}
-```
-
-## **GET** `/v2/p2p/local/peer-id`
-
-Returns client `peerID`.
-
-```yaml
-HTTP/1.1 200 OK
-Content-Type: application/json
-
-{
-  "peer_id": "12D3KooWMtLzEiggxj2NWi1oECuYfpkAkXwKcE6iucmdSizY31nY"
+  "peer_id": "12D3KooWDGoQEcviYKDsepNedifFZ4AQh2r5CdWPrCFUwNq5WTZE",
+  "listeners": {
+    "local": [
+      "/ip4/127.0.0.1/tcp/37000",
+      "/ip4/192.168.50.123/tcp/37000",
+      "/ip4/192.168.64.1/tcp/37000"
+    ],
+    "external": []
+  }
 }
 ```
 
 ## **POST** `/v2/p2p/peers/dial`
 
-Dials a peer on the light client P2P network.
+Dials a peer on the light client P2P network and waits for it's response.
+If the dial goes through, a 200 OK response, the example JSON is stated bellow.
+
+If an error occurs on the dial itself, a 400 Bad Request is returned with the reason for failure set in the error message.
 
 Request:
 

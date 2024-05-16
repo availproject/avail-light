@@ -7,36 +7,32 @@ use crate::network::p2p;
 use super::types::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MultiaddrResponse {
-	pub multiaddresses: Vec<String>,
+pub struct Listeners {
+	pub local: Vec<String>,
+	pub external: Vec<String>,
 }
 
-impl Reply for MultiaddrResponse {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PeerInfoResponse {
+	peer_id: String,
+	listeners: Listeners,
+}
+
+impl Reply for PeerInfoResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
 	}
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PeerIDResponse {
-	pub peer_id: String,
-}
-
-impl Reply for PeerIDResponse {
-	fn into_response(self) -> warp::reply::Response {
-		warp::reply::json(&self).into_response()
-	}
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoteMultiaddrResponse {
+pub struct ExternalPeerDialResponse {
 	pub peer_id: String,
 	pub multiaddress: String,
 	pub established_in: String,
 	pub num_established: u32,
 }
 
-impl Reply for RemoteMultiaddrResponse {
+impl Reply for ExternalPeerDialResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
 	}
@@ -48,38 +44,37 @@ pub struct ExternalPeerMultiaddress {
 	pub peer_id: PeerId,
 }
 
-pub async fn get_local_listeners(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
-	p2p_client
+pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, Error> {
+	let local_listeners = p2p_client
 		.get_local_listeners()
 		.await
-		.map(|multiaddresses| MultiaddrResponse { multiaddresses })
-		.map_err(Error::internal_server_error)
-}
-
-pub async fn get_external_addresses(p2p_client: p2p::Client) -> Result<MultiaddrResponse, Error> {
-	p2p_client
+		.map_err(Error::internal_server_error)?;
+	let external_addresses = p2p_client
 		.get_external_addresses()
 		.await
-		.map(|multiaddresses| MultiaddrResponse { multiaddresses })
-		.map_err(Error::internal_server_error)
-}
-
-pub async fn get_local_peer_id(p2p_client: p2p::Client) -> Result<PeerIDResponse, Error> {
-	p2p_client
+		.map_err(Error::internal_server_error)?;
+	let peer_id = p2p_client
 		.get_local_peer_id()
 		.await
-		.map(|peer_id| PeerIDResponse { peer_id })
-		.map_err(Error::internal_server_error)
+		.map_err(Error::internal_server_error)?;
+
+	Ok(PeerInfoResponse {
+		peer_id,
+		listeners: Listeners {
+			local: local_listeners,
+			external: external_addresses,
+		},
+	})
 }
 
-pub async fn get_peer_multiaddress(
+pub async fn dial_external_peer(
 	p2p_client: p2p::Client,
 	peer_address: ExternalPeerMultiaddress,
-) -> Result<RemoteMultiaddrResponse, Error> {
+) -> Result<ExternalPeerDialResponse, Error> {
 	p2p_client
 		.dial_peer(peer_address.peer_id, Some(peer_address.multiaddress))
 		.await
-		.map(|connection_info| RemoteMultiaddrResponse {
+		.map(|connection_info| ExternalPeerDialResponse {
 			peer_id: connection_info.peer_id.to_string(),
 			multiaddress: connection_info.endpoint.get_remote_address().to_string(),
 			established_in: connection_info.established_in.as_secs().to_string(),
