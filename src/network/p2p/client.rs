@@ -378,18 +378,14 @@ impl Command for GetKademliaMapSize {
 
 struct DialPeer {
 	peer_id: PeerId,
-	peer_address: Option<Multiaddr>,
+	peer_address: Vec<Multiaddr>,
 	response_sender: Option<oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 }
 
 impl Command for DialPeer {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		let opts = DialOpts::peer_id(self.peer_id)
-			.addresses(
-				self.peer_address
-					.clone()
-					.map_or_else(Vec::new, |addr| vec![addr]),
-			)
+			.addresses(self.peer_address.clone())
 			.build();
 
 		entries.swarm().dial(opts)?;
@@ -480,7 +476,7 @@ impl Client {
 	pub async fn dial_peer(
 		&self,
 		peer_id: PeerId,
-		peer_address: Option<Multiaddr>,
+		peer_address: Vec<Multiaddr>,
 	) -> Result<ConnectionEstablishedInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(DialPeer {
@@ -514,7 +510,7 @@ impl Client {
 
 	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		for (peer, addr) in nodes {
-			self.dial_peer(peer, Some(addr.clone()))
+			self.dial_peer(peer, vec![addr.clone()])
 				.await
 				.wrap_err("Dialing Bootstrap peer failed.")?;
 			self.add_address(peer, addr.clone()).await?;

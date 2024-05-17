@@ -70,7 +70,7 @@ pub async fn dial_external_peer(
 	peer_address: ExternalPeerMultiaddress,
 ) -> Result<ExternalPeerDialResponse, Error> {
 	p2p_client
-		.dial_peer(peer_address.peer_id, Some(peer_address.multiaddress))
+		.dial_peer(peer_address.peer_id, vec![peer_address.multiaddress])
 		.await
 		.map(|connection_info| ExternalPeerDialResponse {
 			peer_id: connection_info.peer_id.to_string(),
