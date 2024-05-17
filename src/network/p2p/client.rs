@@ -1,5 +1,6 @@
 use super::{
-	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, LocalInfo, QueryChannel, SendableCommand
+	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, LocalInfo,
+	QueryChannel, SendableCommand,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},

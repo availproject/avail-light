@@ -89,20 +89,19 @@ pub async fn dial_external_peer(
 					DialError::DialPeerConditionFalse(_) => Error::internal_server_error(err),
 					DialError::Aborted => Error::bad_request_unknown("Peer dial aborted."),
 					DialError::WrongPeerId { obtained, endpoint } => {
+						let peer_id = obtained.to_owned();
+						let observed = endpoint.get_remote_address();
 						let message = "The peerID obtained on the connection is not matching the one provided";
 						Error::bad_request_unknown(&format!(
-							"{message}. User provided peerID: {}. Observed: {}",
-							obtained.to_owned(),
-							endpoint.get_remote_address()
+							"{message}. User provided peerID: {peer_id}. Observed: {observed}",
 						))
 					},
-					DialError::Denied { cause } => Error::bad_request_unknown(&format!(
-						"Connection denied. Reason: {}",
-						cause.to_string()
-					)),
+					DialError::Denied { cause } => {
+						Error::bad_request_unknown(&format!("Connection denied. Reason: {cause}",))
+					},
 					DialError::Transport(_) => {
 						let message = "An error occurred while negotiating the transport protocol(s) on a connection";
-						Error::bad_request_unknown(&format!("{message}. Cause: {}", dial_error))
+						Error::bad_request_unknown(&format!("{message}. Cause: {dial_error}"))
 					},
 				}
 			} else {
