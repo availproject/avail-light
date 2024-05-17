@@ -23,6 +23,7 @@ use std::{
 use tracing::error;
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
+pub mod p2p;
 
 pub async fn subscriptions(
 	subscription: Subscription,

@@ -1,10 +1,10 @@
+use crate::{
+	api::v2::types::Error,
+	network::p2p::{self, LocalInfo},
+};
 use libp2p::{swarm::DialError, Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use warp::reply::Reply;
-
-use crate::network::p2p::{self, LocalInfo};
-
-use super::types::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Listeners {

@@ -20,7 +20,6 @@ use crate::{
 };
 
 mod handlers;
-mod p2p_api;
 mod transactions;
 pub mod types;
 mod ws;
@@ -123,7 +122,7 @@ fn get_peer_info_route(
 	warp::path!("v2" / "p2p" / "local" / "info")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.then(p2p_api::get_peer_info)
+		.then(handlers::p2p::get_peer_info)
 		.map(log_internal_server_error)
 }
 
@@ -134,7 +133,7 @@ fn dial_external_peer_route(
 		.and(warp::post())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
-		.then(p2p_api::dial_external_peer)
+		.then(handlers::p2p::dial_external_peer)
 		.map(log_internal_server_error)
 }
 
