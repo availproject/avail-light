@@ -1,6 +1,5 @@
 use super::{
-	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, QueryChannel,
-	SendableCommand,
+	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, LocalInfo, QueryChannel, SendableCommand
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -263,24 +262,23 @@ impl Command for CountConnectedPeers {
 	}
 }
 
-struct GetLocalListeners {
-	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
+struct GetLocalInfo {
+	response_sender: Option<oneshot::Sender<Result<LocalInfo>>>,
 }
 
-impl Command for GetLocalListeners {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
-		let multiaddresses = entries
-			.swarm
-			.listeners()
-			.map(|entry| entry.to_string())
-			.collect();
+impl Command for GetLocalInfo {
+	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(multiaddresses))
-			.expect("CountDHTPeers receiver dropped");
+			.send(Ok(LocalInfo {
+				peer_id: entries.peer_id().to_string(),
+				local_listeners: entries.listeners(),
+				external_listeners: entries.external_address(),
+			}))
+			.expect("GetLocalInfo receiver dropped");
 		Ok(())
 	}
 
@@ -290,65 +288,7 @@ impl Command for GetLocalListeners {
 			.take()
 			.unwrap()
 			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
-	}
-}
-
-struct GetExternalAddresses {
-	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
-}
-
-impl Command for GetExternalAddresses {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
-		let external_addresses = entries
-			.swarm
-			.external_addresses()
-			.map(|entry| entry.to_string())
-			.collect();
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(external_addresses))
-			.expect("CountDHTPeers receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
-	}
-}
-
-struct GetLocalPeerID {
-	response_sender: Option<oneshot::Sender<Result<String>>>,
-}
-
-impl Command for GetLocalPeerID {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
-		let peer_id = entries.swarm.local_peer_id().to_string();
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(peer_id))
-			.expect("CountDHTPeers receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
+			.expect("GetLocalInfo receiver dropped");
 	}
 }
 
@@ -626,27 +566,9 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_local_listeners(&self) -> Result<Vec<String>> {
+	pub async fn get_local_info(&self) -> Result<LocalInfo> {
 		self.execute_sync(|response_sender| {
-			Box::new(GetLocalListeners {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
-	}
-
-	pub async fn get_external_addresses(&self) -> Result<Vec<String>> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetExternalAddresses {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
-	}
-
-	pub async fn get_local_peer_id(&self) -> Result<String> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetLocalPeerID {
+			Box::new(GetLocalInfo {
 				response_sender: Some(response_sender),
 			})
 		})

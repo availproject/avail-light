@@ -67,6 +67,21 @@ impl<'a> EventLoopEntries<'a> {
 		}
 	}
 
+	pub fn peer_id(&self) -> &PeerId {
+		self.swarm.local_peer_id()
+	}
+
+	pub fn listeners(&self) -> Vec<String> {
+		self.swarm.listeners().map(ToString::to_string).collect()
+	}
+
+	pub fn external_address(&self) -> Vec<String> {
+		self.swarm
+			.external_addresses()
+			.map(ToString::to_string)
+			.collect()
+	}
+
 	pub fn insert_query(&mut self, query_id: QueryId, result_sender: QueryChannel) {
 		self.pending_kad_queries.insert(query_id, result_sender);
 	}
@@ -115,6 +130,13 @@ pub struct Behaviour {
 	dcutr: dcutr::Behaviour,
 	upnp: upnp::tokio::Behaviour,
 	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
+}
+
+#[derive(Debug)]
+pub struct LocalInfo {
+	pub peer_id: String,
+	pub local_listeners: Vec<String>,
+	pub external_listeners: Vec<String>,
 }
 
 fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {

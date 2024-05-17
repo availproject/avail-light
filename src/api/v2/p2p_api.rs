@@ -2,7 +2,7 @@ use libp2p::{swarm::DialError, Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use warp::reply::Reply;
 
-use crate::network::p2p;
+use crate::network::p2p::{self, LocalInfo};
 
 use super::types::Error;
 
@@ -21,6 +21,18 @@ pub struct PeerInfoResponse {
 impl Reply for PeerInfoResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
+	}
+}
+
+impl From<LocalInfo> for PeerInfoResponse {
+	fn from(value: LocalInfo) -> Self {
+		PeerInfoResponse {
+			peer_id: value.peer_id,
+			listeners: Listeners {
+				local: value.local_listeners,
+				external: value.external_listeners,
+			},
+		}
 	}
 }
 
@@ -45,26 +57,12 @@ pub struct ExternalPeerMultiaddress {
 }
 
 pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, Error> {
-	let local_listeners = p2p_client
-		.get_local_listeners()
-		.await
-		.map_err(Error::internal_server_error)?;
-	let external_addresses = p2p_client
-		.get_external_addresses()
-		.await
-		.map_err(Error::internal_server_error)?;
-	let peer_id = p2p_client
-		.get_local_peer_id()
+	let local_info = p2p_client
+		.get_local_info()
 		.await
 		.map_err(Error::internal_server_error)?;
 
-	Ok(PeerInfoResponse {
-		peer_id,
-		listeners: Listeners {
-			local: local_listeners,
-			external: external_addresses,
-		},
-	})
+	Ok(local_info.into())
 }
 
 pub async fn dial_external_peer(
