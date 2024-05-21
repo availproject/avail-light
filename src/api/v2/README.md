@@ -256,14 +256,16 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "peer_id": "12D3KooWDGoQEcviYKDsepNedifFZ4AQh2r5CdWPrCFUwNq5WTZE",
+  "peer_id": "{local-peer-id}",
   "listeners": {
     "local": [
-      "/ip4/127.0.0.1/tcp/37000",
-      "/ip4/192.168.50.123/tcp/37000",
-      "/ip4/192.168.64.1/tcp/37000"
+      "{multi-address}",
+      "{multi-address}",
+      "{multi-address}"
     ],
-    "external": []
+    "external": [
+      "{multi-address}"
+    ]
   }
 }
 ```
@@ -273,7 +275,11 @@ Content-Type: application/json
 Dials a peer on the light client P2P network and waits for it's response.
 If the dial goes through, a 200 OK response, the example JSON is stated bellow.
 
-If an error occurs on the dial itself, a 400 Bad Request is returned with the reason for failure set in the error message.
+If an error occurs on the dial 3 types of responses can be returned:
+
+1. 200 OK with the `dial_error` field set, which contains a error type and description.
+2. 400 Bad Request if some of the user inputs are not valid
+3. 500 Internal Server Error for other errors
 
 Request:
 
@@ -292,10 +298,28 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "peer_id": {peer_id},
-  "multiaddress": "{multiaddress}",
-  "established_in": "{established_in}", # Time needed for connection establish (in seconds)
-  "num_established": {num_established} # Number of concurrent connections established with the peer
+  "dial_success": {
+    "peer_id": {peer_id},
+    "multiaddress": "{multi-address}",
+    "established_in": "{established_in}", # Time needed for connection establish (in seconds)
+    "num_established": {num_established} # Number of concurrent connections established with the peer
+  },
+  "dial_error": null
+}
+```
+
+Response containing an error:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "dial_success": null,
+  "dial_error": {
+    "error": "wrong-peer-id",
+    "description": "The peerID obtained on the connection is not matching the one provided. User provided peerID: 12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRA. Observed peerID: 12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT."
+  }
 }
 ```
 
@@ -554,13 +578,13 @@ When high confidence in data availability is achieved, the message is pushed to 
 
 ```json
 {
-	"topic": "data-verified",
-	"message": {
-		"block_number": {block-number},
-		"data_transactions": [{
-			"data": "{base-64-encoded-data}", // Optional
-			"extrinsic": "{base-64-encoded-extrinsic}" // Optional
-		}]
-	}
+ "topic": "data-verified",
+ "message": {
+  "block_number": {block-number},
+  "data_transactions": [{
+   "data": "{base-64-encoded-data}", // Optional
+   "extrinsic": "{base-64-encoded-extrinsic}" // Optional
+  }]
+ }
 }
 ```
