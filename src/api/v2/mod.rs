@@ -116,7 +116,7 @@ fn submit_route(
 		.map(log_internal_server_error)
 }
 
-fn get_peer_info_route(
+fn p2p_local_info_route(
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "p2p" / "local" / "info")
@@ -126,7 +126,7 @@ fn get_peer_info_route(
 		.map(log_internal_server_error)
 }
 
-fn dial_external_peer_route(
+fn p2p_peers_dial_route(
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "p2p" / "peers" / "dial")
@@ -241,8 +241,8 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
-		.or(get_peer_info_route(p2p_client.clone()))
-		.or(dial_external_peer_route(p2p_client.clone()))
+		.or(p2p_local_info_route(p2p_client.clone()))
+		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.recover(handle_rejection)
 }
 
