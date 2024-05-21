@@ -298,6 +298,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
+		p2p_client: p2p_client.clone(),
 	};
 	tokio::task::spawn(shutdown.with_cancel(server.bind()));
 

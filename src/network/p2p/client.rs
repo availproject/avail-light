@@ -1,4 +1,7 @@
-use super::{Command, CommandSender, EventLoopEntries, QueryChannel, SendableCommand};
+use super::{
+	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, LocalInfo,
+	QueryChannel, SendableCommand,
+};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
@@ -260,6 +263,36 @@ impl Command for CountConnectedPeers {
 	}
 }
 
+struct GetLocalInfo {
+	response_sender: Option<oneshot::Sender<Result<LocalInfo>>>,
+}
+
+impl Command for GetLocalInfo {
+	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(LocalInfo {
+				peer_id: entries.peer_id().to_string(),
+				local_listeners: entries.listeners(),
+				external_listeners: entries.external_address(),
+			}))
+			.expect("GetLocalInfo receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: Report) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("GetLocalInfo receiver dropped");
+	}
+}
+
 struct ListConnectedPeers {
 	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
 }
@@ -345,17 +378,17 @@ impl Command for GetKademliaMapSize {
 
 struct DialPeer {
 	peer_id: PeerId,
-	peer_address: Multiaddr,
-	response_sender: Option<oneshot::Sender<Result<()>>>,
+	peer_address: Vec<Multiaddr>,
+	response_sender: Option<oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 }
 
 impl Command for DialPeer {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		entries.swarm().dial(
-			DialOpts::peer_id(self.peer_id)
-				.addresses(vec![self.peer_address.clone()])
-				.build(),
-		)?;
+		let opts = DialOpts::peer_id(self.peer_id)
+			.addresses(self.peer_address.clone())
+			.build();
+
+		entries.swarm().dial(opts)?;
 
 		// insert response channel into Swarm Events pending map
 		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
@@ -440,7 +473,11 @@ impl Client {
 			.context("failed to add address to the routing table")
 	}
 
-	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
+	pub async fn dial_peer(
+		&self,
+		peer_id: PeerId,
+		peer_address: Vec<Multiaddr>,
+	) -> Result<ConnectionEstablishedInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(DialPeer {
 				peer_id,
@@ -473,7 +510,7 @@ impl Client {
 
 	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		for (peer, addr) in nodes {
-			self.dial_peer(peer, addr.clone())
+			self.dial_peer(peer, vec![addr.clone()])
 				.await
 				.wrap_err("Dialing Bootstrap peer failed.")?;
 			self.add_address(peer, addr.clone()).await?;
@@ -520,6 +557,15 @@ impl Client {
 	pub async fn list_connected_peers(&self) -> Result<Vec<String>> {
 		self.execute_sync(|response_sender| {
 			Box::new(ListConnectedPeers {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn get_local_info(&self) -> Result<LocalInfo> {
+		self.execute_sync(|response_sender| {
+			Box::new(GetLocalInfo {
 				response_sender: Some(response_sender),
 			})
 		})

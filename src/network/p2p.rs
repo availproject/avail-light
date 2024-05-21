@@ -30,7 +30,7 @@ pub use kad_mem_providers::ProvidersConfig;
 pub use kad_mem_store::MemoryStoreConfig;
 pub use kad_rocksdb_store::RocksDBStoreConfig;
 
-use self::client::BlockStat;
+use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
 use libp2p_allow_block_list as allow_block_list;
 
 #[derive(Debug)]
@@ -43,7 +43,8 @@ pub enum QueryChannel {
 pub struct EventLoopEntries<'a> {
 	swarm: &'a mut Swarm<Behaviour>,
 	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
-	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	pending_swarm_events:
+		&'a mut HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: &'a mut HashMap<u32, BlockStat>,
 }
@@ -52,7 +53,10 @@ impl<'a> EventLoopEntries<'a> {
 	pub fn new(
 		swarm: &'a mut Swarm<Behaviour>,
 		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
-		pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+		pending_swarm_events: &'a mut HashMap<
+			PeerId,
+			oneshot::Sender<Result<ConnectionEstablishedInfo>>,
+		>,
 		active_blocks: &'a mut HashMap<u32, BlockStat>,
 	) -> Self {
 		Self {
@@ -63,6 +67,21 @@ impl<'a> EventLoopEntries<'a> {
 		}
 	}
 
+	pub fn peer_id(&self) -> &PeerId {
+		self.swarm.local_peer_id()
+	}
+
+	pub fn listeners(&self) -> Vec<String> {
+		self.swarm.listeners().map(ToString::to_string).collect()
+	}
+
+	pub fn external_address(&self) -> Vec<String> {
+		self.swarm
+			.external_addresses()
+			.map(ToString::to_string)
+			.collect()
+	}
+
 	pub fn insert_query(&mut self, query_id: QueryId, result_sender: QueryChannel) {
 		self.pending_kad_queries.insert(query_id, result_sender);
 	}
@@ -70,7 +89,7 @@ impl<'a> EventLoopEntries<'a> {
 	pub fn insert_swarm_event(
 		&mut self,
 		peer_id: PeerId,
-		result_sender: oneshot::Sender<Result<()>>,
+		result_sender: oneshot::Sender<Result<ConnectionEstablishedInfo>>,
 	) {
 		self.pending_swarm_events.insert(peer_id, result_sender);
 	}
@@ -111,6 +130,13 @@ pub struct Behaviour {
 	dcutr: dcutr::Behaviour,
 	upnp: upnp::tokio::Behaviour,
 	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
+}
+
+#[derive(Debug)]
+pub struct LocalInfo {
+	pub peer_id: String,
+	pub local_listeners: Vec<String>,
+	pub external_listeners: Vec<String>,
 }
 
 fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {

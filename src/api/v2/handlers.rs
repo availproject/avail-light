@@ -9,8 +9,7 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::Database,
-	data::Key,
+	data::{Database, Key},
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -24,6 +23,7 @@ use std::{
 use tracing::error;
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
+pub mod p2p;
 
 pub async fn subscriptions(
 	subscription: Subscription,

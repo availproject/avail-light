@@ -15,7 +15,7 @@ use self::{
 use crate::{
 	api::v2::types::Topic,
 	data::Database,
-	network::rpc::Client,
+	network::{p2p, rpc::Client},
 	types::{IdentityConfig, RuntimeConfig, State},
 };
 
@@ -116,6 +116,27 @@ fn submit_route(
 		.map(log_internal_server_error)
 }
 
+fn p2p_local_info_route(
+	p2p_client: p2p::Client,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "p2p" / "local" / "info")
+		.and(warp::get())
+		.and(warp::any().map(move || p2p_client.clone()))
+		.then(handlers::p2p::get_peer_info)
+		.map(log_internal_server_error)
+}
+
+fn p2p_peers_dial_route(
+	p2p_client: p2p::Client,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "p2p" / "peers" / "dial")
+		.and(warp::post())
+		.and(warp::any().map(move || p2p_client.clone()))
+		.and(warp::body::json())
+		.then(handlers::p2p::dial_external_peer)
+		.map(log_internal_server_error)
+}
+
 fn subscriptions_route(
 	clients: WsClients,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -191,6 +212,7 @@ pub fn routes(
 	rpc_client: Client,
 	ws_clients: WsClients,
 	db: impl Database + Clone + Send,
+	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
 		version,
@@ -219,6 +241,8 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, state))
+		.or(p2p_local_info_route(p2p_client.clone()))
+		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.recover(handle_rejection)
 }
 
