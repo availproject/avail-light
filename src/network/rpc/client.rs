@@ -75,7 +75,7 @@ impl Client {
 			Ok(result) => result?,
 			Err(err) => {
 				return Err(eyre!(
-					"Retry Strategy for creating a new RPC Client was stopped because of shutdown: {err}"
+					"RPC Client creation Retry strategy halted due to shutdown: {err}"
 				))
 			},
 		};
@@ -196,7 +196,7 @@ impl Client {
 			// shutdown happened, stop everything
 			Err(err) => {
 				return Err(eyre!(
-					"Retry Strategy for RPC Client calls was stopped because of shutdown: {err}"
+					"RPC Client call Retry Strategy halted due to shutdown: {err}"
 				))
 			},
 		}
@@ -228,7 +228,7 @@ impl Client {
 			Ok(res) => res?,
 			Err(err) => {
 				return Err(eyre!(
-					"Retry Strategy while finding a new RPC node to pass a Client call was stopped because of shutdown: {err}"
+					"RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
 				))
 			},
 		};
