@@ -46,6 +46,7 @@ pub struct Client {
 	nodes: Nodes,
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
+	shutdown: Controller<String>,
 }
 
 impl Client {
@@ -54,19 +55,29 @@ impl Client {
 		nodes: Nodes,
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
+		shutdown: Controller<String>,
 	) -> Result<Self> {
 		// try and connect appropriate Node from the provided list
 		// will do retries with the provided Retry Config
-		let (client, node, _) = Retry::spawn(retry_config.clone(), || async {
-			Self::try_connect_and_execute(
-				nodes.shuffle(Default::default()),
-				ExpectedNodeVariant::default(),
-				expected_genesis_hash,
-				|_| futures::future::ok(()),
-			)
+		let (client, node, _) = match shutdown
+			.with_cancel(Retry::spawn(retry_config.clone(), || async {
+				Self::try_connect_and_execute(
+					nodes.shuffle(Default::default()),
+					ExpectedNodeVariant::default(),
+					expected_genesis_hash,
+					|_| futures::future::ok(()),
+				)
+				.await
+			}))
 			.await
-		})
-		.await?;
+		{
+			Ok(result) => result?,
+			Err(err) => {
+				return Err(eyre!(
+					"Retry strategy stopped while creating new RPC Client: {err}"
+				))
+			},
+		};
 
 		// update application wide State with the newly connected Node
 		state.lock().unwrap().connected_node = node;
@@ -77,6 +88,7 @@ impl Client {
 			nodes,
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
+			shutdown,
 		})
 	}
 
