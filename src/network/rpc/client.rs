@@ -36,6 +36,7 @@ use super::{Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
+	shutdown::Controller,
 	types::{RetryConfig, State, DEV_FLAG_GENHASH},
 };
 
@@ -241,8 +242,7 @@ impl Client {
 
 	async fn create_subxt_subscriptions(
 		client: Arc<AvailClient>,
-	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>, subxt::error::Error>
-	{
+	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>> {
 		// create Header subscription
 		let header_subscription = client.backend().stream_finalized_block_headers().await?;
 		// map Header subscription to the same type for later matching
@@ -306,6 +306,7 @@ impl Client {
 					.legacy_rpc()
 					.chain_get_block_hash(Some(BlockNumber::from(block_number)))
 					.await
+					.map_err(Into::into)
 			})
 			.await?
 			.ok_or_else(|| eyre!("Block with number: {} not found", block_number))?;
@@ -324,6 +325,7 @@ impl Client {
 						format!("Block Header with hash: {block_hash:?} not found",),
 					)
 				})
+				.map_err(Into::into)
 		})
 		.await
 		.wrap_err(format!(
@@ -340,6 +342,7 @@ impl Client {
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
 					.await
+					.map_err(Into::into)
 			})
 			.await?
 			.iter()
@@ -351,9 +354,13 @@ impl Client {
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
-			.with_retries(
-				|client| async move { client.legacy_rpc().chain_get_finalized_head().await },
-			)
+			.with_retries(|client| async move {
+				client
+					.legacy_rpc()
+					.chain_get_finalized_head()
+					.await
+					.map_err(Into::into)
+			})
 			.await?;
 
 		Ok(head)
@@ -431,6 +438,7 @@ impl Client {
 						.query_proof(cells, block_hash)
 						.await
 						.map_err(|error| subxt::Error::Other(format!("{error}")))
+						.map_err(Into::into)
 				}
 			})
 			.await
@@ -449,7 +457,13 @@ impl Client {
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let res = self
-			.with_retries(|client| async move { client.legacy_rpc().system_version().await })
+			.with_retries(|client| async move {
+				client
+					.legacy_rpc()
+					.system_version()
+					.await
+					.map_err(Into::into)
+			})
 			.await?;
 
 		Ok(res)
@@ -469,7 +483,14 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let set_id_key = api::storage().grandpa().current_set_id();
-				async move { client.storage().at(block_hash).fetch(&set_id_key).await }
+				async move {
+					client
+						.storage()
+						.at(block_hash)
+						.fetch(&set_id_key)
+						.await
+						.map_err(Into::into)
+				}
 			})
 			.await?
 			.ok_or_else(|| eyre!("The set_id should exist"))?;
@@ -493,7 +514,14 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let validators_key = api::storage().session().validators();
-				async move { client.storage().at(block_hash).fetch(&validators_key).await }
+				async move {
+					client
+						.storage()
+						.at(block_hash)
+						.fetch(&validators_key)
+						.await
+						.map_err(Into::into)
+				}
 			})
 			.await
 			.map_err(Report::from)?;
@@ -515,6 +543,7 @@ impl Client {
 					.await?
 					.wait_for_success()
 					.await
+					.map_err(Into::into)
 			}
 		})
 		.await
@@ -532,6 +561,7 @@ impl Client {
 					.await?
 					.wait_for_success()
 					.await
+					.map_err(Into::into)
 			}
 		})
 		.await
@@ -547,7 +577,11 @@ impl Client {
 		self.with_retries(|client| async move {
 			let storage = client.storage().at(hash);
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
-			raw_keys.take(count).collect::<Result<Vec<_>, _>>().await
+			raw_keys
+				.take(count)
+				.collect::<Result<Vec<_>, _>>()
+				.await
+				.map_err(Into::into)
 		})
 		.await
 		.map_err(Report::from)
@@ -570,6 +604,7 @@ impl Client {
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
 						.await
+						.map_err(Into::into)
 				}
 			})
 			.await
@@ -586,7 +621,9 @@ impl Client {
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
 				let api = client.runtime_api().at_latest().await?;
-				api.call_raw("grandpa_proveFinality", params).await
+				api.call_raw("grandpa_proveFinality", params)
+					.await
+					.map_err(Into::into)
 			})
 			.await
 			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;
