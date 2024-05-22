@@ -56,7 +56,7 @@ impl<T: Database> SubscriptionLoop<T> {
 		// get the Hash of the Finalized Head [with Retries]
 		let last_finalized_block_hash = rpc_client.get_finalized_head_hash().await?;
 
-		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime.
+		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime [with Retries].
 		let validator_set = rpc_client
 			.get_validator_set_by_hash(last_finalized_block_hash)
 			.await?;
