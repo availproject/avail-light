@@ -74,7 +74,7 @@ impl Client {
 			Ok(result) => result?,
 			Err(err) => {
 				return Err(eyre!(
-					"Retry strategy stopped while creating new RPC Client: {err}"
+					"Retry Strategy for creating a new RPC Client was stopped because of shutdown: {err}"
 				))
 			},
 		};
