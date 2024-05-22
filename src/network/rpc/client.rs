@@ -177,18 +177,29 @@ impl Client {
 	async fn with_retries<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
 		F: FnMut(Arc<AvailClient>) -> Fut + Copy,
-		Fut: std::future::Future<Output = Result<T, subxt::Error>>,
+		Fut: std::future::Future<Output = Result<T>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
-		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
-			f(self.current_client().await).await
-		})
-		.await
+		match self
+			.shutdown
+			.with_cancel(Retry::spawn(
+				self.retry_config.clone(),
+				move || async move { f(self.current_client().await).await },
+			))
+			.await
 		{
 			// this was successful, return early
-			return Ok(result);
+			Ok(Ok(result)) => return Ok(result),
+			// if there was an error, skip ahead and try to find a new Node
+			Ok(Err(_)) => {},
+			// shutdown happened, stop everything
+			Err(err) => {
+				return Err(eyre!(
+					"Retry Strategy for RPC Client calls was stopped because of shutdown: {err}"
+				))
+			},
 		}
-		// if not, find another Node where this could still be done
+		// if retries were not successful, find another Node where this could still be done
 		let connected_node = self.state.lock().unwrap().connected_node.clone();
 		warn!(
 			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
@@ -197,19 +208,29 @@ impl Client {
 		// shuffle nodes, if possible
 		let nodes = self.nodes.shuffle(connected_node.host);
 		// go through available Nodes, try to connect, Retry connecting if needed
-		let (client, node, result) = Retry::spawn(self.retry_config.clone(), move || {
-			let nodes = nodes.clone();
-			async move {
-				Self::try_connect_and_execute(
-					nodes,
-					ExpectedNodeVariant::default(),
-					&self.expected_genesis_hash,
-					move |client| f(client).map_err(Report::from),
-				)
-				.await
-			}
-		})
-		.await?;
+		let (client, node, result) = match self
+			.shutdown
+			.with_cancel(Retry::spawn(self.retry_config.clone(), move || {
+				let nodes = nodes.clone();
+				async move {
+					Self::try_connect_and_execute(
+						nodes,
+						ExpectedNodeVariant::default(),
+						&self.expected_genesis_hash,
+						move |client| f(client).map_err(Report::from),
+					)
+					.await
+				}
+			}))
+			.await
+		{
+			Ok(res) => res?,
+			Err(err) => {
+				return Err(eyre!(
+					"Retry Strategy while finding a new RPC node to pass a Client call was stopped because of shutdown: {err}"
+				))
+			},
+		};
 
 		// retries gave results, update currently connected Node and created Client
 		*self.subxt_client.write().await = client;
