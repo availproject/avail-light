@@ -211,17 +211,15 @@ impl Client {
 		// go through available Nodes, try to connect, Retry connecting if needed
 		let (client, node, result) = match self
 			.shutdown
-			.with_cancel(Retry::spawn(self.retry_config.clone(), move || {
+			.with_cancel(Retry::spawn(self.retry_config.clone(), || async {
 				let nodes = nodes.clone();
-				async move {
-					Self::try_connect_and_execute(
-						nodes,
-						ExpectedNodeVariant::default(),
-						&self.expected_genesis_hash,
-						move |client| f(client).map_err(Report::from),
-					)
-					.await
-				}
+				Self::try_connect_and_execute(
+					nodes,
+					ExpectedNodeVariant::default(),
+					&self.expected_genesis_hash,
+					move |client| f(client).map_err(Report::from),
+				)
+				.await
 			}))
 			.await
 		{
