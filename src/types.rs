@@ -4,7 +4,7 @@ use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use codec::{Decode, Encode};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -881,22 +881,10 @@ impl Default for RuntimeConfig {
 	}
 }
 
-#[derive(Clone)]
+#[derive(ValueEnum, Clone)]
 pub enum Network {
 	Local,
 	Turing,
-}
-
-impl FromStr for Network {
-	type Err = String;
-
-	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-		match s.to_lowercase().as_str() {
-			"local" => Ok(Network::Local),
-			"turing" => Ok(Network::Turing),
-			_ => Err("valid values are: local".to_string()),
-		}
-	}
 }
 
 impl Network {
@@ -936,28 +924,13 @@ impl Network {
 	}
 }
 
-#[derive(Clone)]
+#[derive(ValueEnum, Clone)]
 pub enum LogLevel {
 	Info,
 	Debug,
 	Trace,
 	Warn,
 	Error,
-}
-
-impl FromStr for LogLevel {
-	type Err = String;
-
-	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-		match s {
-			"trace" => Ok(LogLevel::Trace),
-			"debug" => Ok(LogLevel::Debug),
-			"info" => Ok(LogLevel::Info),
-			"warn" => Ok(LogLevel::Warn),
-			"error" => Ok(LogLevel::Error),
-			_ => Err("valid values are: trace, debug and info".to_string()),
-		}
-	}
 }
 
 impl Display for LogLevel {
