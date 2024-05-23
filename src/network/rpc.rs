@@ -1,7 +1,6 @@
-use async_trait::async_trait;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Decode;
-use color_eyre::{eyre::eyre, Report, Result};
+use color_eyre::{eyre::eyre, Result};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize};
@@ -20,6 +19,7 @@ use tracing::{debug, info};
 use crate::{
 	data::Database,
 	network::rpc,
+	shutdown::Controller,
 	types::{GrandpaJustification, RetryConfig, State},
 };
 
@@ -37,12 +37,6 @@ pub use client::Client;
 pub enum Subscription {
 	Header(Header),
 	Justification(GrandpaJustification),
-}
-
-#[async_trait]
-pub trait Command {
-	async fn run(&self, client: Client) -> Result<()>;
-	fn abort(&self, error: Report);
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -201,9 +195,16 @@ pub async fn init<T: Database>(
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
+	shutdown: Controller<String>,
 ) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
-	let rpc_client =
-		Client::new(state.clone(), Nodes::new(nodes), genesis_hash, retry_config).await?;
+	let rpc_client = Client::new(
+		state.clone(),
+		Nodes::new(nodes),
+		genesis_hash,
+		retry_config,
+		shutdown,
+	)
+	.await?;
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
 	let subscriptions =

@@ -1,6 +1,7 @@
 use avail_light::{
 	data::rocks_db::RocksDB,
 	network::rpc,
+	shutdown::Controller,
 	types::{ExponentialConfig, RetryConfig, State},
 };
 use clap::Parser;
@@ -31,8 +32,9 @@ async fn main() -> Result<()> {
 		retries: 4,
 	});
 
+	let shutdown = Controller::new();
 	let (rpc_client, _, subscriptions) =
-		rpc::init(db, state, &[command_args.url], "DEV", retry_cfg).await?;
+		rpc::init(db, state, &[command_args.url], "DEV", retry_cfg, shutdown).await?;
 	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;

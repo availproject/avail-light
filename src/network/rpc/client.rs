@@ -36,6 +36,7 @@ use super::{Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
+	shutdown::Controller,
 	types::{RetryConfig, State, DEV_FLAG_GENHASH},
 };
 
@@ -46,6 +47,7 @@ pub struct Client {
 	nodes: Nodes,
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
+	shutdown: Controller<String>,
 }
 
 impl Client {
@@ -54,19 +56,29 @@ impl Client {
 		nodes: Nodes,
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
+		shutdown: Controller<String>,
 	) -> Result<Self> {
 		// try and connect appropriate Node from the provided list
 		// will do retries with the provided Retry Config
-		let (client, node, _) = Retry::spawn(retry_config.clone(), || async {
-			Self::try_connect_and_execute(
-				nodes.shuffle(Default::default()),
-				ExpectedNodeVariant::default(),
-				expected_genesis_hash,
-				|_| futures::future::ok(()),
-			)
+		let (client, node, _) = match shutdown
+			.with_cancel(Retry::spawn(retry_config.clone(), || async {
+				Self::try_connect_and_execute(
+					nodes.shuffle(Default::default()),
+					ExpectedNodeVariant::default(),
+					expected_genesis_hash,
+					|_| futures::future::ok(()),
+				)
+				.await
+			}))
 			.await
-		})
-		.await?;
+		{
+			Ok(result) => result?,
+			Err(err) => {
+				return Err(eyre!(
+					"RPC Client creation Retry strategy halted due to shutdown: {err}"
+				))
+			},
+		};
 
 		// update application wide State with the newly connected Node
 		state.lock().unwrap().connected_node = node;
@@ -77,6 +89,7 @@ impl Client {
 			nodes,
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
+			shutdown,
 		})
 	}
 
@@ -165,18 +178,29 @@ impl Client {
 	async fn with_retries<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
 		F: FnMut(Arc<AvailClient>) -> Fut + Copy,
-		Fut: std::future::Future<Output = Result<T, subxt::Error>>,
+		Fut: std::future::Future<Output = Result<T>>,
 	{
 		// try and execute the passed function, use the Retry strategy if needed
-		if let Ok(result) = Retry::spawn(self.retry_config.clone(), move || async move {
-			f(self.current_client().await).await
-		})
-		.await
+		match self
+			.shutdown
+			.with_cancel(Retry::spawn(
+				self.retry_config.clone(),
+				move || async move { f(self.current_client().await).await },
+			))
+			.await
 		{
 			// this was successful, return early
-			return Ok(result);
+			Ok(Ok(result)) => return Ok(result),
+			// if there was an error, skip ahead and try to find a new Node
+			Ok(Err(_)) => {},
+			// shutdown happened, stop everything
+			Err(err) => {
+				return Err(eyre!(
+					"RPC Client call Retry Strategy halted due to shutdown: {err}"
+				))
+			},
 		}
-		// if not, find another Node where this could still be done
+		// if retries were not successful, find another Node where this could still be done
 		let connected_node = self.state.lock().unwrap().connected_node.clone();
 		warn!(
 			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
@@ -185,9 +209,10 @@ impl Client {
 		// shuffle nodes, if possible
 		let nodes = self.nodes.shuffle(connected_node.host);
 		// go through available Nodes, try to connect, Retry connecting if needed
-		let (client, node, result) = Retry::spawn(self.retry_config.clone(), move || {
-			let nodes = nodes.clone();
-			async move {
+		let (client, node, result) = match self
+			.shutdown
+			.with_cancel(Retry::spawn(self.retry_config.clone(), || async {
+				let nodes = nodes.clone();
 				Self::try_connect_and_execute(
 					nodes,
 					ExpectedNodeVariant::default(),
@@ -195,9 +220,16 @@ impl Client {
 					move |client| f(client).map_err(Report::from),
 				)
 				.await
-			}
-		})
-		.await?;
+			}))
+			.await
+		{
+			Ok(res) => res?,
+			Err(err) => {
+				return Err(eyre!(
+					"RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
+				))
+			},
+		};
 
 		// retries gave results, update currently connected Node and created Client
 		*self.subxt_client.write().await = client;
@@ -208,8 +240,7 @@ impl Client {
 
 	async fn create_subxt_subscriptions(
 		client: Arc<AvailClient>,
-	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>, subxt::error::Error>
-	{
+	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>> {
 		// create Header subscription
 		let header_subscription = client.backend().stream_finalized_block_headers().await?;
 		// map Header subscription to the same type for later matching
@@ -273,6 +304,7 @@ impl Client {
 					.legacy_rpc()
 					.chain_get_block_hash(Some(BlockNumber::from(block_number)))
 					.await
+					.map_err(Into::into)
 			})
 			.await?
 			.ok_or_else(|| eyre!("Block with number: {} not found", block_number))?;
@@ -291,6 +323,7 @@ impl Client {
 						format!("Block Header with hash: {block_hash:?} not found",),
 					)
 				})
+				.map_err(Into::into)
 		})
 		.await
 		.wrap_err(format!(
@@ -307,6 +340,7 @@ impl Client {
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
 					.await
+					.map_err(Into::into)
 			})
 			.await?
 			.iter()
@@ -318,9 +352,13 @@ impl Client {
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
-			.with_retries(
-				|client| async move { client.legacy_rpc().chain_get_finalized_head().await },
-			)
+			.with_retries(|client| async move {
+				client
+					.legacy_rpc()
+					.chain_get_finalized_head()
+					.await
+					.map_err(Into::into)
+			})
 			.await?;
 
 		Ok(head)
@@ -398,6 +436,7 @@ impl Client {
 						.query_proof(cells, block_hash)
 						.await
 						.map_err(|error| subxt::Error::Other(format!("{error}")))
+						.map_err(Into::into)
 				}
 			})
 			.await
@@ -416,7 +455,13 @@ impl Client {
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let res = self
-			.with_retries(|client| async move { client.legacy_rpc().system_version().await })
+			.with_retries(|client| async move {
+				client
+					.legacy_rpc()
+					.system_version()
+					.await
+					.map_err(Into::into)
+			})
 			.await?;
 
 		Ok(res)
@@ -436,7 +481,14 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let set_id_key = api::storage().grandpa().current_set_id();
-				async move { client.storage().at(block_hash).fetch(&set_id_key).await }
+				async move {
+					client
+						.storage()
+						.at(block_hash)
+						.fetch(&set_id_key)
+						.await
+						.map_err(Into::into)
+				}
 			})
 			.await?
 			.ok_or_else(|| eyre!("The set_id should exist"))?;
@@ -460,7 +512,14 @@ impl Client {
 		let res = self
 			.with_retries(|client| {
 				let validators_key = api::storage().session().validators();
-				async move { client.storage().at(block_hash).fetch(&validators_key).await }
+				async move {
+					client
+						.storage()
+						.at(block_hash)
+						.fetch(&validators_key)
+						.await
+						.map_err(Into::into)
+				}
 			})
 			.await
 			.map_err(Report::from)?;
@@ -482,6 +541,7 @@ impl Client {
 					.await?
 					.wait_for_success()
 					.await
+					.map_err(Into::into)
 			}
 		})
 		.await
@@ -499,6 +559,7 @@ impl Client {
 					.await?
 					.wait_for_success()
 					.await
+					.map_err(Into::into)
 			}
 		})
 		.await
@@ -514,7 +575,11 @@ impl Client {
 		self.with_retries(|client| async move {
 			let storage = client.storage().at(hash);
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
-			raw_keys.take(count).collect::<Result<Vec<_>, _>>().await
+			raw_keys
+				.take(count)
+				.collect::<Result<Vec<_>, _>>()
+				.await
+				.map_err(Into::into)
 		})
 		.await
 		.map_err(Report::from)
@@ -537,6 +602,7 @@ impl Client {
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
 						.await
+						.map_err(Into::into)
 				}
 			})
 			.await
@@ -553,7 +619,9 @@ impl Client {
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
 				let api = client.runtime_api().at_latest().await?;
-				api.call_raw("grandpa_proveFinality", params).await
+				api.call_raw("grandpa_proveFinality", params)
+					.await
+					.map_err(Into::into)
 			})
 			.await
 			.map_err(|e| eyre!("Request failed at Finality Proof. Error: {e}"))?;

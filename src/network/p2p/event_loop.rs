@@ -103,7 +103,6 @@ pub struct EventLoop {
 	/// Blocks we monitor for PUT success rate
 	active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
-
 	event_loop_config: EventLoopConfig,
 }
 

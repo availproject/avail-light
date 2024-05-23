@@ -229,6 +229,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
 		cfg.retry_config.clone(),
+		shutdown.clone(),
 	)
 	.await?;
 
