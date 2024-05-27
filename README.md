@@ -89,7 +89,7 @@ Example configuration file:
 # config.yaml
 log_level = "info"
 http_server_host = "127.0.0.1"
-http_server_port = 7000
+http_server_port = 7007
 
 secret_key = { seed = "avail" }
 port = 37000
@@ -150,8 +150,8 @@ In the Avail network, a light client's identity can be configured using the `ide
 log_level = "info"
 # Light client HTTP server host name (default: 127.0.0.1)
 http_server_host = "127.0.0.1"
-# Light client HTTP server port (default: 7000).
-http_server_port = 7000
+# Light client HTTP server port (default: 7007).
+http_server_port = 7007
 # Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
 # If set to seed, keypair will be generated from that seed.
 # If set to key, a valid ed25519 private key must be provided, else the client will fail
@@ -255,7 +255,7 @@ max_kad_provided_keys = 1024
 To fetch the number of the latest block processed by light client, we can perform `GET` request on `/v1/latest_block` endpoint.
 
 ```sh
-curl "http://localhost:7000/v1/latest_block"
+curl "http://localhost:7007/v1/latest_block"
 ```
 
 Response:
@@ -271,7 +271,7 @@ Response:
 To fetch the confidence for specific block, which is already processed by application client, we can perform `GET` request on `/v1/confidece/{block_number}` endpoint.
 
 ```sh
-curl "http://localhost:7000/v1/confidence/1"
+curl "http://localhost:7007/v1/confidence/1"
 ```
 
 Response:
@@ -294,7 +294,7 @@ After data is verified, it can be fetched with `GET` request on `/v1/appdata/{bl
 #### JSON response
 
 ```sh
-curl "http://localhost:7000/v1/appdata/1?decode=true"
+curl "http://localhost:7007/v1/appdata/1?decode=true"
 ```
 
 Response:
@@ -311,7 +311,7 @@ Response:
 #### Decoded extrinsic
 
 ```sh
-curl -s "http://127.0.0.1:7000/v1/appdata/1?decode=true" | jq -r '.extrinsics[-1]' | base64 -d
+curl -s "http://127.0.0.1:7007/v1/appdata/1?decode=true" | jq -r '.extrinsics[-1]' | base64 -d
 ```
 
 Response:
@@ -323,7 +323,7 @@ Response:
 ### Get the running mode of the Light Client
 
 ```sh
-curl "localhost:7000/v1/mode"
+curl "localhost:7007/v1/mode"
 ```
 
 Response:
@@ -337,7 +337,7 @@ Response:
 ### Get the status of a latest block
 
 ```sh
-curl "localhost:7000/v1/status"
+curl "localhost:7007/v1/status"
 ```
 
 Response:
@@ -353,7 +353,7 @@ Response:
 ### Get the latest block
 
 ```sh
-curl "localhost:7000/v1/latest_block"
+curl "localhost:7007/v1/latest_block"
 ```
 
 Response:
@@ -369,7 +369,7 @@ Response:
 To perform health check of the light client, run:
 
 ```sh
-curl -I "localhost:7000/health"
+curl -I "localhost:7007/health"
 ```
 
 200 OK is expected response.

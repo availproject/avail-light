@@ -67,7 +67,7 @@ pub struct CliOpts {
 	pub port: Option<u16>,
 	/// HTTP port
 	#[arg(long)]
-	pub http_port: Option<u16>,
+	pub http_server_port: Option<u16>,
 	/// Enable websocket transport
 	#[arg(long, value_name = "ws_transport_enable")]
 	pub ws_transport_enable: bool,
@@ -1011,7 +1011,7 @@ impl RuntimeConfig {
 		if let Some(port) = opts.port {
 			self.port = port;
 		}
-		if let Some(http_port) = opts.http_port {
+		if let Some(http_port) = opts.http_server_port {
 			self.http_server_port = http_port;
 		}
 		self.sync_finality_enable |= opts.finality_sync_enable;

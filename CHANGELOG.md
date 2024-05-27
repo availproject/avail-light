@@ -2,6 +2,7 @@
 
 ## v1.9.0
 
+- `http_server_port` flag for setting the http server port. Changed the default server port to 7007
 - Optimize expired kademlia records from RocksDB using compaction phase for removal
 - Add first two endpoints of a new API for the P2P diagnostics
 - Deprecate `--avail-passphrase` CLI parameter and `avail_secret_seed_phrase` configuration parameter and introduce `--avail-suri` and `avail_secret_uri` alternatives.
