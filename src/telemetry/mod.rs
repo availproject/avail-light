@@ -13,6 +13,7 @@ use crate::types::Origin;
 pub mod otlp;
 
 pub enum MetricCounter {
+	Starts,
 	SessionBlockCounter,
 	OutgoingConnectionErrors,
 	IncomingConnectionErrors,
@@ -22,16 +23,10 @@ pub enum MetricCounter {
 	IncomingGetRecordCounter,
 }
 
-impl MetricCounter {
-	fn is_allowed(&self, origin: &Origin) -> bool {
-		// TODO: Specify counter filters
-		!matches!(origin, Origin::External)
-	}
-}
-
 impl Display for MetricCounter {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match self {
+			MetricCounter::Starts => write!(f, "avail.light.starts"),
 			MetricCounter::SessionBlockCounter => write!(f, "session_block_counter"),
 			MetricCounter::OutgoingConnectionErrors => write!(f, "outgoing_connection_errors"),
 			MetricCounter::IncomingConnectionErrors => write!(f, "incoming_connection_errors"),
@@ -44,12 +39,17 @@ impl Display for MetricCounter {
 }
 
 impl MetricCounter {
-	fn init_counters(meter: Meter, origin: Origin) -> HashMap<String, Counter<u64>> {
-		let mut counter_map: HashMap<String, Counter<u64>> = Default::default();
-		if origin == Origin::External {
-			return counter_map;
+	fn is_allowed(&self, origin: &Origin) -> bool {
+		match (origin, self) {
+			(Origin::External, MetricCounter::Starts) => true,
+			(Origin::External, _) => false,
+			(_, _) => true,
 		}
-		for counter in [
+	}
+
+	fn init_counters(meter: Meter, origin: Origin) -> HashMap<String, Counter<u64>> {
+		[
+			MetricCounter::Starts,
 			MetricCounter::SessionBlockCounter,
 			MetricCounter::OutgoingConnectionErrors,
 			MetricCounter::IncomingConnectionErrors,
@@ -57,13 +57,16 @@ impl MetricCounter {
 			MetricCounter::EstablishedConnections,
 			MetricCounter::IncomingPutRecordCounter,
 			MetricCounter::IncomingGetRecordCounter,
-		] {
-			counter_map.insert(
+		]
+		.iter()
+		.filter(|counter| MetricCounter::is_allowed(counter, &origin))
+		.map(|counter| {
+			(
 				counter.to_string(),
 				meter.u64_counter(counter.to_string()).init(),
-			);
-		}
-		counter_map
+			)
+		})
+		.collect()
 	}
 }
 
