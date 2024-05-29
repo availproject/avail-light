@@ -13,13 +13,13 @@ use crate::types::Origin;
 pub mod otlp;
 
 pub enum MetricCounter {
-	SessionBlock,
-	OutgoingConnectionError,
-	IncomingConnectionError,
-	IncomingConnection,
-	ConnectionEstablished,
-	IncomingPutRecord,
-	IncomingGetRecord,
+	SessionBlockCounter,
+	OutgoingConnectionErrors,
+	IncomingConnectionErrors,
+	IncomingConnections,
+	EstablishedConnections,
+	IncomingPutRecordCounter,
+	IncomingGetRecordCounter,
 }
 
 impl MetricCounter {
@@ -32,13 +32,13 @@ impl MetricCounter {
 impl Display for MetricCounter {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match self {
-			MetricCounter::SessionBlock => write!(f, "session_block_counter"),
-			MetricCounter::OutgoingConnectionError => write!(f, "outgoing_connection_errors"),
-			MetricCounter::IncomingConnectionError => write!(f, "incoming_connection_errors"),
-			MetricCounter::IncomingConnection => write!(f, "incoming_connections"),
-			MetricCounter::ConnectionEstablished => write!(f, "established_connections"),
-			MetricCounter::IncomingPutRecord => write!(f, "incoming_put_record_counter"),
-			MetricCounter::IncomingGetRecord => write!(f, "incoming_get_record_counter"),
+			MetricCounter::SessionBlockCounter => write!(f, "session_block_counter"),
+			MetricCounter::OutgoingConnectionErrors => write!(f, "outgoing_connection_errors"),
+			MetricCounter::IncomingConnectionErrors => write!(f, "incoming_connection_errors"),
+			MetricCounter::IncomingConnections => write!(f, "incoming_connections"),
+			MetricCounter::EstablishedConnections => write!(f, "established_connections"),
+			MetricCounter::IncomingPutRecordCounter => write!(f, "incoming_put_record_counter"),
+			MetricCounter::IncomingGetRecordCounter => write!(f, "incoming_get_record_counter"),
 		}
 	}
 }
@@ -50,13 +50,13 @@ impl MetricCounter {
 			return counter_map;
 		}
 		for counter in [
-			MetricCounter::SessionBlock,
-			MetricCounter::OutgoingConnectionError,
-			MetricCounter::IncomingConnectionError,
-			MetricCounter::IncomingConnection,
-			MetricCounter::ConnectionEstablished,
-			MetricCounter::IncomingPutRecord,
-			MetricCounter::IncomingGetRecord,
+			MetricCounter::SessionBlockCounter,
+			MetricCounter::OutgoingConnectionErrors,
+			MetricCounter::IncomingConnectionErrors,
+			MetricCounter::IncomingConnections,
+			MetricCounter::EstablishedConnections,
+			MetricCounter::IncomingPutRecordCounter,
+			MetricCounter::IncomingGetRecordCounter,
 		] {
 			counter_map.insert(
 				counter.to_string(),

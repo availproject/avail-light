@@ -49,7 +49,7 @@ pub async fn process_block(
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>> {
-	metrics.count(MetricCounter::SessionBlock).await;
+	metrics.count(MetricCounter::SessionBlockCounter).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
 		.await?;

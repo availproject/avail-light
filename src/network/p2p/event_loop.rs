@@ -247,10 +247,10 @@ impl EventLoop {
 					},
 					kad::Event::InboundRequest { request } => match request {
 						InboundRequest::GetRecord { .. } => {
-							metrics.count(MetricCounter::IncomingGetRecord).await;
+							metrics.count(MetricCounter::IncomingGetRecordCounter).await;
 						},
 						InboundRequest::PutRecord { source, record, .. } => {
-							metrics.count(MetricCounter::IncomingPutRecord).await;
+							metrics.count(MetricCounter::IncomingPutRecordCounter).await;
 							match record {
 								Some(mut record) => {
 									let ttl = &self.event_loop_config.kad_record_ttl;
@@ -497,10 +497,10 @@ impl EventLoop {
 						}
 					},
 					SwarmEvent::IncomingConnection { .. } => {
-						metrics.count(MetricCounter::IncomingConnection).await;
+						metrics.count(MetricCounter::IncomingConnections).await;
 					},
 					SwarmEvent::IncomingConnectionError { .. } => {
-						metrics.count(MetricCounter::IncomingConnectionError).await;
+						metrics.count(MetricCounter::IncomingConnectionErrors).await;
 					},
 					SwarmEvent::ExternalAddrConfirmed { address } => {
 						info!(
@@ -515,7 +515,7 @@ impl EventLoop {
 						num_established,
 						..
 					} => {
-						metrics.count(MetricCounter::ConnectionEstablished).await;
+						metrics.count(MetricCounter::EstablishedConnections).await;
 						endpoint.get_remote_address();
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
@@ -529,7 +529,7 @@ impl EventLoop {
 						self.establish_relay_circuit(peer_id);
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-						metrics.count(MetricCounter::OutgoingConnectionError).await;
+						metrics.count(MetricCounter::OutgoingConnectionErrors).await;
 
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occurred
