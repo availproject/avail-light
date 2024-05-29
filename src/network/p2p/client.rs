@@ -245,6 +245,7 @@ impl Command for CountDHTPeers {
 	}
 }
 
+#[allow(dead_code)]
 struct GetCellsInDHTPerBlock {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }

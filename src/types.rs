@@ -877,15 +877,17 @@ impl FromStr for LogLevel {
 	}
 }
 
-impl ToString for LogLevel {
-	fn to_string(&self) -> String {
-		match self {
-			LogLevel::Info => "INFO".to_string(),
-			LogLevel::Debug => "DEBUG".to_string(),
-			LogLevel::Trace => "TRACE".to_string(),
-			LogLevel::Warn => "WARN".to_string(),
-			LogLevel::Error => "ERROR".to_string(),
-		}
+impl Display for LogLevel {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		let value = match self {
+			LogLevel::Info => "INFO",
+			LogLevel::Debug => "DEBUG",
+			LogLevel::Trace => "TRACE",
+			LogLevel::Warn => "WARN",
+			LogLevel::Error => "ERROR",
+		};
+
+		f.write_str(value)
 	}
 }
 

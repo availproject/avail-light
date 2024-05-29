@@ -28,7 +28,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
 	network::p2p::kad_mem_store::MemoryStore,
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
+	telemetry::{MetricValue, Metrics},
 	types::{AgentVersion, IdentifyConfig, KademliaMode, LibP2PConfig},
 };
 
@@ -215,13 +215,10 @@ impl EventLoop {
 					kad::Event::PendingRoutablePeer { peer, address } => {
 						trace!("Pending routablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
-					kad::Event::InboundRequest { request } => match request {
-						InboundRequest::GetRecord { .. } => {
-							metrics.count(MetricCounter::IncomingGetRecord).await;
-						},
-						InboundRequest::PutRecord { source, record, .. } => {
-							metrics.count(MetricCounter::IncomingPutRecord).await;
-							match record {
+					kad::Event::InboundRequest { request } => {
+						match request {
+							InboundRequest::GetRecord { .. } => {},
+							InboundRequest::PutRecord { source, record, .. } => match record {
 								Some(rec) => {
 									let key = &rec.key;
 									trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
@@ -232,9 +229,9 @@ impl EventLoop {
 									debug!("Received empty cell record from: {source:?}");
 									return;
 								},
-							}
-						},
-						_ => {},
+							},
+							_ => {},
+						}
 					},
 					kad::Event::ModeChanged { new_mode } => {
 						trace!("Kademlia mode changed: {new_mode:?}");
@@ -467,12 +464,8 @@ impl EventLoop {
 							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 						}
 					},
-					SwarmEvent::IncomingConnection { .. } => {
-						metrics.count(MetricCounter::IncomingConnection).await;
-					},
-					SwarmEvent::IncomingConnectionError { .. } => {
-						metrics.count(MetricCounter::IncomingConnectionError).await;
-					},
+					SwarmEvent::IncomingConnection { .. } => {},
+					SwarmEvent::IncomingConnectionError { .. } => {},
 					SwarmEvent::ExternalAddrConfirmed { address } => {
 						info!(
 							"External reachability confirmed on address: {}",
@@ -499,36 +492,35 @@ impl EventLoop {
 						}
 					},
 					SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-						metrics.count(MetricCounter::ConnectionEstablished).await;
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 							_ = ch.send(Ok(()));
 						}
 						self.establish_relay_circuit(peer_id);
 					},
-					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-						metrics.count(MetricCounter::OutgoingConnectionError).await;
+					SwarmEvent::OutgoingConnectionError {
+						peer_id: Some(peer_id),
+						error,
+						..
+					} => {
+						// Notify the connections we're waiting on an error has occured
+						if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
+							if let Some(peer) =
+								self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
+							{
+								let removed_peer_id = peer.node.key.preimage();
+								debug!("Removed peer {removed_peer_id} from the routing table");
+							}
+						}
+						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
+							_ = ch.send(Err(error.into()));
+						}
 
-						if let Some(peer_id) = peer_id {
-							// Notify the connections we're waiting on an error has occured
-							if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
-								if let Some(peer) =
-									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
-								{
-									let removed_peer_id = peer.node.key.preimage();
-									debug!("Removed peer {removed_peer_id} from the routing table");
-								}
-							}
-							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
-								_ = ch.send(Err(error.into()));
-							}
-
-							// remove error producing relay from pending dials
-							// if the peer giving us problems is the chosen relay
-							// just remove it by resetting the reservation state slot
-							if self.relay.id == peer_id {
-								self.relay.reset();
-							}
+						// remove error producing relay from pending dials
+						// if the peer giving us problems is the chosen relay
+						// just remove it by resetting the reservation state slot
+						if self.relay.id == peer_id {
+							self.relay.reset();
 						}
 					},
 					SwarmEvent::Dialing {

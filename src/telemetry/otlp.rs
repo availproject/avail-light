@@ -1,18 +1,19 @@
 use async_trait::async_trait;
 use color_eyre::Result;
+use opentelemetry::metrics::Counter;
 use opentelemetry_api::{global, metrics::Meter, KeyValue};
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::RwLock;
 
-// use super::MetricCounter;
+use super::MetricCounter;
 
 const ATTRIBUTE_NUMBER: usize = 9;
 
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	// counters: HashMap<String, Counter<u64>>,
+	counters: HashMap<String, Counter<u64>>,
 	attributes: MetricAttributes,
 }
 
@@ -80,8 +81,8 @@ impl Metrics {
 
 #[async_trait]
 impl super::Metrics for Metrics {
-	async fn count(&self, _counter: super::MetricCounter) {
-		// __self.counters[&counter.to_string()].add(1, &__self.attributes().await);
+	async fn count(&self, counter: super::MetricCounter) {
+		__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
 	}
 
 	async fn record(&self, value: super::MetricValue) -> Result<()> {
@@ -187,10 +188,10 @@ pub fn initialize(endpoint: String, attributes: MetricAttributes) -> Result<Metr
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	// let initialized_counters = MetricCounter::init_counters(meter.clone());
+	let initialized_counters = MetricCounter::init_counters(meter.clone());
 	Ok(Metrics {
 		meter,
 		attributes,
-		// counters: initialized_counters,
+		counters: initialized_counters,
 	})
 }

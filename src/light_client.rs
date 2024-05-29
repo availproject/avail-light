@@ -38,7 +38,7 @@ use crate::{
 		rpc::{self, Event},
 	},
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
+	telemetry::{MetricValue, Metrics},
 	types::{self, ClientChannels, LightClientConfig, OptionBlockRange, State},
 	utils::{calculate_confidence, extract_kate},
 };
@@ -80,7 +80,6 @@ pub async fn process_block(
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>> {
-	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
 		.await?;

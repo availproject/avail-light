@@ -32,7 +32,7 @@ use crate::{
 		rpc::{Client as RpcClient, Event},
 	},
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
+	telemetry::{MetricValue, Metrics},
 	types::{BlockVerified, ClientChannels, FatClientConfig},
 	utils::extract_kate,
 };
@@ -86,7 +86,6 @@ pub async fn process_block(
 	received_at: Instant,
 	partition: Partition,
 ) -> Result<()> {
-	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
 		.await?;

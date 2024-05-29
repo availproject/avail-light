@@ -22,6 +22,12 @@ pub struct ExpectedNodeVariant {
 	pub system_version: &'static [&'static str],
 	pub spec_name: &'static str,
 }
+impl Default for ExpectedNodeVariant {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl ExpectedNodeVariant {
 	pub const fn new() -> Self {
 		Self {
