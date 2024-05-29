@@ -6,7 +6,11 @@ use opentelemetry_api::{
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::{collections::HashMap, time::Duration};
+use std::{
+	collections::HashMap,
+	sync::{Arc, RwLock},
+	time::{Duration, Instant},
+};
 
 use crate::types::Origin;
 
@@ -15,10 +19,27 @@ use super::MetricCounter;
 const ATTRIBUTE_NUMBER: usize = 7;
 
 #[derive(Debug)]
+pub struct AggregatedMetrics {
+	counter_sums: HashMap<String, u64>,
+	// (f64, usize) tuple represents (average_value, count)
+	gauge_averages_f64: HashMap<String, (f64, usize)>,
+	gauge_averages_u64: HashMap<String, (u64, usize)>,
+	last_recorded: Option<Instant>,
+}
+
+impl AggregatedMetrics {
+	fn init() {}
+}
+
+// Counters - increment by the value of a sum of all the increments in the time span
+// Gauge - maintain the averages
+// Do we have to keep state of what's sent and when for every individual metric?
+#[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
 	counters: HashMap<String, Counter<u64>>,
 	attributes: MetricAttributes,
+	aggregated_metrics: Arc<RwLock<AggregatedMetrics>>,
 }
 
 #[derive(Debug)]
@@ -32,7 +53,7 @@ pub struct MetricAttributes {
 }
 
 impl Metrics {
-	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
+	fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		[
 			KeyValue::new("version", clap::crate_version!()),
 			KeyValue::new("role", self.attributes.role.clone()),
@@ -45,18 +66,38 @@ impl Metrics {
 	}
 
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
-		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes().await;
-		self.meter
-			.register_callback(&[instrument.as_any()], move |observer| {
-				observer.observe_u64(&instrument, value, &attributes)
-			})?;
+		// Update aggregate metrics by calculating running average
+		let mut aggregated_metrics = self.aggregated_metrics.write().unwrap();
+		let entry = aggregated_metrics
+			.gauge_averages_u64
+			.entry(name.to_string())
+			.or_insert((0, 0));
+		let (avg, count) = entry;
+		*avg = (*avg * *count as u64 + value) / (*count as u64 + 1);
+		*count += 1;
+
+		let value2 = *avg;
+
+		// Dispatch aggregated metric to the local otel instance
+		let now = Instant::now();
+		if let Some(last) = aggregated_metrics.last_recorded {
+			if now.duration_since(last) >= Duration::from_secs(10) {
+				let instrument = self.meter.u64_observable_gauge(name).try_init()?;
+				let attributes = self.attributes();
+				self.meter
+					.register_callback(&[instrument.as_any()], move |observer| {
+						observer.observe_u64(&instrument, value2, &attributes)
+					})?;
+			}
+		};
+
 		Ok(())
 	}
 
 	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
+		// Add averaging logic
 		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes().await;
+		let attributes = self.attributes();
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_f64(&instrument, value, &attributes)
@@ -68,8 +109,9 @@ impl Metrics {
 #[async_trait]
 impl super::Metrics for Metrics {
 	async fn count(&self, counter: super::MetricCounter) {
+		// Add sum logic
 		if counter.is_allowed(&self.attributes.origin) {
-			__self.counters[&counter.to_string()].add(1, &__self.attributes().await);
+			__self.counters[&counter.to_string()].add(1, &__self.attributes());
 		}
 	}
 
@@ -184,5 +226,11 @@ pub fn initialize(
 		meter,
 		attributes,
 		counters,
+		aggregated_metrics: Arc::new(RwLock::new(AggregatedMetrics {
+			counter_sums: Default::default(),
+			last_recorded: None,
+			gauge_averages_f64: Default::default(),
+			gauge_averages_u64: Default::default(),
+		})),
 	})
 }
