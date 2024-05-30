@@ -158,6 +158,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			cfg.ot_collector_endpoint.clone(),
 			metric_attributes,
 			cfg.origin.clone(),
+			cfg.otel_flush_frequency_secs,
 		)
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);

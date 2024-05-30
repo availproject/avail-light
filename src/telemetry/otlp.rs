@@ -25,6 +25,7 @@ pub struct AggregatedMetrics {
 	// (f64, usize) = (average_value, count)
 	gauge_averages_f64: HashMap<String, (f64, usize)>,
 	last_recorded: Option<Instant>,
+	otel_flush_frequency_secs: u64,
 }
 
 #[derive(Debug)]
@@ -72,7 +73,9 @@ impl Metrics {
 		// Flush all temporary aggregated gauges to OTel
 		let now = Instant::now();
 		if let Some(last) = aggregated_metrics.last_recorded {
-			if now.duration_since(last) >= Duration::from_secs(10) {
+			if now.duration_since(last)
+				>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
+			{
 				for (gauge_name, last_value) in aggregated_metrics.gauge_last_value_u64.iter_mut() {
 					let val = *last_value;
 					let instrument = self
@@ -108,7 +111,9 @@ impl Metrics {
 		// Flush all temporary aggregated gauges to OTel
 		let now = Instant::now();
 		if let Some(last) = aggregated_metrics.last_recorded {
-			if now.duration_since(last) >= Duration::from_secs(10) {
+			if now.duration_since(last)
+				>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
+			{
 				for (gauge_name, (average, count)) in
 					aggregated_metrics.gauge_averages_f64.iter_mut()
 				{
@@ -148,7 +153,9 @@ impl super::Metrics for Metrics {
 			// Flush all temporary aggregated counters to OTel
 			let now = Instant::now();
 			if let Some(last) = aggregated_metrics.last_recorded {
-				if now.duration_since(last) >= Duration::from_secs(10) {
+				if now.duration_since(last)
+					>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
+				{
 					for (counter_name, count) in aggregated_metrics.counter_sums.iter_mut() {
 						let cnt = *count;
 						__self.counters[&counter_name.clone()].add(cnt, &__self.attributes());
@@ -238,14 +245,15 @@ pub fn initialize(
 	endpoint: String,
 	attributes: MetricAttributes,
 	origin: Origin,
+	otel_flush_frequency_secs: u64,
 ) -> Result<Metrics> {
 	// Default settings are for external clients
-	let mut export_period = Duration::from_secs(60);
-	let mut export_timeout = Duration::from_secs(65);
+	let mut export_period = Duration::from_secs(300);
+	let mut export_timeout = Duration::from_secs(10);
 
 	if origin != Origin::External {
-		export_period = Duration::from_secs(10);
-		export_timeout = Duration::from_secs(15);
+		export_period = Duration::from_secs(30);
+		export_timeout = Duration::from_secs(10);
 	}
 	let export_config = ExportConfig {
 		endpoint,
@@ -276,6 +284,7 @@ pub fn initialize(
 			last_recorded: None,
 			gauge_last_value_u64: Default::default(),
 			gauge_averages_f64: Default::default(),
+			otel_flush_frequency_secs,
 		})),
 	})
 }

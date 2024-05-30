@@ -425,6 +425,7 @@ pub struct RuntimeConfig {
 	pub log_format_json: bool,
 	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
 	pub ot_collector_endpoint: String,
+	pub otel_flush_frequency_secs: u64,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
@@ -845,6 +846,7 @@ impl Default for RuntimeConfig {
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
+			otel_flush_frequency_secs: 10,
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
