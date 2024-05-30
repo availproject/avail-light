@@ -21,19 +21,12 @@ const ATTRIBUTE_NUMBER: usize = 7;
 #[derive(Debug)]
 pub struct AggregatedMetrics {
 	counter_sums: HashMap<String, u64>,
-	// (f64, usize) tuple represents (average_value, count)
+	gauge_last_value_u64: HashMap<String, u64>,
+	// (f64, usize) = (average_value, count)
 	gauge_averages_f64: HashMap<String, (f64, usize)>,
-	gauge_averages_u64: HashMap<String, (u64, usize)>,
 	last_recorded: Option<Instant>,
 }
 
-impl AggregatedMetrics {
-	fn init() {}
-}
-
-// Counters - increment by the value of a sum of all the increments in the time span
-// Gauge - maintain the averages
-// Do we have to keep state of what's sent and when for every individual metric?
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
@@ -65,29 +58,35 @@ impl Metrics {
 		]
 	}
 
+	// Used only by TotalBlockNumber and HealthCheck
+	// The latest value is temporarily stored and periodically flushed to OTel
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
-		// Update aggregate metrics by calculating running average
 		let mut aggregated_metrics = self.aggregated_metrics.write().unwrap();
-		let entry = aggregated_metrics
-			.gauge_averages_u64
+		aggregated_metrics
+			.gauge_last_value_u64
 			.entry(name.to_string())
-			.or_insert((0, 0));
-		let (avg, count) = entry;
-		*avg = (*avg * *count as u64 + value) / (*count as u64 + 1);
-		*count += 1;
-
-		let value2 = *avg;
-
-		// Dispatch aggregated metric to the local otel instance
+			.and_modify(|last_value| {
+				*last_value = value;
+			})
+			.or_insert(value);
+		// Flush all temporary aggregated gauges to OTel
 		let now = Instant::now();
 		if let Some(last) = aggregated_metrics.last_recorded {
 			if now.duration_since(last) >= Duration::from_secs(10) {
-				let instrument = self.meter.u64_observable_gauge(name).try_init()?;
-				let attributes = self.attributes();
-				self.meter
-					.register_callback(&[instrument.as_any()], move |observer| {
-						observer.observe_u64(&instrument, value2, &attributes)
-					})?;
+				for (gauge_name, last_value) in aggregated_metrics.gauge_last_value_u64.iter_mut() {
+					let val = *last_value;
+					let instrument = self
+						.meter
+						.u64_observable_gauge(gauge_name.clone())
+						.try_init()?;
+					let attributes = self.attributes();
+
+					self.meter
+						.register_callback(&[instrument.as_any()], move |observer| {
+							observer.observe_u64(&instrument, val, &attributes)
+						})?;
+				}
+				aggregated_metrics.last_recorded = Some(Instant::now());
 			}
 		};
 
@@ -95,13 +94,40 @@ impl Metrics {
 	}
 
 	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
-		// Add averaging logic
-		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes();
-		self.meter
-			.register_callback(&[instrument.as_any()], move |observer| {
-				observer.observe_f64(&instrument, value, &attributes)
-			})?;
+		// Update aggregate metrics by calculating running average
+		let mut aggregated_metrics = self.aggregated_metrics.write().unwrap();
+		aggregated_metrics
+			.gauge_averages_f64
+			.entry(name.to_string())
+			.and_modify(|(avg, count)| {
+				*avg = (*avg * *count as f64 + value) / (*count as f64 + 1.0);
+				*count += 1;
+			})
+			.or_insert((value, 1));
+
+		// Flush all temporary aggregated gauges to OTel
+		let now = Instant::now();
+		if let Some(last) = aggregated_metrics.last_recorded {
+			if now.duration_since(last) >= Duration::from_secs(10) {
+				for (gauge_name, (average, count)) in
+					aggregated_metrics.gauge_averages_f64.iter_mut()
+				{
+					let avg = *average;
+					let instrument = self
+						.meter
+						.f64_observable_gauge(gauge_name.clone())
+						.try_init()?;
+					let attributes = self.attributes();
+					self.meter
+						.register_callback(&[instrument.as_any()], move |observer| {
+							observer.observe_f64(&instrument, avg, &attributes)
+						})?;
+					*count = 0;
+				}
+				aggregated_metrics.last_recorded = Some(Instant::now());
+			}
+		};
+
 		Ok(())
 	}
 }
@@ -109,9 +135,28 @@ impl Metrics {
 #[async_trait]
 impl super::Metrics for Metrics {
 	async fn count(&self, counter: super::MetricCounter) {
-		// Add sum logic
 		if counter.is_allowed(&self.attributes.origin) {
-			__self.counters[&counter.to_string()].add(1, &__self.attributes());
+			let mut aggregated_metrics = self.aggregated_metrics.write().unwrap();
+			aggregated_metrics
+				.counter_sums
+				.entry(counter.to_string())
+				.and_modify(|count| {
+					*count += 1;
+				})
+				.or_insert(1);
+
+			// Flush all temporary aggregated counters to OTel
+			let now = Instant::now();
+			if let Some(last) = aggregated_metrics.last_recorded {
+				if now.duration_since(last) >= Duration::from_secs(10) {
+					for (counter_name, count) in aggregated_metrics.counter_sums.iter_mut() {
+						let cnt = *count;
+						__self.counters[&counter_name.clone()].add(cnt, &__self.attributes());
+						*count = 0;
+					}
+					aggregated_metrics.last_recorded = Some(Instant::now());
+				}
+			}
 		}
 	}
 
@@ -152,7 +197,7 @@ impl super::Metrics for Metrics {
 					self.record_f64("dht_put_success", number).await?;
 				},
 				super::MetricValue::ConnectedPeersNum(number) => {
-					self.record_u64("connected_peers_num", number as u64)
+					self.record_f64("connected_peers_num", number as f64)
 						.await?;
 				},
 				super::MetricValue::HealthCheck() => {
@@ -229,8 +274,8 @@ pub fn initialize(
 		aggregated_metrics: Arc::new(RwLock::new(AggregatedMetrics {
 			counter_sums: Default::default(),
 			last_recorded: None,
+			gauge_last_value_u64: Default::default(),
 			gauge_averages_f64: Default::default(),
-			gauge_averages_u64: Default::default(),
 		})),
 	})
 }
