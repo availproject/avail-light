@@ -254,7 +254,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			result
 		},
 	)));
-	ot_metrics.count(MetricCounter::Starts).await;
 
 	info!("Waiting for first finalized header...");
 	let block_header = match shutdown
@@ -400,6 +399,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		replication_factor: cfg.replication_factor,
 		query_timeout: cfg.query_timeout,
 		pruning_interval: cfg.store_pruning_interval,
+		telemetry_flush_interval: cfg.ot_flush_block_interval,
 	};
 
 	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(
@@ -434,12 +434,14 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			db.clone(),
 			light_network_client,
 			(&cfg).into(),
-			ot_metrics,
+			ot_metrics.clone(),
 			state.clone(),
 			channels,
 			shutdown.clone(),
 		)));
 	}
+
+	ot_metrics.count(MetricCounter::Starts).await;
 
 	Ok(())
 }

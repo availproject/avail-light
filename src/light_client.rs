@@ -52,7 +52,7 @@ pub async fn process_block(
 	metrics.count(MetricCounter::SessionBlockCounter).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
-		.await?;
+		.await;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
@@ -109,30 +109,30 @@ pub async fn process_block(
 
 			metrics
 				.record(MetricValue::DHTFetched(fetch_stats.dht_fetched))
-				.await?;
+				.await;
 
 			metrics
 				.record(MetricValue::DHTFetchedPercentage(
 					fetch_stats.dht_fetched_percentage,
 				))
-				.await?;
+				.await;
 
 			metrics
 				.record(MetricValue::DHTFetchDuration(
 					fetch_stats.dht_fetch_duration,
 				))
-				.await?;
+				.await;
 
 			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
 				metrics
 					.record(MetricValue::NodeRPCFetched(rpc_fetched))
-					.await?;
+					.await;
 			}
 
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
 				metrics
 					.record(MetricValue::NodeRPCFetchDuration(rpc_fetch_duration))
-					.await?;
+					.await;
 			}
 			(positions.len(), fetched.len(), unfetched.len())
 		},
@@ -158,7 +158,7 @@ pub async fn process_block(
 	);
 	metrics
 		.record(MetricValue::BlockConfidence(confidence))
-		.await?;
+		.await;
 
 	// push latest mined block's header into column family specified
 	// for keeping block headers, to be used
@@ -210,12 +210,9 @@ pub async fn run(
 		};
 
 		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
-			if let Err(error) = metrics
+			metrics
 				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
-				.await
-			{
-				error!("Cannot record block processing delay: {}", error);
-			}
+				.await;
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
@@ -354,7 +351,7 @@ mod tests {
 
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
-		mock_metrics.expect_record().returning(|_| Ok(()));
+		mock_metrics.expect_record().returning(|_| ());
 		process_block(
 			db,
 			&mock_network_client,

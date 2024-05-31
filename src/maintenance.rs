@@ -1,9 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-#[cfg(not(feature = "kademlia-rocksdb"))]
-use tracing::error;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -18,6 +16,7 @@ pub struct StaticConfigParams {
 	pub replication_factor: u16,
 	pub query_timeout: u32,
 	pub pruning_interval: u32,
+	pub telemetry_flush_interval: u32,
 }
 
 pub async fn process_block(
@@ -32,6 +31,14 @@ pub async fn process_block(
 		match p2p_client.prune_expired_records().await {
 			Ok(pruned) => info!(block_number, pruned, "Pruning finished"),
 			Err(error) => error!(block_number, "Pruning failed: {error:#}"),
+		}
+	}
+
+	if block_number % static_config_params.telemetry_flush_interval == 0 {
+		info!(block_number, "Flushing metrics...");
+		match metrics.flush().await {
+			Ok(()) => info!(block_number, "Flushing metrics finished"),
+			Err(error) => error!(block_number, "Flushing metrics failed: {error:#}"),
 		}
 	}
 
@@ -52,24 +59,24 @@ pub async fn process_block(
 	debug!("Connected peers: {:?}", connected_peers);
 
 	let peers_num_metric = MetricValue::ConnectedPeersNum(peers_num);
-	metrics.record(peers_num_metric).await?;
+	metrics.record(peers_num_metric).await;
 
 	metrics
-		.record(MetricValue::BlockConfidenceTreshold(
+		.record(MetricValue::BlockConfidenceThreshold(
 			static_config_params.block_confidence_treshold,
 		))
-		.await?;
+		.await;
 	metrics
 		.record(MetricValue::ReplicationFactor(
 			static_config_params.replication_factor,
 		))
-		.await?;
+		.await;
 	metrics
 		.record(MetricValue::QueryTimeout(
 			static_config_params.query_timeout,
 		))
-		.await?;
-	metrics.record(MetricValue::HealthCheck()).await?;
+		.await;
+	metrics.record(MetricValue::HealthCheck()).await;
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())
