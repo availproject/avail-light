@@ -11,9 +11,8 @@ use std::{
 	sync::{Arc, RwLock},
 	time::{Duration, Instant},
 };
-use tracing::info;
 
-use crate::types::Origin;
+use crate::types::{Origin, OtelConfig};
 
 use super::MetricCounter;
 
@@ -245,17 +244,8 @@ pub fn initialize(
 	endpoint: String,
 	attributes: MetricAttributes,
 	origin: Origin,
-	otel_flush_frequency_secs: u64,
+	ot_config: OtelConfig,
 ) -> Result<Metrics> {
-	// Default settings are for external clients
-	let mut export_period = Duration::from_secs(300);
-	let mut export_timeout = Duration::from_secs(10);
-
-	info!("Origin: {}", origin);
-	if origin != Origin::External {
-		export_period = Duration::from_secs(30);
-		export_timeout = Duration::from_secs(10);
-	}
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),
@@ -268,12 +258,13 @@ pub fn initialize(
 				.tonic()
 				.with_export_config(export_config),
 		)
-		.with_period(export_period) // Configures the intervening time between exports
-		.with_timeout(export_timeout) // Configures the time a OT waits for an export to complete before canceling it.
+		.with_period(Duration::from_secs(ot_config.ot_export_period)) // Configures the intervening time between exports
+		.with_timeout(Duration::from_secs(ot_config.ot_export_timeout)) // Configures the time a OT waits for an export to complete before canceling it.
 		.build()?;
 
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
+
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
 	let counters = MetricCounter::init_counters(meter.clone(), origin);
 	Ok(Metrics {
@@ -289,7 +280,7 @@ pub fn initialize(
 			},
 			gauge_last_value_u64: Default::default(),
 			gauge_averages_f64: Default::default(),
-			otel_flush_frequency_secs,
+			otel_flush_frequency_secs: ot_config.otel_flush_frequency_secs,
 		})),
 	})
 }
