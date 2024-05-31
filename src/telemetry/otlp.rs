@@ -11,6 +11,7 @@ use std::{
 	sync::{Arc, RwLock},
 	time::{Duration, Instant},
 };
+use tracing::info;
 
 use crate::types::Origin;
 
@@ -19,12 +20,18 @@ use super::MetricCounter;
 const ATTRIBUTE_NUMBER: usize = 7;
 
 #[derive(Debug)]
+pub struct LastRecorded {
+	counters: Instant,
+	gauge_u64: Instant,
+	gauge_f64: Instant,
+}
+#[derive(Debug)]
 pub struct AggregatedMetrics {
 	counter_sums: HashMap<String, u64>,
 	gauge_last_value_u64: HashMap<String, u64>,
 	// (f64, usize) = (average_value, count)
 	gauge_averages_f64: HashMap<String, (f64, usize)>,
-	last_recorded: Option<Instant>,
+	last_recorded: LastRecorded,
 	otel_flush_frequency_secs: u64,
 }
 
@@ -62,6 +69,7 @@ impl Metrics {
 	// Used only by TotalBlockNumber and HealthCheck
 	// The latest value is temporarily stored and periodically flushed to OTel
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
+		// Update with the latest value
 		let mut aggregated_metrics = self.aggregated_metrics.write().unwrap();
 		aggregated_metrics
 			.gauge_last_value_u64
@@ -70,28 +78,26 @@ impl Metrics {
 				*last_value = value;
 			})
 			.or_insert(value);
+
 		// Flush all temporary aggregated gauges to OTel
 		let now = Instant::now();
-		if let Some(last) = aggregated_metrics.last_recorded {
-			if now.duration_since(last)
-				>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
-			{
-				for (gauge_name, last_value) in aggregated_metrics.gauge_last_value_u64.iter_mut() {
-					let val = *last_value;
-					let instrument = self
-						.meter
-						.u64_observable_gauge(gauge_name.clone())
-						.try_init()?;
-					let attributes = self.attributes();
-
-					self.meter
-						.register_callback(&[instrument.as_any()], move |observer| {
-							observer.observe_u64(&instrument, val, &attributes)
-						})?;
-				}
-				aggregated_metrics.last_recorded = Some(Instant::now());
+		if now.duration_since(aggregated_metrics.last_recorded.gauge_u64)
+			>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
+		{
+			for (gauge_name, last_value) in aggregated_metrics.gauge_last_value_u64.iter_mut() {
+				let val = *last_value;
+				let instrument = self
+					.meter
+					.u64_observable_gauge(gauge_name.clone())
+					.try_init()?;
+				let attributes = self.attributes();
+				self.meter
+					.register_callback(&[instrument.as_any()], move |observer| {
+						observer.observe_u64(&instrument, val, &attributes)
+					})?;
 			}
-		};
+			aggregated_metrics.last_recorded.gauge_u64 = Instant::now();
+		}
 
 		Ok(())
 	}
@@ -110,28 +116,24 @@ impl Metrics {
 
 		// Flush all temporary aggregated gauges to OTel
 		let now = Instant::now();
-		if let Some(last) = aggregated_metrics.last_recorded {
-			if now.duration_since(last)
-				>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
-			{
-				for (gauge_name, (average, count)) in
-					aggregated_metrics.gauge_averages_f64.iter_mut()
-				{
-					let avg = *average;
-					let instrument = self
-						.meter
-						.f64_observable_gauge(gauge_name.clone())
-						.try_init()?;
-					let attributes = self.attributes();
-					self.meter
-						.register_callback(&[instrument.as_any()], move |observer| {
-							observer.observe_f64(&instrument, avg, &attributes)
-						})?;
-					*count = 0;
-				}
-				aggregated_metrics.last_recorded = Some(Instant::now());
+		if now.duration_since(aggregated_metrics.last_recorded.gauge_f64)
+			>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
+		{
+			for (gauge_name, (average, count)) in aggregated_metrics.gauge_averages_f64.iter_mut() {
+				let avg = *average;
+				let instrument = self
+					.meter
+					.f64_observable_gauge(gauge_name.clone())
+					.try_init()?;
+				let attributes = self.attributes();
+				self.meter
+					.register_callback(&[instrument.as_any()], move |observer| {
+						observer.observe_f64(&instrument, avg, &attributes)
+					})?;
+				*count = 0;
 			}
-		};
+			aggregated_metrics.last_recorded.gauge_f64 = Instant::now();
+		}
 
 		Ok(())
 	}
@@ -152,17 +154,15 @@ impl super::Metrics for Metrics {
 
 			// Flush all temporary aggregated counters to OTel
 			let now = Instant::now();
-			if let Some(last) = aggregated_metrics.last_recorded {
-				if now.duration_since(last)
-					>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
-				{
-					for (counter_name, count) in aggregated_metrics.counter_sums.iter_mut() {
-						let cnt = *count;
-						__self.counters[&counter_name.clone()].add(cnt, &__self.attributes());
-						*count = 0;
-					}
-					aggregated_metrics.last_recorded = Some(Instant::now());
+			if now.duration_since(aggregated_metrics.last_recorded.counters)
+				>= Duration::from_secs(aggregated_metrics.otel_flush_frequency_secs)
+			{
+				for (counter_name, count) in aggregated_metrics.counter_sums.iter_mut() {
+					let cnt = *count;
+					__self.counters[&counter_name.clone()].add(cnt, &__self.attributes());
+					*count = 0;
 				}
+				aggregated_metrics.last_recorded.counters = Instant::now();
 			}
 		}
 	}
@@ -251,6 +251,7 @@ pub fn initialize(
 	let mut export_period = Duration::from_secs(300);
 	let mut export_timeout = Duration::from_secs(10);
 
+	info!("Origin: {}", origin);
 	if origin != Origin::External {
 		export_period = Duration::from_secs(30);
 		export_timeout = Duration::from_secs(10);
@@ -281,7 +282,11 @@ pub fn initialize(
 		counters,
 		aggregated_metrics: Arc::new(RwLock::new(AggregatedMetrics {
 			counter_sums: Default::default(),
-			last_recorded: None,
+			last_recorded: LastRecorded {
+				counters: Instant::now(),
+				gauge_u64: Instant::now(),
+				gauge_f64: Instant::now(),
+			},
 			gauge_last_value_u64: Default::default(),
 			gauge_averages_f64: Default::default(),
 			otel_flush_frequency_secs,
