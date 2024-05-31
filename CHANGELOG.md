@@ -2,6 +2,7 @@
 
 ## v1.9.0
 
+- Add metric aggregation on client side in order to decrease the telemetry server load
 - Add `avail.light.starts` metric counter which allows measuring number of restarts
 - Add `http_server_port` CLI parameter for setting the http server port. Default HTTP server port set to 7007
 - Optimize expired kademlia records from RocksDB using compaction phase for removal
