@@ -12,6 +12,7 @@ use crate::types::Origin;
 
 pub mod otlp;
 
+#[derive(Debug)]
 pub enum MetricCounter {
 	Starts,
 	SessionBlockCounter,
@@ -39,6 +40,10 @@ impl Display for MetricCounter {
 }
 
 impl MetricCounter {
+	fn is_buffered(&self) -> bool {
+		!matches!(self, MetricCounter::Starts)
+	}
+
 	fn is_allowed(&self, origin: &Origin) -> bool {
 		match (origin, self) {
 			(Origin::External, MetricCounter::Starts) => true,
@@ -70,6 +75,7 @@ impl MetricCounter {
 	}
 }
 
+#[derive(Clone, Debug)]
 pub enum MetricValue {
 	TotalBlockNumber(u32),
 	DHTFetched(f64),
@@ -78,7 +84,7 @@ pub enum MetricValue {
 	NodeRPCFetched(f64),
 	NodeRPCFetchDuration(f64),
 	BlockConfidence(f64),
-	BlockConfidenceTreshold(f64),
+	BlockConfidenceThreshold(f64),
 	RPCCallDuration(f64),
 	DHTPutDuration(f64),
 	DHTPutSuccess(f64),
@@ -116,5 +122,6 @@ impl MetricValue {
 #[async_trait]
 pub trait Metrics {
 	async fn count(&self, counter: MetricCounter);
-	async fn record(&self, value: MetricValue) -> Result<()>;
+	async fn record(&self, value: MetricValue);
+	async fn flush(&self) -> Result<()>;
 }

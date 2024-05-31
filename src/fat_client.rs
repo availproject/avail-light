@@ -84,7 +84,7 @@ pub async fn process_block(
 	metrics.count(MetricCounter::SessionBlockCounter).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
-		.await?;
+		.await;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -168,7 +168,7 @@ pub async fn process_block(
 		.record(MetricValue::RPCCallDuration(
 			partition_rpc_retrieve_time_elapsed.as_secs_f64(),
 		))
-		.await?;
+		.await;
 
 	if rpc_fetched.len() >= dimensions.cols().get().into() {
 		let data_cells = rpc_fetched
@@ -224,12 +224,9 @@ pub async fn run(
 		};
 
 		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
-			if let Err(error) = metrics
+			metrics
 				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
-				.await
-			{
-				error!("Cannot record block processing delay: {}", error);
-			}
+				.await;
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
@@ -382,7 +379,7 @@ mod tests {
 
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
-		mock_metrics.expect_record().returning(|_| Ok(()));
+		mock_metrics.expect_record().returning(|_| ());
 
 		process_block(
 			&mock_client,

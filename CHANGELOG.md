@@ -1,6 +1,10 @@
 # Changelog
 
-## v1.9.0
+## 1.9.1
+
+- Postpone flushing aggregated counters to maintanence step
+
+## [v1.9.0](https://github.com/availproject/avail-light/releases/tag/v1.9.0) - 2024-04-06
 
 - Add metric aggregation on client side in order to decrease the telemetry server load
 - Add `avail.light.starts` metric counter which allows measuring number of restarts

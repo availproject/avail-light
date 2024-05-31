@@ -427,7 +427,7 @@ pub struct RuntimeConfig {
 	pub ot_collector_endpoint: String,
 	pub ot_export_period: u64,
 	pub ot_export_timeout: u64,
-	pub otel_flush_frequency_secs: u64,
+	pub ot_flush_block_interval: u32,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
@@ -830,7 +830,6 @@ pub struct OtelConfig {
 	pub ot_collector_endpoint: String,
 	pub ot_export_period: u64,
 	pub ot_export_timeout: u64,
-	pub otel_flush_frequency_secs: u64,
 }
 
 impl From<&RuntimeConfig> for OtelConfig {
@@ -839,7 +838,6 @@ impl From<&RuntimeConfig> for OtelConfig {
 			ot_collector_endpoint: val.ot_collector_endpoint.clone(),
 			ot_export_period: val.ot_export_period,
 			ot_export_timeout: val.ot_export_timeout,
-			otel_flush_frequency_secs: val.otel_flush_frequency_secs,
 		}
 	}
 }
@@ -870,7 +868,7 @@ impl Default for RuntimeConfig {
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			ot_export_period: 300,
 			ot_export_timeout: 10,
-			otel_flush_frequency_secs: 10,
+			ot_flush_block_interval: 15,
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
