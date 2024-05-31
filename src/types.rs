@@ -425,6 +425,9 @@ pub struct RuntimeConfig {
 	pub log_format_json: bool,
 	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
 	pub ot_collector_endpoint: String,
+	pub ot_export_period: u64,
+	pub ot_export_timeout: u64,
+	pub otel_flush_frequency_secs: u64,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
@@ -821,6 +824,26 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		}
 	}
 }
+
+#[derive(Clone, Debug)]
+pub struct OtelConfig {
+	pub ot_collector_endpoint: String,
+	pub ot_export_period: u64,
+	pub ot_export_timeout: u64,
+	pub otel_flush_frequency_secs: u64,
+}
+
+impl From<&RuntimeConfig> for OtelConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		OtelConfig {
+			ot_collector_endpoint: val.ot_collector_endpoint.clone(),
+			ot_export_period: val.ot_export_period,
+			ot_export_timeout: val.ot_export_timeout,
+			otel_flush_frequency_secs: val.otel_flush_frequency_secs,
+		}
+	}
+}
+
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
@@ -845,6 +868,9 @@ impl Default for RuntimeConfig {
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
+			ot_export_period: 300,
+			ot_export_timeout: 10,
+			otel_flush_frequency_secs: 10,
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,

@@ -11,7 +11,7 @@ use avail_light::{
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
-	types::{CliOpts, IdentityConfig, LibP2PConfig, RuntimeConfig, State},
+	types::{CliOpts, IdentityConfig, LibP2PConfig, OtelConfig, RuntimeConfig, State},
 };
 use clap::Parser;
 use color_eyre::{
@@ -153,11 +153,13 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			.unwrap_or("n/a".to_string()),
 	};
 
+	let cfg_otel: OtelConfig = (&cfg).into();
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
 			cfg.ot_collector_endpoint.clone(),
 			metric_attributes,
 			cfg.origin.clone(),
+			cfg_otel,
 		)
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
