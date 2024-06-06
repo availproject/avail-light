@@ -49,9 +49,9 @@ pub async fn process_block(
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>> {
-	metrics.count(MetricCounter::SessionBlockCounter).await;
+	metrics.count(MetricCounter::SessionBlocks).await;
 	metrics
-		.record(MetricValue::TotalBlockNumber(header.number))
+		.record(MetricValue::BlockHeight(header.number))
 		.await;
 
 	let block_number = header.number;
@@ -124,14 +124,12 @@ pub async fn process_block(
 				.await;
 
 			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
-				metrics
-					.record(MetricValue::NodeRPCFetched(rpc_fetched))
-					.await;
+				metrics.record(MetricValue::RPCFetched(rpc_fetched)).await;
 			}
 
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
 				metrics
-					.record(MetricValue::NodeRPCFetchDuration(rpc_fetch_duration))
+					.record(MetricValue::RPCFetchDuration(rpc_fetch_duration))
 					.await;
 			}
 			(positions.len(), fetched.len(), unfetched.len())

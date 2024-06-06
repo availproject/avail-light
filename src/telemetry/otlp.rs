@@ -1,3 +1,8 @@
+use super::{MetricCounter, MetricValue};
+use crate::{
+	telemetry::MetricName,
+	types::{Origin, OtelConfig},
+};
 use async_trait::async_trait;
 use color_eyre::Result;
 use opentelemetry_api::{
@@ -9,18 +14,14 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
-use crate::types::{Origin, OtelConfig};
-
-use super::{MetricCounter, MetricValue};
-
 const ATTRIBUTE_NUMBER: usize = 7;
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
-// That can be optimized by using dedicated data structure with proper bounds .
+// That can be optimized by using dedicated data structure with proper bounds.
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	counters: HashMap<String, Counter<u64>>,
+	counters: HashMap<&'static str, Counter<u64>>,
 	attributes: MetricAttributes,
 	metric_buffer: Arc<Mutex<Vec<MetricValue>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
@@ -80,30 +81,38 @@ impl From<MetricValue> for Record {
 		use MetricValue::*;
 		use Record::*;
 
+		let name = value.name();
+
 		match value {
-			TotalBlockNumber(number) => MaxU64("total_block_number", number as u64),
-			DHTFetched(number) => AvgF64("dht_fetched", number),
-			DHTFetchedPercentage(number) => AvgF64("dht_fetched_percentage", number),
-			DHTFetchDuration(number) => AvgF64("dht_fetch_duration", number),
-			NodeRPCFetched(number) => AvgF64("node_rpc_fetched", number),
-			NodeRPCFetchDuration(number) => AvgF64("node_rpc_fetch_duration", number),
-			BlockConfidence(number) => AvgF64("block_confidence", number),
-			BlockConfidenceThreshold(number) => AvgF64("block_confidence_threshold", number),
-			RPCCallDuration(number) => AvgF64("rpc_call_duration", number),
-			DHTPutDuration(number) => AvgF64("dht_put_duration", number),
-			DHTPutSuccess(number) => AvgF64("dht_put_success", number),
-			ConnectedPeersNum(number) => AvgF64("connected_peers_num", number as f64),
-			HealthCheck() => MaxU64("up", 1),
-			BlockProcessingDelay(number) => AvgF64("block_processing_delay", number),
-			ReplicationFactor(number) => AvgF64("replication_factor", number as f64),
-			QueryTimeout(number) => AvgF64("query_timeout", number as f64),
-			PingLatency(number) => AvgF64("ping_latency", number),
+			BlockHeight(number) => MaxU64(name, number as u64),
+			BlockConfidence(number) => AvgF64(name, number),
+			BlockConfidenceThreshold(number) => AvgF64(name, number),
+			BlockProcessingDelay(number) => AvgF64(name, number),
+
+			DHTReplicationFactor(number) => AvgF64(name, number as f64),
+
+			DHTFetched(number) => AvgF64(name, number),
+			DHTFetchedPercentage(number) => AvgF64(name, number),
+			DHTFetchDuration(number) => AvgF64(name, number),
+			DHTPutDuration(number) => AvgF64(name, number),
+			DHTPutSuccess(number) => AvgF64(name, number),
+
+			DHTConnectedPeers(number) => AvgF64(name, number as f64),
+			DHTQueryTimeout(number) => AvgF64(name, number as f64),
+			DHTPingLatency(number) => AvgF64(name, number),
+
+			RPCFetched(number) => AvgF64(name, number),
+			RPCFetchDuration(number) => AvgF64(name, number),
+			RPCCallDuration(number) => AvgF64(name, number),
+
+			Up() => MaxU64(name, 1),
+
 			#[cfg(feature = "crawl")]
-			CrawlCellsSuccessRate(number) => AvgF64("crawl_cells_success_rate", number),
+			CrawlCellsSuccessRate(number) => AvgF64(name, number),
 			#[cfg(feature = "crawl")]
-			CrawlRowsSuccessRate(number) => AvgF64("crawl_rows_success_rate", number),
+			CrawlRowsSuccessRate(number) => AvgF64(name, number),
 			#[cfg(feature = "crawl")]
-			CrawlBlockDelay(number) => AvgF64("crawl_block_delay", number),
+			CrawlBlockDelay(number) => AvgF64(name, number),
 		}
 	}
 }
@@ -111,11 +120,11 @@ impl From<MetricValue> for Record {
 /// Counts occurrences of counters in the provided buffer.
 /// Returned value is a `HashMap` where the keys are the counter name,
 /// and values are the counts of those counters.
-fn flatten_counters(buffer: &[impl ToString]) -> HashMap<String, u64> {
+fn flatten_counters(buffer: &[impl MetricName]) -> HashMap<&'static str, u64> {
 	let mut result = HashMap::new();
 	for counter in buffer {
 		result
-			.entry(counter.to_string())
+			.entry(counter.name())
 			.and_modify(|count| *count += 1)
 			.or_insert(1);
 	}
@@ -160,7 +169,7 @@ impl super::Metrics for Metrics {
 			return;
 		}
 		if !counter.is_buffered() {
-			self.counters[&counter.to_string()].add(1, &self.attributes());
+			self.counters[&counter.name()].add(1, &self.attributes());
 			return;
 		}
 		let mut counter_buffer = self.counter_buffer.lock().await;
@@ -204,6 +213,23 @@ impl super::Metrics for Metrics {
 	}
 }
 
+fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<u64>> {
+	[
+		MetricCounter::Starts,
+		MetricCounter::SessionBlocks,
+		MetricCounter::OutgoingConnectionErrors,
+		MetricCounter::IncomingConnectionErrors,
+		MetricCounter::IncomingConnections,
+		MetricCounter::EstablishedConnections,
+		MetricCounter::IncomingPutRecord,
+		MetricCounter::IncomingGetRecord,
+	]
+	.iter()
+	.filter(|counter| MetricCounter::is_allowed(counter, &origin))
+	.map(|counter| (counter.name(), meter.u64_counter(counter.name()).init()))
+	.collect()
+}
+
 pub fn initialize(
 	endpoint: String,
 	attributes: MetricAttributes,
@@ -230,7 +256,7 @@ pub fn initialize(
 	let meter = global::meter("avail_light_client");
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = MetricCounter::init_counters(meter.clone(), origin);
+	let counters = init_counters(meter.clone(), origin);
 	Ok(Metrics {
 		meter,
 		attributes,
@@ -252,96 +278,96 @@ mod tests {
 
 		let one = flatten_counters(&[Starts]);
 		let mut expected = HashMap::new();
-		expected.insert("avail.light.starts".to_string(), 1);
+		expected.insert(Starts.name(), 1);
 		assert_eq!(one, expected);
 
 		let two = flatten_counters(&[Starts, Starts]);
 		let mut expected = HashMap::new();
-		expected.insert("avail.light.starts".to_string(), 2);
+		expected.insert(Starts.name(), 2);
 		assert_eq!(two, expected);
 
 		let buffer = vec![
 			Starts,
-			SessionBlockCounter,
+			SessionBlocks,
 			IncomingConnectionErrors,
 			IncomingConnectionErrors,
 			IncomingConnections,
 			Starts,
-			IncomingGetRecordCounter,
-			IncomingPutRecordCounter,
+			IncomingGetRecord,
+			IncomingPutRecord,
 			Starts,
 		];
 		let result = flatten_counters(&buffer);
 		let mut expected = HashMap::new();
-		expected.insert("avail.light.starts".to_string(), 3);
-		expected.insert("session_block_counter".to_string(), 1);
-		expected.insert("incoming_connection_errors".to_string(), 2);
-		expected.insert("incoming_connections".to_string(), 1);
-		expected.insert("incoming_get_record_counter".to_string(), 1);
-		expected.insert("incoming_put_record_counter".to_string(), 1);
+		expected.insert(Starts.name(), 3);
+		expected.insert(SessionBlocks.name(), 1);
+		expected.insert(IncomingConnectionErrors.name(), 2);
+		expected.insert(IncomingConnections.name(), 1);
+		expected.insert(IncomingGetRecord.name(), 1);
+		expected.insert(IncomingPutRecord.name(), 1);
 		assert_eq!(result, expected);
 	}
 
 	#[test]
 	fn test_flatten_metrics() {
-		let (u64_metrics, f64_metrics) = flatten_metrics(&[] as &[MetricValue]);
-		assert!(u64_metrics.is_empty());
-		assert!(f64_metrics.is_empty());
+		let (m_u64, m_f64) = flatten_metrics(&[] as &[MetricValue]);
+		assert!(m_u64.is_empty());
+		assert!(m_f64.is_empty());
 
 		let buffer = &[MetricValue::BlockConfidence(90.0)];
-		let (u64_metrics, f64_metrics) = flatten_metrics(buffer);
-		assert!(u64_metrics.is_empty());
-		assert_eq!(f64_metrics.len(), 1);
-		assert_eq!(*f64_metrics.get("block_confidence").unwrap(), 90.0);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
+		assert!(m_u64.is_empty());
+		assert_eq!(m_f64.len(), 1);
+		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&90.0));
 
 		let buffer = &[
 			MetricValue::BlockConfidence(90.0),
-			MetricValue::TotalBlockNumber(1),
+			MetricValue::BlockHeight(1),
 			MetricValue::BlockConfidence(93.0),
 		];
-		let (u64_metrics, f64_metrics) = flatten_metrics(buffer);
-		assert_eq!(u64_metrics.len(), 1);
-		assert_eq!(*u64_metrics.get("total_block_number").unwrap(), 1);
-		assert_eq!(f64_metrics.len(), 1);
-		assert_eq!(*f64_metrics.get("block_confidence").unwrap(), 91.5);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
+		assert_eq!(m_u64.len(), 1);
+		assert_eq!(m_u64.get("avail.light.block.height"), Some(&1));
+		assert_eq!(m_f64.len(), 1);
+		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&91.5));
 
 		let buffer = &[
 			MetricValue::BlockConfidence(90.0),
-			MetricValue::TotalBlockNumber(1),
+			MetricValue::BlockHeight(1),
 			MetricValue::BlockConfidence(93.0),
 			MetricValue::BlockConfidence(93.0),
 			MetricValue::BlockConfidence(99.0),
-			MetricValue::TotalBlockNumber(10),
-			MetricValue::TotalBlockNumber(1),
+			MetricValue::BlockHeight(10),
+			MetricValue::BlockHeight(1),
 		];
-		let (u64_metrics, f64_metrics) = flatten_metrics(buffer);
-		assert_eq!(u64_metrics.len(), 1);
-		assert_eq!(*u64_metrics.get("total_block_number").unwrap(), 10);
-		assert_eq!(f64_metrics.len(), 1);
-		assert_eq!(*f64_metrics.get("block_confidence").unwrap(), 93.75);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
+		assert_eq!(m_u64.len(), 1);
+		assert_eq!(m_u64.get("avail.light.block.height"), Some(&10));
+		assert_eq!(m_f64.len(), 1);
+		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&93.75));
 
 		let buffer = &[
-			MetricValue::ConnectedPeersNum(90),
-			MetricValue::HealthCheck(),
+			MetricValue::DHTConnectedPeers(90),
+			MetricValue::Up(),
 			MetricValue::DHTFetchDuration(1.0),
 			MetricValue::DHTPutSuccess(10.0),
 			MetricValue::BlockConfidence(99.0),
-			MetricValue::HealthCheck(),
+			MetricValue::Up(),
 			MetricValue::DHTFetchDuration(2.0),
 			MetricValue::DHTFetchDuration(2.1),
-			MetricValue::TotalBlockNumber(999),
-			MetricValue::HealthCheck(),
-			MetricValue::ConnectedPeersNum(80),
+			MetricValue::BlockHeight(999),
+			MetricValue::Up(),
+			MetricValue::DHTConnectedPeers(80),
 			MetricValue::BlockConfidence(98.0),
 		];
-		let (u64_metrics, f64_metrics) = flatten_metrics(buffer);
-		assert_eq!(u64_metrics.len(), 2);
-		assert_eq!(*u64_metrics.get("up").unwrap(), 1);
-		assert_eq!(*u64_metrics.get("total_block_number").unwrap(), 999);
-		assert_eq!(f64_metrics.len(), 4);
-		assert_eq!(*f64_metrics.get("dht_put_success").unwrap(), 10.0);
-		assert_eq!(*f64_metrics.get("dht_fetch_duration").unwrap(), 1.7);
-		assert_eq!(*f64_metrics.get("block_confidence").unwrap(), 98.5);
-		assert_eq!(*f64_metrics.get("connected_peers_num").unwrap(), 85.0);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
+		assert_eq!(m_u64.len(), 2);
+		assert_eq!(m_u64.get("avail.light.up"), Some(&1));
+		assert_eq!(m_u64.get("avail.light.block.height"), Some(&999));
+		assert_eq!(m_f64.len(), 4);
+		assert_eq!(m_f64.get("avail.light.dht.put_success"), Some(&10.0));
+		assert_eq!(m_f64.get("avail.light.dht.fetch_duration"), Some(&1.7));
+		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&98.5));
+		assert_eq!(m_f64.get("avail.light.dht.connected_peers"), Some(&85.0));
 	}
 }

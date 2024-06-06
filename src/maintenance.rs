@@ -58,7 +58,7 @@ pub async fn process_block(
 	let connected_peers = p2p_client.list_connected_peers().await?;
 	debug!("Connected peers: {:?}", connected_peers);
 
-	let peers_num_metric = MetricValue::ConnectedPeersNum(peers_num);
+	let peers_num_metric = MetricValue::DHTConnectedPeers(peers_num);
 	metrics.record(peers_num_metric).await;
 
 	metrics
@@ -67,16 +67,16 @@ pub async fn process_block(
 		))
 		.await;
 	metrics
-		.record(MetricValue::ReplicationFactor(
+		.record(MetricValue::DHTReplicationFactor(
 			static_config_params.replication_factor,
 		))
 		.await;
 	metrics
-		.record(MetricValue::QueryTimeout(
+		.record(MetricValue::DHTQueryTimeout(
 			static_config_params.query_timeout,
 		))
 		.await;
-	metrics.record(MetricValue::HealthCheck()).await;
+	metrics.record(MetricValue::Up()).await;
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())

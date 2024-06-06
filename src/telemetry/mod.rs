@@ -1,40 +1,38 @@
-use std::{
-	collections::HashMap,
-	fmt::{self, Display, Formatter},
-};
-
+use crate::types::Origin;
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;
-use opentelemetry_api::metrics::{Counter, Meter};
-
-use crate::types::Origin;
 
 pub mod otlp;
 
 #[derive(Debug)]
 pub enum MetricCounter {
 	Starts,
-	SessionBlockCounter,
+	SessionBlocks,
 	OutgoingConnectionErrors,
 	IncomingConnectionErrors,
 	IncomingConnections,
 	EstablishedConnections,
-	IncomingPutRecordCounter,
-	IncomingGetRecordCounter,
+	IncomingPutRecord,
+	IncomingGetRecord,
 }
 
-impl Display for MetricCounter {
-	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+pub trait MetricName {
+	fn name(&self) -> &'static str;
+}
+
+impl MetricName for MetricCounter {
+	fn name(&self) -> &'static str {
+		use MetricCounter::*;
 		match self {
-			MetricCounter::Starts => write!(f, "avail.light.starts"),
-			MetricCounter::SessionBlockCounter => write!(f, "session_block_counter"),
-			MetricCounter::OutgoingConnectionErrors => write!(f, "outgoing_connection_errors"),
-			MetricCounter::IncomingConnectionErrors => write!(f, "incoming_connection_errors"),
-			MetricCounter::IncomingConnections => write!(f, "incoming_connections"),
-			MetricCounter::EstablishedConnections => write!(f, "established_connections"),
-			MetricCounter::IncomingPutRecordCounter => write!(f, "incoming_put_record_counter"),
-			MetricCounter::IncomingGetRecordCounter => write!(f, "incoming_get_record_counter"),
+			Starts => "avail.light.starts",
+			SessionBlocks => "avail.light.session_blocks",
+			OutgoingConnectionErrors => "avail.light.outgoing_connection_errors",
+			IncomingConnectionErrors => "avail.light.incoming_connection_errors",
+			IncomingConnections => "avail.light.incoming_connections",
+			EstablishedConnections => "avail.light.established_connections",
+			IncomingPutRecord => "avail.light.incoming_put_record",
+			IncomingGetRecord => "avail.light.incoming_get_record",
 		}
 	}
 }
@@ -51,55 +49,76 @@ impl MetricCounter {
 			(_, _) => true,
 		}
 	}
-
-	fn init_counters(meter: Meter, origin: Origin) -> HashMap<String, Counter<u64>> {
-		[
-			MetricCounter::Starts,
-			MetricCounter::SessionBlockCounter,
-			MetricCounter::OutgoingConnectionErrors,
-			MetricCounter::IncomingConnectionErrors,
-			MetricCounter::IncomingConnections,
-			MetricCounter::EstablishedConnections,
-			MetricCounter::IncomingPutRecordCounter,
-			MetricCounter::IncomingGetRecordCounter,
-		]
-		.iter()
-		.filter(|counter| MetricCounter::is_allowed(counter, &origin))
-		.map(|counter| {
-			(
-				counter.to_string(),
-				meter.u64_counter(counter.to_string()).init(),
-			)
-		})
-		.collect()
-	}
 }
 
 #[derive(Clone, Debug)]
 pub enum MetricValue {
-	TotalBlockNumber(u32),
+	BlockHeight(u32),
+	BlockConfidence(f64),
+	BlockConfidenceThreshold(f64),
+	BlockProcessingDelay(f64),
+
+	DHTReplicationFactor(u16),
+
 	DHTFetched(f64),
 	DHTFetchedPercentage(f64),
 	DHTFetchDuration(f64),
-	NodeRPCFetched(f64),
-	NodeRPCFetchDuration(f64),
-	BlockConfidence(f64),
-	BlockConfidenceThreshold(f64),
-	RPCCallDuration(f64),
 	DHTPutDuration(f64),
 	DHTPutSuccess(f64),
-	ConnectedPeersNum(usize),
-	HealthCheck(),
-	BlockProcessingDelay(f64),
-	PingLatency(f64),
-	ReplicationFactor(u16),
-	QueryTimeout(u32),
+
+	DHTConnectedPeers(usize),
+	DHTQueryTimeout(u32),
+	DHTPingLatency(f64),
+
+	RPCFetched(f64),
+	RPCFetchDuration(f64),
+	RPCCallDuration(f64),
+
+	Up(),
+
 	#[cfg(feature = "crawl")]
 	CrawlCellsSuccessRate(f64),
 	#[cfg(feature = "crawl")]
 	CrawlRowsSuccessRate(f64),
 	#[cfg(feature = "crawl")]
 	CrawlBlockDelay(f64),
+}
+
+impl MetricName for MetricValue {
+	fn name(&self) -> &'static str {
+		use MetricValue::*;
+
+		match self {
+			BlockHeight(_) => "avail.light.block.height",
+			BlockConfidence(_) => "avail.light.block.confidence",
+			BlockConfidenceThreshold(_) => "avail.light.block.confidence_threshold",
+			BlockProcessingDelay(_) => "avail.light.block.processing_delay",
+
+			DHTReplicationFactor(_) => "avail.light.dht.replication_factor",
+			DHTFetched(_) => "avail.light.dht.fetched",
+			DHTFetchedPercentage(_) => "avail.light.dht.fetched_percentage",
+			DHTFetchDuration(_) => "avail.light.dht.fetch_duration",
+			DHTPutDuration(_) => "avail.light.dht.put_duration",
+			DHTPutSuccess(_) => "avail.light.dht.put_success",
+
+			DHTConnectedPeers(_) => "avail.light.dht.connected_peers",
+			DHTQueryTimeout(_) => "avail.light.dht.query_timeout",
+			DHTPingLatency(_) => "avail.light.dht.ping_latency",
+
+			RPCFetched(_) => "avail.light.rpc.fetched",
+			RPCFetchDuration(_) => "avail.light.rpc.fetch_duration",
+			RPCCallDuration(_) => "avail.light.rpc.call_duration",
+
+			Up() => "avail.light.up",
+
+			#[cfg(feature = "crawl")]
+			CrawlCellsSuccessRate(_) => "avail.light.crawl.cells_success_rate",
+			#[cfg(feature = "crawl")]
+			CrawlRowsSuccessRate(_) => "avail.light.crawl.rows_success_rate",
+			#[cfg(feature = "crawl")]
+			CrawlBlockDelay(_) => "avail.light.crawl.block_delay",
+		}
+	}
 }
 
 impl MetricValue {
@@ -111,7 +130,7 @@ impl MetricValue {
 				self,
 				MetricValue::DHTFetchedPercentage(_)
 					| MetricValue::BlockConfidence(_)
-					| MetricValue::HealthCheck()
+					| MetricValue::Up()
 			),
 			_ => true,
 		}
