@@ -247,10 +247,10 @@ impl EventLoop {
 					},
 					kad::Event::InboundRequest { request } => match request {
 						InboundRequest::GetRecord { .. } => {
-							metrics.count(MetricCounter::IncomingGetRecordCounter).await;
+							metrics.count(MetricCounter::IncomingGetRecord).await;
 						},
 						InboundRequest::PutRecord { source, record, .. } => {
-							metrics.count(MetricCounter::IncomingPutRecordCounter).await;
+							metrics.count(MetricCounter::IncomingPutRecord).await;
 							match record {
 								Some(mut record) => {
 									let ttl = &self.event_loop_config.kad_record_ttl;
@@ -459,7 +459,7 @@ impl EventLoop {
 			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { result, .. })) => {
 				if let Ok(rtt) = result {
 					let _ = metrics
-						.record(MetricValue::PingLatency(rtt.as_millis() as f64))
+						.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
 						.await;
 				}
 			},

@@ -81,9 +81,9 @@ pub async fn process_block(
 	received_at: Instant,
 	partition: Partition,
 ) -> Result<()> {
-	metrics.count(MetricCounter::SessionBlockCounter).await;
+	metrics.count(MetricCounter::SessionBlocks).await;
 	metrics
-		.record(MetricValue::TotalBlockNumber(header.number))
+		.record(MetricValue::BlockHeight(header.number))
 		.await;
 
 	let block_number = header.number;

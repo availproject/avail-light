@@ -2,6 +2,7 @@
 
 ## 1.9.1
 
+- Introduce `avail.light` namespace to the metrics
 - Postpone flushing aggregated counters to maintanence step
 
 ## [v1.9.0](https://github.com/availproject/avail-light/releases/tag/v1.9.0) - 2024-04-06
