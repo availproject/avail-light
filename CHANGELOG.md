@@ -2,6 +2,7 @@
 
 ## 1.9.1
 
+- Add `hex` network support to the `--network` CLI parameter
 - Introduce `avail.light` namespace to the metrics
 - Postpone flushing aggregated counters to maintanence step
 

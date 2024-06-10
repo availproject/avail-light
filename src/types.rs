@@ -911,20 +911,23 @@ impl Default for RuntimeConfig {
 #[derive(ValueEnum, Clone)]
 pub enum Network {
 	Local,
+	Hex,
 	Turing,
 }
 
 impl Network {
-	fn peer_id(&self) -> &str {
+	fn bootstrap_peer_id(&self) -> &str {
 		match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
+			Network::Hex => "12D3KooWBMwfo5qyoLQDRat86kFcGAiJ2yxKM63rXHMw2rDuNZMA",
 			Network::Turing => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		}
 	}
 
-	fn multiaddr(&self) -> &str {
+	fn bootstrap_multiaddrr(&self) -> &str {
 		match self {
 			Network::Local => "/ip4/127.0.0.1/tcp/39000",
+			Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
 			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
 		}
 	}
@@ -932,6 +935,7 @@ impl Network {
 	fn full_node_ws(&self) -> &str {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
+			Network::Hex => "wss://rpc-hex-devnet.avail.tools/ws",
 			Network::Turing => "wss://turing-rpc.avail.so/ws",
 		}
 	}
@@ -939,6 +943,7 @@ impl Network {
 	fn ot_collector_endpoint(&self) -> &str {
 		match self {
 			Network::Local => "http://127.0.0.1:4317",
+			Network::Hex => "http://otel.lightclient.hex.avail.so:4317",
 			Network::Turing => "http://otel.lightclient.turing.avail.so:4317",
 		}
 	}
@@ -946,6 +951,7 @@ impl Network {
 	fn genesis_hash(&self) -> &str {
 		match self {
 			Network::Local => "DEV",
+			Network::Hex => "9d5ea6a5d7631e13028b684a1a0078e3970caa78bd677eaecaf2160304f174fb",
 			Network::Turing => "d3d2f3a3495dc597434a99d7d449ebad6616db45e4e4f178f31cc6fa14378b70",
 		}
 	}
@@ -990,9 +996,9 @@ impl RuntimeConfig {
 		// Flags override the config parameters
 		if let Some(network) = &opts.network {
 			let bootstrap: (PeerId, Multiaddr) = (
-				PeerId::from_str(network.peer_id())
+				PeerId::from_str(network.bootstrap_peer_id())
 					.wrap_err("unable to parse default bootstrap peerID")?,
-				Multiaddr::from_str(network.multiaddr())
+				Multiaddr::from_str(network.bootstrap_multiaddrr())
 					.wrap_err("unable to parse default bootstrap multi-address")?,
 			);
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
