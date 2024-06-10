@@ -1,12 +1,12 @@
 # Changelog
 
-## 1.9.1
+## [1.9.1](https://github.com/availproject/avail-light/releases/tag/v1.9.1) - 2024-06-10
 
 - Add `hex` network support to the `--network` CLI parameter
 - Introduce `avail.light` namespace to the metrics
 - Postpone flushing aggregated counters to maintanence step
 
-## [v1.9.0](https://github.com/availproject/avail-light/releases/tag/v1.9.0) - 2024-04-06
+## [v1.9.0](https://github.com/availproject/avail-light/releases/tag/v1.9.0) - 2024-06-04
 
 - Add metric aggregation on client side in order to decrease the telemetry server load
 - Add `avail.light.starts` metric counter which allows measuring number of restarts
