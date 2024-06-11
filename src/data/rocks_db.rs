@@ -1,8 +1,5 @@
 use crate::{
-	data::{
-		self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF,
-		FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF, STATE_CF,
-	},
+	data::{self, Key, APP_DATA_CF, FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF},
 	network::p2p::ExpirationCompactionFilterFactory,
 };
 use codec::{Decode, Encode};
@@ -22,10 +19,7 @@ impl RocksDB {
 		kademlia_store_cf_opts
 			.set_compaction_filter_factory(ExpirationCompactionFilterFactory::default());
 		let cf_opts = vec![
-			ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, Options::default()),
-			ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, Options::default()),
 			ColumnFamilyDescriptor::new(APP_DATA_CF, Options::default()),
-			ColumnFamilyDescriptor::new(STATE_CF, Options::default()),
 			ColumnFamilyDescriptor::new(KADEMLIA_STORE_CF, kademlia_store_cf_opts),
 		];
 
@@ -48,14 +42,13 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 				format!("{app_id}:{block_number}").into_bytes(),
 			),
 			Key::BlockHeader(block_number) => {
-				(Some(BLOCK_HEADER_CF), block_number.to_be_bytes().to_vec())
+				(Some(APP_DATA_CF), block_number.to_be_bytes().to_vec())
 			},
-			Key::VerifiedCellCount(block_number) => (
-				Some(CONFIDENCE_FACTOR_CF),
-				block_number.to_be_bytes().to_vec(),
-			),
+			Key::VerifiedCellCount(block_number) => {
+				(Some(APP_DATA_CF), block_number.to_be_bytes().to_vec())
+			},
 			Key::FinalitySyncCheckpoint => (
-				Some(STATE_CF),
+				Some(APP_DATA_CF),
 				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
 			),
 		}

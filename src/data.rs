@@ -28,17 +28,8 @@ pub trait Database {
 	fn delete(&self, key: Key) -> Result<()>;
 }
 
-/// Column family for confidence factor
-pub const CONFIDENCE_FACTOR_CF: &str = "avail_light_confidence_factor_cf";
-
-/// Column family for block header
-pub const BLOCK_HEADER_CF: &str = "avail_light_block_header_cf";
-
 /// Column family for app data
 pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
-
-/// Column family for state
-pub const STATE_CF: &str = "avail_light_state_cf";
 
 /// Column family for Kademlia store
 pub const KADEMLIA_STORE_CF: &str = "avail_light_kademlia_store_cf";
