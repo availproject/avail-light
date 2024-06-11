@@ -179,3 +179,23 @@ jobs:
           tags: availj/avail-light:${{ steps.prepare.outputs.tag_name }}
           build-args: |
             AVAIL_TAG=${{ steps.prepare.outputs.tag_name }}
+
+  lc_external_deployment:
+    needs:
+      - binary_publish
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Trigger repository dispatch for LC deployment
+        shell: bash
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            ${{ secrets.DEPLOY_URL}} \
+            -d "{\"event_type\": \"lc_external_deployment\", \"client_payload\": {\"tag\": \"${{ env.TAG_NAME }}\"}}" \
+            | grep -q "204"
