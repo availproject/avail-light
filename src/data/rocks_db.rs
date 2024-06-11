@@ -38,17 +38,18 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 	fn from(key: Key) -> Self {
 		match key {
 			Key::AppData(app_id, block_number) => (
-				Some(APP_DATA_CF),
+				Some(APP_STATE_CF),
 				format!("{app_id}:{block_number}").into_bytes(),
 			),
-			Key::BlockHeader(block_number) => {
-				(Some(APP_DATA_CF), block_number.to_be_bytes().to_vec())
-			},
+			Key::BlockHeader(block_number) => (
+				Some(APP_STATE_CF),
+				format!("{BLOCK_HEADER_KEY_PREFIX}:{block_number}").into_bytes(),
+			),
 			Key::VerifiedCellCount(block_number) => {
-				(Some(APP_DATA_CF), block_number.to_be_bytes().to_vec())
+				(Some(APP_STATE_CF), block_number.to_be_bytes().to_vec())
 			},
 			Key::FinalitySyncCheckpoint => (
-				Some(APP_DATA_CF),
+				Some(APP_STATE_CF),
 				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
 			),
 		}
