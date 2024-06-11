@@ -1,6 +1,4 @@
-use crate::data::{
-	Database, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, FINALITY_SYNC_CHECKPOINT_KEY,
-};
+use crate::data::{Database, Key, APP_DATA_CF, FINALITY_SYNC_CHECKPOINT_KEY};
 use color_eyre::eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -59,11 +57,9 @@ impl From<Key> for HashMapKey {
 			Key::AppData(app_id, block_number) => {
 				HashMapKey(format!("{APP_DATA_CF}:{app_id}:{block_number}"))
 			},
-			Key::BlockHeader(block_number) => {
-				HashMapKey(format!("{BLOCK_HEADER_CF}:{block_number}"))
-			},
+			Key::BlockHeader(block_number) => HashMapKey(format!("{APP_DATA_CF}:{block_number}")),
 			Key::VerifiedCellCount(block_number) => {
-				HashMapKey(format!("{CONFIDENCE_FACTOR_CF}:{block_number}"))
+				HashMapKey(format!("{APP_DATA_CF}:{block_number}"))
 			},
 			Key::FinalitySyncCheckpoint => HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string()),
 		}
