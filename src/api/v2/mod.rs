@@ -54,11 +54,13 @@ fn version_route(
 fn status_route(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
+		.and(with_db(db))
 		.map(handlers::status)
 }
 
@@ -153,6 +155,7 @@ fn ws_route(
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
+	db: impl Database + Clone + Send + 'static,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "ws" / String)
 		.and(warp::ws())
@@ -161,6 +164,7 @@ fn ws_route(
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || submitter.clone()))
 		.and(warp::any().map(move || state.clone()))
+		.and(with_db(db))
 		.and_then(handlers::ws)
 }
 
@@ -209,9 +213,9 @@ pub fn routes(
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	identity_config: IdentityConfig,
-	rpc_client: Client,
+	rpc_client: Client<impl Database + Send + Sync + Clone + 'static>,
 	ws_clients: WsClients,
-	db: impl Database + Clone + Send,
+	db: impl Database + Clone + Send + 'static,
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
@@ -230,7 +234,7 @@ pub fn routes(
 	});
 
 	version_route(version.clone())
-		.or(status_route(config.clone(), state.clone()))
+		.or(status_route(config.clone(), state.clone(), db.clone()))
 		.or(block_route(config.clone(), state.clone(), db.clone()))
 		.or(block_header_route(
 			config.clone(),
@@ -240,7 +244,14 @@ pub fn routes(
 		.or(block_data_route(config.clone(), state.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
-		.or(ws_route(ws_clients, version, config, submitter, state))
+		.or(ws_route(
+			ws_clients,
+			version,
+			config,
+			submitter,
+			state,
+			db.clone(),
+		))
 		.or(p2p_local_info_route(p2p_client.clone()))
 		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.recover(handle_rejection)
@@ -254,8 +265,10 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
-		data::Key,
-		data::{mem_db, Database},
+		data::{
+			mem_db::{self, MemoryDB},
+			Database, Key,
+		},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
@@ -306,7 +319,8 @@ mod tests {
 	#[tokio::test]
 	async fn status_route_defaults() {
 		let state = Arc::new(Mutex::new(State::default()));
-		let route = super::status_route(RuntimeConfig::default(), state);
+		let db = MemoryDB::default();
+		let route = super::status_route(RuntimeConfig::default(), state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -333,6 +347,7 @@ mod tests {
 			..Default::default()
 		};
 		let state = Arc::new(Mutex::new(State::default()));
+		let db = MemoryDB::default();
 		{
 			let mut state = state.lock().unwrap();
 			state.latest = 30;
@@ -347,7 +362,7 @@ mod tests {
 			state.sync_data_verified.set(18);
 		}
 
-		let route = super::status_route(runtime_config, state);
+		let route = super::status_route(runtime_config, state, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -760,12 +775,14 @@ mod tests {
 				.await;
 
 			let state = Arc::new(Mutex::new(State::default()));
+			let db = MemoryDB::default();
 			let route = super::ws_route(
 				clients.clone(),
 				v1(),
 				config.clone(),
 				submitter.map(Arc::new),
 				state.clone(),
+				db,
 			);
 			let ws_client = warp::test::ws()
 				.path(&format!("/v2/ws/{client_uuid}"))
