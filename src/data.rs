@@ -35,6 +35,8 @@ pub const APP_STATE_CF: &str = "app_state_cf";
 pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
 
 /// Keys predefined for persistance:
+/// App ID prefix used with App Data key
+const APP_ID_PREFIX: &str = "app_id";
 /// Prefix used with current Block Header key
 const BLOCK_HEADER_KEY_PREFIX: &str = "block_header";
 /// Prefix used with Verified Cell Count key

@@ -39,7 +39,7 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 		match key {
 			Key::AppData(app_id, block_number) => (
 				Some(APP_STATE_CF),
-				format!("{app_id}:{block_number}").into_bytes(),
+				format!("{APP_ID_PREFIX}:{app_id}:{block_number}").into_bytes(),
 			),
 			Key::BlockHeader(block_number) => (
 				Some(APP_STATE_CF),
