@@ -56,15 +56,15 @@ impl Database for MemoryDB {
 impl From<Key> for HashMapKey {
 	fn from(key: Key) -> Self {
 		match key {
-			Key::AppData(app_id, block_number) => {
-				HashMapKey(format!("{APP_STATE_CF}:{app_id}:{block_number}"))
-			},
+			Key::AppData(app_id, block_number) => HashMapKey(format!(
+				"{APP_STATE_CF}:{APP_ID_PREFIX}:{app_id}:{block_number}"
+			)),
 			Key::BlockHeader(block_number) => HashMapKey(format!(
 				"{APP_STATE_CF}:{BLOCK_HEADER_KEY_PREFIX}:{block_number}"
 			)),
-			Key::VerifiedCellCount(block_number) => {
-				HashMapKey(format!("{APP_STATE_CF}:{block_number}"))
-			},
+			Key::VerifiedCellCount(block_number) => HashMapKey(format!(
+				"{APP_STATE_CF}:{VERIFIED_CELL_COUNT_PREFIX}:{block_number}"
+			)),
 			Key::FinalitySyncCheckpoint => HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string()),
 			Key::RpcNode => HashMapKey(CONNECTED_RPC_NODE_KEY.to_string()),
 		}
