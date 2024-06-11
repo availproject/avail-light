@@ -24,6 +24,7 @@ use std::fs;
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::ops::Range;
 use std::str::FromStr;
+use std::string::ToString;
 use std::time::{Duration, Instant};
 use subxt_signer::bip39::{Language, Mnemonic};
 use subxt_signer::sr25519::Keypair;
@@ -953,6 +954,31 @@ impl Network {
 			Network::Local => "DEV",
 			Network::Hex => "9d5ea6a5d7631e13028b684a1a0078e3970caa78bd677eaecaf2160304f174fb",
 			Network::Turing => "d3d2f3a3495dc597434a99d7d449ebad6616db45e4e4f178f31cc6fa14378b70",
+		}
+	}
+
+	pub fn name(genesis_hash: &str) -> String {
+		let network = match genesis_hash {
+			"9d5ea6a5d7631e13028b684a1a0078e3970caa78bd677eaecaf2160304f174fb" => {
+				Network::Hex.to_string()
+			},
+			"d3d2f3a3495dc597434a99d7d449ebad6616db45e4e4f178f31cc6fa14378b70" => {
+				Network::Turing.to_string()
+			},
+			"DEV" => Network::Local.to_string(),
+			_ => "other".to_string(),
+		};
+
+		format!("{}:{}", network, &genesis_hash[..6])
+	}
+}
+
+impl std::string::ToString for Network {
+	fn to_string(&self) -> String {
+		match self {
+			Network::Local => "local".to_string(),
+			Network::Hex => "hex".to_string(),
+			Network::Turing => "turing".to_string(),
 		}
 	}
 }
