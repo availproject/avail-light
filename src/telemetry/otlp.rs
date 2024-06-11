@@ -35,6 +35,7 @@ pub struct MetricAttributes {
 	pub avail_address: String,
 	pub operating_mode: String,
 	pub partition_size: String,
+	pub network: String,
 }
 
 impl Metrics {
@@ -47,6 +48,7 @@ impl Metrics {
 			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
 			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
+			KeyValue::new("network", self.attributes.network.clone()),
 		]
 	}
 

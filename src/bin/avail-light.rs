@@ -11,7 +11,7 @@ use avail_light::{
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
-	types::{CliOpts, IdentityConfig, LibP2PConfig, OtelConfig, RuntimeConfig, State},
+	types::{CliOpts, IdentityConfig, LibP2PConfig, Network, OtelConfig, RuntimeConfig, State},
 };
 use clap::Parser;
 use color_eyre::{
@@ -151,6 +151,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 				)
 			})
 			.unwrap_or("n/a".to_string()),
+		network: Network::name(&cfg.genesis_hash),
 	};
 
 	let cfg_otel: OtelConfig = (&cfg).into();
