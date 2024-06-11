@@ -1,9 +1,9 @@
 use avail_subxt::{primitives::Header, utils::H256};
-use codec::Decode;
+use codec::{Decode, Encode};
 use color_eyre::{eyre::eyre, Result};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use serde::{de, Deserialize};
+use serde::{de, Deserialize, Serialize};
 use sp_core::bytes::from_hex;
 use std::{
 	collections::HashSet,
@@ -74,7 +74,7 @@ impl<'de> Deserialize<'de> for WrappedProof {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct Node {
 	pub host: String,
 	pub system_version: String,
@@ -189,16 +189,16 @@ impl<'a> Iterator for NodesIterator<'a> {
 	}
 }
 
-pub async fn init<T: Database>(
+pub async fn init<T: Database + Clone>(
 	db: T,
 	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
 	shutdown: Controller<String>,
-) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
+) -> Result<(Client<T>, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
 	let rpc_client = Client::new(
-		state.clone(),
+		db.clone(),
 		Nodes::new(nodes),
 		genesis_hash,
 		retry_config,

@@ -1,5 +1,5 @@
 use crate::{
-	data::{self, Key, APP_DATA_CF, FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF},
+	data::{self, Key, APP_STATE_CF, FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF},
 	network::p2p::ExpirationCompactionFilterFactory,
 };
 use codec::{Decode, Encode};
@@ -7,6 +7,10 @@ use color_eyre::eyre::{eyre, Context, Result};
 use rocksdb::{ColumnFamilyDescriptor, Options};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+use super::{
+	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, VERIFIED_CELL_COUNT_PREFIX,
+};
 
 #[derive(Clone)]
 pub struct RocksDB {
@@ -19,7 +23,7 @@ impl RocksDB {
 		kademlia_store_cf_opts
 			.set_compaction_filter_factory(ExpirationCompactionFilterFactory::default());
 		let cf_opts = vec![
-			ColumnFamilyDescriptor::new(APP_DATA_CF, Options::default()),
+			ColumnFamilyDescriptor::new(APP_STATE_CF, Options::default()),
 			ColumnFamilyDescriptor::new(KADEMLIA_STORE_CF, kademlia_store_cf_opts),
 		];
 
@@ -52,6 +56,10 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 			Key::FinalitySyncCheckpoint => (
 				Some(APP_STATE_CF),
 				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
+			),
+			Key::RpcNode => (
+				Some(APP_STATE_CF),
+				CONNECTED_RPC_NODE_KEY.as_bytes().to_vec(),
 			),
 		}
 	}

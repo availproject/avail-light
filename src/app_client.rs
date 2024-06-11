@@ -76,13 +76,13 @@ trait Client {
 }
 
 #[derive(Clone)]
-struct AppClient {
+struct AppClient<T: Database> {
 	p2p_client: P2pClient,
-	rpc_client: RpcClient,
+	rpc_client: RpcClient<T>,
 }
 
 #[async_trait]
-impl Client for AppClient {
+impl<T: Database + Sync> Client for AppClient<T> {
 	async fn reconstruct_rows_from_dht(
 		&self,
 		pp: Arc<PublicParameters>,
@@ -416,11 +416,11 @@ async fn process_block(
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 #[allow(clippy::too_many_arguments)]
-pub async fn run(
+pub async fn run<T: Database + Clone + Sync>(
 	cfg: AppClientConfig,
-	db: impl Database + Clone + Sync,
+	db: T,
 	network_client: P2pClient,
-	rpc_client: RpcClient,
+	rpc_client: RpcClient<T>,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,

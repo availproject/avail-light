@@ -54,11 +54,11 @@ pub trait Client {
 #[derive(Clone)]
 pub struct SyncClient<T: Database + Sync> {
 	db: T,
-	rpc_client: RpcClient,
+	rpc_client: RpcClient<T>,
 }
 
 impl<T: Database + Sync> SyncClient<T> {
-	pub fn new(db: T, rpc_client: RpcClient) -> Self {
+	pub fn new(db: T, rpc_client: RpcClient<T>) -> Self {
 		SyncClient { db, rpc_client }
 	}
 }

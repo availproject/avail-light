@@ -53,6 +53,7 @@ pub async fn ws(
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
+	db: impl Database + Clone + Send + 'static,
 ) -> Result<impl Reply, Rejection> {
 	if !clients.has_subscription(&subscription_id).await {
 		return Err(warp::reject::not_found());
@@ -67,13 +68,14 @@ pub async fn ws(
 			config,
 			submitter.clone(),
 			state.clone(),
+			db.clone(),
 		)
 	}))
 }
 
-pub fn status(config: RuntimeConfig, state: Arc<Mutex<State>>) -> impl Reply {
+pub fn status(config: RuntimeConfig, state: Arc<Mutex<State>>, db: impl Database) -> impl Reply {
 	let state = state.lock().expect("Lock should be acquired");
-	Status::new(&config, &state)
+	Status::new(&config, &state, db)
 }
 
 pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {
