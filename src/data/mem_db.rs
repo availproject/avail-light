@@ -1,10 +1,12 @@
-use crate::data::{Database, Key, APP_DATA_CF, FINALITY_SYNC_CHECKPOINT_KEY};
+use crate::data::{Database, Key, APP_STATE_CF, FINALITY_SYNC_CHECKPOINT_KEY};
 use color_eyre::eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::HashMap,
 	sync::{Arc, RwLock},
 };
+
+use super::{BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY};
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct HashMapKey(pub String);
@@ -55,13 +57,16 @@ impl From<Key> for HashMapKey {
 	fn from(key: Key) -> Self {
 		match key {
 			Key::AppData(app_id, block_number) => {
-				HashMapKey(format!("{APP_DATA_CF}:{app_id}:{block_number}"))
+				HashMapKey(format!("{APP_STATE_CF}:{app_id}:{block_number}"))
 			},
-			Key::BlockHeader(block_number) => HashMapKey(format!("{APP_DATA_CF}:{block_number}")),
+			Key::BlockHeader(block_number) => HashMapKey(format!(
+				"{APP_STATE_CF}:{BLOCK_HEADER_KEY_PREFIX}:{block_number}"
+			)),
 			Key::VerifiedCellCount(block_number) => {
-				HashMapKey(format!("{APP_DATA_CF}:{block_number}"))
+				HashMapKey(format!("{APP_STATE_CF}:{block_number}"))
 			},
 			Key::FinalitySyncCheckpoint => HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string()),
+			Key::RpcNode => HashMapKey(CONNECTED_RPC_NODE_KEY.to_string()),
 		}
 	}
 }

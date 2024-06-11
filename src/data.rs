@@ -28,12 +28,15 @@ pub trait Database {
 	fn delete(&self, key: Key) -> Result<()>;
 }
 
-/// Column family for app data
-pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
+/// Column family for application state
+pub const APP_STATE_CF: &str = "app_state_cf";
 
 /// Column family for Kademlia store
-pub const KADEMLIA_STORE_CF: &str = "avail_light_kademlia_store_cf";
+pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
 
+/// Keys predefined for persistance:
+/// Prefix used with current for Block Header key
+const BLOCK_HEADER_KEY_PREFIX: &str = "block_header";
 /// Sync finality checkpoint key name
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
