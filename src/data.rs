@@ -35,8 +35,10 @@ pub const APP_STATE_CF: &str = "app_state_cf";
 pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
 
 /// Keys predefined for persistance:
-/// Prefix used with current for Block Header key
+/// Prefix used with current Block Header key
 const BLOCK_HEADER_KEY_PREFIX: &str = "block_header";
+/// Prefix used with Verified Cell Count key
+const VERIFIED_CELL_COUNT_PREFIX: &str = "verified_cell_count";
 /// Sync finality checkpoint key name
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
