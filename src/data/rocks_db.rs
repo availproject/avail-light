@@ -45,9 +45,10 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 				Some(APP_STATE_CF),
 				format!("{BLOCK_HEADER_KEY_PREFIX}:{block_number}").into_bytes(),
 			),
-			Key::VerifiedCellCount(block_number) => {
-				(Some(APP_STATE_CF), block_number.to_be_bytes().to_vec())
-			},
+			Key::VerifiedCellCount(block_number) => (
+				Some(APP_STATE_CF),
+				format!("{VERIFIED_CELL_COUNT_PREFIX}:{block_number}").into_bytes(),
+			),
 			Key::FinalitySyncCheckpoint => (
 				Some(APP_STATE_CF),
 				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
