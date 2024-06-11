@@ -12,7 +12,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 use tracing::{debug, info};
 
-use crate::proof;
+use crate::{data::Database, proof};
 
 pub mod p2p;
 pub mod rpc;
@@ -57,16 +57,16 @@ impl FetchStats {
 	}
 }
 
-struct DHTWithRPCFallbackClient {
+struct DHTWithRPCFallbackClient<T: Database> {
 	p2p_client: p2p::Client,
-	rpc_client: rpc::Client,
+	rpc_client: rpc::Client<T>,
 	pp: Arc<PublicParameters>,
 	disable_rpc: bool,
 }
 
 type Commitments = [[u8; config::COMMITMENT_SIZE]];
 
-impl DHTWithRPCFallbackClient {
+impl<T: Database> DHTWithRPCFallbackClient<T> {
 	async fn fetch_verified_from_dht(
 		&self,
 		block_number: u32,
@@ -152,7 +152,7 @@ impl DHTWithRPCFallbackClient {
 }
 
 #[async_trait]
-impl Client for DHTWithRPCFallbackClient {
+impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 	async fn fetch_verified(
 		&self,
 		block_number: u32,
@@ -206,7 +206,7 @@ impl Client for DHTWithRPCFallbackClient {
 
 pub fn new(
 	p2p_client: p2p::Client,
-	rpc_client: rpc::Client,
+	rpc_client: rpc::Client<impl Database + Sync>,
 	pp: Arc<PublicParameters>,
 	disable_rpc: bool,
 ) -> impl Client {

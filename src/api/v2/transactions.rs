@@ -4,7 +4,7 @@ use color_eyre::Result;
 use subxt_signer::sr25519::Keypair;
 
 use super::types::{SubmitResponse, Transaction};
-use crate::network::rpc;
+use crate::{data::Database, network::rpc};
 
 #[async_trait]
 pub trait Submit {
@@ -12,14 +12,14 @@ pub trait Submit {
 }
 
 #[derive(Clone)]
-pub struct Submitter {
-	pub rpc_client: rpc::Client,
+pub struct Submitter<T: Database> {
+	pub rpc_client: rpc::Client<T>,
 	pub app_id: u32,
 	pub signer: Keypair,
 }
 
 #[async_trait]
-impl Submit for Submitter {
+impl<T: Database + Sync> Submit for Submitter<T> {
 	async fn submit(&self, transaction: Transaction) -> Result<SubmitResponse> {
 		let ex_event = match transaction {
 			Transaction::Data(data) => {

@@ -35,7 +35,7 @@ pub struct Server<T: Database> {
 	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
-	pub node_client: rpc::Client,
+	pub node_client: rpc::Client<T>,
 	pub ws_clients: v2::types::WsClients,
 	pub shutdown: Controller<String>,
 	pub p2p_client: p2p::Client,

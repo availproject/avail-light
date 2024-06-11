@@ -39,18 +39,18 @@ struct BlockData {
 }
 
 pub struct SubscriptionLoop<T: Database> {
-	rpc_client: Client,
+	rpc_client: Client<T>,
 	event_sender: Sender<Event>,
 	state: Arc<Mutex<State>>,
 	db: T,
 	block_data: BlockData,
 }
 
-impl<T: Database> SubscriptionLoop<T> {
+impl<T: Database + Clone> SubscriptionLoop<T> {
 	pub async fn new(
 		state: Arc<Mutex<State>>,
 		db: T,
-		rpc_client: Client,
+		rpc_client: Client<T>,
 		event_sender: Sender<Event>,
 	) -> Result<Self> {
 		// get the Hash of the Finalized Head [with Retries]

@@ -53,11 +53,11 @@ pub trait Client {
 
 pub struct SyncFinality<T: Database + Sync> {
 	db: T,
-	rpc_client: rpc::Client,
+	rpc_client: rpc::Client<T>,
 }
 
 impl<T: Database + Sync> SyncFinality<T> {
-	pub fn new(db: T, rpc_client: rpc::Client) -> Self {
+	pub fn new(db: T, rpc_client: rpc::Client<T>) -> Self {
 		SyncFinality { db, rpc_client }
 	}
 }

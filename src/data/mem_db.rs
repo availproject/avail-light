@@ -6,7 +6,9 @@ use std::{
 	sync::{Arc, RwLock},
 };
 
-use super::{BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY};
+use super::{
+	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, VERIFIED_CELL_COUNT_PREFIX,
+};
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct HashMapKey(pub String);

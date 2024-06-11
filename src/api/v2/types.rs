@@ -25,7 +25,8 @@ use warp::{
 };
 
 use crate::{
-	network::rpc::Event as RpcEvent,
+	data::{Database, Key},
+	network::rpc::{Event as RpcEvent, Node as RpcNode},
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
@@ -166,7 +167,7 @@ impl Reply for SubmitResponse {
 }
 
 impl Status {
-	pub fn new(config: &RuntimeConfig, state: &State) -> Self {
+	pub fn new(config: &RuntimeConfig, state: &State, db: impl Database) -> Self {
 		let historical_sync = state.synced.map(|synced| HistoricalSync {
 			synced,
 			available: state.sync_confidence_achieved.as_ref().map(From::from),
@@ -180,7 +181,10 @@ impl Status {
 			historical_sync,
 		};
 
-		let node = state.connected_node.clone();
+		let node: RpcNode = db
+			.get(Key::RpcNode)
+			.unwrap()
+			.expect("No connected RPC Node found id db");
 
 		Status {
 			modes: config.into(),

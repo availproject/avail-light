@@ -45,12 +45,15 @@ pub trait Client {
 }
 
 #[derive(Clone)]
-pub struct FatClient {
+pub struct FatClient<T: Database> {
 	p2p_client: P2pClient,
-	rpc_client: RpcClient,
+	rpc_client: RpcClient<T>,
 }
 
-pub fn new(p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient {
+pub fn new(
+	p2p_client: P2pClient,
+	rpc_client: RpcClient<impl Database>,
+) -> FatClient<impl Database> {
 	FatClient {
 		p2p_client,
 		rpc_client,
@@ -58,7 +61,7 @@ pub fn new(p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient {
 }
 
 #[async_trait]
-impl Client for FatClient {
+impl<T: Database + Sync> Client for FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
