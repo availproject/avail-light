@@ -4,7 +4,7 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::rocks_db::RocksDB,
+	data::{rocks_db::RocksDB, Database, Key},
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
@@ -367,15 +367,14 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		spawn_in_span(shutdown.with_cancel(avail_light::sync_finality::run(
 			sync_finality,
 			shutdown.clone(),
-			state.clone(),
 			block_header.clone(),
 		)));
 	} else {
-		let mut s = state
-			.lock()
-			.map_err(|e| eyre!("State mutex is poisoned: {e:#}"))?;
 		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
-		s.finality_synced = true;
+		// set the flag in the db, signaling across that we don't need to sync
+		_ = db
+			.put(Key::IsFinalitySynced, true)
+			.wrap_err("Avail Light Client failed to set IsFinalitySynced flag in DB.")?;
 	}
 
 	let static_config_params = StaticConfigParams {

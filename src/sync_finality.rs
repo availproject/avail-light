@@ -11,10 +11,7 @@ use sp_core::{
 	ed25519::{self},
 	twox_128, H256,
 };
-use std::{
-	iter::zip,
-	sync::{Arc, Mutex},
-};
+use std::iter::zip;
 use subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32};
 use tracing::{error, info, trace};
 
@@ -23,7 +20,6 @@ use crate::{
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
-	types::State,
 	utils::filter_auth_set_changes,
 };
 
@@ -32,6 +28,7 @@ pub trait Client {
 	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()>;
 	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>;
 	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>;
+	fn set_is_finality_synced(&self, value: bool) -> Result<()>;
 	async fn get_paged_storage_keys(
 		&self,
 		key: Vec<u8>,
@@ -148,6 +145,12 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 			.put(Key::FinalitySyncCheckpoint, checkpoint)
 			.wrap_err("Finality Sync Client failed to store Checkpoint")
 	}
+
+	fn set_is_finality_synced(&self, value: bool) -> Result<()> {
+		self.db
+			.put(Key::IsFinalitySynced, value)
+			.wrap_err("Finality Sync Client failed to stor IsFinalitySynced flag")
+	}
 }
 
 const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
@@ -210,23 +213,14 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn run(
-	client: impl Client,
-	shutdown: Controller<String>,
-	state: Arc<Mutex<State>>,
-	from_header: Header,
-) {
-	if let Err(error) = sync(client, state, from_header).await {
+pub async fn run(client: impl Client, shutdown: Controller<String>, from_header: Header) {
+	if let Err(error) = sync(client, from_header).await {
 		error!("Cannot sync finality {error}");
 		let _ = shutdown.trigger_shutdown(format!("Cannot sync finality {error:#}"));
 	};
 }
 
-pub async fn sync(
-	client: impl Client,
-	state: Arc<Mutex<State>>,
-	mut from_header: Header,
-) -> Result<()> {
+pub async fn sync(client: impl Client, mut from_header: Header) -> Result<()> {
 	let gen_hash = client.get_genesis_hash().await?;
 
 	let checkpoint = client.get_checkpoint()?;
@@ -322,7 +316,8 @@ pub async fn sync(
 			validator_set: validator_set.clone(),
 		})?;
 	}
-	state.lock().unwrap().finality_synced = true;
+	// set finality synced flag in db
+	_ = client.set_is_finality_synced(true)?;
 	info!("Finality is fully synced.");
 	Ok(())
 }

@@ -179,10 +179,6 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 
 				is_final.expect("Finality check failed");
 
-				// To avoid locking the global state all the time, after finality is synced, it will not be necessary to read the state
-				if !finality_synced {
-					finality_synced = self.state.lock().unwrap().finality_synced;
-				}
 				// store Finality Checkpoint if finality is synced
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
@@ -196,6 +192,15 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 							},
 						)
 						.unwrap();
+				} else {
+					// to avoid reading from db all the time,
+					// after finality is synced, it will not be necessary to read the state
+
+					finality_synced = self
+						.db
+						.get(Key::IsFinalitySynced)
+						.unwrap()
+						.expect("No IsFinalitySynced flag found in DB.");
 				}
 
 				// try and get get all the skipped blocks, if they exist

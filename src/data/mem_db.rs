@@ -7,7 +7,8 @@ use std::{
 };
 
 use super::{
-	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, VERIFIED_CELL_COUNT_PREFIX,
+	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, IS_FINALITY_SYNCED_KEY,
+	VERIFIED_CELL_COUNT_PREFIX,
 };
 
 #[derive(Eq, Hash, PartialEq)]
@@ -69,6 +70,7 @@ impl From<Key> for HashMapKey {
 			)),
 			Key::FinalitySyncCheckpoint => HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string()),
 			Key::RpcNode => HashMapKey(CONNECTED_RPC_NODE_KEY.to_string()),
+			Key::IsFinalitySynced => HashMapKey(IS_FINALITY_SYNCED_KEY.to_string()),
 		}
 	}
 }

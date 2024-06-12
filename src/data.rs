@@ -43,6 +43,8 @@ const BLOCK_HEADER_KEY_PREFIX: &str = "block_header";
 const VERIFIED_CELL_COUNT_PREFIX: &str = "verified_cell_count";
 /// Sync finality checkpoint key name
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
+/// Finality Sync flag key
+const IS_FINALITY_SYNCED_KEY: &str = "is_finality_sync";
 /// Connected RPC Node details key
 const CONNECTED_RPC_NODE_KEY: &str = "connected_rpc_node";
 
@@ -53,6 +55,7 @@ pub enum Key {
 	VerifiedCellCount(u32),
 	FinalitySyncCheckpoint,
 	RpcNode,
+	IsFinalitySynced,
 }
 
 #[derive(Serialize, Deserialize, Debug, Decode, Encode)]
