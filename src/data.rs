@@ -3,29 +3,33 @@ use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
 use sp_core::ed25519;
 
+pub mod keys;
 pub mod rocks_db;
 
 #[cfg(test)]
 pub mod mem_db;
 
-pub trait Database {
-	/// Type of the database key which we can get from the custom key.
-	type Key;
+pub type RocksDBKey = (Option<&'static str>, Vec<u8>);
 
+#[derive(Eq, Hash, PartialEq)]
+pub struct HashMapKey(pub String);
+
+/// Type of the database key which we can get from the custom key.
+pub trait RecordKey: Into<RocksDBKey> + Into<HashMapKey> {
+	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
+}
+
+pub trait Database {
 	/// Puts value for given key into database.
 	/// Key is serialized into database key, value is serialized into type supported by database.
-	fn put<T>(&self, key: Key, value: T) -> Result<()>
-	where
-		T: Serialize + Encode;
+	fn put<T: RecordKey>(&self, key: T, value: T::Type) -> Result<()>;
 
 	/// Gets value for given key.
 	/// Key is serialized into database key, value is deserialized into the given type.
-	fn get<T>(&self, key: Key) -> Result<Option<T>>
-	where
-		for<'a> T: Deserialize<'a> + Decode;
+	fn get<T: RecordKey>(&self, key: T) -> Result<Option<T::Type>>;
 
 	/// Deletes value from the database for the given key.
-	fn delete(&self, key: Key) -> Result<()>;
+	fn delete<T: RecordKey>(&self, key: T) -> Result<()>;
 }
 
 /// Column family for application state
@@ -47,6 +51,8 @@ const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 const IS_FINALITY_SYNCED_KEY: &str = "is_finality_sync";
 /// Connected RPC Node details key
 const CONNECTED_RPC_NODE_KEY: &str = "connected_rpc_node";
+/// Key for Sync Data that has been verified
+const SYNC_DATA_VERIFIED: &str = "sync_data_verified";
 
 #[derive(Clone)]
 pub enum Key {
@@ -56,6 +62,7 @@ pub enum Key {
 	FinalitySyncCheckpoint,
 	RpcNode,
 	IsFinalitySynced,
+	SyncDataVerified,
 }
 
 #[derive(Serialize, Deserialize, Debug, Decode, Encode)]

@@ -266,6 +266,7 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::{
+			keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey},
 			mem_db::{self, MemoryDB},
 			Database, Key,
 		},
@@ -410,7 +411,7 @@ mod tests {
 			state.data_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(10), incomplete_header());
+		_ = db.put(BlockHeaderKey(10), incomplete_header());
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -436,8 +437,8 @@ mod tests {
 			state.data_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::VerifiedCellCount(10), 4);
-		_ = db.put(Key::BlockHeader(10), header());
+		_ = db.put(VerifiedCellCountKey(10), 4);
+		_ = db.put(BlockHeaderKey(10), header());
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -469,7 +470,7 @@ mod tests {
 		}));
 
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(block_number), header());
+		_ = db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -543,7 +544,7 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(1), header());
+		_ = db.put(BlockHeaderKey(1), header());
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -577,7 +578,7 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(block_number), header());
+		_ = db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -619,7 +620,7 @@ mod tests {
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(5), header());
+		_ = db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -648,7 +649,7 @@ mod tests {
 		}));
 		let db = mem_db::MemoryDB::default();
 		_ = db.put(
-			Key::AppData(1, 5),
+			AppDataKey(1, 5),
 			vec![vec![
 				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
 				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
@@ -659,7 +660,7 @@ mod tests {
 				10,
 			]],
 		);
-		_ = db.put(Key::BlockHeader(5), header());
+		_ = db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
 			.method("GET")

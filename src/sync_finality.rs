@@ -16,7 +16,10 @@ use subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{Database, FinalitySyncCheckpoint, Key},
+	data::{
+		keys::{BlockHeaderKey, FinalitySyncCheckpointKey, IsFinalitySyncedKey},
+		Database, FinalitySyncCheckpoint,
+	},
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
@@ -130,25 +133,25 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 
 	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()> {
 		self.db
-			.put(Key::BlockHeader(block_number), header)
+			.put(BlockHeaderKey(block_number), header)
 			.wrap_err("Finality Sync Client failed to store Block Header")
 	}
 
 	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>> {
 		self.db
-			.get(Key::FinalitySyncCheckpoint)
+			.get(FinalitySyncCheckpointKey)
 			.wrap_err("Finality Sync Client failed to get Checkpoint")
 	}
 
 	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()> {
 		self.db
-			.put(Key::FinalitySyncCheckpoint, checkpoint)
+			.put(FinalitySyncCheckpointKey, checkpoint)
 			.wrap_err("Finality Sync Client failed to store Checkpoint")
 	}
 
 	fn set_is_finality_synced(&self, value: bool) -> Result<()> {
 		self.db
-			.put(Key::IsFinalitySynced, value)
+			.put(IsFinalitySyncedKey, value)
 			.wrap_err("Finality Sync Client failed to stor IsFinalitySynced flag")
 	}
 }

@@ -1,17 +1,13 @@
 use crate::{
-	data::{self, Key, APP_STATE_CF, FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF},
+	data::{self, APP_STATE_CF, KADEMLIA_STORE_CF},
 	network::p2p::ExpirationCompactionFilterFactory,
 };
 use codec::{Decode, Encode};
 use color_eyre::eyre::{eyre, Context, Result};
 use rocksdb::{ColumnFamilyDescriptor, Options};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use super::{
-	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, IS_FINALITY_SYNCED_KEY,
-	VERIFIED_CELL_COUNT_PREFIX,
-};
+use super::RecordKey;
 
 #[derive(Clone)]
 pub struct RocksDB {
@@ -37,53 +33,15 @@ impl RocksDB {
 	}
 }
 
-type RocksKey = (Option<&'static str>, Vec<u8>);
-
-impl From<Key> for (Option<&'static str>, Vec<u8>) {
-	fn from(key: Key) -> Self {
-		match key {
-			Key::AppData(app_id, block_number) => (
-				Some(APP_STATE_CF),
-				format!("{APP_ID_PREFIX}:{app_id}:{block_number}").into_bytes(),
-			),
-			Key::BlockHeader(block_number) => (
-				Some(APP_STATE_CF),
-				format!("{BLOCK_HEADER_KEY_PREFIX}:{block_number}").into_bytes(),
-			),
-			Key::VerifiedCellCount(block_number) => (
-				Some(APP_STATE_CF),
-				format!("{VERIFIED_CELL_COUNT_PREFIX}:{block_number}").into_bytes(),
-			),
-			Key::FinalitySyncCheckpoint => (
-				Some(APP_STATE_CF),
-				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
-			),
-			Key::RpcNode => (
-				Some(APP_STATE_CF),
-				CONNECTED_RPC_NODE_KEY.as_bytes().to_vec(),
-			),
-			Key::IsFinalitySynced => (
-				Some(APP_STATE_CF),
-				IS_FINALITY_SYNCED_KEY.as_bytes().to_vec(),
-			),
-		}
-	}
-}
-
 impl data::Database for RocksDB {
-	type Key = RocksKey;
-
-	fn put<T>(&self, key: Key, value: T) -> Result<()>
-	where
-		T: Serialize + Encode,
-	{
+	fn put<T: RecordKey>(&self, key: T, value: T::Type) -> Result<()> {
 		let (column_family, key) = key.into();
 		// if Column Family descriptor was provided, put the key in that partition
 		let Some(cf) = column_family else {
 			// else, just put it in the default partition
 			return self
 				.db
-				.put(key, <T>::encode(&value))
+				.put(key, <T::Type>::encode(&value))
 				.wrap_err("Put operation failed on RocksDB");
 		};
 
@@ -92,14 +50,11 @@ impl data::Database for RocksDB {
 			.cf_handle(cf)
 			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
 		self.db
-			.put_cf(&cf_handle, key, <T>::encode(&value))
+			.put_cf(&cf_handle, key, <T::Type>::encode(&value))
 			.wrap_err("Put operation with Column Family failed on RocksDB")
 	}
 
-	fn get<T>(&self, key: Key) -> Result<Option<T>>
-	where
-		T: for<'a> Deserialize<'a> + Decode,
-	{
+	fn get<T: RecordKey>(&self, key: T) -> Result<Option<T::Type>> {
 		let (column_family, key) = key.into();
 		// if Column Family descriptor was provided, get the key from that partition
 		let Some(cf) = column_family else {
@@ -107,7 +62,9 @@ impl data::Database for RocksDB {
 			return self
 				.db
 				.get(key)?
-				.map(|value| <T>::decode(&mut &value[..]).wrap_err("Failed decoding the app data."))
+				.map(|value| {
+					<T::Type>::decode(&mut &value[..]).wrap_err("Failed decoding the app data.")
+				})
 				.transpose()
 				.wrap_err("Get operation failed on RocksDB");
 		};
@@ -119,12 +76,14 @@ impl data::Database for RocksDB {
 
 		self.db
 			.get_cf(&cf_handle, key)?
-			.map(|value| <T>::decode(&mut &value[..]).wrap_err("Failed decoding the app data."))
+			.map(|value| {
+				<T::Type>::decode(&mut &value[..]).wrap_err("Failed decoding the app data.")
+			})
 			.transpose()
 			.wrap_err("Get operation with Column Family failed on RocksDB")
 	}
 
-	fn delete(&self, key: Key) -> Result<()> {
+	fn delete<T: RecordKey>(&self, key: T) -> Result<()> {
 		let (column_family, key) = key.into();
 		// if Column Family descriptor was provided, delete the key from that partition
 		let Some(cf) = column_family else {

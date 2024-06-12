@@ -15,8 +15,10 @@ use tracing::{debug, info, trace};
 
 use super::{Client, Subscription};
 use crate::{
-	data::Database,
-	data::{FinalitySyncCheckpoint, Key},
+	data::{
+		keys::{FinalitySyncCheckpointKey, IsFinalitySyncedKey},
+		Database, FinalitySyncCheckpoint,
+	},
 	finality::{check_finality, ValidatorSet},
 	types::{GrandpaJustification, OptionBlockRange, State},
 	utils::filter_auth_set_changes,
@@ -184,7 +186,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 					info!("Storing finality checkpoint at block {}", header.number);
 					self.db
 						.put(
-							Key::FinalitySyncCheckpoint,
+							FinalitySyncCheckpointKey,
 							FinalitySyncCheckpoint {
 								set_id: self.block_data.current_valset.set_id,
 								number: header.number,
@@ -198,7 +200,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 
 					finality_synced = self
 						.db
-						.get(Key::IsFinalitySynced)
+						.get(IsFinalitySyncedKey)
 						.unwrap()
 						.expect("No IsFinalitySynced flag found in DB.");
 				}
