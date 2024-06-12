@@ -295,10 +295,8 @@ pub fn block_status(
 	};
 
 	if block_number < first_block {
-		let verified_sync_data = db
-			.get(VerifiedSyncDataKey)
-			.unwrap()
-			.expect("Could not fetch Verified Sync Data from DB.");
+		let verified_sync_data = db.get(VerifiedSyncDataKey).unwrap().unwrap_or(None);
+		// .expect("Could not fetch Verified Sync Data from DB.");
 		if verified_sync_data.contains(block_number) {
 			return Some(BlockStatus::Finished);
 		}

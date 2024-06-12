@@ -768,6 +768,7 @@ mod tests {
 	struct MockSetup {
 		ws_client: warp::test::WsClient,
 		state: Arc<Mutex<State>>,
+		db: MemoryDB,
 	}
 
 	impl MockSetup {
@@ -786,7 +787,7 @@ mod tests {
 				config.clone(),
 				submitter.map(Arc::new),
 				state.clone(),
-				db,
+				db.clone(),
 			);
 			let ws_client = warp::test::ws()
 				.path(&format!("/v2/ws/{client_uuid}"))
@@ -794,7 +795,11 @@ mod tests {
 				.await
 				.expect("handshake");
 
-			MockSetup { ws_client, state }
+			MockSetup {
+				ws_client,
+				state,
+				db,
+			}
 		}
 
 		async fn ws_send_text(&mut self, message: &str) -> String {
@@ -828,7 +833,6 @@ mod tests {
 		};
 
 		let mut test = MockSetup::new(config, None).await;
-		let db = MemoryDB::default();
 		{
 			let mut state = test.state.lock().unwrap();
 			state.latest = 30;
@@ -844,7 +848,7 @@ mod tests {
 		let mut verified_sync_data = None;
 		verified_sync_data.set(10);
 		verified_sync_data.set(18);
-		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
+		_ = test.db.put(VerifiedSyncDataKey, verified_sync_data);
 
 		let gen_hash = H256::default();
 		let expected = format!(
