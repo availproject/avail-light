@@ -41,7 +41,10 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	data::{keys::AppDataKey, Database},
+	data::{
+		keys::{AppDataKey, VerifiedSyncDataKey},
+		Database,
+	},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -433,12 +436,19 @@ pub async fn run(
 
 	fn set_data_verified_state(
 		state: Arc<Mutex<State>>,
+		db: impl Database,
 		sync_range: &Range<u32>,
 		block_number: u32,
 	) {
 		let mut state = state.lock().expect("State lock can be acquired");
 		match sync_range.contains(&block_number) {
-			true => state.sync_data_verified.set(block_number),
+			true => {
+				let mut verified_sync_data = None;
+				verified_sync_data.set(block_number);
+				_ = db
+					.put(VerifiedSyncDataKey, verified_sync_data)
+					.expect("App Client Failed to initialize Verified Sync Data in DB.");
+			},
 			false => state.data_verified.set(block_number),
 		}
 		if state.synced == Some(false) && sync_range.clone().last() == Some(block_number) {
@@ -459,7 +469,7 @@ pub async fn run(
 		let block_number = block.block_num;
 		let Some(extension) = &block.extension else {
 			info!(block_number, "Skipping block without header extension");
-			set_data_verified_state(state.clone(), &sync_range, block_number);
+			set_data_verified_state(state.clone(), db.clone(), &sync_range, block_number);
 			continue;
 		};
 		let dimensions = &extension.dimensions;
@@ -471,7 +481,7 @@ pub async fn run(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
 			);
-			set_data_verified_state(state.clone(), &sync_range, block_number);
+			set_data_verified_state(state.clone(), db.clone(), &sync_range, block_number);
 			continue;
 		}
 
@@ -488,7 +498,7 @@ pub async fn run(
 					return;
 				},
 			};
-		set_data_verified_state(state.clone(), &sync_range, block_number);
+		set_data_verified_state(state.clone(), db.clone(), &sync_range, block_number);
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
 			let _ =
