@@ -973,12 +973,12 @@ impl Network {
 	}
 }
 
-impl std::string::ToString for Network {
-	fn to_string(&self) -> String {
+impl fmt::Display for Network {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Network::Local => "local".to_string(),
-			Network::Hex => "hex".to_string(),
-			Network::Turing => "turing".to_string(),
+			Network::Local => write!(f, "local"),
+			Network::Hex => write!(f, "hex"),
+			Network::Turing => write!(f, "turing"),
 		}
 	}
 }
