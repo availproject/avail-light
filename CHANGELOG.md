@@ -1,8 +1,10 @@
 # Changelog
 
-## 1.9.2
+## [1.9.2]
 
 - Fix default configuration for http_server_port
+- Introduce network name to metrics
+- Support enforcing minimum protocol version for agents on p2p network
 
 ## [1.9.1](https://github.com/availproject/avail-light/releases/tag/v1.9.1) - 2024-06-10
 
