@@ -41,7 +41,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	data::{Database, Key},
+	data::{keys::AppDataKey, Database},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -395,7 +395,7 @@ async fn process_block(
 	debug!(block_number, "Storing data into database");
 
 	// store encoded App Data into the database
-	db.put(Key::AppData(app_id.0, block_number), data.clone())
+	db.put(AppDataKey(app_id.0, block_number), data.clone())
 		.wrap_err("App Client failed to store App Data into database")?;
 
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
@@ -416,11 +416,11 @@ async fn process_block(
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 #[allow(clippy::too_many_arguments)]
-pub async fn run<T: Database + Clone + Sync>(
+pub async fn run(
 	cfg: AppClientConfig,
-	db: T,
+	db: impl Database + Clone,
 	network_client: P2pClient,
-	rpc_client: RpcClient<T>,
+	rpc_client: RpcClient<impl Database + Clone + Sync>,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,

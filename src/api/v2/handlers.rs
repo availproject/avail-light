@@ -9,7 +9,10 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::{Database, Key},
+	data::{
+		keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey},
+		Database,
+	},
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
@@ -101,14 +104,14 @@ pub async fn block(
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
-		.get(Key::BlockHeader(block_number))
+		.get(BlockHeaderKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	let confidence = db
-		.get(Key::VerifiedCellCount(block_number))
+		.get(VerifiedCellCountKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 
@@ -125,7 +128,7 @@ pub async fn block_header(
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
-		.get(Key::BlockHeader(block_number))
+		.get(BlockHeaderKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
@@ -138,7 +141,7 @@ pub async fn block_header(
 		return Err(Error::bad_request_unknown("Block header is not available"));
 	};
 
-	db.get::<primitives::Header>(Key::BlockHeader(block_number))
+	db.get(BlockHeaderKey(block_number))
 		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
@@ -157,7 +160,7 @@ pub async fn block_data(
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
-		.get(Key::BlockHeader(block_number))
+		.get(BlockHeaderKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
@@ -168,7 +171,7 @@ pub async fn block_data(
 	};
 
 	let data = db
-		.get::<Vec<Vec<u8>>>(Key::AppData(app_id, block_number))
+		.get(AppDataKey(app_id, block_number))
 		.map_err(Error::internal_server_error)?;
 
 	let Some(data) = data else {

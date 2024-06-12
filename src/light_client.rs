@@ -29,7 +29,10 @@ use std::{
 use tracing::{error, info};
 
 use crate::{
-	data::{Database, Key},
+	data::{
+		keys::{BlockHeaderKey, VerifiedCellCountKey},
+		Database,
+	},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -68,7 +71,7 @@ pub async fn process_block(
 
 			state.lock().unwrap().confidence_achieved.set(block_number);
 
-			db.put(Key::BlockHeader(block_number), header)
+			db.put(BlockHeaderKey(block_number), header)
 				.wrap_err("Light Client failed to store Block Header")?;
 
 			return Ok(None);
@@ -144,7 +147,7 @@ pub async fn process_block(
 	}
 
 	// write confidence factor into on-disk database
-	db.put(Key::VerifiedCellCount(block_number), verified as u32)
+	db.put(VerifiedCellCountKey(block_number), verified as u32)
 		.wrap_err("Light Client failed to store Confidence Factor")?;
 
 	state.lock().unwrap().confidence_achieved.set(block_number);
@@ -168,7 +171,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	db.put(Key::BlockHeader(block_number), header)
+	db.put(BlockHeaderKey(block_number), header)
 		.wrap_err("Light Client failed to store Block Header")?;
 
 	Ok(Some(confidence))

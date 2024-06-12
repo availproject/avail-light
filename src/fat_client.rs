@@ -25,7 +25,7 @@ use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-	data::{Database, Key},
+	data::{keys::BlockHeaderKey, Database},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -119,7 +119,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	db.put(Key::BlockHeader(block_number), header)
+	db.put(BlockHeaderKey(block_number), header.clone())
 		.wrap_err("Fat Client failed to store Block Header")?;
 
 	// Fat client partition upload logic

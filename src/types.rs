@@ -1,6 +1,6 @@
 //! Shared light client structs and enums.
 use crate::network::p2p::{MemoryStoreConfig, ProvidersConfig, RocksDBStoreConfig};
-use crate::network::rpc::Event;
+use crate::network::rpc::{Event, Node as RpcNode};
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -1085,7 +1085,7 @@ impl IdentityConfig {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct BlockRange {
 	pub first: u32,
 	pub last: u32,
