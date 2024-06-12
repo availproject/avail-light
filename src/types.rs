@@ -16,6 +16,7 @@ use kate_recovery::{
 };
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
+use semver::Version;
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::crypto::Ss58Codec;
 use sp_core::{blake2_256, bytes, ed25519};
@@ -24,7 +25,6 @@ use std::fs;
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::ops::Range;
 use std::str::FromStr;
-use std::string::ToString;
 use std::time::{Duration, Instant};
 use subxt_signer::bip39::{Language, Mnemonic};
 use subxt_signer::sr25519::Keypair;
@@ -37,6 +37,7 @@ const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
+const MINIMUM_SUPPORTED_VERSION: &str = "1.9.2";
 pub const DEV_FLAG_GENHASH: &str = "DEV";
 pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
 pub const IDENTITY_AGENT_BASE: &str = "avail-light-client";
@@ -731,14 +732,15 @@ pub struct AgentVersion {
 	pub client_type: String,
 	// Kademlia client or server mode
 	pub kademlia_mode: String,
+	pub release_version: String,
 }
 
 impl fmt::Display for AgentVersion {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(
 			f,
-			"{}/{}/{}",
-			self.base_version, self.client_type, self.kademlia_mode
+			"{}/{}/{}/{}",
+			self.base_version, self.release_version, self.client_type, self.kademlia_mode
 		)
 	}
 }
@@ -748,14 +750,15 @@ impl FromStr for AgentVersion {
 
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		let parts: Vec<&str> = s.split('/').collect();
-		if parts.len() != 3 {
+		if parts.len() != 4 {
 			return Err("Failed to parse agent version".to_owned());
 		}
 
 		Ok(AgentVersion {
 			base_version: parts[0].to_string(),
-			client_type: parts[1].to_string(),
-			kademlia_mode: parts[2].to_string(),
+			release_version: parts[1].to_string(),
+			client_type: parts[2].to_string(),
+			kademlia_mode: parts[3].to_string(),
 		})
 	}
 }
@@ -774,6 +777,7 @@ impl From<&RuntimeConfig> for IdentifyConfig {
 
 		let agent_version = AgentVersion {
 			base_version: IDENTITY_AGENT_BASE.to_string(),
+			release_version: clap::crate_version!().to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
 			kademlia_mode,
 		};
@@ -786,6 +790,17 @@ impl From<&RuntimeConfig> for IdentifyConfig {
 				gen_hash = genhash_short
 			),
 		}
+	}
+}
+
+impl AgentVersion {
+	pub fn is_supported(&self) -> bool {
+		if let Ok(release_version) = Version::parse(&self.release_version) {
+			if let Ok(min_supported_version) = Version::parse(MINIMUM_SUPPORTED_VERSION) {
+				return release_version >= min_supported_version;
+			}
+		}
+		false
 	}
 }
 
@@ -969,7 +984,8 @@ impl Network {
 			_ => "other".to_string(),
 		};
 
-		format!("{}:{}", network, &genesis_hash[..6])
+		let prefix = &genesis_hash[..std::cmp::min(6, genesis_hash.len())];
+		format!("{}:{}", network, prefix)
 	}
 }
 
