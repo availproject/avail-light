@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use super::{
-	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, VERIFIED_CELL_COUNT_PREFIX,
+	APP_ID_PREFIX, BLOCK_HEADER_KEY_PREFIX, CONNECTED_RPC_NODE_KEY, IS_FINALITY_SYNCED_KEY,
+	VERIFIED_CELL_COUNT_PREFIX,
 };
 
 #[derive(Clone)]
@@ -60,6 +61,10 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 			Key::RpcNode => (
 				Some(APP_STATE_CF),
 				CONNECTED_RPC_NODE_KEY.as_bytes().to_vec(),
+			),
+			Key::IsFinalitySynced => (
+				Some(APP_STATE_CF),
+				IS_FINALITY_SYNCED_KEY.as_bytes().to_vec(),
 			),
 		}
 	}
