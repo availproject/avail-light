@@ -266,7 +266,7 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::{
-			keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey},
+			keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey, VerifiedSyncDataKey},
 			mem_db::{self, MemoryDB},
 			Database,
 		},
@@ -359,9 +359,12 @@ mod tests {
 			state.synced.replace(false);
 			state.sync_confidence_achieved.set(10);
 			state.sync_confidence_achieved.set(19);
-			state.sync_data_verified.set(10);
-			state.sync_data_verified.set(18);
 		}
+
+		let mut verified_sync_data = None;
+		verified_sync_data.set(10);
+		verified_sync_data.set(18);
+		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 
 		let route = super::status_route(runtime_config, state, db);
 		let response = warp::test::request()
@@ -825,7 +828,7 @@ mod tests {
 		};
 
 		let mut test = MockSetup::new(config, None).await;
-
+		let db = MemoryDB::default();
 		{
 			let mut state = test.state.lock().unwrap();
 			state.latest = 30;
@@ -836,9 +839,12 @@ mod tests {
 			state.synced.replace(false);
 			state.sync_confidence_achieved.set(10);
 			state.sync_confidence_achieved.set(19);
-			state.sync_data_verified.set(10);
-			state.sync_data_verified.set(18);
 		}
+
+		let mut verified_sync_data = None;
+		verified_sync_data.set(10);
+		verified_sync_data.set(18);
+		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 
 		let gen_hash = H256::default();
 		let expected = format!(
