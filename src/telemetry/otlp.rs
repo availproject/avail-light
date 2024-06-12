@@ -14,7 +14,7 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
-const ATTRIBUTE_NUMBER: usize = 7;
+const ATTRIBUTE_NUMBER: usize = 8;
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
