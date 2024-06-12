@@ -268,7 +268,7 @@ mod tests {
 		data::{
 			keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey},
 			mem_db::{self, MemoryDB},
-			Database, Key,
+			Database,
 		},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};

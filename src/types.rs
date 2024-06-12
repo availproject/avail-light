@@ -1,6 +1,6 @@
 //! Shared light client structs and enums.
 use crate::network::p2p::{MemoryStoreConfig, ProvidersConfig, RocksDBStoreConfig};
-use crate::network::rpc::{Event, Node as RpcNode};
+use crate::network::rpc::Event;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
