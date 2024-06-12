@@ -9,6 +9,12 @@ pub mod rocks_db;
 #[cfg(test)]
 pub mod mem_db;
 
+/// Column family for application state
+pub const APP_STATE_CF: &str = "app_state_cf";
+
+/// Column family for Kademlia store
+pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
+
 pub type RocksDBKey = (Option<&'static str>, Vec<u8>);
 
 #[derive(Eq, Hash, PartialEq)]
@@ -31,28 +37,6 @@ pub trait Database {
 	/// Deletes value from the database for the given key.
 	fn delete<T: RecordKey>(&self, key: T) -> Result<()>;
 }
-
-/// Column family for application state
-pub const APP_STATE_CF: &str = "app_state_cf";
-
-/// Column family for Kademlia store
-pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
-
-/// Keys predefined for persistance:
-/// App ID prefix used with App Data key
-const APP_ID_PREFIX: &str = "app_id";
-/// Prefix used with current Block Header key
-const BLOCK_HEADER_KEY_PREFIX: &str = "block_header";
-/// Prefix used with Verified Cell Count key
-const VERIFIED_CELL_COUNT_PREFIX: &str = "verified_cell_count";
-/// Sync finality checkpoint key name
-const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
-/// Finality Sync flag key
-const IS_FINALITY_SYNCED_KEY: &str = "is_finality_sync";
-/// Connected RPC Node details key
-const CONNECTED_RPC_NODE_KEY: &str = "connected_rpc_node";
-/// Key for Sync Data that has been verified
-const SYNC_DATA_VERIFIED: &str = "sync_data_verified";
 
 #[derive(Clone)]
 pub enum Key {
