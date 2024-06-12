@@ -372,7 +372,6 @@ impl EventLoop {
 							incoming_peer_agent_version.release_version
 						);
 						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-						self.swarm.behaviour_mut().blocked_peers.block_peer(peer_id);
 						return;
 					}
 

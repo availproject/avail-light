@@ -795,12 +795,13 @@ impl From<&RuntimeConfig> for IdentifyConfig {
 
 impl AgentVersion {
 	pub fn is_supported(&self) -> bool {
-		if let Ok(release_version) = Version::parse(&self.release_version) {
-			if let Ok(min_supported_version) = Version::parse(MINIMUM_SUPPORTED_VERSION) {
-				return release_version >= min_supported_version;
-			}
+		match (
+			Version::parse(&self.release_version),
+			Version::parse(MINIMUM_SUPPORTED_VERSION),
+		) {
+			(Ok(release_version), Ok(minimum_version)) => release_version >= minimum_version,
+			(_, _) => false,
 		}
-		false
 	}
 }
 
