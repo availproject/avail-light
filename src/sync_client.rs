@@ -16,7 +16,10 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use crate::{
-	data::{Database, Key},
+	data::{
+		keys::{BlockHeaderKey, VerifiedCellCountKey},
+		Database,
+	},
 	network::{
 		self,
 		rpc::{self, Client as RpcClient},
@@ -68,7 +71,7 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		if let Some(header) = self
 			.db
-			.get(Key::BlockHeader(block_number))
+			.get(BlockHeaderKey(block_number))
 			.wrap_err("Sync Client failed to get Block Header from the storage")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
@@ -89,7 +92,7 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		};
 
 		self.db
-			.put(Key::BlockHeader(block_number), header.clone())
+			.put(BlockHeaderKey(block_number), header.clone())
 			.wrap_err("Sync Client failed to store Block Header")?;
 
 		Ok((header, hash))
@@ -97,14 +100,14 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 
 	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
 		self.db
-			.get(Key::VerifiedCellCount(block_number))
+			.get(VerifiedCellCountKey(block_number))
 			.wrap_err("Sync Client failed to check if Confidence Factor is stored")
 			.map(|c: Option<u32>| c.is_some())
 	}
 
 	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
-			.put(Key::VerifiedCellCount(block_number), count)
+			.put(VerifiedCellCountKey(block_number), count)
 			.wrap_err("Sync Client failed to store Confidence Factor")
 	}
 }

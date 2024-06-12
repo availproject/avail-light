@@ -1,7 +1,10 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{Database, Key},
+	data::{
+		keys::{AppDataKey, VerifiedCellCountKey},
+		Database,
+	},
 	network::rpc::cell_count_for_confidence,
 	types::{Mode, OptionBlockRange, RuntimeConfig, State},
 	utils::calculate_confidence,
@@ -44,7 +47,7 @@ pub fn confidence(
 
 	info!("Got request for confidence for block {block_num}");
 
-	let count = match db.get(Key::VerifiedCellCount(block_num)) {
+	let count = match db.get(VerifiedCellCountKey(block_num)) {
 		Ok(Some(count)) => count,
 		Ok(None) if is_synced(block_num, state) => cell_count_for_confidence(cfg.confidence),
 		Ok(None) => return ClientResponse::NotFinalized,
@@ -72,7 +75,7 @@ pub fn status(
 	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
 	};
-	let res = match db.get(Key::VerifiedCellCount(last)) {
+	let res = match db.get(VerifiedCellCountKey(last)) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
@@ -131,7 +134,7 @@ pub fn appdata(
 	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
 	let res = match decode_app_data_to_extrinsics(
-		db.get(Key::AppData(app_id.unwrap_or(0u32), block_num)),
+		db.get(AppDataKey(app_id.unwrap_or(0u32), block_num)),
 	) {
 		Ok(Some(data)) => {
 			if !decode {

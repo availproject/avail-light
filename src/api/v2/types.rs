@@ -25,7 +25,7 @@ use warp::{
 };
 
 use crate::{
-	data::{Database, Key},
+	data::{keys::RpcNodeKey, Database},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
@@ -182,7 +182,7 @@ impl Status {
 		};
 
 		let node: RpcNode = db
-			.get(Key::RpcNode)
+			.get(RpcNodeKey)
 			.unwrap()
 			.expect("No connected RPC Node found id db");
 

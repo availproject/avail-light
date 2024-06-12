@@ -4,7 +4,7 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{rocks_db::RocksDB, Database, Key},
+	data::{keys::IsFinalitySyncedKey, rocks_db::RocksDB, Database},
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
@@ -373,7 +373,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
 		// set the flag in the db, signaling across that we don't need to sync
 		_ = db
-			.put(Key::IsFinalitySynced, true)
+			.put(IsFinalitySyncedKey, true)
 			.wrap_err("Avail Light Client failed to set IsFinalitySynced flag in DB.")?;
 	}
 
