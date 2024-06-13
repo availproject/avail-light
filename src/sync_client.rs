@@ -17,7 +17,7 @@
 
 use crate::{
 	data::{
-		keys::{BlockHeaderKey, VerifiedCellCountKey},
+		keys::{AchievedSyncConfidenceKey, BlockHeaderKey, VerifiedCellCountKey},
 		Database,
 	},
 	network::{
@@ -51,7 +51,8 @@ use tracing::{error, info, warn};
 pub trait Client {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
 	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>;
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()>;
+	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()>;
+	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -72,28 +73,27 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		if let Some(header) = self
 			.db
 			.get(BlockHeaderKey(block_number))
-			.wrap_err("Sync Client failed to get Block Header from the storage")?
+			.wrap_err("Sync Client failed to get Block Header from the DB.")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			return Ok((header, hash));
 		}
 
-		let (header, hash) = match self
-			.rpc_client
-			.get_header_by_block_number(block_number)
-			.await
-			.wrap_err_with(|| {
-				format!(
-					"Sync Client failed to get Block {block_number:#?} by Block Number from storage",
-				)
-			}) {
-			Ok(value) => value,
-			Err(error) => return Err(error),
-		};
+		let (header, hash) =
+			match self
+				.rpc_client
+				.get_header_by_block_number(block_number)
+				.await
+				.wrap_err_with(|| {
+					format!("Sync Client failed to get Block {block_number:#?} by Block Number from DB.",)
+				}) {
+				Ok(value) => value,
+				Err(error) => return Err(error),
+			};
 
 		self.db
 			.put(BlockHeaderKey(block_number), header.clone())
-			.wrap_err("Sync Client failed to store Block Header")?;
+			.wrap_err("Sync Client failed to store Block Header in DB.")?;
 
 		Ok((header, hash))
 	}
@@ -101,14 +101,29 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
 		self.db
 			.get(VerifiedCellCountKey(block_number))
-			.wrap_err("Sync Client failed to check if Confidence Factor is stored")
+			.wrap_err("Sync Client failed to check if Confidence Factor is stored in DB.")
 			.map(|c: Option<u32>| c.is_some())
 	}
 
-	fn store_confidence(&self, count: u32, block_number: u32) -> Result<()> {
+	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
 			.put(VerifiedCellCountKey(block_number), count)
-			.wrap_err("Sync Client failed to store Confidence Factor")
+			.wrap_err("Sync Client failed to store Verified Cell Count into DB.")
+	}
+
+	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()> {
+		// get the current BlockRange stored in DB under this key
+		let mut block_range = self
+			.db
+			.get(AchievedSyncConfidenceKey)
+			.wrap_err("Sync Client failed to fetch Achieved Sync Confidence from DB.")?
+			.unwrap_or(None);
+		// mutate the value
+		block_range.set(block_number);
+		// store mutated value back in the DB
+		self.db
+			.put(AchievedSyncConfidenceKey, block_range)
+			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
 	}
 }
 
@@ -159,8 +174,8 @@ async fn process_block(
 		return Ok(());
 	}
 
-	// write confidence factor into on-disk database
-	client.store_confidence(verified.try_into()?, block_number)?;
+	// write verified cell count into on-disk database
+	client.store_verified_cell_count(verified.try_into()?, block_number)?;
 
 	let confidence = Some(calculate_confidence(verified as u32));
 	let client_msg =
@@ -241,8 +256,9 @@ pub async fn run(
 		{
 			error!(block_number, "Cannot process block: {error:#}");
 		} else {
-			let mut state = state.lock().unwrap();
-			state.sync_confidence_achieved.set(block_number);
+			if let Err(error) = client.store_achieved_sync_confidence(block_number) {
+				error!(block_number, "Cannot process block: {error:#}");
+			}
 		}
 	}
 
@@ -381,7 +397,7 @@ mod tests {
 			.with(eq(2))
 			.returning(|_| Ok(true));
 		mock_client
-			.expect_store_confidence()
+			.expect_store_verified_cell_count()
 			.withf(move |_, block_number| *block_number == 2)
 			.returning(move |_, _| Ok(()));
 		process_block(
@@ -467,7 +483,7 @@ mod tests {
 			});
 
 		mock_client
-			.expect_store_confidence()
+			.expect_store_verified_cell_count()
 			.withf(move |_, block_number| *block_number == 2)
 			.returning(move |_, _| Ok(()));
 		process_block(
