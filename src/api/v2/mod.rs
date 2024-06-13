@@ -266,7 +266,10 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::{
-			keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey, VerifiedSyncDataKey},
+			keys::{
+				AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey, VerifiedCellCountKey,
+				VerifiedSyncDataKey,
+			},
 			mem_db::{self, MemoryDB},
 			Database,
 		},
@@ -357,14 +360,17 @@ mod tests {
 			state.data_verified.set(20);
 			state.data_verified.set(29);
 			state.synced.replace(false);
-			state.sync_confidence_achieved.set(10);
-			state.sync_confidence_achieved.set(19);
 		}
 
 		let mut verified_sync_data = None;
 		verified_sync_data.set(10);
 		verified_sync_data.set(18);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
+
+		let mut achieved_sync_confidence = None;
+		achieved_sync_confidence.set(10);
+		achieved_sync_confidence.set(19);
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
 		let route = super::status_route(runtime_config, state, db);
 		let response = warp::test::request()
@@ -841,14 +847,19 @@ mod tests {
 			state.data_verified.set(20);
 			state.data_verified.set(29);
 			state.synced.replace(false);
-			state.sync_confidence_achieved.set(10);
-			state.sync_confidence_achieved.set(19);
 		}
 
 		let mut verified_sync_data = None;
 		verified_sync_data.set(10);
 		verified_sync_data.set(18);
 		_ = test.db.put(VerifiedSyncDataKey, verified_sync_data);
+
+		let mut achieved_sync_confidence = None;
+		achieved_sync_confidence.set(10);
+		achieved_sync_confidence.set(19);
+		_ = test
+			.db
+			.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
 		let gen_hash = H256::default();
 		let expected = format!(

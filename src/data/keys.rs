@@ -19,6 +19,8 @@ const IS_FINALITY_SYNCED_KEY: &str = "is_finality_sync";
 const CONNECTED_RPC_NODE_KEY: &str = "connected_rpc_node";
 /// Key for Sync Data that has been verified
 const VERIFIED_SYNC_DATA: &str = "verified_sync_data";
+/// Achieved Sync Confidence key
+const ACHIEVED_SYNC_CONFIDENCE_KEY: &str = "achieved_sync_confidence";
 
 pub struct AppDataKey(pub u32, pub u32);
 
@@ -173,5 +175,26 @@ impl From<VerifiedSyncDataKey> for HashMapKey {
 impl From<VerifiedSyncDataKey> for RocksDBKey {
 	fn from(_: VerifiedSyncDataKey) -> Self {
 		(Some(APP_STATE_CF), VERIFIED_SYNC_DATA.as_bytes().to_vec())
+	}
+}
+
+pub struct AchievedSyncConfidenceKey;
+
+impl RecordKey for AchievedSyncConfidenceKey {
+	type Type = Option<BlockRange>;
+}
+
+impl From<AchievedSyncConfidenceKey> for HashMapKey {
+	fn from(_: AchievedSyncConfidenceKey) -> Self {
+		HashMapKey(ACHIEVED_SYNC_CONFIDENCE_KEY.to_string())
+	}
+}
+
+impl From<AchievedSyncConfidenceKey> for RocksDBKey {
+	fn from(_: AchievedSyncConfidenceKey) -> Self {
+		(
+			Some(APP_STATE_CF),
+			ACHIEVED_SYNC_CONFIDENCE_KEY.as_bytes().to_vec(),
+		)
 	}
 }
