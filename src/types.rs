@@ -381,7 +381,7 @@ pub struct FibonacciConfig {
 pub struct RuntimeConfig {
 	/// Light client HTTP server host name (default: 127.0.0.1).
 	pub http_server_host: String,
-	/// Light client HTTP server port (default: 7000).
+	/// Light client HTTP server port (default: 7007).
 	pub http_server_port: u16,
 	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
 	/// If set to seed, keypair will be generated from that seed.
@@ -846,7 +846,7 @@ impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
-			http_server_port: 7000,
+			http_server_port: 7007,
 			port: 37000,
 			ws_transport_enable: false,
 			secret_key: None,
