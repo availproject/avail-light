@@ -21,6 +21,8 @@ const CONNECTED_RPC_NODE_KEY: &str = "connected_rpc_node";
 const VERIFIED_SYNC_DATA: &str = "verified_sync_data";
 /// Achieved Sync Confidence key
 const ACHIEVED_SYNC_CONFIDENCE_KEY: &str = "achieved_sync_confidence";
+/// Verified Sync Header key
+const VERIFIED_SYNC_HEADER_KEY: &str = "verified_sync_header";
 
 pub struct AppDataKey(pub u32, pub u32);
 
@@ -195,6 +197,27 @@ impl From<AchievedSyncConfidenceKey> for RocksDBKey {
 		(
 			Some(APP_STATE_CF),
 			ACHIEVED_SYNC_CONFIDENCE_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+pub struct VerifiedSyncHeaderKey;
+
+impl RecordKey for VerifiedSyncHeaderKey {
+	type Type = Option<BlockRange>;
+}
+
+impl From<VerifiedSyncHeaderKey> for HashMapKey {
+	fn from(_: VerifiedSyncHeaderKey) -> Self {
+		HashMapKey(VERIFIED_SYNC_HEADER_KEY.to_string())
+	}
+}
+
+impl From<VerifiedSyncHeaderKey> for RocksDBKey {
+	fn from(_: VerifiedSyncHeaderKey) -> Self {
+		(
+			Some(APP_STATE_CF),
+			VERIFIED_SYNC_HEADER_KEY.as_bytes().to_vec(),
 		)
 	}
 }
