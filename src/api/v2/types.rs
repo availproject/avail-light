@@ -26,7 +26,10 @@ use warp::{
 
 use crate::{
 	data::{
-		keys::{AchievedSyncConfidenceKey, RpcNodeKey, VerifiedSyncDataKey, VerifiedSyncHeaderKey},
+		keys::{
+			AchievedSyncConfidenceKey, LatestSyncKey, RpcNodeKey, VerifiedSyncDataKey,
+			VerifiedSyncHeaderKey,
+		},
 		Database,
 	},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
@@ -323,7 +326,11 @@ pub fn block_status(
 		if verified_sync_header.contains(block_number) {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
-		let is_sync_latest = state.sync_latest.map(|latest| block_number == latest);
+		let latest_sync = db
+			.get(LatestSyncKey)
+			.expect("Could not fetch Latest Sync from DB.")
+			.unwrap_or(None);
+		let is_sync_latest = latest_sync.map(|latest| block_number == latest);
 		if is_sync_latest.unwrap_or(false) {
 			return Some(BlockStatus::VerifyingHeader);
 		}
@@ -851,7 +858,10 @@ mod tests {
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
-			keys::{AchievedSyncConfidenceKey, VerifiedSyncDataKey, VerifiedSyncHeaderKey},
+			keys::{
+				AchievedSyncConfidenceKey, LatestSyncKey, VerifiedSyncDataKey,
+				VerifiedSyncHeaderKey,
+			},
 			mem_db, Database,
 		},
 		types::{OptionBlockRange, State},
@@ -1092,17 +1102,17 @@ mod tests {
 			verifying_header
 		);
 
-		let mut state = State {
+		let state = State {
 			latest: 5,
-			sync_latest: Some(1),
 			..Default::default()
 		};
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestSyncKey, Some(1));
 		assert_eq!(
 			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_header
 		);
-		state.sync_latest = Some(2);
+		_ = db.put(LatestSyncKey, Some(2));
 		assert_eq!(
 			block_status(&Some(1), &state, db.clone(), 2, ExtensionSome),
 			verifying_header

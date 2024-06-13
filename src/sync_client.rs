@@ -18,7 +18,8 @@
 use crate::{
 	data::{
 		keys::{
-			AchievedSyncConfidenceKey, BlockHeaderKey, VerifiedCellCountKey, VerifiedSyncHeaderKey,
+			AchievedSyncConfidenceKey, BlockHeaderKey, LatestSyncKey, VerifiedCellCountKey,
+			VerifiedSyncHeaderKey,
 		},
 		Database,
 	},
@@ -56,6 +57,7 @@ pub trait Client {
 	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()>;
 	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()>;
 	fn store_verified_sync_header(&self, block_number: u32) -> Result<()>;
+	fn store_latest_sync(&self, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -142,6 +144,12 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		self.db
 			.put(VerifiedSyncHeaderKey, block_range)
 			.wrap_err("Sync Client failed to store Verified Sync Header in DB.")
+	}
+
+	fn store_latest_sync(&self, block_number: u32) -> Result<()> {
+		self.db
+			.put(LatestSyncKey, Some(block_number))
+			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
 	}
 }
 
@@ -253,14 +261,14 @@ pub async fn run(
 			},
 		};
 
-		{
-			let mut state = state.lock().unwrap();
-			state.sync_latest.replace(block_number);
-			// TODO: Add proper header verification on sync
-			if let Err(error) = client.store_verified_sync_header(block_number) {
-				error!(block_number, "Cannot process block: {error:#}");
-				continue;
-			}
+		if let Err(error) = client.store_latest_sync(block_number) {
+			error!(block_number, "Cannot process block: {error:#}");
+			continue;
+		};
+		// TODO: Add proper header verification on sync
+		if let Err(error) = client.store_verified_sync_header(block_number) {
+			error!(block_number, "Cannot process block: {error:#}");
+			continue;
 		}
 
 		// TODO: Should we handle unprocessed blocks differently?
