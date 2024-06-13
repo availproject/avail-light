@@ -89,6 +89,9 @@ pub struct CliOpts {
 	/// ed25519 private key for libp2p keypair generation
 	#[arg(long)]
 	pub private_key: Option<String>,
+	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
+	#[arg(long, value_parser = block_matrix_partition_format::parse)]
+	pub block_matrix_partition: Option<Partition>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -251,6 +254,21 @@ pub mod block_matrix_partition_format {
 	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
 
+	pub fn parse(value: &str) -> Result<Partition, String> {
+		let value = value
+			.split('/')
+			.map(str::parse::<u8>)
+			.collect::<Result<Vec<u8>, _>>()
+			.map_err(|error| error.to_string())?;
+
+		match value[..] {
+			[0, _] | [_, 0] => Err("Partition number or fraction cannot be 0".to_string()),
+			[num, frac] if num > frac => Err(format!("Invalid partition: {num}/{frac}")),
+			[number, fraction] => Ok(Partition { number, fraction }),
+			_ => Err(format!("Invalid partition parameter: {value:?})")),
+		}
+	}
+
 	pub fn serialize<S>(partition: &Option<Partition>, serializer: S) -> Result<S::Ok, S::Error>
 	where
 		S: Serializer,
@@ -269,21 +287,12 @@ pub mod block_matrix_partition_format {
 	where
 		D: Deserializer<'de>,
 	{
-		let s = String::deserialize(deserializer)?;
-		if s.is_empty() || s.to_ascii_lowercase().contains("none") {
+		let value = &String::deserialize(deserializer)?;
+		if value.is_empty() || value.to_ascii_lowercase().contains("none") {
 			return Ok(None);
 		}
-		let parts = s.split('/').collect::<Vec<_>>();
-		if parts.len() != 2 {
-			return Err(serde::de::Error::custom(format!("Invalid value {s}")));
-		}
-		let number = parts[0].parse::<u8>().map_err(serde::de::Error::custom)?;
-		let fraction = parts[1].parse::<u8>().map_err(serde::de::Error::custom)?;
-		if number != 0 {
-			Ok(Some(Partition { number, fraction }))
-		} else {
-			Ok(None)
-		}
+
+		parse(value).map(Some).map_err(serde::de::Error::custom)
 	}
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1073,6 +1082,10 @@ impl RuntimeConfig {
 			self.secret_key = Some(SecretKey::Seed {
 				seed: seed.to_string(),
 			})
+		}
+
+		if let Some(partition) = &opts.block_matrix_partition {
+			self.block_matrix_partition = Some(*partition)
 		}
 
 		Ok(())
