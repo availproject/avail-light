@@ -1,5 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
+use libp2p::kad::Mode;
 use std::sync::Arc;
+use sysinfo::System;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 
@@ -7,26 +9,17 @@ use crate::{
 	network::p2p::Client as P2pClient,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::BlockVerified,
+	types::{BlockVerified, MaintenanceConfig},
 };
-
-#[derive(Clone, Copy)]
-pub struct StaticConfigParams {
-	pub block_confidence_treshold: f64,
-	pub replication_factor: u16,
-	pub query_timeout: u32,
-	pub pruning_interval: u32,
-	pub telemetry_flush_interval: u32,
-}
 
 pub async fn process_block(
 	block_number: u32,
 	p2p_client: &P2pClient,
-	static_config_params: StaticConfigParams,
+	maintenance_config: MaintenanceConfig,
 	metrics: &Arc<impl Metrics>,
 ) -> Result<()> {
 	#[cfg(not(feature = "kademlia-rocksdb"))]
-	if block_number % static_config_params.pruning_interval == 0 {
+	if block_number % maintenance_config.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
 		match p2p_client.prune_expired_records().await {
 			Ok(pruned) => info!(block_number, pruned, "Pruning finished"),
@@ -34,7 +27,7 @@ pub async fn process_block(
 		}
 	}
 
-	if block_number % static_config_params.telemetry_flush_interval == 0 {
+	if block_number % maintenance_config.telemetry_flush_interval == 0 {
 		info!(block_number, "Flushing metrics...");
 		match metrics.flush().await {
 			Ok(()) => info!(block_number, "Flushing metrics finished"),
@@ -58,22 +51,32 @@ pub async fn process_block(
 	let connected_peers = p2p_client.list_connected_peers().await?;
 	debug!("Connected peers: {:?}", connected_peers);
 
+	// Check if Kademlia mode change needs to happen
+	if maintenance_config.automatic_server_mode {
+		// Check external reachability and local hardware availability
+		let local_info = p2p_client.get_local_info().await?;
+		if !local_info.external_listeners.is_empty() && check_system_resources() {
+			info!("Switching Kademlia mode to server!");
+			_ = p2p_client.change_kademlia_mode(Mode::Server);
+		}
+	}
+
 	let peers_num_metric = MetricValue::DHTConnectedPeers(peers_num);
 	metrics.record(peers_num_metric).await;
 
 	metrics
 		.record(MetricValue::BlockConfidenceThreshold(
-			static_config_params.block_confidence_treshold,
+			maintenance_config.block_confidence_treshold,
 		))
 		.await;
 	metrics
 		.record(MetricValue::DHTReplicationFactor(
-			static_config_params.replication_factor,
+			maintenance_config.replication_factor,
 		))
 		.await;
 	metrics
 		.record(MetricValue::DHTQueryTimeout(
-			static_config_params.query_timeout,
+			maintenance_config.query_timeout,
 		))
 		.await;
 	metrics.count(MetricCounter::Up).await;
@@ -86,7 +89,7 @@ pub async fn run(
 	p2p_client: P2pClient,
 	metrics: Arc<impl Metrics>,
 	mut block_receiver: broadcast::Receiver<BlockVerified>,
-	static_config_params: StaticConfigParams,
+	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
 ) {
 	info!("Starting maintenance...");
@@ -104,4 +107,20 @@ pub async fn run(
 			break;
 		}
 	}
+}
+
+// Total available memory > 16GB
+// CPU core count > 4
+fn check_system_resources() -> bool {
+	let sys = System::new_all();
+
+	let total_memory_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+	let num_cpus = sys.cpus().len();
+
+	info!(
+		"Total memory: {} GB. CPU core count: {}.",
+		total_memory_gb, num_cpus
+	);
+
+	total_memory_gb > 16.0 && num_cpus > 4
 }

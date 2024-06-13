@@ -11,7 +11,7 @@ use avail_light::{
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
-	types::{CliOpts, IdentityConfig, LibP2PConfig, Network, OtelConfig, RuntimeConfig},
+	types::{CliOpts, IdentityConfig, LibP2PConfig, Network, OtelConfig, RuntimeConfig, State},
 	utils::spawn_in_span,
 };
 use clap::Parser;
@@ -365,15 +365,8 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		db.put(IsFinalitySyncedKey, true);
 	}
 
-	let static_config_params = StaticConfigParams {
-		block_confidence_treshold: cfg.confidence,
-		replication_factor: cfg.replication_factor,
-		query_timeout: cfg.query_timeout,
-		pruning_interval: cfg.store_pruning_interval,
-		telemetry_flush_interval: cfg.ot_flush_block_interval,
-	};
-
-	spawn_in_span(shutdown.with_cancel(avail_light::maintenance::run(
+	let static_config_params: MaintenanceConfig = (&cfg).into();
+	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
