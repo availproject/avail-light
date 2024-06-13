@@ -443,6 +443,7 @@ pub async fn run(
 		let mut state = state.lock().expect("State lock can be acquired");
 		match sync_range.contains(&block_number) {
 			true => {
+				// initialize DB data on startup
 				let mut verified_sync_data = None;
 				verified_sync_data.set(block_number);
 				_ = db

@@ -26,7 +26,7 @@ use warp::{
 
 use crate::{
 	data::{
-		keys::{RpcNodeKey, VerifiedSyncDataKey},
+		keys::{AchievedSyncConfidenceKey, RpcNodeKey, VerifiedSyncDataKey},
 		Database,
 	},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
@@ -173,7 +173,12 @@ impl Status {
 	pub fn new(config: &RuntimeConfig, state: &State, db: impl Database) -> Self {
 		let historical_sync = state.synced.map(|synced| HistoricalSync {
 			synced,
-			available: state.sync_confidence_achieved.as_ref().map(From::from),
+			available: db
+				.get(AchievedSyncConfidenceKey)
+				.unwrap()
+				.expect("Could not fetch Achieved Sync Confidence from DB.")
+				.as_ref()
+				.map(From::from),
 			app_data: db
 				.get(VerifiedSyncDataKey)
 				.unwrap()
@@ -295,12 +300,19 @@ pub fn block_status(
 	};
 
 	if block_number < first_block {
-		let verified_sync_data = db.get(VerifiedSyncDataKey).unwrap().unwrap_or(None);
-		// .expect("Could not fetch Verified Sync Data from DB.");
+		let verified_sync_data = db
+			.get(VerifiedSyncDataKey)
+			.expect("Could not fetch Verified Sync Data from DB.")
+			.unwrap_or(None);
 		if verified_sync_data.contains(block_number) {
 			return Some(BlockStatus::Finished);
 		}
-		if state.sync_confidence_achieved.contains(block_number) {
+
+		let achieved_sync_confidence = db
+			.get(AchievedSyncConfidenceKey)
+			.expect("Could not fetch Achieved Sync Confidence from DB.")
+			.unwrap_or(None);
+		if achieved_sync_confidence.contains(block_number) {
 			return Some(BlockStatus::VerifyingData);
 		}
 		if state.sync_header_verified.contains(block_number) {
@@ -833,7 +845,10 @@ mod tests {
 
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
-		data::{keys::VerifiedSyncDataKey, mem_db, Database},
+		data::{
+			keys::{AchievedSyncConfidenceKey, VerifiedSyncDataKey},
+			mem_db, Database,
+		},
 		types::{OptionBlockRange, State},
 		utils::OptionalExtension,
 	};
@@ -1008,15 +1023,15 @@ mod tests {
 			unavailable
 		);
 		assert_eq!(
-			block_status(&Some(1), &state, db.clone(), 0, ExtensionNone),
+			block_status(&Some(10), &state, db.clone(), 0, ExtensionNone),
 			unavailable
 		);
 		assert_eq!(
-			block_status(&Some(1), &state, db.clone(), 0, ExtensionNone),
+			block_status(&Some(10), &state, db.clone(), 9, ExtensionNone),
 			unavailable
 		);
 		assert_ne!(
-			block_status(&Some(1), &state, db.clone(), 0, ExtensionNone),
+			block_status(&Some(9), &state, db.clone(), 9, ExtensionNone),
 			unavailable
 		);
 	}
@@ -1030,15 +1045,19 @@ mod tests {
 		let db = mem_db::MemoryDB::default();
 		let pending = Some(BlockStatus::Pending);
 		assert_eq!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(0), &state, db.clone(), 0, ExtensionSome),
 			pending
 		);
 		assert_eq!(
 			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
 			pending
 		);
+		assert_eq!(
+			block_status(&Some(0), &state, db.clone(), 4, ExtensionSome),
+			pending
+		);
 		assert_ne!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(0), &state, db.clone(), 5, ExtensionSome),
 			pending
 		);
 	}
@@ -1049,7 +1068,7 @@ mod tests {
 		let db = mem_db::MemoryDB::default();
 		let verifying_header = Some(BlockStatus::VerifyingHeader);
 		assert_eq!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(0), &state, db.clone(), 0, ExtensionSome),
 			verifying_header
 		);
 		state.latest = 1;
@@ -1059,12 +1078,12 @@ mod tests {
 		);
 		state.latest = 10;
 		assert_eq!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(0), &state, db.clone(), 10, ExtensionSome),
 			verifying_header
 		);
 		state.latest = 11;
 		assert_ne!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(10), &state, db.clone(), 10, ExtensionSome),
 			verifying_header
 		);
 
@@ -1075,16 +1094,16 @@ mod tests {
 		};
 		let db = mem_db::MemoryDB::default();
 		assert_eq!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_header
 		);
 		state.sync_latest = Some(2);
 		assert_eq!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 2, ExtensionSome),
 			verifying_header
 		);
 		assert_ne!(
-			block_status(&Some(0), &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 3, ExtensionSome),
 			verifying_header
 		);
 	}
@@ -1104,15 +1123,15 @@ mod tests {
 		state.header_verified.set(5);
 		state.confidence_achieved.set(4);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 5, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 4, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 6, ExtensionSome),
 			verifying_confidence
 		);
 
@@ -1122,22 +1141,24 @@ mod tests {
 		};
 		state.sync_header_verified.set(1);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_confidence
 		);
-		state.sync_confidence_achieved.set(1);
+		let mut achieved_sync_confidence = None;
+		achieved_sync_confidence.set(1);
+		achieved_sync_confidence.set(4);
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 		state.sync_header_verified.set(5);
-		state.sync_confidence_achieved.set(4);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 5, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 4, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 6, ExtensionSome),
 			verifying_confidence
 		);
 	}
@@ -1159,15 +1180,15 @@ mod tests {
 		state.confidence_achieved.set(5);
 		state.data_verified.set(4);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 5, ExtensionSome),
 			verifying_data
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 4, ExtensionSome),
 			verifying_data
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 6, ExtensionSome),
 			verifying_data
 		);
 
@@ -1176,28 +1197,30 @@ mod tests {
 			..Default::default()
 		};
 		state.sync_header_verified.set(1);
-		state.sync_confidence_achieved.set(1);
+		let mut achieved_sync_confidence = None;
+		achieved_sync_confidence.set(1);
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence.clone());
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_data
 		);
 		let mut verified_sync_data = None;
 		verified_sync_data.set(1);
+		verified_sync_data.set(4);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
 		state.sync_header_verified.set(5);
-		state.sync_confidence_achieved.set(5);
-		verified_sync_data.set(4);
-		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
+		achieved_sync_confidence.set(5);
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 5, ExtensionSome),
 			verifying_data
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 4, ExtensionSome),
 			verifying_data
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 6, ExtensionSome),
 			verifying_data
 		);
 	}
@@ -1217,15 +1240,15 @@ mod tests {
 		state.header_verified.set(5);
 		state.data_verified.set(5);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 4, ExtensionSome),
 			finished
 		);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 5, ExtensionSome),
 			finished
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&None, &state, db.clone(), 6, ExtensionSome),
 			finished
 		);
 
@@ -1238,22 +1261,22 @@ mod tests {
 		verified_sync_data.set(1);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			finished
 		);
 		state.sync_header_verified.set(5);
 		verified_sync_data.set(5);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 4, ExtensionSome),
 			finished
 		);
 		assert_eq!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 5, ExtensionSome),
 			finished
 		);
 		assert_ne!(
-			block_status(&None, &state, db.clone(), 1, ExtensionSome),
+			block_status(&Some(1), &state, db.clone(), 6, ExtensionSome),
 			finished
 		);
 	}
