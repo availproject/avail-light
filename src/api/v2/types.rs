@@ -26,7 +26,7 @@ use warp::{
 
 use crate::{
 	data::{
-		keys::{AchievedSyncConfidenceKey, RpcNodeKey, VerifiedSyncDataKey},
+		keys::{AchievedSyncConfidenceKey, RpcNodeKey, VerifiedSyncDataKey, VerifiedSyncHeaderKey},
 		Database,
 	},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
@@ -315,7 +315,12 @@ pub fn block_status(
 		if achieved_sync_confidence.contains(block_number) {
 			return Some(BlockStatus::VerifyingData);
 		}
-		if state.sync_header_verified.contains(block_number) {
+
+		let verified_sync_header = db
+			.get(VerifiedSyncHeaderKey)
+			.expect("Could not fetch Verified Sync Header from DB.")
+			.unwrap_or(None);
+		if verified_sync_header.contains(block_number) {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
 		let is_sync_latest = state.sync_latest.map(|latest| block_number == latest);
@@ -846,7 +851,7 @@ mod tests {
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
-			keys::{AchievedSyncConfidenceKey, VerifiedSyncDataKey},
+			keys::{AchievedSyncConfidenceKey, VerifiedSyncDataKey, VerifiedSyncHeaderKey},
 			mem_db, Database,
 		},
 		types::{OptionBlockRange, State},
@@ -1135,11 +1140,13 @@ mod tests {
 			verifying_confidence
 		);
 
-		let mut state = State {
+		let state = State {
 			latest: 10,
 			..Default::default()
 		};
-		state.sync_header_verified.set(1);
+		let mut verified_sync_header = None;
+		verified_sync_header.set(1);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		assert_eq!(
 			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_confidence
@@ -1148,7 +1155,8 @@ mod tests {
 		achieved_sync_confidence.set(1);
 		achieved_sync_confidence.set(4);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
-		state.sync_header_verified.set(5);
+		verified_sync_header.set(5);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
 		assert_eq!(
 			block_status(&Some(1), &state, db.clone(), 5, ExtensionSome),
 			verifying_confidence
@@ -1192,11 +1200,13 @@ mod tests {
 			verifying_data
 		);
 
-		let mut state = State {
+		let state = State {
 			latest: 10,
 			..Default::default()
 		};
-		state.sync_header_verified.set(1);
+		let mut verified_sync_header = None;
+		verified_sync_header.set(1);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		let mut achieved_sync_confidence = None;
 		achieved_sync_confidence.set(1);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence.clone());
@@ -1208,7 +1218,8 @@ mod tests {
 		verified_sync_data.set(1);
 		verified_sync_data.set(4);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
-		state.sync_header_verified.set(5);
+		verified_sync_header.set(5);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
 		achieved_sync_confidence.set(5);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 		assert_eq!(
@@ -1252,11 +1263,14 @@ mod tests {
 			finished
 		);
 
-		let mut state = State {
+		let state = State {
 			latest: 10,
 			..Default::default()
 		};
-		state.sync_header_verified.set(1);
+
+		let mut verified_sync_header = None;
+		verified_sync_header.set(1);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		let mut verified_sync_data = None;
 		verified_sync_data.set(1);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
@@ -1264,7 +1278,8 @@ mod tests {
 			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			finished
 		);
-		state.sync_header_verified.set(5);
+		verified_sync_header.set(5);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
 		verified_sync_data.set(5);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 		assert_eq!(

@@ -17,7 +17,9 @@
 
 use crate::{
 	data::{
-		keys::{AchievedSyncConfidenceKey, BlockHeaderKey, VerifiedCellCountKey},
+		keys::{
+			AchievedSyncConfidenceKey, BlockHeaderKey, VerifiedCellCountKey, VerifiedSyncHeaderKey,
+		},
 		Database,
 	},
 	network::{
@@ -53,6 +55,7 @@ pub trait Client {
 	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>;
 	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()>;
 	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()>;
+	fn store_verified_sync_header(&self, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -124,6 +127,21 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		self.db
 			.put(AchievedSyncConfidenceKey, block_range)
 			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
+	}
+
+	fn store_verified_sync_header(&self, block_number: u32) -> Result<()> {
+		// get the current BlockRange stored in DB under this key
+		let mut block_range = self
+			.db
+			.get(VerifiedSyncHeaderKey)
+			.wrap_err("Sync Client failed to fetch Verified Sync Header from DB.")?
+			.unwrap_or(None);
+		// mutate the value
+		block_range.set(block_number);
+		// store mutated value back in the DB
+		self.db
+			.put(VerifiedSyncHeaderKey, block_range)
+			.wrap_err("Sync Client failed to store Verified Sync Header in DB.")
 	}
 }
 
@@ -239,7 +257,10 @@ pub async fn run(
 			let mut state = state.lock().unwrap();
 			state.sync_latest.replace(block_number);
 			// TODO: Add proper header verification on sync
-			state.sync_header_verified.set(block_number);
+			if let Err(error) = client.store_verified_sync_header(block_number) {
+				error!(block_number, "Cannot process block: {error:#}");
+				continue;
+			}
 		}
 
 		// TODO: Should we handle unprocessed blocks differently?
