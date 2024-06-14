@@ -58,12 +58,7 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 			..
 		} = self.cfg.clone();
 
-		let v1_api = v1::routes(
-			self.db.clone(),
-			app_id,
-			self.state.clone(),
-			self.cfg.clone(),
-		);
+		let v1_api = v1::routes(self.db.clone(), app_id, self.cfg.clone());
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
