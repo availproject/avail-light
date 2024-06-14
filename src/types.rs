@@ -1108,7 +1108,6 @@ pub struct State {
 	pub latest: u32,
 	pub header_verified: Option<BlockRange>,
 	pub confidence_achieved: Option<BlockRange>,
-	pub data_verified: Option<BlockRange>,
 }
 
 pub trait OptionBlockRange {
