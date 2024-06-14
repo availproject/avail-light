@@ -152,7 +152,7 @@ pub async fn process_block(
 	db.put(VerifiedCellCountKey(block_number), verified as u32)
 		.wrap_err("Light Client failed to store Confidence Factor")?;
 
-	// get current currently stored Achieved Confidence
+	// get currently stored Achieved Confidence
 	let mut achieved_confidence = db
 		.get(AchievedConfidenceKey)
 		.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?

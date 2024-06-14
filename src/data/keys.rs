@@ -29,6 +29,8 @@ const LATEST_SYNC_KEY: &str = "latest_sync";
 const VERIFIED_DATA_KEY: &str = "verified_data";
 /// Key for storing Achieved Confidence
 const ACHIEVED_CONFIDENCE_KEY: &str = "achieved_confidence";
+/// Key for storing Verified Header
+const VERIFIED_HEADER_KEY: &str = "verified_header";
 
 pub struct AppDataKey(pub u32, pub u32);
 
@@ -282,5 +284,23 @@ impl From<AchievedConfidenceKey> for RocksDBKey {
 			Some(APP_STATE_CF),
 			ACHIEVED_CONFIDENCE_KEY.as_bytes().to_vec(),
 		)
+	}
+}
+
+pub struct VerifiedHeaderKey;
+
+impl RecordKey for VerifiedHeaderKey {
+	type Type = Option<BlockRange>;
+}
+
+impl From<VerifiedHeaderKey> for HashMapKey {
+	fn from(_: VerifiedHeaderKey) -> Self {
+		HashMapKey(VERIFIED_HEADER_KEY.to_string())
+	}
+}
+
+impl From<VerifiedHeaderKey> for RocksDBKey {
+	fn from(_: VerifiedHeaderKey) -> Self {
+		(Some(APP_STATE_CF), VERIFIED_HEADER_KEY.as_bytes().to_vec())
 	}
 }

@@ -16,7 +16,7 @@ use tracing::{debug, info, trace};
 use super::{Client, Subscription};
 use crate::{
 	data::{
-		keys::{FinalitySyncCheckpointKey, IsFinalitySyncedKey},
+		keys::{FinalitySyncCheckpointKey, IsFinalitySyncedKey, VerifiedHeaderKey},
 		Database, FinalitySyncCheckpoint,
 	},
 	finality::{check_finality, ValidatorSet},
@@ -245,12 +245,20 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				// reset Last Finalized Block Header
 				self.block_data.last_finalized_block_header = Some(header.clone());
 
+				// get currently stored Verified Header
+				let mut verified_header = self
+					.db
+					.get(VerifiedHeaderKey)
+					.expect("Light Client failed to fetch Verified Header from DB.")
+					.unwrap_or(None);
+				// mutate value
+				verified_header.set(header.number);
+				// and store in DB
+				self.db
+					.put(VerifiedHeaderKey, verified_header)
+					.expect("Light Client failed to store Verified Header in DB.");
+
 				// finally, send the Verified Block Header
-				self.state
-					.lock()
-					.unwrap()
-					.header_verified
-					.set(header.number);
 				self.event_sender
 					.send(Event::HeaderUpdate {
 						header,
