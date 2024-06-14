@@ -267,8 +267,8 @@ mod tests {
 		},
 		data::{
 			keys::{
-				AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey, LatestSyncKey,
-				VerifiedCellCountKey, VerifiedDataKey, VerifiedSyncDataKey,
+				AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
+				LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedSyncDataKey,
 			},
 			mem_db::{self, MemoryDB},
 			Database,
@@ -355,10 +355,12 @@ mod tests {
 		{
 			let mut state = state.lock().unwrap();
 			state.latest = 30;
-			state.confidence_achieved.set(20);
-			state.confidence_achieved.set(29);
 			state.synced.replace(false);
 		}
+
+		let mut achieved_confidence = Some(BlockRange::init(20));
+		achieved_confidence.set(29);
+		_ = db.put(AchievedConfidenceKey, achieved_confidence);
 
 		let mut verified_sync_data = Some(BlockRange::init(10));
 		verified_sync_data.set(18);
@@ -581,10 +583,10 @@ mod tests {
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
 			header_verified: Some(BlockRange::init(10)),
-			confidence_achieved: Some(BlockRange::init(9)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(9)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(8)));
 		_ = db.put(LatestSyncKey, Some(5));
 		_ = db.put(BlockHeaderKey(block_number), header());
@@ -624,10 +626,10 @@ mod tests {
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
 			header_verified: Some(BlockRange::init(5)),
-			confidence_achieved: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, state, db);
@@ -652,10 +654,10 @@ mod tests {
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
 			header_verified: Some(BlockRange::init(5)),
-			confidence_achieved: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(
 			AppDataKey(1, 5),
@@ -842,10 +844,12 @@ mod tests {
 		{
 			let mut state = test.state.lock().unwrap();
 			state.latest = 30;
-			state.confidence_achieved.set(20);
-			state.confidence_achieved.set(29);
 			state.synced.replace(false);
 		}
+
+		let mut achieved_confidence = Some(BlockRange::init(20));
+		achieved_confidence.set(29);
+		_ = test.db.put(AchievedConfidenceKey, achieved_confidence);
 
 		let mut verified_sync_data = Some(BlockRange::init(10));
 		verified_sync_data.set(18);

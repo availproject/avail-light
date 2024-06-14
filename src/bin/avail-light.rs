@@ -434,7 +434,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			light_network_client,
 			(&cfg).into(),
 			ot_metrics,
-			state.clone(),
 			channels,
 			shutdown.clone(),
 		)));

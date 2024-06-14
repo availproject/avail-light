@@ -22,15 +22,12 @@ use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{commitments, matrix::Dimensions};
 use sp_core::blake2_256;
-use std::{
-	sync::{Arc, Mutex},
-	time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 use tracing::{error, info};
 
 use crate::{
 	data::{
-		keys::{BlockHeaderKey, VerifiedCellCountKey},
+		keys::{AchievedConfidenceKey, BlockHeaderKey, VerifiedCellCountKey},
 		Database,
 	},
 	network::{
@@ -39,7 +36,7 @@ use crate::{
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, ClientChannels, LightClientConfig, OptionBlockRange, State},
+	types::{self, ClientChannels, LightClientConfig, OptionBlockRange},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -50,7 +47,6 @@ pub async fn process_block(
 	cfg: &LightClientConfig,
 	header: Header,
 	received_at: Instant,
-	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>> {
 	metrics.count(MetricCounter::SessionBlockCounter).await;
 	metrics
@@ -68,8 +64,16 @@ pub async fn process_block(
 	let (required, verified, unverified) = match extract_kate(&header.extension) {
 		None => {
 			info!("Skipping block without header extension");
-
-			state.lock().unwrap().confidence_achieved.set(block_number);
+			// get current currently stored Achieved Confidence
+			let mut achieved_confidence = db
+				.get(AchievedConfidenceKey)
+				.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?
+				.unwrap_or(None);
+			// mutate value
+			achieved_confidence.set(block_number);
+			// and store in DB
+			db.put(AchievedConfidenceKey, achieved_confidence)
+				.wrap_err("Light Client failed to store Achieved Confidence in DB.")?;
 
 			db.put(BlockHeaderKey(block_number), header)
 				.wrap_err("Light Client failed to store Block Header")?;
@@ -146,11 +150,20 @@ pub async fn process_block(
 		return Ok(None);
 	}
 
-	// write confidence factor into on-disk database
+	// write Verified Cell Count into on-disk db
 	db.put(VerifiedCellCountKey(block_number), verified as u32)
 		.wrap_err("Light Client failed to store Confidence Factor")?;
 
-	state.lock().unwrap().confidence_achieved.set(block_number);
+	// get current currently stored Achieved Confidence
+	let mut achieved_confidence = db
+		.get(AchievedConfidenceKey)
+		.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?
+		.unwrap_or(None);
+	// mutate value
+	achieved_confidence.set(block_number);
+	// and store in DB
+	db.put(AchievedConfidenceKey, achieved_confidence)
+		.wrap_err("Light Client failed to store Achieved Confidence in DB.")?;
 
 	let confidence = calculate_confidence(verified as u32);
 	info!(
@@ -192,7 +205,6 @@ pub async fn run(
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,
-	state: Arc<Mutex<State>>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 ) {
@@ -230,7 +242,6 @@ pub async fn run(
 			&cfg,
 			header.clone(),
 			received_at,
-			state.clone(),
 		)
 		.await;
 		let confidence = match process_block_result {
@@ -339,7 +350,6 @@ mod tests {
 				},
 			}),
 		};
-		let state = Arc::new(Mutex::new(State::default()));
 		let recv = Instant::now();
 		mock_network_client
 			.expect_fetch_verified()
@@ -365,7 +375,6 @@ mod tests {
 			&cfg,
 			header,
 			recv,
-			state,
 		)
 		.await
 		.unwrap();
