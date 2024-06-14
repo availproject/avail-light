@@ -268,7 +268,7 @@ mod tests {
 		data::{
 			keys::{
 				AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey, LatestSyncKey,
-				VerifiedCellCountKey, VerifiedSyncDataKey,
+				VerifiedCellCountKey, VerifiedDataKey, VerifiedSyncDataKey,
 			},
 			mem_db::{self, MemoryDB},
 			Database,
@@ -357,18 +357,18 @@ mod tests {
 			state.latest = 30;
 			state.confidence_achieved.set(20);
 			state.confidence_achieved.set(29);
-			state.data_verified.set(20);
-			state.data_verified.set(29);
 			state.synced.replace(false);
 		}
 
-		let mut verified_sync_data = None;
-		verified_sync_data.set(10);
+		let mut verified_sync_data = Some(BlockRange::init(10));
 		verified_sync_data.set(18);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 
-		let mut achieved_sync_confidence = None;
-		achieved_sync_confidence.set(10);
+		let mut verified_data = Some(BlockRange::init(20));
+		verified_data.set(29);
+		_ = db.put(VerifiedDataKey, verified_data.clone());
+
+		let mut achieved_sync_confidence = Some(BlockRange::init(10));
 		achieved_sync_confidence.set(19);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
@@ -417,9 +417,9 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = 10;
 			state.header_verified.set(10);
-			state.data_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
 		_ = db.put(BlockHeaderKey(10), incomplete_header());
 		let route = super::block_route(config, state, db);
 		let response = warp::test::request()
@@ -443,9 +443,9 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = 10;
 			state.header_verified.set(10);
-			state.data_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedCellCountKey(10), 4);
 		_ = db.put(BlockHeaderKey(10), header());
 		let route = super::block_route(config, state, db);
@@ -582,10 +582,10 @@ mod tests {
 			latest: 10,
 			header_verified: Some(BlockRange::init(10)),
 			confidence_achieved: Some(BlockRange::init(9)),
-			data_verified: Some(BlockRange::init(8)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedDataKey, Some(BlockRange::init(8)));
 		_ = db.put(LatestSyncKey, Some(5));
 		_ = db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_data_route(config, state, db);
@@ -625,10 +625,10 @@ mod tests {
 			latest: 10,
 			header_verified: Some(BlockRange::init(5)),
 			confidence_achieved: Some(BlockRange::init(5)),
-			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, state, db);
 		let response = warp::test::request()
@@ -653,10 +653,10 @@ mod tests {
 			latest: 10,
 			header_verified: Some(BlockRange::init(5)),
 			confidence_achieved: Some(BlockRange::init(5)),
-			data_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(
 			AppDataKey(1, 5),
 			vec![vec![
@@ -844,18 +844,18 @@ mod tests {
 			state.latest = 30;
 			state.confidence_achieved.set(20);
 			state.confidence_achieved.set(29);
-			state.data_verified.set(20);
-			state.data_verified.set(29);
 			state.synced.replace(false);
 		}
 
-		let mut verified_sync_data = None;
-		verified_sync_data.set(10);
+		let mut verified_sync_data = Some(BlockRange::init(10));
 		verified_sync_data.set(18);
 		_ = test.db.put(VerifiedSyncDataKey, verified_sync_data);
 
-		let mut achieved_sync_confidence = None;
-		achieved_sync_confidence.set(10);
+		let mut verified_data = Some(BlockRange::init(20));
+		verified_data.set(29);
+		_ = test.db.put(VerifiedDataKey, verified_data);
+
+		let mut achieved_sync_confidence = Some(BlockRange::init(10));
 		achieved_sync_confidence.set(19);
 		_ = test
 			.db

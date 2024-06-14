@@ -27,8 +27,8 @@ use warp::{
 use crate::{
 	data::{
 		keys::{
-			AchievedSyncConfidenceKey, LatestSyncKey, RpcNodeKey, VerifiedSyncDataKey,
-			VerifiedSyncHeaderKey,
+			AchievedSyncConfidenceKey, LatestSyncKey, RpcNodeKey, VerifiedDataKey,
+			VerifiedSyncDataKey, VerifiedSyncHeaderKey,
 		},
 		Database,
 	},
@@ -178,22 +178,26 @@ impl Status {
 			synced,
 			available: db
 				.get(AchievedSyncConfidenceKey)
-				.unwrap()
 				.expect("Could not fetch Achieved Sync Confidence from DB.")
+				.unwrap_or(None)
 				.as_ref()
 				.map(From::from),
 			app_data: db
 				.get(VerifiedSyncDataKey)
-				.unwrap()
 				.expect("Could not fetch Verified Sync Data from DB.")
+				.unwrap_or(None)
 				.as_ref()
 				.map(From::from),
 		});
 
+		let verified_data = db
+			.get(VerifiedDataKey)
+			.expect("Could not fetch Verified Data from DB.")
+			.unwrap_or(None);
 		let blocks = Blocks {
 			latest: state.latest,
 			available: state.confidence_achieved.as_ref().map(From::from),
-			app_data: state.data_verified.as_ref().map(From::from),
+			app_data: verified_data.as_ref().map(From::from),
 			historical_sync,
 		};
 
@@ -335,7 +339,11 @@ pub fn block_status(
 			return Some(BlockStatus::VerifyingHeader);
 		}
 	} else {
-		if state.data_verified.contains(block_number) {
+		let verified_data = db
+			.get(VerifiedDataKey)
+			.expect("Could not fetch Verified Data from DB.")
+			.unwrap_or(None);
+		if verified_data.contains(block_number) {
 			return Some(BlockStatus::Finished);
 		}
 		if state.confidence_achieved.contains(block_number) {
@@ -859,12 +867,12 @@ mod tests {
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
 			keys::{
-				AchievedSyncConfidenceKey, LatestSyncKey, VerifiedSyncDataKey,
+				AchievedSyncConfidenceKey, LatestSyncKey, VerifiedDataKey, VerifiedSyncDataKey,
 				VerifiedSyncHeaderKey,
 			},
 			mem_db, Database,
 		},
-		types::{OptionBlockRange, State},
+		types::{BlockRange, OptionBlockRange, State},
 		utils::{spawn_in_span, OptionalExtension},
 	};
 
@@ -1154,15 +1162,13 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		};
-		let mut verified_sync_header = None;
-		verified_sync_header.set(1);
+		let mut verified_sync_header = Some(BlockRange::init(1));
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		assert_eq!(
 			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_confidence
 		);
-		let mut achieved_sync_confidence = None;
-		achieved_sync_confidence.set(1);
+		let mut achieved_sync_confidence = Some(BlockRange::init(1));
 		achieved_sync_confidence.set(4);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 		verified_sync_header.set(5);
@@ -1193,10 +1199,12 @@ mod tests {
 			block_status(&None, &state, db.clone(), 1, ExtensionSome),
 			verifying_data
 		);
-		state.data_verified.set(1);
+
+		let mut verified_data = Some(BlockRange::init(1));
+		verified_data.set(4);
+		_ = db.put(VerifiedDataKey, verified_data);
 		state.header_verified.set(5);
 		state.confidence_achieved.set(5);
-		state.data_verified.set(4);
 		assert_eq!(
 			block_status(&None, &state, db.clone(), 5, ExtensionSome),
 			verifying_data
@@ -1214,18 +1222,15 @@ mod tests {
 			latest: 10,
 			..Default::default()
 		};
-		let mut verified_sync_header = None;
-		verified_sync_header.set(1);
+		let mut verified_sync_header = Some(BlockRange::init(1));
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
-		let mut achieved_sync_confidence = None;
-		achieved_sync_confidence.set(1);
+		let mut achieved_sync_confidence = Some(BlockRange::init(1));
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence.clone());
 		assert_eq!(
 			block_status(&Some(1), &state, db.clone(), 1, ExtensionSome),
 			verifying_data
 		);
-		let mut verified_sync_data = None;
-		verified_sync_data.set(1);
+		let mut verified_sync_data = Some(BlockRange::init(1));
 		verified_sync_data.set(4);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
 		verified_sync_header.set(5);
@@ -1253,13 +1258,15 @@ mod tests {
 		let finished = Some(BlockStatus::Finished);
 		state.latest = 10;
 		state.header_verified.set(1);
-		state.data_verified.set(1);
+		let mut verified_data = Some(BlockRange::init(1));
+		_ = db.put(VerifiedDataKey, verified_data.clone());
 		assert_eq!(
 			block_status(&None, &state, db.clone(), 1, ExtensionSome),
 			finished
 		);
 		state.header_verified.set(5);
-		state.data_verified.set(5);
+		verified_data.set(5);
+		_ = db.put(VerifiedDataKey, verified_data);
 		assert_eq!(
 			block_status(&None, &state, db.clone(), 4, ExtensionSome),
 			finished
@@ -1278,8 +1285,7 @@ mod tests {
 			..Default::default()
 		};
 
-		let mut verified_sync_header = None;
-		verified_sync_header.set(1);
+		let mut verified_sync_header = Some(BlockRange::init(1));
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		let mut verified_sync_data = None;
 		verified_sync_data.set(1);
