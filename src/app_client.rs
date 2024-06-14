@@ -42,13 +42,13 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::{
-		keys::{AppDataKey, VerifiedSyncDataKey},
+		keys::{AppDataKey, VerifiedDataKey, VerifiedSyncDataKey},
 		Database,
 	},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
-	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
+	types::{AppClientConfig, BlockRange, BlockVerified, State},
 };
 
 #[async_trait]
@@ -444,13 +444,15 @@ pub async fn run(
 		match sync_range.contains(&block_number) {
 			true => {
 				// initialize DB data on startup
-				let mut verified_sync_data = None;
-				verified_sync_data.set(block_number);
 				_ = db
-					.put(VerifiedSyncDataKey, verified_sync_data)
+					.put(VerifiedSyncDataKey, Some(BlockRange::init(block_number)))
 					.expect("App Client Failed to initialize Verified Sync Data in DB.");
 			},
-			false => state.data_verified.set(block_number),
+			false => {
+				_ = db
+					.put(VerifiedDataKey, Some(BlockRange::init(block_number)))
+					.expect("App Client Failed to initialize Verified Data in DB.");
+			},
 		}
 		if state.synced == Some(false) && sync_range.clone().last() == Some(block_number) {
 			state.synced.replace(true);
