@@ -268,7 +268,8 @@ mod tests {
 		data::{
 			keys::{
 				AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-				LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedSyncDataKey,
+				LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey,
+				VerifiedSyncDataKey,
 			},
 			mem_db::{self, MemoryDB},
 			Database,
@@ -418,9 +419,9 @@ mod tests {
 		{
 			let mut state = state.lock().unwrap();
 			state.latest = 10;
-			state.header_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
 		_ = db.put(BlockHeaderKey(10), incomplete_header());
 		let route = super::block_route(config, state, db);
@@ -444,9 +445,9 @@ mod tests {
 		{
 			let mut state = state.lock().unwrap();
 			state.latest = 10;
-			state.header_verified.set(10);
 		}
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedCellCountKey(10), 4);
 		_ = db.put(BlockHeaderKey(10), header());
@@ -475,11 +476,11 @@ mod tests {
 		};
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
-			header_verified: Some(BlockRange::init(9)),
 			..Default::default()
 		}));
 
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(9)));
 		_ = db.put(LatestSyncKey, Some(5));
 		_ = db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_header_route(config, state, db);
@@ -551,10 +552,10 @@ mod tests {
 		let config = RuntimeConfig::default();
 		let state = Arc::new(Mutex::new(State {
 			latest: 1,
-			header_verified: Some(BlockRange::init(1)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(1)));
 		_ = db.put(BlockHeaderKey(1), header());
 		let route = super::block_header_route(config, state, db);
 		let response = warp::test::request()
@@ -582,10 +583,10 @@ mod tests {
 		};
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
-			header_verified: Some(BlockRange::init(10)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(9)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(8)));
 		_ = db.put(LatestSyncKey, Some(5));
@@ -625,10 +626,10 @@ mod tests {
 		};
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
-			header_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(BlockHeaderKey(5), header());
@@ -653,10 +654,10 @@ mod tests {
 		};
 		let state = Arc::new(Mutex::new(State {
 			latest: 10,
-			header_verified: Some(BlockRange::init(5)),
 			..Default::default()
 		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(

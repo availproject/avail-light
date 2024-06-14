@@ -1169,7 +1169,6 @@ impl BlockRange {
 pub struct State {
 	pub synced: Option<bool>,
 	pub latest: u32,
-	pub header_verified: Option<BlockRange>,
 }
 
 pub trait OptionBlockRange {
