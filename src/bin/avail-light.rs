@@ -4,7 +4,11 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{keys::IsFinalitySyncedKey, rocks_db::RocksDB, Database},
+	data::{
+		keys::{IsFinalitySyncedKey, LatestHeaderKey},
+		rocks_db::RocksDB,
+		Database,
+	},
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
@@ -211,7 +215,6 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	let state = Arc::new(Mutex::new(State::default()));
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
-		state.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
 		cfg.retry_config.clone(),
@@ -268,7 +271,8 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		},
 	};
 
-	state.lock().unwrap().latest = block_header.number;
+	db.put(LatestHeaderKey, block_header.number)
+		.wrap_err("Coldn't store Latest Header in DB.")?;
 	let sync_range = cfg.sync_range(block_header.number);
 
 	let ws_clients = api::v2::types::WsClients::default();

@@ -5,11 +5,7 @@ use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
 use sp_core::bytes::from_hex;
-use std::{
-	collections::HashSet,
-	fmt::Display,
-	sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, fmt::Display};
 use tokio::{
 	sync::broadcast,
 	time::{self, timeout},
@@ -20,7 +16,7 @@ use crate::{
 	data::Database,
 	network::rpc,
 	shutdown::Controller,
-	types::{GrandpaJustification, RetryConfig, State},
+	types::{GrandpaJustification, RetryConfig},
 };
 
 mod client;
@@ -191,7 +187,6 @@ impl<'a> Iterator for NodesIterator<'a> {
 
 pub async fn init<T: Database + Clone>(
 	db: T,
-	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
@@ -207,8 +202,7 @@ pub async fn init<T: Database + Clone>(
 	.await?;
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
-	let subscriptions =
-		SubscriptionLoop::new(state, db, rpc_client.clone(), event_sender.clone()).await?;
+	let subscriptions = SubscriptionLoop::new(db, rpc_client.clone(), event_sender.clone()).await?;
 
 	Ok((rpc_client, event_sender, subscriptions))
 }

@@ -97,25 +97,15 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 pub async fn block(
 	block_number: u32,
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone,
 ) -> Result<impl Reply, Error> {
-	let state = state.lock().expect("Lock should be acquired");
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
-		.and_then(|extension| {
-			block_status(
-				sync_start_block,
-				&state,
-				db.clone(),
-				block_number,
-				extension,
-			)
-		})
+		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	let confidence = db
@@ -129,25 +119,15 @@ pub async fn block(
 pub async fn block_header(
 	block_number: u32,
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone,
 ) -> Result<Header, Error> {
-	let state = state.lock().expect("Lock should be acquired");
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
-		.and_then(|extension| {
-			block_status(
-				sync_start_block,
-				&state,
-				db.clone(),
-				block_number,
-				extension,
-			)
-		})
+		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	if matches!(
@@ -167,11 +147,8 @@ pub async fn block_data(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone,
 ) -> Result<DataResponse, Error> {
-	let state = state.lock().expect("Lock should be acquired");
-
 	let app_id = config.app_id.ok_or(Error::not_found())?;
 	let sync_start_block = &config.sync_start_block;
 
@@ -179,15 +156,7 @@ pub async fn block_data(
 		.get(BlockHeaderKey(block_number))
 		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
-		.and_then(|extension| {
-			block_status(
-				sync_start_block,
-				&state,
-				db.clone(),
-				block_number,
-				extension,
-			)
-		})
+		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	if block_status != BlockStatus::Finished {
