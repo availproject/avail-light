@@ -66,13 +66,11 @@ fn status_route(
 
 fn block_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.then(handlers::block)
 		.map(log_internal_server_error)
@@ -80,13 +78,11 @@ fn block_route(
 
 fn block_header_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "header")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.then(handlers::block_header)
 		.map(log_internal_server_error)
@@ -94,14 +90,12 @@ fn block_header_route(
 
 fn block_data_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "data")
 		.and(warp::get())
 		.and(warp::query::<DataQuery>())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.then(handlers::block_data)
 		.map(log_internal_server_error)
@@ -235,13 +229,9 @@ pub fn routes(
 
 	version_route(version.clone())
 		.or(status_route(config.clone(), state.clone(), db.clone()))
-		.or(block_route(config.clone(), state.clone(), db.clone()))
-		.or(block_header_route(
-			config.clone(),
-			state.clone(),
-			db.clone(),
-		))
-		.or(block_data_route(config.clone(), state.clone(), db.clone()))
+		.or(block_route(config.clone(), db.clone()))
+		.or(block_header_route(config.clone(), db.clone()))
+		.or(block_data_route(config.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(
@@ -268,8 +258,8 @@ mod tests {
 		data::{
 			keys::{
 				AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-				LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey,
-				VerifiedSyncDataKey,
+				LatestHeaderKey, LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey,
+				VerifiedHeaderKey, VerifiedSyncDataKey,
 			},
 			mem_db::{self, MemoryDB},
 			Database,
@@ -355,9 +345,9 @@ mod tests {
 		let db = MemoryDB::default();
 		{
 			let mut state = state.lock().unwrap();
-			state.latest = 30;
 			state.synced.replace(false);
 		}
+		_ = db.put(LatestHeaderKey, 30);
 
 		let mut achieved_confidence = Some(BlockRange::init(20));
 		achieved_confidence.set(29);
@@ -396,13 +386,9 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_not_found(latest: u32, block_number: u32) {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = latest;
-		}
 		let db = mem_db::MemoryDB::default();
-		let route = super::block_route(config, state, db);
+		_ = db.put(LatestHeaderKey, latest);
+		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}"))
@@ -415,16 +401,12 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_incomplete() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = 10;
-		}
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
 		_ = db.put(BlockHeaderKey(10), incomplete_header());
-		let route = super::block_route(config, state, db);
+		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/10")
@@ -441,17 +423,13 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_finished() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = 10;
-		}
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedCellCountKey(10), 4);
 		_ = db.put(BlockHeaderKey(10), header());
-		let route = super::block_route(config, state, db);
+		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/10")
@@ -474,16 +452,12 @@ mod tests {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
-
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(9)));
 		_ = db.put(LatestSyncKey, Some(5));
 		_ = db.put(BlockHeaderKey(block_number), header());
-		let route = super::block_header_route(config, state, db);
+		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/header"))
@@ -496,12 +470,9 @@ mod tests {
 	#[tokio::test]
 	async fn block_header_route_not_found() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
 		let db = mem_db::MemoryDB::default();
-		let route = super::block_header_route(config, state, db);
+		_ = db.put(LatestHeaderKey, 10);
+		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/header")
@@ -550,14 +521,11 @@ mod tests {
 	#[tokio::test]
 	async fn block_header_route_ok() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State {
-			latest: 1,
-			..Default::default()
-		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 1);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(1)));
 		_ = db.put(BlockHeaderKey(1), header());
-		let route = super::block_header_route(config, state, db);
+		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/1/header")
@@ -581,17 +549,14 @@ mod tests {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(9)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(8)));
 		_ = db.put(LatestSyncKey, Some(5));
 		_ = db.put(BlockHeaderKey(block_number), header());
-		let route = super::block_data_route(config, state, db);
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/data"))
@@ -604,12 +569,9 @@ mod tests {
 	#[tokio::test]
 	async fn block_data_route_not_found() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
 		let db = mem_db::MemoryDB::default();
-		let route = super::block_data_route(config, state, db);
+		_ = db.put(LatestHeaderKey, 10);
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/data")
@@ -624,16 +586,13 @@ mod tests {
 			app_id: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
 		_ = db.put(BlockHeaderKey(5), header());
-		let route = super::block_data_route(config, state, db);
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -652,11 +611,8 @@ mod tests {
 			app_id: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
 		let db = mem_db::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
@@ -673,7 +629,7 @@ mod tests {
 			]],
 		);
 		_ = db.put(BlockHeaderKey(5), header());
-		let route = super::block_data_route(config, state, db);
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -844,9 +800,9 @@ mod tests {
 		let mut test = MockSetup::new(config, None).await;
 		{
 			let mut state = test.state.lock().unwrap();
-			state.latest = 30;
 			state.synced.replace(false);
 		}
+		_ = test.db.put(LatestHeaderKey, 30);
 
 		let mut achieved_confidence = Some(BlockRange::init(20));
 		achieved_confidence.set(29);

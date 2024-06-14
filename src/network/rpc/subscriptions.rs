@@ -5,10 +5,7 @@ use sp_core::{
 	blake2_256,
 	ed25519::{self, Public},
 };
-use std::{
-	sync::{Arc, Mutex},
-	time::Instant,
-};
+use std::time::Instant;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, trace};
@@ -16,11 +13,13 @@ use tracing::{debug, info, trace};
 use super::{Client, Subscription};
 use crate::{
 	data::{
-		keys::{FinalitySyncCheckpointKey, IsFinalitySyncedKey, VerifiedHeaderKey},
+		keys::{
+			FinalitySyncCheckpointKey, IsFinalitySyncedKey, LatestHeaderKey, VerifiedHeaderKey,
+		},
 		Database, FinalitySyncCheckpoint,
 	},
 	finality::{check_finality, ValidatorSet},
-	types::{GrandpaJustification, OptionBlockRange, State},
+	types::{GrandpaJustification, OptionBlockRange},
 	utils::filter_auth_set_changes,
 };
 
@@ -43,18 +42,12 @@ struct BlockData {
 pub struct SubscriptionLoop<T: Database> {
 	rpc_client: Client<T>,
 	event_sender: Sender<Event>,
-	state: Arc<Mutex<State>>,
 	db: T,
 	block_data: BlockData,
 }
 
 impl<T: Database + Clone> SubscriptionLoop<T> {
-	pub async fn new(
-		state: Arc<Mutex<State>>,
-		db: T,
-		rpc_client: Client<T>,
-		event_sender: Sender<Event>,
-	) -> Result<Self> {
+	pub async fn new(db: T, rpc_client: Client<T>, event_sender: Sender<Event>) -> Result<Self> {
 		// get the Hash of the Finalized Head [with Retries]
 		let last_finalized_block_hash = rpc_client.get_finalized_head_hash().await?;
 
@@ -76,7 +69,6 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		Ok(Self {
 			rpc_client,
 			event_sender,
-			state,
 			db,
 			block_data: BlockData {
 				justifications: Default::default(),
@@ -112,7 +104,9 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
-				self.state.lock().unwrap().latest = header.clone().number;
+				self.db
+					.put(LatestHeaderKey, header.clone().number)
+					.expect("Couldn't store Latest Header in DB.");
 				info!("Header no.: {}", header.number);
 
 				// if new validator set becomes active, replace the current one

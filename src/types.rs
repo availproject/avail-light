@@ -1105,7 +1105,6 @@ impl BlockRange {
 #[derive(Default)]
 pub struct State {
 	pub synced: Option<bool>,
-	pub latest: u32,
 }
 
 pub trait OptionBlockRange {

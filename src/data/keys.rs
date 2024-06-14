@@ -31,6 +31,8 @@ const VERIFIED_DATA_KEY: &str = "verified_data";
 const ACHIEVED_CONFIDENCE_KEY: &str = "achieved_confidence";
 /// Key for storing Verified Header
 const VERIFIED_HEADER_KEY: &str = "verified_header";
+/// Key for storing Latest Header number
+const LATEST_HEADER_KEY: &str = "latest_header";
 
 pub struct AppDataKey(pub u32, pub u32);
 
@@ -302,5 +304,23 @@ impl From<VerifiedHeaderKey> for HashMapKey {
 impl From<VerifiedHeaderKey> for RocksDBKey {
 	fn from(_: VerifiedHeaderKey) -> Self {
 		(Some(APP_STATE_CF), VERIFIED_HEADER_KEY.as_bytes().to_vec())
+	}
+}
+
+pub struct LatestHeaderKey;
+
+impl RecordKey for LatestHeaderKey {
+	type Type = u32;
+}
+
+impl From<LatestHeaderKey> for HashMapKey {
+	fn from(_: LatestHeaderKey) -> Self {
+		HashMapKey(LATEST_HEADER_KEY.to_string())
+	}
+}
+
+impl From<LatestHeaderKey> for RocksDBKey {
+	fn from(_: LatestHeaderKey) -> Self {
+		(Some(APP_STATE_CF), LATEST_HEADER_KEY.as_bytes().to_vec())
 	}
 }
