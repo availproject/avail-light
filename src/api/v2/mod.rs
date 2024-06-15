@@ -1,8 +1,4 @@
-use std::{
-	convert::Infallible,
-	fmt::Display,
-	sync::{Arc, Mutex},
-};
+use std::{convert::Infallible, fmt::Display, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
@@ -16,7 +12,7 @@ use crate::{
 	api::v2::types::Topic,
 	data::Database,
 	network::{p2p, rpc::Client},
-	types::{IdentityConfig, RuntimeConfig, State},
+	types::{IdentityConfig, RuntimeConfig},
 };
 
 mod handlers;
@@ -53,13 +49,11 @@ fn version_route(
 
 fn status_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.map(handlers::status)
 }
@@ -148,7 +142,6 @@ fn ws_route(
 	version: Version,
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send + 'static,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "ws" / String)
@@ -157,7 +150,6 @@ fn ws_route(
 		.and(warp::any().map(move || version.clone()))
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || submitter.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.and_then(handlers::ws)
 }
@@ -204,7 +196,6 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 pub fn routes(
 	version: String,
 	network_version: String,
-	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	identity_config: IdentityConfig,
 	rpc_client: Client<impl Database + Send + Sync + Clone + 'static>,
@@ -228,20 +219,13 @@ pub fn routes(
 	});
 
 	version_route(version.clone())
-		.or(status_route(config.clone(), state.clone(), db.clone()))
+		.or(status_route(config.clone(), db.clone()))
 		.or(block_route(config.clone(), db.clone()))
 		.or(block_header_route(config.clone(), db.clone()))
 		.or(block_data_route(config.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
-		.or(ws_route(
-			ws_clients,
-			version,
-			config,
-			submitter,
-			state,
-			db.clone(),
-		))
+		.or(ws_route(ws_clients, version, config, submitter, db.clone()))
 		.or(p2p_local_info_route(p2p_client.clone()))
 		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.recover(handle_rejection)
@@ -258,13 +242,13 @@ mod tests {
 		data::{
 			keys::{
 				AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-				LatestHeaderKey, LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey,
+				IsSyncedKey, LatestHeaderKey, LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey,
 				VerifiedHeaderKey, VerifiedSyncDataKey,
 			},
 			mem_db::{self, MemoryDB},
 			Database,
 		},
-		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
+		types::{BlockRange, OptionBlockRange, RuntimeConfig},
 	};
 	use async_trait::async_trait;
 	use avail_subxt::{api::runtime_types::avail_core::AppId, utils::H256};
@@ -278,11 +262,7 @@ mod tests {
 	};
 	use hyper::StatusCode;
 	use kate_recovery::matrix::Partition;
-	use std::{
-		collections::HashSet,
-		str::FromStr,
-		sync::{Arc, Mutex},
-	};
+	use std::{collections::HashSet, str::FromStr, sync::Arc};
 	use subxt::config::substrate::Digest;
 	use test_case::test_case;
 	use uuid::Uuid;
@@ -313,9 +293,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn status_route_defaults() {
-		let state = Arc::new(Mutex::new(State::default()));
 		let db = MemoryDB::default();
-		let route = super::status_route(RuntimeConfig::default(), state, db);
+		let route = super::status_route(RuntimeConfig::default(), db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -341,12 +320,9 @@ mod tests {
 			}),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State::default()));
 		let db = MemoryDB::default();
-		{
-			let mut state = state.lock().unwrap();
-			state.synced.replace(false);
-		}
+
+		_ = db.put(IsSyncedKey, Some(false));
 		_ = db.put(LatestHeaderKey, 30);
 
 		let mut achieved_confidence = Some(BlockRange::init(20));
@@ -365,7 +341,7 @@ mod tests {
 		achieved_sync_confidence.set(19);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
-		let route = super::status_route(runtime_config, state, db);
+		let route = super::status_route(runtime_config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -732,7 +708,6 @@ mod tests {
 
 	struct MockSetup {
 		ws_client: warp::test::WsClient,
-		state: Arc<Mutex<State>>,
 		db: MemoryDB,
 	}
 
@@ -744,14 +719,12 @@ mod tests {
 				.subscribe(&client_uuid, Subscription::default())
 				.await;
 
-			let state = Arc::new(Mutex::new(State::default()));
 			let db = MemoryDB::default();
 			let route = super::ws_route(
 				clients.clone(),
 				v1(),
 				config.clone(),
 				submitter.map(Arc::new),
-				state.clone(),
 				db.clone(),
 			);
 			let ws_client = warp::test::ws()
@@ -760,11 +733,7 @@ mod tests {
 				.await
 				.expect("handshake");
 
-			MockSetup {
-				ws_client,
-				state,
-				db,
-			}
+			MockSetup { ws_client, db }
 		}
 
 		async fn ws_send_text(&mut self, message: &str) -> String {
@@ -798,11 +767,9 @@ mod tests {
 		};
 
 		let mut test = MockSetup::new(config, None).await;
-		{
-			let mut state = test.state.lock().unwrap();
-			state.synced.replace(false);
-		}
+
 		_ = test.db.put(LatestHeaderKey, 30);
+		_ = test.db.put(IsSyncedKey, Some(false));
 
 		let mut achieved_confidence = Some(BlockRange::init(20));
 		achieved_confidence.set(29);

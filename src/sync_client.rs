@@ -18,8 +18,8 @@
 use crate::{
 	data::{
 		keys::{
-			AchievedSyncConfidenceKey, BlockHeaderKey, LatestSyncKey, VerifiedCellCountKey,
-			VerifiedSyncHeaderKey,
+			AchievedSyncConfidenceKey, BlockHeaderKey, IsSyncedKey, LatestSyncKey,
+			VerifiedCellCountKey, VerifiedSyncHeaderKey,
 		},
 		Database,
 	},
@@ -27,7 +27,7 @@ use crate::{
 		self,
 		rpc::{self, Client as RpcClient},
 	},
-	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
+	types::{BlockVerified, OptionBlockRange, SyncClientConfig},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -41,11 +41,7 @@ use color_eyre::{
 use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
 use sp_core::blake2_256;
-use std::{
-	ops::Range,
-	sync::{Arc, Mutex},
-	time::Instant,
-};
+use std::{ops::Range, time::Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
@@ -58,6 +54,7 @@ pub trait Client {
 	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()>;
 	fn store_verified_sync_header(&self, block_number: u32) -> Result<()>;
 	fn store_latest_sync(&self, block_number: u32) -> Result<()>;
+	fn store_is_synced(&self, is_synced: bool) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -151,6 +148,12 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 			.put(LatestSyncKey, Some(block_number))
 			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
 	}
+
+	fn store_is_synced(&self, is_synced: bool) -> Result<()> {
+		self.db
+			.put(IsSyncedKey, Some(is_synced))
+			.wrap_err("Sync Client failed to store IsSynced flag in DB.")
+	}
 }
 
 async fn process_block(
@@ -228,7 +231,6 @@ pub async fn run(
 	cfg: SyncClientConfig,
 	sync_range: Range<u32>,
 	block_verified_sender: broadcast::Sender<BlockVerified>,
-	state: Arc<Mutex<State>>,
 ) {
 	if sync_range.is_empty() {
 		warn!("There are no blocks to sync for range {sync_range:?}");
@@ -284,15 +286,15 @@ pub async fn run(
 		.await
 		{
 			error!(block_number, "Cannot process block: {error:#}");
-		} else {
-			if let Err(error) = client.store_achieved_sync_confidence(block_number) {
-				error!(block_number, "Cannot process block: {error:#}");
-			}
+		} else if let Err(error) = client.store_achieved_sync_confidence(block_number) {
+			error!(block_number, "Cannot process block: {error:#}");
 		}
 	}
 
 	if cfg.is_last_step {
-		state.lock().unwrap().synced.replace(true);
+		client
+			.store_is_synced(true)
+			.expect("Sync Client couldn't store IsSynced flag in DB.");
 	}
 }
 

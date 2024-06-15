@@ -33,6 +33,8 @@ const ACHIEVED_CONFIDENCE_KEY: &str = "achieved_confidence";
 const VERIFIED_HEADER_KEY: &str = "verified_header";
 /// Key for storing Latest Header number
 const LATEST_HEADER_KEY: &str = "latest_header";
+/// Key for storing IsSynced boolean
+const IS_SYNCED_KEY: &str = "is_synced";
 
 pub struct AppDataKey(pub u32, pub u32);
 
@@ -322,5 +324,23 @@ impl From<LatestHeaderKey> for HashMapKey {
 impl From<LatestHeaderKey> for RocksDBKey {
 	fn from(_: LatestHeaderKey) -> Self {
 		(Some(APP_STATE_CF), LATEST_HEADER_KEY.as_bytes().to_vec())
+	}
+}
+
+pub struct IsSyncedKey;
+
+impl RecordKey for IsSyncedKey {
+	type Type = Option<bool>;
+}
+
+impl From<IsSyncedKey> for HashMapKey {
+	fn from(_: IsSyncedKey) -> Self {
+		HashMapKey(IS_SYNCED_KEY.to_string())
+	}
+}
+
+impl From<IsSyncedKey> for RocksDBKey {
+	fn from(_: IsSyncedKey) -> Self {
+		(Some(APP_STATE_CF), IS_SYNCED_KEY.as_bytes().to_vec())
 	}
 }

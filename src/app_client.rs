@@ -35,20 +35,20 @@ use rand_chacha::ChaChaRng;
 use std::{
 	collections::{HashMap, HashSet},
 	ops::Range,
-	sync::{Arc, Mutex},
+	sync::Arc,
 };
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::{
-		keys::{AppDataKey, VerifiedDataKey, VerifiedSyncDataKey},
+		keys::{AppDataKey, IsSyncedKey, VerifiedDataKey, VerifiedSyncDataKey},
 		Database,
 	},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
-	types::{AppClientConfig, BlockRange, BlockVerified, State},
+	types::{AppClientConfig, BlockRange, BlockVerified},
 };
 
 #[async_trait]
@@ -427,35 +427,33 @@ pub async fn run(
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
-	state: Arc<Mutex<State>>,
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
 	shutdown: Controller<String>,
 ) {
 	info!("Starting for app {app_id}...");
 
-	fn set_data_verified_state(
-		state: Arc<Mutex<State>>,
-		db: impl Database,
-		sync_range: &Range<u32>,
-		block_number: u32,
-	) {
-		let mut state = state.lock().expect("State lock can be acquired");
+	fn set_data_verified_state(db: impl Database, sync_range: &Range<u32>, block_number: u32) {
 		match sync_range.contains(&block_number) {
 			true => {
 				// initialize DB data on startup
-				_ = db
-					.put(VerifiedSyncDataKey, Some(BlockRange::init(block_number)))
+				db.put(VerifiedSyncDataKey, Some(BlockRange::init(block_number)))
 					.expect("App Client Failed to initialize Verified Sync Data in DB.");
 			},
 			false => {
-				_ = db
-					.put(VerifiedDataKey, Some(BlockRange::init(block_number)))
+				db.put(VerifiedDataKey, Some(BlockRange::init(block_number)))
 					.expect("App Client Failed to initialize Verified Data in DB.");
 			},
 		}
-		if state.synced == Some(false) && sync_range.clone().last() == Some(block_number) {
-			state.synced.replace(true);
+		if db
+			.get(IsSyncedKey)
+			.expect("App Client couldn't fetch IsSynced flag from DB.")
+			.unwrap_or(None)
+			== Some(false)
+			&& sync_range.clone().last() == Some(block_number)
+		{
+			db.put(IsSyncedKey, Some(true))
+				.expect("App Client couldn't store IsSynced flag in DB.");
 		};
 	}
 
@@ -472,7 +470,7 @@ pub async fn run(
 		let block_number = block.block_num;
 		let Some(extension) = &block.extension else {
 			info!(block_number, "Skipping block without header extension");
-			set_data_verified_state(state.clone(), db.clone(), &sync_range, block_number);
+			set_data_verified_state(db.clone(), &sync_range, block_number);
 			continue;
 		};
 		let dimensions = &extension.dimensions;
@@ -484,7 +482,7 @@ pub async fn run(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
 			);
-			set_data_verified_state(state.clone(), db.clone(), &sync_range, block_number);
+			set_data_verified_state(db.clone(), &sync_range, block_number);
 			continue;
 		}
 
@@ -501,7 +499,7 @@ pub async fn run(
 					return;
 				},
 			};
-		set_data_verified_state(state.clone(), db.clone(), &sync_range, block_number);
+		set_data_verified_state(db.clone(), &sync_range, block_number);
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
 			let _ =
