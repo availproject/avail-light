@@ -27,16 +27,14 @@ use warp::{
 use crate::{
 	data::{
 		keys::{
-			AchievedConfidenceKey, AchievedSyncConfidenceKey, LatestHeaderKey, LatestSyncKey,
-			RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+			AchievedConfidenceKey, AchievedSyncConfidenceKey, IsSyncedKey, LatestHeaderKey,
+			LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 			VerifiedSyncHeaderKey,
 		},
 		Database,
 	},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
-	types::{
-		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
-	},
+	types::{self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig},
 	utils::{decode_app_data, OptionalExtension},
 };
 
@@ -174,22 +172,26 @@ impl Reply for SubmitResponse {
 }
 
 impl Status {
-	pub fn new(config: &RuntimeConfig, state: &State, db: impl Database) -> Self {
-		let historical_sync = state.synced.map(|synced| HistoricalSync {
-			synced,
-			available: db
-				.get(AchievedSyncConfidenceKey)
-				.expect("Could not fetch Achieved Sync Confidence from DB.")
-				.unwrap_or(None)
-				.as_ref()
-				.map(From::from),
-			app_data: db
-				.get(VerifiedSyncDataKey)
-				.expect("Could not fetch Verified Sync Data from DB.")
-				.unwrap_or(None)
-				.as_ref()
-				.map(From::from),
-		});
+	pub fn new(config: &RuntimeConfig, db: impl Database) -> Self {
+		let historical_sync = db
+			.get(IsSyncedKey)
+			.expect("Couldn't fetch IsSynced flag from DB.")
+			.unwrap_or(None)
+			.map(|synced| HistoricalSync {
+				synced,
+				available: db
+					.get(AchievedSyncConfidenceKey)
+					.expect("Could not fetch Achieved Sync Confidence from DB.")
+					.unwrap_or(None)
+					.as_ref()
+					.map(From::from),
+				app_data: db
+					.get(VerifiedSyncDataKey)
+					.expect("Could not fetch Verified Sync Data from DB.")
+					.unwrap_or(None)
+					.as_ref()
+					.map(From::from),
+			});
 
 		let blocks = Blocks {
 			latest: db
@@ -216,14 +218,14 @@ impl Status {
 			None => RpcNode::default(),
 		};
 
-		return Status {
+		Status {
 			modes: config.into(),
 			app_id: config.app_id,
 			genesis_hash: format!("{:?}", node.genesis_hash),
 			network: node.network(),
 			blocks,
 			partition: config.block_matrix_partition,
-		};
+		}
 	}
 }
 

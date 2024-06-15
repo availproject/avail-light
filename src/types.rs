@@ -1162,11 +1162,6 @@ impl BlockRange {
 	}
 }
 
-#[derive(Default)]
-pub struct State {
-	pub synced: Option<bool>,
-}
-
 pub trait OptionBlockRange {
 	fn set(&mut self, block_number: u32);
 	fn first(&self) -> Option<u32>;

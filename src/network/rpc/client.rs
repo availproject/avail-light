@@ -240,11 +240,11 @@ impl<D: Database> Client<D> {
 			_ = self.db.put(RpcNodeKey, node);
 
 			return Ok(result);
-		} else {
-			return Err(eyre!(
-				"Couldn't find a persisted Node that was connected previously."
-			));
-		};
+		}
+
+		Err(eyre!(
+			"Couldn't find a persisted Node that was connected previously."
+		))
 	}
 
 	async fn create_subxt_subscriptions(

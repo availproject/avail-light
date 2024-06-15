@@ -320,7 +320,7 @@ pub async fn sync(client: impl Client, mut from_header: Header) -> Result<()> {
 		})?;
 	}
 	// set finality synced flag in db
-	_ = client.set_is_finality_synced(true)?;
+	client.set_is_finality_synced(true)?;
 	info!("Finality is fully synced.");
 	Ok(())
 }

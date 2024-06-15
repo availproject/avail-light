@@ -16,15 +16,11 @@ use crate::types::IdentityConfig;
 use crate::{
 	api::v1,
 	network::rpc::{self},
-	types::{RuntimeConfig, State},
+	types::RuntimeConfig,
 };
 use color_eyre::eyre::WrapErr;
 use futures::{Future, FutureExt};
-use std::{
-	net::SocketAddr,
-	str::FromStr,
-	sync::{Arc, Mutex},
-};
+use std::{net::SocketAddr, str::FromStr};
 use tracing::info;
 use warp::{Filter, Reply};
 
@@ -32,7 +28,6 @@ pub struct Server<T: Database> {
 	pub db: T,
 	pub cfg: RuntimeConfig,
 	pub identity_cfg: IdentityConfig,
-	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
 	pub node_client: rpc::Client<T>,
@@ -62,7 +57,6 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
-			self.state.clone(),
 			self.cfg,
 			self.identity_cfg,
 			self.node_client.clone(),
