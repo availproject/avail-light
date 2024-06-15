@@ -13,16 +13,13 @@ use crate::{
 		keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey},
 		Database,
 	},
-	types::{RuntimeConfig, State},
+	types::RuntimeConfig,
 	utils::calculate_confidence,
 };
 use avail_subxt::primitives;
 use color_eyre::{eyre::eyre, Result};
 use hyper::StatusCode;
-use std::{
-	convert::Infallible,
-	sync::{Arc, Mutex},
-};
+use std::{convert::Infallible, sync::Arc};
 use tracing::error;
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
@@ -55,7 +52,6 @@ pub async fn ws(
 	version: Version,
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send + 'static,
 ) -> Result<impl Reply, Rejection> {
 	if !clients.has_subscription(&subscription_id).await {
@@ -70,15 +66,13 @@ pub async fn ws(
 			version,
 			config,
 			submitter.clone(),
-			state.clone(),
 			db.clone(),
 		)
 	}))
 }
 
-pub fn status(config: RuntimeConfig, state: Arc<Mutex<State>>, db: impl Database) -> impl Reply {
-	let state = state.lock().expect("Lock should be acquired");
-	Status::new(&config, &state, db)
+pub fn status(config: RuntimeConfig, db: impl Database) -> impl Reply {
+	Status::new(&config, db)
 }
 
 pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {
