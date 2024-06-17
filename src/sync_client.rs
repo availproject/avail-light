@@ -17,11 +17,8 @@
 
 use crate::{
 	data::{
-		keys::{
-			AchievedSyncConfidenceKey, BlockHeaderKey, IsSyncedKey, LatestSyncKey,
-			VerifiedCellCountKey, VerifiedSyncHeaderKey,
-		},
-		Database,
+		AchievedSyncConfidenceKey, BlockHeaderKey, Database, IsSyncedKey, LatestSyncKey,
+		VerifiedCellCountKey, VerifiedSyncHeaderKey,
 	},
 	network::{
 		self,

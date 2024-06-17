@@ -26,10 +26,7 @@ use std::{sync::Arc, time::Instant};
 use tracing::{error, info};
 
 use crate::{
-	data::{
-		keys::{AchievedConfidenceKey, BlockHeaderKey, VerifiedCellCountKey},
-		Database,
-	},
+	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -273,7 +270,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		data::mem_db,
+		data,
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
 		telemetry,
 		types::RuntimeConfig,
@@ -305,7 +302,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [

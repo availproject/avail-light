@@ -9,10 +9,7 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::{
-		keys::{AppDataKey, BlockHeaderKey, VerifiedCellCountKey},
-		Database,
-	},
+	data::{AppDataKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	types::RuntimeConfig,
 	utils::calculate_confidence,
 };

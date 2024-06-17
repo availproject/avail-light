@@ -1,5 +1,5 @@
 use avail_light::{
-	data::rocks_db::RocksDB,
+	data::RocksDB,
 	network::rpc,
 	shutdown::Controller,
 	types::{ExponentialConfig, RetryConfig},

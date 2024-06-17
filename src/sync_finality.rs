@@ -17,8 +17,8 @@ use tracing::{error, info, trace};
 
 use crate::{
 	data::{
-		keys::{BlockHeaderKey, FinalitySyncCheckpointKey, IsFinalitySyncedKey},
-		Database, FinalitySyncCheckpoint,
+		BlockHeaderKey, Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey,
+		IsFinalitySyncedKey,
 	},
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
