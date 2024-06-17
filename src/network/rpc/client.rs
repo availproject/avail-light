@@ -36,7 +36,7 @@ use super::{Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
-	data::{keys::RpcNodeKey, Database},
+	data::{Database, RpcNodeKey},
 	shutdown::Controller,
 	types::{RetryConfig, DEV_FLAG_GENHASH},
 };

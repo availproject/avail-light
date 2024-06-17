@@ -4,11 +4,7 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{
-		keys::{IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey},
-		rocks_db::RocksDB,
-		Database,
-	},
+	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
 	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,

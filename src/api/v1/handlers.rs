@@ -1,10 +1,7 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{
-		keys::{AchievedConfidenceKey, AppDataKey, VerifiedCellCountKey},
-		Database,
-	},
+	data::{AchievedConfidenceKey, AppDataKey, Database, VerifiedCellCountKey},
 	network::rpc::cell_count_for_confidence,
 	types::{Mode, OptionBlockRange, RuntimeConfig},
 	utils::calculate_confidence,
