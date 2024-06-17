@@ -408,7 +408,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 			db.clone(),
 			light_network_client,
 			(&cfg).into(),
-			ot_metrics,
+			ot_metrics.clone(),
 			channels,
 			shutdown.clone(),
 		)));
