@@ -13,10 +13,8 @@ use tracing::{debug, info, trace};
 use super::{Client, Subscription};
 use crate::{
 	data::{
-		keys::{
-			FinalitySyncCheckpointKey, IsFinalitySyncedKey, LatestHeaderKey, VerifiedHeaderKey,
-		},
-		Database, FinalitySyncCheckpoint,
+		Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey, IsFinalitySyncedKey,
+		LatestHeaderKey, VerifiedHeaderKey,
 	},
 	finality::{check_finality, ValidatorSet},
 	types::{GrandpaJustification, OptionBlockRange},

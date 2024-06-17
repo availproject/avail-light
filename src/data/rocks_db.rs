@@ -1,3 +1,4 @@
+use super::{keys::*, *};
 use crate::{
 	data::{self, APP_STATE_CF, KADEMLIA_STORE_CF},
 	network::p2p::ExpirationCompactionFilterFactory,
@@ -7,12 +8,13 @@ use color_eyre::eyre::{eyre, Context, Result};
 use rocksdb::{ColumnFamilyDescriptor, Options};
 use std::sync::Arc;
 
-use super::RecordKey;
-
 #[derive(Clone)]
 pub struct RocksDB {
 	db: Arc<rocksdb::DB>,
 }
+
+#[derive(Eq, Hash, PartialEq)]
+pub struct RocksDBKey(Option<&'static str>, Vec<u8>);
 
 impl RocksDB {
 	pub fn open(path: &str) -> Result<(RocksDB, Arc<rocksdb::DB>)> {
@@ -35,7 +37,7 @@ impl RocksDB {
 
 impl data::Database for RocksDB {
 	fn put<T: RecordKey>(&self, key: T, value: T::Type) -> Result<()> {
-		let (column_family, key) = key.into();
+		let RocksDBKey(column_family, key) = key.into();
 		// if Column Family descriptor was provided, put the key in that partition
 		let Some(cf) = column_family else {
 			// else, just put it in the default partition
@@ -55,7 +57,7 @@ impl data::Database for RocksDB {
 	}
 
 	fn get<T: RecordKey>(&self, key: T) -> Result<Option<T::Type>> {
-		let (column_family, key) = key.into();
+		let RocksDBKey(column_family, key) = key.into();
 		// if Column Family descriptor was provided, get the key from that partition
 		let Some(cf) = column_family else {
 			// else, just get it from the default partition
@@ -84,7 +86,7 @@ impl data::Database for RocksDB {
 	}
 
 	fn delete<T: RecordKey>(&self, key: T) -> Result<()> {
-		let (column_family, key) = key.into();
+		let RocksDBKey(column_family, key) = key.into();
 		// if Column Family descriptor was provided, delete the key from that partition
 		let Some(cf) = column_family else {
 			// else, just delete it from the default partition
@@ -100,5 +102,124 @@ impl data::Database for RocksDB {
 		self.db
 			.delete_cf(&cf_handle, key)
 			.wrap_err("Delete operation with Column Family failed on RocksDB")
+	}
+}
+
+impl From<AppDataKey> for RocksDBKey {
+	fn from(value: AppDataKey) -> Self {
+		let AppDataKey(app_id, block_num) = value;
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			format!("{APP_ID_PREFIX}:{app_id}:{block_num}").into_bytes(),
+		)
+	}
+}
+
+impl From<BlockHeaderKey> for RocksDBKey {
+	fn from(value: BlockHeaderKey) -> Self {
+		let BlockHeaderKey(block_num) = value;
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			format!("{BLOCK_HEADER_KEY_PREFIX}:{block_num}").into_bytes(),
+		)
+	}
+}
+
+impl From<VerifiedCellCountKey> for RocksDBKey {
+	fn from(value: VerifiedCellCountKey) -> Self {
+		let VerifiedCellCountKey(count) = value;
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			format!("{VERIFIED_CELL_COUNT_PREFIX}:{count}").into_bytes(),
+		)
+	}
+}
+
+impl From<FinalitySyncCheckpointKey> for RocksDBKey {
+	fn from(_: FinalitySyncCheckpointKey) -> Self {
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+impl From<RpcNodeKey> for RocksDBKey {
+	fn from(_: RpcNodeKey) -> Self {
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			CONNECTED_RPC_NODE_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+impl From<IsFinalitySyncedKey> for RocksDBKey {
+	fn from(_: IsFinalitySyncedKey) -> Self {
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			IS_FINALITY_SYNCED_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+impl From<VerifiedSyncDataKey> for RocksDBKey {
+	fn from(_: VerifiedSyncDataKey) -> Self {
+		RocksDBKey(Some(APP_STATE_CF), VERIFIED_SYNC_DATA.as_bytes().to_vec())
+	}
+}
+
+impl From<AchievedSyncConfidenceKey> for RocksDBKey {
+	fn from(_: AchievedSyncConfidenceKey) -> Self {
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			ACHIEVED_SYNC_CONFIDENCE_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+impl From<VerifiedSyncHeaderKey> for RocksDBKey {
+	fn from(_: VerifiedSyncHeaderKey) -> Self {
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			VERIFIED_SYNC_HEADER_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+impl From<LatestSyncKey> for RocksDBKey {
+	fn from(_: LatestSyncKey) -> Self {
+		RocksDBKey(Some(APP_STATE_CF), LATEST_SYNC_KEY.as_bytes().to_vec())
+	}
+}
+
+impl From<VerifiedDataKey> for RocksDBKey {
+	fn from(_: VerifiedDataKey) -> Self {
+		RocksDBKey(Some(APP_STATE_CF), VERIFIED_DATA_KEY.as_bytes().to_vec())
+	}
+}
+impl From<AchievedConfidenceKey> for RocksDBKey {
+	fn from(_: AchievedConfidenceKey) -> Self {
+		RocksDBKey(
+			Some(APP_STATE_CF),
+			ACHIEVED_CONFIDENCE_KEY.as_bytes().to_vec(),
+		)
+	}
+}
+
+impl From<VerifiedHeaderKey> for RocksDBKey {
+	fn from(_: VerifiedHeaderKey) -> Self {
+		RocksDBKey(Some(APP_STATE_CF), VERIFIED_HEADER_KEY.as_bytes().to_vec())
+	}
+}
+
+impl From<LatestHeaderKey> for RocksDBKey {
+	fn from(_: LatestHeaderKey) -> Self {
+		RocksDBKey(Some(APP_STATE_CF), LATEST_HEADER_KEY.as_bytes().to_vec())
+	}
+}
+
+impl From<IsSyncedKey> for RocksDBKey {
+	fn from(_: IsSyncedKey) -> Self {
+		RocksDBKey(Some(APP_STATE_CF), IS_SYNCED_KEY.as_bytes().to_vec())
 	}
 }

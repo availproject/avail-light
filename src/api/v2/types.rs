@@ -26,12 +26,9 @@ use warp::{
 
 use crate::{
 	data::{
-		keys::{
-			AchievedConfidenceKey, AchievedSyncConfidenceKey, IsSyncedKey, LatestHeaderKey,
-			LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
-			VerifiedSyncHeaderKey,
-		},
-		Database,
+		AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, IsSyncedKey, LatestHeaderKey,
+		LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+		VerifiedSyncHeaderKey,
 	},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
 	types::{self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig},
@@ -896,11 +893,9 @@ mod tests {
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
-			keys::{
-				AchievedConfidenceKey, AchievedSyncConfidenceKey, LatestHeaderKey, LatestSyncKey,
-				VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey, VerifiedSyncHeaderKey,
-			},
-			mem_db, Database,
+			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, LatestHeaderKey,
+			LatestSyncKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+			VerifiedSyncHeaderKey,
 		},
 		types::{BlockRange, OptionBlockRange},
 		utils::{spawn_in_span, OptionalExtension},
@@ -1046,7 +1041,7 @@ mod tests {
 
 	#[test]
 	fn block_status_none() {
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		assert_eq!(block_status(&None, db.clone(), 1, ExtensionNone), None);
 		_ = db.put(LatestHeaderKey, 10);
 		assert_ne!(block_status(&None, db.clone(), 1, ExtensionNone), None);
@@ -1055,7 +1050,7 @@ mod tests {
 
 	#[test]
 	fn block_status_unavailable() {
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		let unavailable = Some(BlockStatus::Unavailable);
 		_ = db.put(LatestHeaderKey, 10);
 		assert_eq!(
@@ -1078,7 +1073,7 @@ mod tests {
 
 	#[test]
 	fn block_status_pending() {
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 5);
 		let pending = Some(BlockStatus::Pending);
 		assert_eq!(
@@ -1101,7 +1096,7 @@ mod tests {
 
 	#[test]
 	fn block_status_verifying_header() {
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		let verifying_header = Some(BlockStatus::VerifyingHeader);
 		assert_eq!(
 			block_status(&Some(0), db.clone(), 0, ExtensionSome),
@@ -1123,7 +1118,7 @@ mod tests {
 			verifying_header
 		);
 
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 5);
 		_ = db.put(LatestSyncKey, Some(1));
 		assert_eq!(
@@ -1143,7 +1138,7 @@ mod tests {
 
 	#[test]
 	fn block_status_verifying_confidence() {
-		let mut db = mem_db::MemoryDB::default();
+		let mut db = data::MemoryDB::default();
 		let verifying_confidence = Some(BlockStatus::VerifyingConfidence);
 		_ = db.put(LatestHeaderKey, 10);
 		let mut verified_header = Some(BlockRange::init(1));
@@ -1170,7 +1165,7 @@ mod tests {
 			verifying_confidence
 		);
 
-		db = mem_db::MemoryDB::default();
+		db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 
 		let mut verified_sync_header = Some(BlockRange::init(1));
@@ -1200,7 +1195,7 @@ mod tests {
 
 	#[test]
 	fn block_status_verifying_data() {
-		let mut db = mem_db::MemoryDB::default();
+		let mut db = data::MemoryDB::default();
 		let verifying_data = Some(BlockStatus::VerifyingData);
 		_ = db.put(LatestHeaderKey, 10);
 		let mut verified_header = Some(BlockRange::init(1));
@@ -1232,7 +1227,7 @@ mod tests {
 			verifying_data
 		);
 
-		db = mem_db::MemoryDB::default();
+		db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 
 		let mut verified_sync_header = Some(BlockRange::init(1));
@@ -1266,7 +1261,7 @@ mod tests {
 
 	#[test]
 	fn block_status_finished() {
-		let mut db = mem_db::MemoryDB::default();
+		let mut db = data::MemoryDB::default();
 		let finished = Some(BlockStatus::Finished);
 		_ = db.put(LatestHeaderKey, 10);
 		let mut verified_header = Some(BlockRange::init(1));
@@ -1282,7 +1277,7 @@ mod tests {
 		assert_eq!(block_status(&None, db.clone(), 5, ExtensionSome), finished);
 		assert_ne!(block_status(&None, db.clone(), 6, ExtensionSome), finished);
 
-		db = mem_db::MemoryDB::default();
+		db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 
 		let mut verified_sync_header = Some(BlockRange::init(1));

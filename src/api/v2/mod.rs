@@ -240,13 +240,9 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::{
-			keys::{
-				AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-				IsSyncedKey, LatestHeaderKey, LatestSyncKey, VerifiedCellCountKey, VerifiedDataKey,
-				VerifiedHeaderKey, VerifiedSyncDataKey,
-			},
-			mem_db::{self, MemoryDB},
-			Database,
+			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
+			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, VerifiedCellCountKey,
+			VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		},
 		types::{BlockRange, OptionBlockRange, RuntimeConfig},
 	};
@@ -362,7 +358,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_not_found(latest: u32, block_number: u32) {
 		let config = RuntimeConfig::default();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, latest);
 		let route = super::block_route(config, db);
 		let response = warp::test::request()
@@ -377,7 +373,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_incomplete() {
 		let config = RuntimeConfig::default();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
@@ -399,7 +395,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_finished() {
 		let config = RuntimeConfig::default();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
@@ -428,7 +424,7 @@ mod tests {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(9)));
 		_ = db.put(LatestSyncKey, Some(5));
@@ -446,7 +442,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_header_route_not_found() {
 		let config = RuntimeConfig::default();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
@@ -497,7 +493,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_header_route_ok() {
 		let config = RuntimeConfig::default();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 1);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(1)));
 		_ = db.put(BlockHeaderKey(1), header());
@@ -525,7 +521,7 @@ mod tests {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(9)));
@@ -545,7 +541,7 @@ mod tests {
 	#[tokio::test]
 	async fn block_data_route_not_found() {
 		let config = RuntimeConfig::default();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
@@ -562,7 +558,7 @@ mod tests {
 			app_id: Some(1),
 			..Default::default()
 		};
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
@@ -587,7 +583,7 @@ mod tests {
 			app_id: Some(1),
 			..Default::default()
 		};
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
 		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));

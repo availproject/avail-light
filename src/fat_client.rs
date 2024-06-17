@@ -25,7 +25,7 @@ use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-	data::{keys::BlockHeaderKey, Database},
+	data::{BlockHeaderKey, Database},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -267,7 +267,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{data::mem_db, telemetry, types::RuntimeConfig};
+	use crate::{data, telemetry, types::RuntimeConfig};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -368,7 +368,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn process_block_successful() {
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		let mut mock_client = MockClient::new();
 		mock_client
 			.expect_get_kate_proof()
