@@ -11,7 +11,7 @@ use avail_light::{
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
-	types::{CliOpts, IdentityConfig, LibP2PConfig, OtelConfig, RuntimeConfig},
+	types::{CliOpts, IdentityConfig, LibP2PConfig, Network, OtelConfig, RuntimeConfig},
 };
 use clap::Parser;
 use color_eyre::{
@@ -425,7 +425,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 			db.clone(),
 			light_network_client,
 			(&cfg).into(),
-			ot_metrics,
+			ot_metrics.clone(),
 			channels,
 			shutdown.clone(),
 		)));
