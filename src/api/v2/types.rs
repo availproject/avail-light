@@ -31,7 +31,7 @@ use crate::{
 		VerifiedSyncHeaderKey,
 	},
 	network::rpc::{Event as RpcEvent, Node as RpcNode},
-	types::{self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig},
+	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig},
 	utils::{decode_app_data, OptionalExtension},
 };
 
@@ -58,8 +58,8 @@ pub struct BlockRange {
 	pub last: u32,
 }
 
-impl From<&types::BlockRange> for BlockRange {
-	fn from(value: &types::BlockRange) -> Self {
+impl From<types::BlockRange> for BlockRange {
+	fn from(value: types::BlockRange) -> Self {
 		BlockRange {
 			first: value.first,
 			last: value.last,
@@ -173,20 +173,15 @@ impl Status {
 		let historical_sync = db
 			.get(IsSyncedKey)
 			.expect("Couldn't fetch IsSynced flag from DB.")
-			.unwrap_or(None)
 			.map(|synced| HistoricalSync {
 				synced,
 				available: db
 					.get(AchievedSyncConfidenceKey)
 					.expect("Could not fetch Achieved Sync Confidence from DB.")
-					.unwrap_or(None)
-					.as_ref()
 					.map(From::from),
 				app_data: db
 					.get(VerifiedSyncDataKey)
 					.expect("Could not fetch Verified Sync Data from DB.")
-					.unwrap_or(None)
-					.as_ref()
 					.map(From::from),
 			});
 
@@ -198,14 +193,10 @@ impl Status {
 			available: db
 				.get(AchievedConfidenceKey)
 				.expect("Could not fetch Achieved Confidence from DB.")
-				.unwrap_or(None)
-				.as_ref()
 				.map(From::from),
 			app_data: db
 				.get(VerifiedDataKey)
 				.expect("Could not fetch Verified Data from DB.")
-				.unwrap_or(None)
-				.as_ref()
 				.map(From::from),
 			historical_sync,
 		};
@@ -307,12 +298,11 @@ pub fn block_status(
 		return None;
 	};
 
-	let verified_header = db
+	let first_block = db
 		.get(VerifiedHeaderKey)
 		.expect("Failed to fetch Verified Header from DB.")
-		.unwrap_or(None);
+		.map_or(latest, |range| range.first);
 
-	let first_block = verified_header.first().unwrap_or(latest);
 	let first_sync_block = sync_start_block.unwrap_or(first_block);
 
 	if block_number < first_sync_block {
@@ -324,59 +314,65 @@ pub fn block_status(
 	};
 
 	if block_number < first_block {
-		let verified_sync_data = db
+		let has_verified_sync_data = db
 			.get(VerifiedSyncDataKey)
 			.expect("Could not fetch Verified Sync Data from DB.")
-			.unwrap_or(None);
-		if verified_sync_data.contains(block_number) {
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_sync_data {
 			return Some(BlockStatus::Finished);
 		}
 
-		let achieved_sync_confidence = db
+		let has_achieved_sync_confidence = db
 			.get(AchievedSyncConfidenceKey)
 			.expect("Could not fetch Achieved Sync Confidence from DB.")
-			.unwrap_or(None);
-		if achieved_sync_confidence.contains(block_number) {
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_achieved_sync_confidence {
 			return Some(BlockStatus::VerifyingData);
 		}
 
-		let verified_sync_header = db
+		let has_verified_sync_header = db
 			.get(VerifiedSyncHeaderKey)
 			.expect("Could not fetch Verified Sync Header from DB.")
-			.unwrap_or(None);
-		if verified_sync_header.contains(block_number) {
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_sync_header {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
+
 		let latest_sync = db
 			.get(LatestSyncKey)
-			.expect("Could not fetch Latest Sync from DB.")
-			.unwrap_or(None);
+			.expect("Could not fetch Latest Sync from DB.");
 		let is_sync_latest = latest_sync.map(|latest| block_number == latest);
 		if is_sync_latest.unwrap_or(false) {
 			return Some(BlockStatus::VerifyingHeader);
 		}
 	} else {
-		let verified_data = db
+		let has_verified_data = db
 			.get(VerifiedDataKey)
 			.expect("Could not fetch Verified Data from DB.")
-			.unwrap_or(None);
-		if verified_data.contains(block_number) {
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_data {
 			return Some(BlockStatus::Finished);
 		}
 
-		let achieved_confidence = db
+		let has_achieved_confidence = db
 			.get(AchievedConfidenceKey)
 			.expect("Could not fetch Achieved Confidence from DB.")
-			.unwrap_or(None);
-		if achieved_confidence.contains(block_number) {
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_achieved_confidence {
 			return Some(BlockStatus::VerifyingData);
 		}
 
-		let verified_header = db
+		let has_verified_header = db
 			.get(VerifiedHeaderKey)
 			.expect("Could not fetch Verified Header from DB.")
-			.unwrap_or(None);
-		if verified_header.contains(block_number) {
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_header {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
 		if latest == block_number {
@@ -897,7 +893,7 @@ mod tests {
 			LatestSyncKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 			VerifiedSyncHeaderKey,
 		},
-		types::{BlockRange, OptionBlockRange},
+		types::BlockRange,
 		utils::OptionalExtension,
 	};
 
@@ -1120,12 +1116,12 @@ mod tests {
 
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 5);
-		_ = db.put(LatestSyncKey, Some(1));
+		_ = db.put(LatestSyncKey, 1);
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 1, ExtensionSome),
 			verifying_header
 		);
-		_ = db.put(LatestSyncKey, Some(2));
+		_ = db.put(LatestSyncKey, 2);
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 2, ExtensionSome),
 			verifying_header
@@ -1141,16 +1137,16 @@ mod tests {
 		let mut db = data::MemoryDB::default();
 		let verifying_confidence = Some(BlockStatus::VerifyingConfidence);
 		_ = db.put(LatestHeaderKey, 10);
-		let mut verified_header = Some(BlockRange::init(1));
+		let mut verified_header = BlockRange::init(1);
 		_ = db.put(VerifiedHeaderKey, verified_header.clone());
 		assert_eq!(
 			block_status(&None, db.clone(), 1, ExtensionSome),
 			verifying_confidence
 		);
-		let mut achieved_confidence = Some(BlockRange::init(1));
-		achieved_confidence.set(4);
+		let mut achieved_confidence = BlockRange::init(1);
+		achieved_confidence.last = 4;
 		_ = db.put(AchievedConfidenceKey, achieved_confidence);
-		verified_header.set(5);
+		verified_header.last = 5;
 		_ = db.put(VerifiedHeaderKey, verified_header);
 		assert_eq!(
 			block_status(&None, db.clone(), 5, ExtensionSome),
@@ -1168,16 +1164,16 @@ mod tests {
 		db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 
-		let mut verified_sync_header = Some(BlockRange::init(1));
+		let mut verified_sync_header = BlockRange::init(1);
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 1, ExtensionSome),
 			verifying_confidence
 		);
-		let mut achieved_sync_confidence = Some(BlockRange::init(1));
-		achieved_sync_confidence.set(4);
+		let mut achieved_sync_confidence = BlockRange::init(1);
+		achieved_sync_confidence.last = 4;
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
-		verified_sync_header.set(5);
+		verified_sync_header.last = 5;
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 5, ExtensionSome),
@@ -1198,8 +1194,8 @@ mod tests {
 		let mut db = data::MemoryDB::default();
 		let verifying_data = Some(BlockStatus::VerifyingData);
 		_ = db.put(LatestHeaderKey, 10);
-		let mut verified_header = Some(BlockRange::init(1));
-		let mut achieved_confidence = Some(BlockRange::init(1));
+		let mut verified_header = BlockRange::init(1);
+		let mut achieved_confidence = BlockRange::init(1);
 		_ = db.put(AchievedConfidenceKey, achieved_confidence.clone());
 		_ = db.put(VerifiedHeaderKey, verified_header.clone());
 		assert_eq!(
@@ -1207,12 +1203,12 @@ mod tests {
 			verifying_data
 		);
 
-		let mut verified_data = Some(BlockRange::init(1));
-		verified_data.set(4);
+		let mut verified_data = BlockRange::init(1);
+		verified_data.last = 4;
 		_ = db.put(VerifiedDataKey, verified_data);
-		verified_header.set(5);
+		verified_header.last = 5;
 		_ = db.put(VerifiedHeaderKey, verified_header);
-		achieved_confidence.set(5);
+		achieved_confidence.last = 5;
 		_ = db.put(AchievedConfidenceKey, achieved_confidence);
 		assert_eq!(
 			block_status(&None, db.clone(), 5, ExtensionSome),
@@ -1230,20 +1226,20 @@ mod tests {
 		db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 
-		let mut verified_sync_header = Some(BlockRange::init(1));
+		let mut verified_sync_header = BlockRange::init(1);
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
-		let mut achieved_sync_confidence = Some(BlockRange::init(1));
+		let mut achieved_sync_confidence = BlockRange::init(1);
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence.clone());
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 1, ExtensionSome),
 			verifying_data
 		);
-		let mut verified_sync_data = Some(BlockRange::init(1));
-		verified_sync_data.set(4);
+		let mut verified_sync_data = BlockRange::init(1);
+		verified_sync_data.last = 4;
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
-		verified_sync_header.set(5);
+		verified_sync_header.last = 5;
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
-		achieved_sync_confidence.set(5);
+		achieved_sync_confidence.last = 5;
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 5, ExtensionSome),
@@ -1264,14 +1260,14 @@ mod tests {
 		let mut db = data::MemoryDB::default();
 		let finished = Some(BlockStatus::Finished);
 		_ = db.put(LatestHeaderKey, 10);
-		let mut verified_header = Some(BlockRange::init(1));
+		let mut verified_header = BlockRange::init(1);
 		_ = db.put(VerifiedHeaderKey, verified_header.clone());
-		let mut verified_data = Some(BlockRange::init(1));
+		let mut verified_data = BlockRange::init(1);
 		_ = db.put(VerifiedDataKey, verified_data.clone());
 		assert_eq!(block_status(&None, db.clone(), 1, ExtensionSome), finished);
-		verified_header.set(5);
+		verified_header.last = 5;
 		_ = db.put(VerifiedHeaderKey, verified_header);
-		verified_data.set(5);
+		verified_data.last = 5;
 		_ = db.put(VerifiedDataKey, verified_data);
 		assert_eq!(block_status(&None, db.clone(), 4, ExtensionSome), finished);
 		assert_eq!(block_status(&None, db.clone(), 5, ExtensionSome), finished);
@@ -1280,18 +1276,17 @@ mod tests {
 		db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
 
-		let mut verified_sync_header = Some(BlockRange::init(1));
+		let mut verified_sync_header = BlockRange::init(1);
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
-		let mut verified_sync_data = None;
-		verified_sync_data.set(1);
+		let mut verified_sync_data = BlockRange::init(1);
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 1, ExtensionSome),
 			finished
 		);
-		verified_sync_header.set(5);
+		verified_sync_header.last = 5;
 		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
-		verified_sync_data.set(5);
+		verified_sync_data.last = 5;
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 		assert_eq!(
 			block_status(&Some(1), db.clone(), 4, ExtensionSome),

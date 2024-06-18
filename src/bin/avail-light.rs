@@ -360,7 +360,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	);
 
 	if cfg.sync_start_block.is_some() {
-		db.put(IsSyncedKey, Some(false))
+		db.put(IsSyncedKey, false)
 			.expect("Avail Light Client couldn't store IsSynced flag in DB.");
 		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_client::run(
 			sync_client,

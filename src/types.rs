@@ -1162,36 +1162,6 @@ impl BlockRange {
 	}
 }
 
-pub trait OptionBlockRange {
-	fn set(&mut self, block_number: u32);
-	fn first(&self) -> Option<u32>;
-	fn last(&self) -> Option<u32>;
-	fn contains(&self, block_number: u32) -> bool;
-}
-
-impl OptionBlockRange for Option<BlockRange> {
-	fn set(&mut self, block_number: u32) {
-		match self {
-			Some(range) => range.last = block_number,
-			None => *self = Some(BlockRange::init(block_number)),
-		};
-	}
-
-	fn first(&self) -> Option<u32> {
-		self.as_ref().map(|range| range.first)
-	}
-
-	fn last(&self) -> Option<u32> {
-		self.as_ref().map(|range| range.last)
-	}
-
-	fn contains(&self, block_number: u32) -> bool {
-		self.as_ref()
-			.map(|range| range.contains(block_number))
-			.unwrap_or(false)
-	}
-}
-
 #[derive(Debug, Encode)]
 pub enum SignerMessage {
 	_DummyMessage(u32),

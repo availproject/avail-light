@@ -17,7 +17,7 @@ use crate::{
 		LatestHeaderKey, VerifiedHeaderKey,
 	},
 	finality::{check_finality, ValidatorSet},
-	types::{GrandpaJustification, OptionBlockRange},
+	types::{BlockRange, GrandpaJustification},
 	utils::filter_auth_set_changes,
 };
 
@@ -185,7 +185,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 								validator_set: self.block_data.current_valset.validator_set.clone(),
 							},
 						)
-						.unwrap();
+						.expect("Can store FinalitySyncCheckpoint to the DB");
 				} else {
 					// to avoid reading from db all the time,
 					// after finality is synced, it will not be necessary to read the state
@@ -193,8 +193,8 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 					finality_synced = self
 						.db
 						.get(IsFinalitySyncedKey)
-						.unwrap()
-						.expect("No IsFinalitySynced flag found in DB.");
+						.expect("Can read IsFinalitySynced from the DB")
+						.unwrap_or(false)
 				}
 
 				// try and get get all the skipped blocks, if they exist
@@ -242,9 +242,9 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 					.db
 					.get(VerifiedHeaderKey)
 					.expect("Light Client failed to fetch Verified Header from DB.")
-					.unwrap_or(None);
+					.unwrap_or_else(|| BlockRange::init(header.number));
 				// mutate value
-				verified_header.set(header.number);
+				verified_header.last = header.number;
 				// and store in DB
 				self.db
 					.put(VerifiedHeaderKey, verified_header)
