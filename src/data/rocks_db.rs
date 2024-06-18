@@ -16,6 +16,12 @@ pub struct RocksDB {
 #[derive(Eq, Hash, PartialEq)]
 pub struct RocksDBKey(Option<&'static str>, Vec<u8>);
 
+impl RocksDBKey {
+	fn app_state(key: &str) -> Self {
+		Self(Some(APP_STATE_CF), key.as_bytes().to_vec())
+	}
+}
+
 impl RocksDB {
 	pub fn open(path: &str) -> Result<(RocksDB, Arc<rocksdb::DB>)> {
 		let mut kademlia_store_cf_opts = Options::default();
@@ -108,118 +114,91 @@ impl data::Database for RocksDB {
 impl From<AppDataKey> for RocksDBKey {
 	fn from(value: AppDataKey) -> Self {
 		let AppDataKey(app_id, block_num) = value;
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			format!("{APP_ID_PREFIX}:{app_id}:{block_num}").into_bytes(),
-		)
+		RocksDBKey::app_state(&format!("{APP_ID_PREFIX}:{app_id}:{block_num}"))
 	}
 }
 
 impl From<BlockHeaderKey> for RocksDBKey {
 	fn from(value: BlockHeaderKey) -> Self {
 		let BlockHeaderKey(block_num) = value;
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			format!("{BLOCK_HEADER_KEY_PREFIX}:{block_num}").into_bytes(),
-		)
+		RocksDBKey::app_state(&format!("{BLOCK_HEADER_KEY_PREFIX}:{block_num}"))
 	}
 }
 
 impl From<VerifiedCellCountKey> for RocksDBKey {
 	fn from(value: VerifiedCellCountKey) -> Self {
 		let VerifiedCellCountKey(count) = value;
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			format!("{VERIFIED_CELL_COUNT_PREFIX}:{count}").into_bytes(),
-		)
+		RocksDBKey::app_state(&format!("{VERIFIED_CELL_COUNT_PREFIX}:{count}"))
 	}
 }
 
 impl From<FinalitySyncCheckpointKey> for RocksDBKey {
 	fn from(_: FinalitySyncCheckpointKey) -> Self {
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
-		)
+		RocksDBKey::app_state(FINALITY_SYNC_CHECKPOINT_KEY)
 	}
 }
 
 impl From<RpcNodeKey> for RocksDBKey {
 	fn from(_: RpcNodeKey) -> Self {
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			CONNECTED_RPC_NODE_KEY.as_bytes().to_vec(),
-		)
+		RocksDBKey::app_state(CONNECTED_RPC_NODE_KEY)
 	}
 }
 
 impl From<IsFinalitySyncedKey> for RocksDBKey {
 	fn from(_: IsFinalitySyncedKey) -> Self {
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			IS_FINALITY_SYNCED_KEY.as_bytes().to_vec(),
-		)
+		RocksDBKey::app_state(IS_FINALITY_SYNCED_KEY)
 	}
 }
 
 impl From<VerifiedSyncDataKey> for RocksDBKey {
 	fn from(_: VerifiedSyncDataKey) -> Self {
-		RocksDBKey(Some(APP_STATE_CF), VERIFIED_SYNC_DATA.as_bytes().to_vec())
+		RocksDBKey::app_state(VERIFIED_SYNC_DATA)
 	}
 }
 
 impl From<AchievedSyncConfidenceKey> for RocksDBKey {
 	fn from(_: AchievedSyncConfidenceKey) -> Self {
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			ACHIEVED_SYNC_CONFIDENCE_KEY.as_bytes().to_vec(),
-		)
+		RocksDBKey::app_state(ACHIEVED_SYNC_CONFIDENCE_KEY)
 	}
 }
 
 impl From<VerifiedSyncHeaderKey> for RocksDBKey {
 	fn from(_: VerifiedSyncHeaderKey) -> Self {
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			VERIFIED_SYNC_HEADER_KEY.as_bytes().to_vec(),
-		)
+		RocksDBKey::app_state(VERIFIED_SYNC_HEADER_KEY)
 	}
 }
 
 impl From<LatestSyncKey> for RocksDBKey {
 	fn from(_: LatestSyncKey) -> Self {
-		RocksDBKey(Some(APP_STATE_CF), LATEST_SYNC_KEY.as_bytes().to_vec())
+		RocksDBKey::app_state(LATEST_SYNC_KEY)
 	}
 }
 
 impl From<VerifiedDataKey> for RocksDBKey {
 	fn from(_: VerifiedDataKey) -> Self {
-		RocksDBKey(Some(APP_STATE_CF), VERIFIED_DATA_KEY.as_bytes().to_vec())
+		RocksDBKey::app_state(VERIFIED_DATA_KEY)
 	}
 }
 impl From<AchievedConfidenceKey> for RocksDBKey {
 	fn from(_: AchievedConfidenceKey) -> Self {
-		RocksDBKey(
-			Some(APP_STATE_CF),
-			ACHIEVED_CONFIDENCE_KEY.as_bytes().to_vec(),
-		)
+		RocksDBKey::app_state(ACHIEVED_CONFIDENCE_KEY)
 	}
 }
 
 impl From<VerifiedHeaderKey> for RocksDBKey {
 	fn from(_: VerifiedHeaderKey) -> Self {
-		RocksDBKey(Some(APP_STATE_CF), VERIFIED_HEADER_KEY.as_bytes().to_vec())
+		RocksDBKey::app_state(VERIFIED_HEADER_KEY)
 	}
 }
 
 impl From<LatestHeaderKey> for RocksDBKey {
 	fn from(_: LatestHeaderKey) -> Self {
-		RocksDBKey(Some(APP_STATE_CF), LATEST_HEADER_KEY.as_bytes().to_vec())
+		RocksDBKey::app_state(LATEST_HEADER_KEY)
 	}
 }
 
 impl From<IsSyncedKey> for RocksDBKey {
 	fn from(_: IsSyncedKey) -> Self {
-		RocksDBKey(Some(APP_STATE_CF), IS_SYNCED_KEY.as_bytes().to_vec())
+		RocksDBKey::app_state(IS_SYNCED_KEY)
 	}
 }

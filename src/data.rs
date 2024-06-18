@@ -94,42 +94,42 @@ impl RecordKey for IsFinalitySyncedKey {
 pub struct VerifiedSyncDataKey;
 
 impl RecordKey for VerifiedSyncDataKey {
-	type Type = Option<BlockRange>;
+	type Type = BlockRange;
 }
 
 pub struct AchievedSyncConfidenceKey;
 
 impl RecordKey for AchievedSyncConfidenceKey {
-	type Type = Option<BlockRange>;
+	type Type = BlockRange;
 }
 pub struct VerifiedSyncHeaderKey;
 
 impl RecordKey for VerifiedSyncHeaderKey {
-	type Type = Option<BlockRange>;
+	type Type = BlockRange;
 }
 
 pub struct LatestSyncKey;
 
 impl RecordKey for LatestSyncKey {
-	type Type = Option<u32>;
+	type Type = u32;
 }
 
 pub struct VerifiedDataKey;
 
 impl RecordKey for VerifiedDataKey {
-	type Type = Option<BlockRange>;
+	type Type = BlockRange;
 }
 
 pub struct AchievedConfidenceKey;
 
 impl RecordKey for AchievedConfidenceKey {
-	type Type = Option<BlockRange>;
+	type Type = BlockRange;
 }
 
 pub struct VerifiedHeaderKey;
 
 impl RecordKey for VerifiedHeaderKey {
-	type Type = Option<BlockRange>;
+	type Type = BlockRange;
 }
 
 pub struct LatestHeaderKey;
@@ -141,5 +141,5 @@ impl RecordKey for LatestHeaderKey {
 pub struct IsSyncedKey;
 
 impl RecordKey for IsSyncedKey {
-	type Type = Option<bool>;
+	type Type = bool;
 }

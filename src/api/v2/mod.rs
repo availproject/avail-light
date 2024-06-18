@@ -244,7 +244,7 @@ mod tests {
 			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, VerifiedCellCountKey,
 			VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		},
-		types::{BlockRange, OptionBlockRange, RuntimeConfig},
+		types::{BlockRange, RuntimeConfig},
 	};
 	use async_trait::async_trait;
 	use avail_subxt::{api::runtime_types::avail_core::AppId, utils::H256};
@@ -318,23 +318,23 @@ mod tests {
 		};
 		let db = MemoryDB::default();
 
-		_ = db.put(IsSyncedKey, Some(false));
+		_ = db.put(IsSyncedKey, false);
 		_ = db.put(LatestHeaderKey, 30);
 
-		let mut achieved_confidence = Some(BlockRange::init(20));
-		achieved_confidence.set(29);
+		let mut achieved_confidence = BlockRange::init(20);
+		achieved_confidence.last = 29;
 		_ = db.put(AchievedConfidenceKey, achieved_confidence);
 
-		let mut verified_sync_data = Some(BlockRange::init(10));
-		verified_sync_data.set(18);
+		let mut verified_sync_data = BlockRange::init(10);
+		verified_sync_data.last = 18;
 		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
 
-		let mut verified_data = Some(BlockRange::init(20));
-		verified_data.set(29);
+		let mut verified_data = BlockRange::init(20);
+		verified_data.last = 29;
 		_ = db.put(VerifiedDataKey, verified_data.clone());
 
-		let mut achieved_sync_confidence = Some(BlockRange::init(10));
-		achieved_sync_confidence.set(19);
+		let mut achieved_sync_confidence = BlockRange::init(10);
+		achieved_sync_confidence.last = 19;
 		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
 		let route = super::status_route(runtime_config, db);
@@ -375,8 +375,8 @@ mod tests {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
-		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
+		_ = db.put(VerifiedDataKey, BlockRange::init(10));
 		_ = db.put(BlockHeaderKey(10), incomplete_header());
 		let route = super::block_route(config, db);
 		let response = warp::test::request()
@@ -397,8 +397,8 @@ mod tests {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
-		_ = db.put(VerifiedDataKey, Some(BlockRange::init(10)));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
+		_ = db.put(VerifiedDataKey, BlockRange::init(10));
 		_ = db.put(VerifiedCellCountKey(10), 4);
 		_ = db.put(BlockHeaderKey(10), header());
 		let route = super::block_route(config, db);
@@ -426,8 +426,8 @@ mod tests {
 		};
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(9)));
-		_ = db.put(LatestSyncKey, Some(5));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(9));
+		_ = db.put(LatestSyncKey, 5);
 		_ = db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
@@ -495,7 +495,7 @@ mod tests {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 1);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(1)));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(1));
 		_ = db.put(BlockHeaderKey(1), header());
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
@@ -523,10 +523,10 @@ mod tests {
 		};
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(10)));
-		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(9)));
-		_ = db.put(VerifiedDataKey, Some(BlockRange::init(8)));
-		_ = db.put(LatestSyncKey, Some(5));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
+		_ = db.put(AchievedConfidenceKey, BlockRange::init(9));
+		_ = db.put(VerifiedDataKey, BlockRange::init(8));
+		_ = db.put(LatestSyncKey, 5);
 		_ = db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
@@ -560,9 +560,9 @@ mod tests {
 		};
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
-		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
-		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(5));
+		_ = db.put(AchievedConfidenceKey, BlockRange::init(5));
+		_ = db.put(VerifiedDataKey, BlockRange::init(5));
 		_ = db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
@@ -585,9 +585,9 @@ mod tests {
 		};
 		let db = data::MemoryDB::default();
 		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, Some(BlockRange::init(5)));
-		_ = db.put(AchievedConfidenceKey, Some(BlockRange::init(5)));
-		_ = db.put(VerifiedDataKey, Some(BlockRange::init(5)));
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(5));
+		_ = db.put(AchievedConfidenceKey, BlockRange::init(5));
+		_ = db.put(VerifiedDataKey, BlockRange::init(5));
 		_ = db.put(
 			AppDataKey(1, 5),
 			vec![vec![
@@ -765,22 +765,22 @@ mod tests {
 		let mut test = MockSetup::new(config, None).await;
 
 		_ = test.db.put(LatestHeaderKey, 30);
-		_ = test.db.put(IsSyncedKey, Some(false));
+		_ = test.db.put(IsSyncedKey, false);
 
-		let mut achieved_confidence = Some(BlockRange::init(20));
-		achieved_confidence.set(29);
+		let mut achieved_confidence = BlockRange::init(20);
+		achieved_confidence.last = 29;
 		_ = test.db.put(AchievedConfidenceKey, achieved_confidence);
 
-		let mut verified_sync_data = Some(BlockRange::init(10));
-		verified_sync_data.set(18);
+		let mut verified_sync_data = BlockRange::init(10);
+		verified_sync_data.last = 18;
 		_ = test.db.put(VerifiedSyncDataKey, verified_sync_data);
 
-		let mut verified_data = Some(BlockRange::init(20));
-		verified_data.set(29);
+		let mut verified_data = BlockRange::init(20);
+		verified_data.last = 29;
 		_ = test.db.put(VerifiedDataKey, verified_data);
 
-		let mut achieved_sync_confidence = Some(BlockRange::init(10));
-		achieved_sync_confidence.set(19);
+		let mut achieved_sync_confidence = BlockRange::init(10);
+		achieved_sync_confidence.last = 19;
 		_ = test
 			.db
 			.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
