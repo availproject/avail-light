@@ -343,7 +343,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	);
 
 	if cfg.sync_start_block.is_some() {
-		db.put(IsSyncedKey, Some(false))
+		db.put(IsSyncedKey, false)
 			.expect("Avail Light Client couldn't store IsSynced flag in DB.");
 		spawn_in_span(shutdown.with_cancel(avail_light::sync_client::run(
 			sync_client,

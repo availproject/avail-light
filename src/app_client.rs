@@ -434,22 +434,21 @@ pub async fn run(
 		match sync_range.contains(&block_number) {
 			true => {
 				// initialize DB data on startup
-				db.put(VerifiedSyncDataKey, Some(BlockRange::init(block_number)))
+				db.put(VerifiedSyncDataKey, BlockRange::init(block_number))
 					.expect("App Client Failed to initialize Verified Sync Data in DB.");
 			},
 			false => {
-				db.put(VerifiedDataKey, Some(BlockRange::init(block_number)))
+				db.put(VerifiedDataKey, BlockRange::init(block_number))
 					.expect("App Client Failed to initialize Verified Data in DB.");
 			},
 		}
 		if db
 			.get(IsSyncedKey)
 			.expect("App Client couldn't fetch IsSynced flag from DB.")
-			.unwrap_or(None)
 			== Some(false)
 			&& sync_range.clone().last() == Some(block_number)
 		{
-			db.put(IsSyncedKey, Some(true))
+			db.put(IsSyncedKey, true)
 				.expect("App Client couldn't store IsSynced flag in DB.");
 		};
 	}

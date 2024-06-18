@@ -3,7 +3,7 @@ use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{AchievedConfidenceKey, AppDataKey, Database, VerifiedCellCountKey},
 	network::rpc::cell_count_for_confidence,
-	types::{Mode, OptionBlockRange, RuntimeConfig},
+	types::{BlockRange, Mode, RuntimeConfig},
 	utils::calculate_confidence,
 };
 use avail_subxt::{
@@ -33,14 +33,9 @@ pub fn confidence(
 	cfg: RuntimeConfig,
 ) -> ClientResponse<ConfidenceResponse> {
 	fn is_synced(block_num: u32, db: impl Database) -> bool {
-		match db
-			.get(AchievedConfidenceKey)
+		db.get(AchievedConfidenceKey)
 			.expect("Achieved Confidence could not be fetched from the DB.")
-			.unwrap_or(None)
-		{
-			Some(range) => block_num <= range.last,
-			None => false,
-		}
+			.map_or(false, |range| block_num <= range.last)
 	}
 
 	info!("Got request for confidence for block {block_num}");
@@ -65,11 +60,9 @@ pub fn confidence(
 }
 
 pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> {
-	let Some(last) = db
+	let Some(BlockRange { last, .. }) = db
 		.get(AchievedConfidenceKey)
 		.expect("Achieved Confidence could not be fetched from the DB.")
-		.unwrap_or(None)
-		.last()
 	else {
 		return ClientResponse::NotFound;
 	};
@@ -92,15 +85,14 @@ pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> 
 
 pub fn latest_block(db: impl Database) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
-	match db
+	let Some(BlockRange { last, .. }) = db
 		.get(AchievedConfidenceKey)
 		.expect("Achieved Confidence could not be fetched from the DB.")
-		.unwrap_or(None)
-		.last()
-	{
-		None => ClientResponse::NotFound,
-		Some(latest_block) => ClientResponse::Normal(LatestBlockResponse { latest_block }),
-	}
+	else {
+		return ClientResponse::NotFound;
+	};
+
+	ClientResponse::Normal(LatestBlockResponse { latest_block: last })
 }
 
 pub fn appdata(
@@ -131,11 +123,6 @@ pub fn appdata(
 		}
 	}
 	info!("Got request for AppData for block {block_num}");
-	let last = db
-		.get(AchievedConfidenceKey)
-		.expect("Achieved Confidence could not be fetched from the DB.")
-		.unwrap_or(None)
-		.last();
 	let decode = query.decode.unwrap_or(false);
 	let res = match decode_app_data_to_extrinsics(
 		db.get(AppDataKey(app_id.unwrap_or(0u32), block_num)),
@@ -162,10 +149,11 @@ pub fn appdata(
 			}
 		},
 
-		Ok(None) => match last {
-			Some(last) if block_num == last => ClientResponse::InProcess,
-			_ => ClientResponse::NotFound,
-		},
+		Ok(None) => db
+			.get(AchievedConfidenceKey)
+			.expect("Achieved Confidence could not be fetched from the DB.")
+			.filter(|range| block_num == range.last)
+			.map_or(ClientResponse::NotFound, |_| ClientResponse::InProcess),
 		Err(e) => ClientResponse::Error(e),
 	};
 	debug!("Returning AppData: {res:?}");

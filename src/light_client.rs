@@ -33,7 +33,7 @@ use crate::{
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, ClientChannels, LightClientConfig, OptionBlockRange},
+	types::{self, BlockRange, ClientChannels, LightClientConfig},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -65,10 +65,10 @@ pub async fn process_block(
 			let mut achieved_confidence = db
 				.get(AchievedConfidenceKey)
 				.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?
-				.unwrap_or(None);
-			// mutate value
-			achieved_confidence.set(block_number);
-			// and store in DB
+				.unwrap_or_else(|| BlockRange::init(block_number));
+
+			achieved_confidence.last = block_number;
+
 			db.put(AchievedConfidenceKey, achieved_confidence)
 				.wrap_err("Light Client failed to store Achieved Confidence in DB.")?;
 
@@ -153,10 +153,10 @@ pub async fn process_block(
 	let mut achieved_confidence = db
 		.get(AchievedConfidenceKey)
 		.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?
-		.unwrap_or(None);
-	// mutate value
-	achieved_confidence.set(block_number);
-	// and store in DB
+		.unwrap_or_else(|| BlockRange::init(block_number));
+
+	achieved_confidence.last = block_number;
+
 	db.put(AchievedConfidenceKey, achieved_confidence)
 		.wrap_err("Light Client failed to store Achieved Confidence in DB.")?;
 

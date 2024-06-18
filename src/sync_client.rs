@@ -24,7 +24,7 @@ use crate::{
 		self,
 		rpc::{self, Client as RpcClient},
 	},
-	types::{BlockVerified, OptionBlockRange, SyncClientConfig},
+	types::{BlockRange, BlockVerified, SyncClientConfig},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -116,9 +116,9 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 			.db
 			.get(AchievedSyncConfidenceKey)
 			.wrap_err("Sync Client failed to fetch Achieved Sync Confidence from DB.")?
-			.unwrap_or(None);
+			.unwrap_or_else(|| BlockRange::init(block_number));
 		// mutate the value
-		block_range.set(block_number);
+		block_range.last = block_number;
 		// store mutated value back in the DB
 		self.db
 			.put(AchievedSyncConfidenceKey, block_range)
@@ -131,9 +131,9 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 			.db
 			.get(VerifiedSyncHeaderKey)
 			.wrap_err("Sync Client failed to fetch Verified Sync Header from DB.")?
-			.unwrap_or(None);
+			.unwrap_or_else(|| BlockRange::init(block_number));
 		// mutate the value
-		block_range.set(block_number);
+		block_range.last = block_number;
 		// store mutated value back in the DB
 		self.db
 			.put(VerifiedSyncHeaderKey, block_range)
@@ -142,13 +142,13 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 
 	fn store_latest_sync(&self, block_number: u32) -> Result<()> {
 		self.db
-			.put(LatestSyncKey, Some(block_number))
+			.put(LatestSyncKey, block_number)
 			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
 	}
 
 	fn store_is_synced(&self, is_synced: bool) -> Result<()> {
 		self.db
-			.put(IsSyncedKey, Some(is_synced))
+			.put(IsSyncedKey, is_synced)
 			.wrap_err("Sync Client failed to store IsSynced flag in DB.")
 	}
 }
