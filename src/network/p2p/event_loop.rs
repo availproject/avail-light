@@ -405,34 +405,41 @@ impl EventLoop {
 					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 				},
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
-				mdns::Event::Discovered(addrs_list) => {
-					for (peer_id, multiaddr) in addrs_list {
-						trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-						self.swarm
-							.behaviour_mut()
-							.kademlia
-							.add_address(&peer_id, multiaddr);
-					}
-				},
-				mdns::Event::Expired(addrs_list) => {
-					for (peer_id, multiaddr) in addrs_list {
-						trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
+			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
+				match event {
+					mdns::Event::Discovered(addrs_list) => {
+						addrs_list
+							.into_iter()
+							.filter(|(peer_id, multiaddr)| {
+								multiaddr
+									.to_string()
+									.contains(Protocol::P2p(*peer_id).tag())
+							})
+							.for_each(|(peer_id, multiaddr)| {
+								trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 
-						if self
-							.swarm
-							.behaviour_mut()
-							.mdns
-							.discovered_nodes()
-							.any(|&p| p == peer_id)
-						{
-							self.swarm
+								let _ = self.swarm.dial(multiaddr);
+							});
+					},
+					mdns::Event::Expired(addrs_list) => {
+						addrs_list.into_iter().for_each(|(peer_id, multiaddr)| {
+							trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
+
+							if self
+								.swarm
 								.behaviour_mut()
-								.kademlia
-								.remove_address(&peer_id, &multiaddr);
-						}
-					}
-				},
+								.mdns
+								.discovered_nodes()
+								.any(|&p| p == peer_id)
+							{
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.remove_address(&peer_id, &multiaddr);
+							}
+						});
+					},
+				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {
