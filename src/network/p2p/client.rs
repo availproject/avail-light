@@ -1,6 +1,6 @@
 use super::{
-	event_loop::ConnectionEstablishedInfo, Command, CommandSender, EventLoopEntries, LocalInfo,
-	QueryChannel, SendableCommand,
+	event_loop::ConnectionEstablishedInfo, is_global, Command, CommandSender, EventLoopEntries,
+	LocalInfo, QueryChannel, SendableCommand,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -269,7 +269,7 @@ impl Command for CountKademliaPeers {
 				for addr in addresses {
 					for protocol in addr.iter() {
 						if let libp2p::multiaddr::Protocol::Ip4(ip) = protocol {
-							if !ip.is_private() {
+							if is_global(ip) {
 								peers_with_non_pvt_addr += 1;
 								// We just need to hit the first external address
 								break;
