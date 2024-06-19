@@ -265,8 +265,7 @@ impl Command for CountKademliaPeers {
 		let mut peers_with_non_pvt_addr: usize = 0;
 		for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
 			for item in bucket.iter() {
-				let addresses = item.node.value.clone().into_vec();
-				for addr in addresses {
+				for addr in item.node.value.iter() {
 					for protocol in addr.iter() {
 						if let libp2p::multiaddr::Protocol::Ip4(ip) = protocol {
 							if is_global(ip) {
@@ -276,8 +275,8 @@ impl Command for CountKademliaPeers {
 							}
 						};
 					}
-					total_peers += 1;
 				}
+				total_peers += 1;
 			}
 		}
 		self.response_sender
