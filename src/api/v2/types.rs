@@ -30,7 +30,7 @@ use crate::{
 		LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		VerifiedSyncHeaderKey,
 	},
-	network::rpc::{Event as RpcEvent, Node as RpcNode},
+	network::rpc::Event as RpcEvent,
 	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig},
 	utils::{decode_app_data, OptionalExtension},
 };
@@ -172,39 +172,39 @@ impl Status {
 	pub fn new(config: &RuntimeConfig, db: impl Database) -> Self {
 		let historical_sync = db
 			.get(IsSyncedKey)
-			.expect("Couldn't fetch IsSynced flag from DB.")
+			.expect("Failed to get IsSynced flag from the DB")
 			.map(|synced| HistoricalSync {
 				synced,
 				available: db
 					.get(AchievedSyncConfidenceKey)
-					.expect("Could not fetch Achieved Sync Confidence from DB.")
+					.expect("Failed to get achieved sync confidence from the DB")
 					.map(From::from),
 				app_data: db
 					.get(VerifiedSyncDataKey)
-					.expect("Could not fetch Verified Sync Data from DB.")
+					.expect("Failed to get verified sync data from the DB")
 					.map(From::from),
 			});
 
 		let blocks = Blocks {
 			latest: db
 				.get(LatestHeaderKey)
-				.expect("Could not fetch Latest Header from DB.")
+				.expect("Failed to get latest header from the DB")
 				.unwrap_or_default(),
 			available: db
 				.get(AchievedConfidenceKey)
-				.expect("Could not fetch Achieved Confidence from DB.")
+				.expect("Failed to get achieved confidence from the DB")
 				.map(From::from),
 			app_data: db
 				.get(VerifiedDataKey)
-				.expect("Could not fetch Verified Data from DB.")
+				.expect("Failed to get verified data from the DB")
 				.map(From::from),
 			historical_sync,
 		};
 
-		let node = match db.get(RpcNodeKey).unwrap() {
-			Some(n) => n,
-			None => RpcNode::default(),
-		};
+		let node = db
+			.get(RpcNodeKey)
+			.expect("Failed to get RPC node from the DB")
+			.unwrap_or_default();
 
 		Status {
 			modes: config.into(),
@@ -292,7 +292,7 @@ pub fn block_status(
 ) -> Option<BlockStatus> {
 	let latest = db
 		.get(LatestHeaderKey)
-		.expect("Could not fetch Latest Header from DB.")
+		.expect("Failed to getlatest header from the DB")
 		.unwrap_or_default();
 	if block_number > latest {
 		return None;
@@ -300,7 +300,7 @@ pub fn block_status(
 
 	let first_block = db
 		.get(VerifiedHeaderKey)
-		.expect("Failed to fetch Verified Header from DB.")
+		.expect("Failed to get verified header from DB")
 		.map_or(latest, |range| range.first);
 
 	let first_sync_block = sync_start_block.unwrap_or(first_block);
@@ -316,7 +316,7 @@ pub fn block_status(
 	if block_number < first_block {
 		let has_verified_sync_data = db
 			.get(VerifiedSyncDataKey)
-			.expect("Could not fetch Verified Sync Data from DB.")
+			.expect("Failed to get verified sync data from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_sync_data {
@@ -325,7 +325,7 @@ pub fn block_status(
 
 		let has_achieved_sync_confidence = db
 			.get(AchievedSyncConfidenceKey)
-			.expect("Could not fetch Achieved Sync Confidence from DB.")
+			.expect("Failed to get achieved sync confidence from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_achieved_sync_confidence {
@@ -334,7 +334,7 @@ pub fn block_status(
 
 		let has_verified_sync_header = db
 			.get(VerifiedSyncHeaderKey)
-			.expect("Could not fetch Verified Sync Header from DB.")
+			.expect("Failed to get verified sync header")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_sync_header {
@@ -343,7 +343,7 @@ pub fn block_status(
 
 		let latest_sync = db
 			.get(LatestSyncKey)
-			.expect("Could not fetch Latest Sync from DB.");
+			.expect("Failed to get latest sync key from the DB");
 		let is_sync_latest = latest_sync.map(|latest| block_number == latest);
 		if is_sync_latest.unwrap_or(false) {
 			return Some(BlockStatus::VerifyingHeader);
@@ -351,7 +351,7 @@ pub fn block_status(
 	} else {
 		let has_verified_data = db
 			.get(VerifiedDataKey)
-			.expect("Could not fetch Verified Data from DB.")
+			.expect("Failed to get verified data from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_data {
@@ -360,7 +360,7 @@ pub fn block_status(
 
 		let has_achieved_confidence = db
 			.get(AchievedConfidenceKey)
-			.expect("Could not fetch Achieved Confidence from DB.")
+			.expect("Failed to get achieved confidence from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_achieved_confidence {
@@ -369,7 +369,7 @@ pub fn block_status(
 
 		let has_verified_header = db
 			.get(VerifiedHeaderKey)
-			.expect("Could not fetch Verified Header from DB.")
+			.expect("Failed to get verified header from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_header {

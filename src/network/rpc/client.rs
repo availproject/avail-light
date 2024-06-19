@@ -82,7 +82,7 @@ impl<D: Database> Client<D> {
 		};
 
 		// update application wide State with the newly connected Node
-		// get the currently persisted node from DB implementation
+		// store the currently persisted node from DB implementation
 		_ = db.put(RpcNodeKey, node);
 
 		Ok(Self {

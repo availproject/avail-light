@@ -72,27 +72,21 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		if let Some(header) = self
 			.db
 			.get(BlockHeaderKey(block_number))
-			.wrap_err("Sync Client failed to get Block Header from the DB.")?
+			.wrap_err("Failed to get block header from the DB")?
 		{
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			return Ok((header, hash));
 		}
 
-		let (header, hash) =
-			match self
-				.rpc_client
-				.get_header_by_block_number(block_number)
-				.await
-				.wrap_err_with(|| {
-					format!("Sync Client failed to get Block {block_number:#?} by Block Number from DB.",)
-				}) {
-				Ok(value) => value,
-				Err(error) => return Err(error),
-			};
+		let (header, hash) = self
+			.rpc_client
+			.get_header_by_block_number(block_number)
+			.await
+			.wrap_err("Failed to get block header from the RPC")?;
 
 		self.db
 			.put(BlockHeaderKey(block_number), header.clone())
-			.wrap_err("Sync Client failed to store Block Header in DB.")?;
+			.wrap_err("Failed to store blcok header in the DB")?;
 
 		Ok((header, hash))
 	}
@@ -100,14 +94,14 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
 		self.db
 			.get(VerifiedCellCountKey(block_number))
-			.wrap_err("Sync Client failed to check if Confidence Factor is stored in DB.")
+			.wrap_err("Failed to get verified cell count from the DB")
 			.map(|c: Option<u32>| c.is_some())
 	}
 
 	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()> {
 		self.db
 			.put(VerifiedCellCountKey(block_number), count)
-			.wrap_err("Sync Client failed to store Verified Cell Count into DB.")
+			.wrap_err("Failed to store verified cell count in the DB")
 	}
 
 	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()> {
@@ -115,14 +109,14 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		let mut block_range = self
 			.db
 			.get(AchievedSyncConfidenceKey)
-			.wrap_err("Sync Client failed to fetch Achieved Sync Confidence from DB.")?
+			.wrap_err("Failed to get sync confidence achieved from the DB")?
 			.unwrap_or_else(|| BlockRange::init(block_number));
 		// mutate the value
 		block_range.last = block_number;
 		// store mutated value back in the DB
 		self.db
 			.put(AchievedSyncConfidenceKey, block_range)
-			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
+			.wrap_err("Failed to store achived sync confidence in the DB")
 	}
 
 	fn store_verified_sync_header(&self, block_number: u32) -> Result<()> {
@@ -130,26 +124,26 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 		let mut block_range = self
 			.db
 			.get(VerifiedSyncHeaderKey)
-			.wrap_err("Sync Client failed to fetch Verified Sync Header from DB.")?
+			.wrap_err("Failed to fetch verified sync header from the DB")?
 			.unwrap_or_else(|| BlockRange::init(block_number));
 		// mutate the value
 		block_range.last = block_number;
 		// store mutated value back in the DB
 		self.db
 			.put(VerifiedSyncHeaderKey, block_range)
-			.wrap_err("Sync Client failed to store Verified Sync Header in DB.")
+			.wrap_err("Failed to store verified sync header in the DB")
 	}
 
 	fn store_latest_sync(&self, block_number: u32) -> Result<()> {
 		self.db
 			.put(LatestSyncKey, block_number)
-			.wrap_err("Sync Client failed to store Achieved Sync Confidence in DB.")
+			.wrap_err("Failed to store latest sync block in the DB")
 	}
 
 	fn store_is_synced(&self, is_synced: bool) -> Result<()> {
 		self.db
 			.put(IsSyncedKey, is_synced)
-			.wrap_err("Sync Client failed to store IsSynced flag in DB.")
+			.wrap_err("Failed to store IsSynced flag in the DB")
 	}
 }
 
@@ -291,7 +285,7 @@ pub async fn run(
 	if cfg.is_last_step {
 		client
 			.store_is_synced(true)
-			.expect("Sync Client couldn't store IsSynced flag in DB.");
+			.expect("Failed to store IsSynced flag in the DB");
 	}
 }
 
