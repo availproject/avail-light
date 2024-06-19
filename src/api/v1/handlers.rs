@@ -16,6 +16,11 @@ use color_eyre::{eyre::WrapErr, Result};
 use num::{BigUint, FromPrimitive};
 use tracing::{debug, info};
 
+fn get_achived_confidence(db: &impl Database) -> Option<BlockRange> {
+	db.get(AchievedConfidenceKey)
+		.expect("Failed to get achieved confidence from the DB")
+}
+
 fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block as u64)?;
 	let factor_big: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64)?;
@@ -33,9 +38,7 @@ pub fn confidence(
 	cfg: RuntimeConfig,
 ) -> ClientResponse<ConfidenceResponse> {
 	fn is_synced(block_num: u32, db: impl Database) -> bool {
-		db.get(AchievedConfidenceKey)
-			.expect("Achieved Confidence could not be fetched from the DB.")
-			.map_or(false, |range| block_num <= range.last)
+		get_achived_confidence(&db).map_or(false, |range| block_num <= range.last)
 	}
 
 	info!("Got request for confidence for block {block_num}");
@@ -60,10 +63,7 @@ pub fn confidence(
 }
 
 pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> {
-	let Some(BlockRange { last, .. }) = db
-		.get(AchievedConfidenceKey)
-		.expect("Achieved Confidence could not be fetched from the DB.")
-	else {
+	let Some(BlockRange { last, .. }) = get_achived_confidence(&db) else {
 		return ClientResponse::NotFound;
 	};
 	let res = match db.get(VerifiedCellCountKey(last)) {
@@ -85,10 +85,7 @@ pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> 
 
 pub fn latest_block(db: impl Database) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
-	let Some(BlockRange { last, .. }) = db
-		.get(AchievedConfidenceKey)
-		.expect("Achieved Confidence could not be fetched from the DB.")
-	else {
+	let Some(BlockRange { last, .. }) = get_achived_confidence(&db) else {
 		return ClientResponse::NotFound;
 	};
 
@@ -149,9 +146,7 @@ pub fn appdata(
 			}
 		},
 
-		Ok(None) => db
-			.get(AchievedConfidenceKey)
-			.expect("Achieved Confidence could not be fetched from the DB.")
+		Ok(None) => get_achived_confidence(&db)
 			.filter(|range| block_num == range.last)
 			.map_or(ClientResponse::NotFound, |_| ClientResponse::InProcess),
 		Err(e) => ClientResponse::Error(e),
