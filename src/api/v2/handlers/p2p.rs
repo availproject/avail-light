@@ -1,6 +1,6 @@
 use crate::{
 	api::v2::types::Error,
-	network::p2p::{self, LocalInfo},
+	network::p2p::{self},
 };
 use libp2p::{swarm::DialError, Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
@@ -16,23 +16,13 @@ pub struct Listeners {
 pub struct PeerInfoResponse {
 	peer_id: String,
 	listeners: Listeners,
+	routing_table_peers_count: usize,
+	routing_table_external_peers_count: usize,
 }
 
 impl Reply for PeerInfoResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
-	}
-}
-
-impl From<LocalInfo> for PeerInfoResponse {
-	fn from(value: LocalInfo) -> Self {
-		PeerInfoResponse {
-			peer_id: value.peer_id,
-			listeners: Listeners {
-				local: value.local_listeners,
-				external: value.external_listeners,
-			},
-		}
 	}
 }
 
@@ -74,7 +64,20 @@ pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, 
 		.await
 		.map_err(Error::internal_server_error)?;
 
-	Ok(local_info.into())
+	let (routing_table_peers_count, routing_table_external_peers_count) = p2p_client
+		.count_dht_entries()
+		.await
+		.map_err(Error::internal_server_error)?;
+
+	Ok(PeerInfoResponse {
+		peer_id: local_info.peer_id,
+		listeners: Listeners {
+			local: local_info.local_listeners,
+			external: local_info.external_listeners,
+		},
+		routing_table_peers_count,
+		routing_table_external_peers_count,
+	})
 }
 
 pub async fn dial_external_peer(

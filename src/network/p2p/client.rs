@@ -255,19 +255,36 @@ impl Command for PutKadRecord {
 	fn abort(&mut self, _: Report) {}
 }
 
-struct CountConnectedPeers {
-	response_sender: Option<oneshot::Sender<Result<usize>>>,
+struct CountKademliaPeers {
+	response_sender: Option<oneshot::Sender<Result<(usize, usize)>>>,
 }
 
-impl Command for CountConnectedPeers {
+impl Command for CountKademliaPeers {
 	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
-		// send result back
-		// TODO: consider what to do if this results with None
+		let mut total_peers: usize = 0;
+		let mut peers_with_non_pvt_addr: usize = 0;
+		for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
+			for item in bucket.iter() {
+				let addresses = item.node.value.clone().into_vec();
+				for addr in addresses {
+					for protocol in addr.iter() {
+						if let libp2p::multiaddr::Protocol::Ip4(ip) = protocol {
+							if !ip.is_private() {
+								peers_with_non_pvt_addr += 1;
+								// We just need to hit the first external address
+								break;
+							}
+						};
+					}
+					total_peers += 1;
+				}
+			}
+		}
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(entries.swarm.network_info().num_peers()))
-			.expect("CountDHTPeers receiver dropped");
+			.send(Ok((total_peers, peers_with_non_pvt_addr)))
+			.expect("CountKademliaPeers receiver dropped");
 		Ok(())
 	}
 
@@ -563,9 +580,9 @@ impl Client {
 			.context("receiver should not be dropped")
 	}
 
-	pub async fn count_dht_entries(&self) -> Result<usize> {
+	pub async fn count_dht_entries(&self) -> Result<(usize, usize)> {
 		self.execute_sync(|response_sender| {
-			Box::new(CountConnectedPeers {
+			Box::new(CountKademliaPeers {
 				response_sender: Some(response_sender),
 			})
 		})

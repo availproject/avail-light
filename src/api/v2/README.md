@@ -249,7 +249,15 @@ This API is intended to be used for P2P network observability and diagnostics.
 
 ## **GET** `/v2/p2p/local/info`
 
-Returns `peer_id` and a list of listeners with both local and external addresses. External addresses are only populated once confirmed externally by the bootstrap.
+Returns:
+
+- `peer_id`
+- list of listeners with local addresses
+- list of listeners with external addresses
+- number of clients found in peers routing table
+- number of clients with non-private addresses found in the routing table
+
+External addresses are only populated once confirmed externally by the bootstrap.
 
 ```yaml
 HTTP/1.1 200 OK
@@ -265,8 +273,10 @@ Content-Type: application/json
     ],
     "external": [
       "{multi-address}"
-    ]
-  }
+    ],
+  },
+  "routing_table_peers_count": "{num}",
+  "routing_table_external_peers_count": "{num}",
 }
 ```
 
