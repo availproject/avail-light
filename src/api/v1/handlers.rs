@@ -18,7 +18,6 @@ use tracing::{debug, info};
 
 fn get_achived_confidence(db: &impl Database) -> Option<BlockRange> {
 	db.get(AchievedConfidenceKey)
-		.expect("Failed to get achieved confidence from the DB")
 }
 
 fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
@@ -44,10 +43,9 @@ pub fn confidence(
 	info!("Got request for confidence for block {block_num}");
 
 	let count = match db.get(VerifiedCellCountKey(block_num)) {
-		Ok(Some(count)) => count,
-		Ok(None) if is_synced(block_num, db) => cell_count_for_confidence(cfg.confidence),
-		Ok(None) => return ClientResponse::NotFinalized,
-		Err(error) => return ClientResponse::Error(error),
+		Some(count) => count,
+		None if is_synced(block_num, db) => cell_count_for_confidence(cfg.confidence),
+		None => return ClientResponse::NotFinalized,
 	};
 
 	let confidence = calculate_confidence(count);
@@ -67,7 +65,7 @@ pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> 
 		return ClientResponse::NotFound;
 	};
 	let res = match db.get(VerifiedCellCountKey(last)) {
-		Ok(Some(count)) => {
+		Some(count) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
 				block_num: last,
@@ -75,9 +73,7 @@ pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> 
 				app_id,
 			})
 		},
-		Ok(None) => ClientResponse::NotFound,
-
-		Err(e) => ClientResponse::Error(e),
+		None => ClientResponse::NotFound,
 	};
 	info!("Returning status: {res:?}");
 	res
@@ -99,24 +95,21 @@ pub fn appdata(
 	app_id: Option<u32>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
-		data: Result<Option<Vec<Vec<u8>>>>,
+		data: Option<Vec<Vec<u8>>>,
 	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
 		let xts = data.map(|e| {
-			e.map(|e| {
-				e.iter()
-					.enumerate()
-					.map(|(i, raw)| {
-						<_ as Decode>::decode(&mut &raw[..])
-							.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
-					})
-					.collect::<Result<Vec<_>>>()
-			})
+			e.iter()
+				.enumerate()
+				.map(|(i, raw)| {
+					<_ as Decode>::decode(&mut &raw[..])
+						.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
+				})
+				.collect::<Result<Vec<_>>>()
 		});
 		match xts {
-			Ok(Some(Ok(s))) => Ok(Some(s)),
-			Ok(Some(Err(e))) => Err(e),
-			Ok(None) => Ok(None),
-			Err(e) => Err(e),
+			Some(Ok(s)) => Ok(Some(s)),
+			Some(Err(e)) => Err(e),
+			None => Ok(None),
 		}
 	}
 	info!("Got request for AppData for block {block_num}");
