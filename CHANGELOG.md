@@ -2,6 +2,7 @@
 
 ## 1.9.3
 
+- Don't fail on any failed signature in the justification, only if there is no supermajority of valid signatures. Log the failed signature details.
 - Add `run id` to the logs, unique per run and generated on startup, if the log format is JSON
 - Fixed initialization of the `avail.light.up` counter
 
