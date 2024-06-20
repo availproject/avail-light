@@ -28,10 +28,10 @@ use crate::{
 
 #[async_trait]
 pub trait Client {
-	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()>;
-	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>>;
-	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()>;
-	fn set_is_finality_synced(&self, value: bool) -> Result<()>;
+	fn store_block_header(&self, block_number: u32, header: Header);
+	fn get_checkpoint(&self) -> Option<FinalitySyncCheckpoint>;
+	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint);
+	fn set_is_finality_synced(&self, value: bool);
 	async fn get_paged_storage_keys(
 		&self,
 		key: Vec<u8>,
@@ -131,28 +131,20 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 			.wrap_err("Finality Sync Client failed to request Finality Proof")
 	}
 
-	fn store_block_header(&self, block_number: u32, header: Header) -> Result<()> {
-		self.db
-			.put(BlockHeaderKey(block_number), header)
-			.wrap_err("Finality Sync Client failed to store Block Header")
+	fn store_block_header(&self, block_number: u32, header: Header) {
+		self.db.put(BlockHeaderKey(block_number), header)
 	}
 
-	fn get_checkpoint(&self) -> Result<Option<FinalitySyncCheckpoint>> {
-		self.db
-			.get(FinalitySyncCheckpointKey)
-			.wrap_err("Finality Sync Client failed to get Checkpoint")
+	fn get_checkpoint(&self) -> Option<FinalitySyncCheckpoint> {
+		self.db.get(FinalitySyncCheckpointKey)
 	}
 
-	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) -> Result<()> {
-		self.db
-			.put(FinalitySyncCheckpointKey, checkpoint)
-			.wrap_err("Finality Sync Client failed to store Checkpoint")
+	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint) {
+		self.db.put(FinalitySyncCheckpointKey, checkpoint)
 	}
 
-	fn set_is_finality_synced(&self, value: bool) -> Result<()> {
-		self.db
-			.put(IsFinalitySyncedKey, value)
-			.wrap_err("Finality Sync Client failed to stor IsFinalitySynced flag")
+	fn set_is_finality_synced(&self, value: bool) {
+		self.db.put(IsFinalitySyncedKey, value)
 	}
 }
 
@@ -226,7 +218,7 @@ pub async fn run(client: impl Client, shutdown: Controller<String>, from_header:
 pub async fn sync(client: impl Client, mut from_header: Header) -> Result<()> {
 	let gen_hash = client.get_genesis_hash().await?;
 
-	let checkpoint = client.get_checkpoint()?;
+	let checkpoint = client.get_checkpoint();
 
 	info!("Starting finality validation sync.");
 	let mut set_id: u64;
@@ -272,7 +264,7 @@ pub async fn sync(client: impl Client, mut from_header: Header) -> Result<()> {
 			.get_header_by_hash(hash)
 			.await
 			.wrap_err(format!("Couldn't get header for {}", hash))?;
-		client.store_block_header(curr_block_num, from_header.clone())?;
+		client.store_block_header(curr_block_num, from_header.clone());
 
 		assert_eq!(
 			from_header.parent_hash, prev_hash,
@@ -317,10 +309,10 @@ pub async fn sync(client: impl Client, mut from_header: Header) -> Result<()> {
 			number: curr_block_num,
 			set_id,
 			validator_set: validator_set.clone(),
-		})?;
+		});
 	}
 	// set finality synced flag in db
-	client.set_is_finality_synced(true)?;
+	client.set_is_finality_synced(true);
 	info!("Finality is fully synced.");
 	Ok(())
 }
