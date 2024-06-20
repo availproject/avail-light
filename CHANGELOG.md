@@ -2,6 +2,7 @@
 
 ## 1.9.2
 
+- Add `--logs-json` CLI flag
 - Change the way peer counting is done and expose it through the P2P diagnostic API. Add the count of peers with external addresses.
 - Add `--block-matrix-partition` CLI parameter
 - Introduce network name to metrics

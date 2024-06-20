@@ -79,7 +79,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
-	if cfg.log_format_json {
+	if opts.logs_json || cfg.log_format_json {
 		tracing::subscriber::set_global_default(json_subscriber(log_level))
 			.expect("global json subscriber is set")
 	} else {
