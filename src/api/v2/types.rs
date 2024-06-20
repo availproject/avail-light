@@ -819,7 +819,7 @@ mod tests {
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		types::{OptionBlockRange, State},
-		utils::OptionalExtension,
+		utils::{spawn_in_span, OptionalExtension},
 	};
 
 	use super::{
@@ -896,7 +896,7 @@ mod tests {
 		clients.set_sender("1", sender_1).await.unwrap();
 		clients.set_sender("2", sender_2).await.unwrap();
 
-		tokio::task::spawn(async move {
+		spawn_in_span(async move {
 			for (topic, message) in [
 				(Topic::HeaderVerified, header_verified()),
 				(Topic::ConfidenceAchieved, confidence_achieved()),
