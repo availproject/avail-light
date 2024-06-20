@@ -1216,14 +1216,14 @@ pub enum SignerMessage {
 	PrecommitMessage(Precommit),
 }
 
-#[derive(Clone, Debug, Decode, Encode, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
 pub struct Precommit {
 	pub target_hash: H256,
 	/// The target block's number
 	pub target_number: u32,
 }
 
-#[derive(Clone, Debug, Decode, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
 pub struct SignedPrecommit {
 	pub precommit: Precommit,
 	/// The signature on the message.
@@ -1231,7 +1231,7 @@ pub struct SignedPrecommit {
 	/// The Id of the signer.
 	pub id: ed25519::Public,
 }
-#[derive(Clone, Debug, Decode, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
 pub struct Commit {
 	pub target_hash: H256,
 	/// The target block's number.
@@ -1240,7 +1240,7 @@ pub struct Commit {
 	pub precommits: Vec<SignedPrecommit>,
 }
 
-#[derive(Clone, Debug, Decode)]
+#[derive(Clone, Debug, Decode, Encode, Serialize)]
 pub struct GrandpaJustification {
 	pub round: u64,
 	pub commit: Commit,

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use codec::Encode;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use sp_core::{
 	blake2_256,
 	ed25519::{self, Public},
@@ -11,7 +13,7 @@ use tracing::{info, warn};
 use crate::types::{GrandpaJustification, SignerMessage};
 use color_eyre::{eyre::eyre, Result};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidatorSet {
 	pub set_id: u64,
 	pub validator_set: Vec<Public>,
@@ -33,11 +35,11 @@ pub fn check_finality(
 
 	// verify all the Signatures of the Justification signs,
 	// verify the hash of the block and extract all the signer addresses
-	let signer_addresses = justification
+	let (failed_verifications, signer_addresses): (Vec<_>, Vec<_>) = justification
 		.commit
 		.precommits
 		.iter()
-		.map(|precommit| {
+		.partition_map(|precommit| {
 			// form a message which is signed in the Justification, it's a triplet of a Precommit,
 			// round number and set_id (taken from Substrate code)
 			let signed_message = Encode::encode(&(
@@ -77,19 +79,21 @@ pub fn check_finality(
 			);
 			(is_ok && ancestry)
 				.then(|| precommit.clone().id)
-				.ok_or_else(|| {
-					eyre!(
-				"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",
-				&precommit.id,
-				validator_set.set_id,
-				justification
-			)
-				})
-		})
-		.collect::<Result<Vec<_>>>();
+				.ok_or((precommit, validator_set.set_id, justification))
+				.into()
+		});
+
+	for (precommit, set_id, just) in failed_verifications {
+		warn!("Failed signature verifications on block {:?}, root block: {:?}, validator id: {:?}, set_id: {}, round: {}",
+		precommit.precommit.target_hash,
+		just.commit.target_hash,
+		precommit.id,
+		set_id,
+		just.round);
+	}
 
 	// match all the Signer addresses to the Current Validator Set
-	let num_matched_addresses = signer_addresses?
+	let num_matched_addresses = signer_addresses
 		.iter()
 		.filter(|x| validator_set.validator_set.iter().any(|e| e.0.eq(&x.0)))
 		.count();
@@ -139,15 +143,50 @@ fn confirm_ancestry(
 
 #[cfg(test)]
 mod tests {
+	use super::{check_finality, ValidatorSet};
+	use crate::types::{Commit, GrandpaJustification, Precommit, SignerMessage};
+	use avail_subxt::primitives::Header as DaHeader;
 	use codec::Encode;
 	use hex::FromHex;
-	use sp_core::{
-		ed25519::{self, Public, Signature},
-		Pair,
-	};
+	use serde::{Deserialize, Serialize};
+	use sp_core::ed25519::{self, Public, Signature};
+	use sp_core::Pair as PairT;
+	use std::fs::File;
 	use test_case::test_case;
 
-	use crate::types::{Precommit, SignerMessage};
+	#[derive(Clone, Debug, Serialize, Deserialize)]
+	pub struct JsonGrandpaJustification {
+		pub round: u64,
+		pub commit: Commit,
+		pub votes_ancestries: Vec<DaHeader>,
+	}
+
+	impl From<GrandpaJustification> for JsonGrandpaJustification {
+		fn from(value: GrandpaJustification) -> Self {
+			Self {
+				round: value.round,
+				commit: value.commit,
+				votes_ancestries: value.votes_ancestries,
+			}
+		}
+	}
+
+	impl Into<GrandpaJustification> for JsonGrandpaJustification {
+		fn into(self) -> GrandpaJustification {
+			GrandpaJustification {
+				round: self.round,
+				commit: self.commit,
+				votes_ancestries: self.votes_ancestries,
+			}
+		}
+	}
+
+	#[derive(Clone, Debug, Serialize, Deserialize)]
+	pub struct ValidatorSetAndJustification {
+		pub validator_set: ValidatorSet,
+		pub justification: JsonGrandpaJustification,
+	}
+
 	#[test_case(1, 1 => true)]
 	#[test_case(1, 2 => false)]
 	#[test_case(2, 2 => true)]
@@ -186,6 +225,16 @@ mod tests {
 			&set_id,
 		));
 
-		<ed25519::Pair as Pair>::verify(&sig, signed_message, &id)
+		<ed25519::Pair as PairT>::verify(&sig, signed_message, &id)
+	}
+
+	#[test_case("src/test_assets/ancestry.json" => true; "Complex ancestry")]
+	#[test_case("src/test_assets/ancestry_missing_link_no_majority.json" => false; "Missing ancestor negative case")]
+	#[test_case("src/test_assets/ancestry_missing_link_works.json" => true; "Missing ancestor")]
+	fn finality_test(json_path: &str) -> bool {
+		let valjust_file = File::open(json_path).unwrap();
+		let valjust: ValidatorSetAndJustification = serde_json::from_reader(valjust_file).unwrap();
+
+		check_finality(&valjust.validator_set, &valjust.justification.into()).is_ok()
 	}
 }
