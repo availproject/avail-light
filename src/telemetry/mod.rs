@@ -5,9 +5,10 @@ use mockall::automock;
 
 pub mod otlp;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MetricCounter {
 	Starts,
+	Up,
 	SessionBlocks,
 	OutgoingConnectionErrors,
 	IncomingConnectionErrors,
@@ -26,6 +27,7 @@ impl MetricName for MetricCounter {
 		use MetricCounter::*;
 		match self {
 			Starts => "avail.light.starts",
+			Up => "avail.light.up",
 			SessionBlocks => "avail.light.session_blocks",
 			OutgoingConnectionErrors => "avail.light.outgoing_connection_errors",
 			IncomingConnectionErrors => "avail.light.incoming_connection_errors",
@@ -42,9 +44,14 @@ impl MetricCounter {
 		!matches!(self, MetricCounter::Starts)
 	}
 
+	fn as_last(&self) -> bool {
+		matches!(self, MetricCounter::Up)
+	}
+
 	fn is_allowed(&self, origin: &Origin) -> bool {
 		match (origin, self) {
 			(Origin::External, MetricCounter::Starts) => true,
+			(Origin::External, MetricCounter::Up) => true,
 			(Origin::External, _) => false,
 			(_, _) => true,
 		}
@@ -73,8 +80,6 @@ pub enum MetricValue {
 	RPCFetched(f64),
 	RPCFetchDuration(f64),
 	RPCCallDuration(f64),
-
-	Up(),
 
 	#[cfg(feature = "crawl")]
 	CrawlCellsSuccessRate(f64),
@@ -109,8 +114,6 @@ impl MetricName for MetricValue {
 			RPCFetchDuration(_) => "avail.light.rpc.fetch_duration",
 			RPCCallDuration(_) => "avail.light.rpc.call_duration",
 
-			Up() => "avail.light.up",
-
 			#[cfg(feature = "crawl")]
 			CrawlCellsSuccessRate(_) => "avail.light.crawl.cells_success_rate",
 			#[cfg(feature = "crawl")]
@@ -128,9 +131,7 @@ impl MetricValue {
 		match origin {
 			Origin::External => matches!(
 				self,
-				MetricValue::DHTFetchedPercentage(_)
-					| MetricValue::BlockConfidence(_)
-					| MetricValue::Up()
+				MetricValue::DHTFetchedPercentage(_) | MetricValue::BlockConfidence(_)
 			),
 			_ => true,
 		}

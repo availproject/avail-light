@@ -107,8 +107,6 @@ impl From<MetricValue> for Record {
 			RPCFetchDuration(number) => AvgF64(name, number),
 			RPCCallDuration(number) => AvgF64(name, number),
 
-			Up() => MaxU64(name, 1),
-
 			#[cfg(feature = "crawl")]
 			CrawlCellsSuccessRate(number) => AvgF64(name, number),
 			#[cfg(feature = "crawl")]
@@ -122,12 +120,16 @@ impl From<MetricValue> for Record {
 /// Counts occurrences of counters in the provided buffer.
 /// Returned value is a `HashMap` where the keys are the counter name,
 /// and values are the counts of those counters.
-fn flatten_counters(buffer: &[impl MetricName]) -> HashMap<&'static str, u64> {
+fn flatten_counters(buffer: &[MetricCounter]) -> HashMap<&'static str, u64> {
 	let mut result = HashMap::new();
 	for counter in buffer {
 		result
 			.entry(counter.name())
-			.and_modify(|count| *count += 1)
+			.and_modify(|count| {
+				if !counter.as_last() {
+					*count += 1
+				}
+			})
 			.or_insert(1);
 	}
 	result
@@ -290,18 +292,22 @@ mod tests {
 
 		let buffer = vec![
 			Starts,
+			Up,
 			SessionBlocks,
 			IncomingConnectionErrors,
 			IncomingConnectionErrors,
 			IncomingConnections,
+			Up,
 			Starts,
 			IncomingGetRecord,
+			Up,
 			IncomingPutRecord,
 			Starts,
 		];
 		let result = flatten_counters(&buffer);
 		let mut expected = HashMap::new();
 		expected.insert(Starts.name(), 3);
+		expected.insert(Up.name(), 1);
 		expected.insert(SessionBlocks.name(), 1);
 		expected.insert(IncomingConnectionErrors.name(), 2);
 		expected.insert(IncomingConnections.name(), 1);
@@ -350,21 +356,17 @@ mod tests {
 
 		let buffer = &[
 			MetricValue::DHTConnectedPeers(90),
-			MetricValue::Up(),
 			MetricValue::DHTFetchDuration(1.0),
 			MetricValue::DHTPutSuccess(10.0),
 			MetricValue::BlockConfidence(99.0),
-			MetricValue::Up(),
 			MetricValue::DHTFetchDuration(2.0),
 			MetricValue::DHTFetchDuration(2.1),
 			MetricValue::BlockHeight(999),
-			MetricValue::Up(),
 			MetricValue::DHTConnectedPeers(80),
 			MetricValue::BlockConfidence(98.0),
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
-		assert_eq!(m_u64.len(), 2);
-		assert_eq!(m_u64.get("avail.light.up"), Some(&1));
+		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&999));
 		assert_eq!(m_f64.len(), 4);
 		assert_eq!(m_f64.get("avail.light.dht.put_success"), Some(&10.0));
