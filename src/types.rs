@@ -39,7 +39,8 @@ pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
 const MINIMUM_SUPPORTED_VERSION: &str = "1.9.2";
 pub const DEV_FLAG_GENHASH: &str = "DEV";
-pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
+pub const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
+pub const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
 pub const IDENTITY_AGENT_BASE: &str = "avail-light-client";
 pub const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
@@ -598,14 +599,20 @@ pub struct LibP2PConfig {
 	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
+	pub genesis_hash: String,
 }
 
 impl From<&LibP2PConfig> for libp2p::kad::Config {
 	fn from(cfg: &LibP2PConfig) -> Self {
-		// Use identify protocol_version as Kademlia protocol name
-		let kademlia_protocol_name =
-			libp2p::StreamProtocol::try_from_owned(cfg.identify.protocol_version.clone())
-				.expect("Invalid Kademlia protocol name");
+		let mut genhash_short = cfg.genesis_hash.trim_start_matches("0x").to_string();
+		genhash_short.truncate(6);
+
+		let kademlia_protocol_name = libp2p::StreamProtocol::try_from_owned(format!(
+			"{id}-{gen_hash}",
+			id = KADEMLIA_PROTOCOL_BASE,
+			gen_hash = genhash_short
+		))
+		.expect("Invalid Kademlia protocol name");
 
 		// create Kademlia Config
 		let mut kad_cfg = libp2p::kad::Config::default();
@@ -655,7 +662,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
-			identify: val.into(),
+			identify: IdentifyConfig::new(),
 			autonat: val.into(),
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
@@ -667,6 +674,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			per_connection_event_buffer_size: val.per_connection_event_buffer_size,
 			dial_concurrency_factor: std::num::NonZeroU8::new(val.dial_concurrency_factor)
 				.expect("Invalid dial concurrency factor"),
+			genesis_hash: val.genesis_hash.clone(),
 		}
 	}
 }
@@ -742,8 +750,6 @@ pub struct IdentifyConfig {
 pub struct AgentVersion {
 	pub base_version: String,
 	pub client_type: String,
-	// Kademlia client or server mode
-	pub kademlia_mode: String,
 	pub release_version: String,
 }
 
@@ -751,8 +757,8 @@ impl fmt::Display for AgentVersion {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(
 			f,
-			"{}/{}/{}/{}",
-			self.base_version, self.release_version, self.client_type, self.kademlia_mode
+			"{}/{}/{}",
+			self.base_version, self.release_version, self.client_type
 		)
 	}
 }
@@ -762,7 +768,7 @@ impl FromStr for AgentVersion {
 
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		let parts: Vec<&str> = s.split('/').collect();
-		if parts.len() != 4 {
+		if parts.len() != 3 {
 			return Err("Failed to parse agent version".to_owned());
 		}
 
@@ -770,37 +776,21 @@ impl FromStr for AgentVersion {
 			base_version: parts[0].to_string(),
 			release_version: parts[1].to_string(),
 			client_type: parts[2].to_string(),
-			kademlia_mode: parts[3].to_string(),
 		})
 	}
 }
 
-impl From<&RuntimeConfig> for IdentifyConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		let mut genhash_short = val.genesis_hash.trim_start_matches("0x").to_string();
-		genhash_short.truncate(6);
-
-		let kademlia_mode = if val.is_fat_client() {
-			// Fat client is implicitly server mode
-			KademliaMode::Server.to_string()
-		} else {
-			val.operation_mode.to_string()
-		};
-
+impl IdentifyConfig {
+	fn new() -> Self {
 		let agent_version = AgentVersion {
 			base_version: IDENTITY_AGENT_BASE.to_string(),
 			release_version: clap::crate_version!().to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
-			kademlia_mode,
 		};
 
 		Self {
 			agent_version,
-			protocol_version: format!(
-				"{id}-{gen_hash}",
-				id = IDENTITY_PROTOCOL,
-				gen_hash = genhash_short
-			),
+			protocol_version: IDENTITY_PROTOCOL.to_owned(),
 		}
 	}
 }
