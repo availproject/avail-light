@@ -4,7 +4,7 @@ use crate::{
 	network::p2p::ExpirationCompactionFilterFactory,
 };
 use codec::{Decode, Encode};
-use color_eyre::eyre::{eyre, Context, Result};
+use color_eyre::eyre::Result;
 use rocksdb::{ColumnFamilyDescriptor, Options};
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ impl RocksDB {
 }
 
 impl data::Database for RocksDB {
-	fn put<T: RecordKey>(&self, key: T, value: T::Type) -> Result<()> {
+	fn put<T: RecordKey>(&self, key: T, value: T::Type) {
 		let RocksDBKey(column_family, key) = key.into();
 		// if Column Family descriptor was provided, put the key in that partition
 		let Some(cf) = column_family else {
@@ -50,48 +50,46 @@ impl data::Database for RocksDB {
 			return self
 				.db
 				.put(key, <T::Type>::encode(&value))
-				.wrap_err("Put operation failed on RocksDB");
+				.expect("Put operation has failed on RocksDB");
 		};
 
 		let cf_handle = self
 			.db
 			.cf_handle(cf)
-			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
+			.expect("Couldn't get Column Family handle from RocksDB");
 		self.db
 			.put_cf(&cf_handle, key, <T::Type>::encode(&value))
-			.wrap_err("Put operation with Column Family failed on RocksDB")
+			.expect("Put operation with Column Family has failed on RocksDB")
 	}
 
-	fn get<T: RecordKey>(&self, key: T) -> Result<Option<T::Type>> {
+	fn get<T: RecordKey>(&self, key: T) -> Option<T::Type> {
 		let RocksDBKey(column_family, key) = key.into();
 		// if Column Family descriptor was provided, get the key from that partition
 		let Some(cf) = column_family else {
 			// else, just get it from the default partition
 			return self
 				.db
-				.get(key)?
+				.get(key)
+				.expect("Get operation has failed on RocksDB")
 				.map(|value| {
-					<T::Type>::decode(&mut &value[..]).wrap_err("Failed decoding the app data.")
-				})
-				.transpose()
-				.wrap_err("Get operation failed on RocksDB");
+					<T::Type>::decode(&mut &value[..]).expect("Failed to decode the RocksDB data.")
+				});
 		};
 
 		let cf_handle = self
 			.db
 			.cf_handle(cf)
-			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
+			.expect("Couldn't get Column Family handle from RocksDB");
 
 		self.db
-			.get_cf(&cf_handle, key)?
+			.get_cf(&cf_handle, key)
+			.expect("Couldn't get Column Family handle from RocksDB")
 			.map(|value| {
-				<T::Type>::decode(&mut &value[..]).wrap_err("Failed decoding the app data.")
+				<T::Type>::decode(&mut &value[..]).expect("Failed to decode the RocksDB data.")
 			})
-			.transpose()
-			.wrap_err("Get operation with Column Family failed on RocksDB")
 	}
 
-	fn delete<T: RecordKey>(&self, key: T) -> Result<()> {
+	fn delete<T: RecordKey>(&self, key: T) {
 		let RocksDBKey(column_family, key) = key.into();
 		// if Column Family descriptor was provided, delete the key from that partition
 		let Some(cf) = column_family else {
@@ -99,15 +97,15 @@ impl data::Database for RocksDB {
 			return self
 				.db
 				.delete(key)
-				.wrap_err("Delete operation failed on RocksDB");
+				.expect("Delete operation has failed on RocksDB");
 		};
 		let cf_handle = self
 			.db
 			.cf_handle(cf)
-			.ok_or_else(|| eyre!("Couldn't get Column Family handle from RocksDB"))?;
+			.expect("Couldn't get Column Family handle from RocksDB");
 		self.db
 			.delete_cf(&cf_handle, key)
-			.wrap_err("Delete operation with Column Family failed on RocksDB")
+			.expect("Delete operation with Column Family has failed on RocksDB")
 	}
 }
 

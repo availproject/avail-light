@@ -2,7 +2,6 @@ use self::rocks_db::RocksDBKey;
 use crate::{network::rpc::Node as RpcNode, types::BlockRange};
 use avail_subxt::primitives::Header;
 use codec::{Decode, Encode};
-use color_eyre::eyre::Result;
 #[cfg(test)]
 use mem_db::HashMapKey;
 use serde::{Deserialize, Serialize};
@@ -38,14 +37,14 @@ pub trait RecordKey: Into<RocksDBKey> + Into<HashMapKey> {
 pub trait Database {
 	/// Puts value for given key into database.
 	/// Key is serialized into database key, value is serialized into type supported by database.
-	fn put<T: RecordKey>(&self, key: T, value: T::Type) -> Result<()>;
+	fn put<T: RecordKey>(&self, key: T, value: T::Type);
 
 	/// Gets value for given key.
 	/// Key is serialized into database key, value is deserialized into the given type.
-	fn get<T: RecordKey>(&self, key: T) -> Result<Option<T::Type>>;
+	fn get<T: RecordKey>(&self, key: T) -> Option<T::Type>;
 
 	/// Deletes value from the database for the given key.
-	fn delete<T: RecordKey>(&self, key: T) -> Result<()>;
+	fn delete<T: RecordKey>(&self, key: T);
 }
 
 #[derive(Serialize, Deserialize, Debug, Decode, Encode)]
