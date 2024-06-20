@@ -360,13 +360,13 @@ impl EventLoop {
 					let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
 						Ok(agent) => agent,
 						Err(e) => {
-							info!("Error parsing incoming agent version: {e}");
+							debug!("Error parsing incoming agent version: {e}");
 							return;
 						},
 					};
 
 					if !incoming_peer_agent_version.is_supported() {
-						info!(
+						debug!(
 							"Unsupported release version: {}",
 							incoming_peer_agent_version.release_version
 						);
@@ -374,16 +374,9 @@ impl EventLoop {
 						return;
 					}
 
-					info!(
-						"Kademlia protocol {:?}",
-						self.swarm.behaviour_mut().kademlia.protocol_names()[0]
-					);
-
-					info!("Protocols: {:?}", protocols);
-
 					if protocols.contains(&self.swarm.behaviour_mut().kademlia.protocol_names()[0])
 					{
-						info!("Adding peer {peer_id} to routing table.");
+						trace!("Adding peer {peer_id} to routing table.");
 						for addr in listen_addrs {
 							self.swarm
 								.behaviour_mut()
@@ -392,7 +385,7 @@ impl EventLoop {
 						}
 					} else {
 						// Block and remove non-Avail peers
-						info!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+						debug!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 					}
 				},
