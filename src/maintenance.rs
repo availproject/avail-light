@@ -6,7 +6,7 @@ use tracing::{debug, error, info};
 use crate::{
 	network::p2p::Client as P2pClient,
 	shutdown::Controller,
-	telemetry::{MetricValue, Metrics},
+	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::BlockVerified,
 };
 
@@ -76,7 +76,7 @@ pub async fn process_block(
 			static_config_params.query_timeout,
 		))
 		.await;
-	metrics.record(MetricValue::Up()).await;
+	metrics.count(MetricCounter::Up).await;
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())
