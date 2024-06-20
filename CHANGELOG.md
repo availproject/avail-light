@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.9.2
+## [1.9.2](https://github.com/availproject/avail-light/releases/tag/v1.9.2) - 2024-06-20
 
 - Change `avail.light.up` metric type to counter
 - Add `--logs-json` CLI flag
