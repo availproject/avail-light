@@ -119,8 +119,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	db.put(BlockHeaderKey(block_number), header.clone())
-		.wrap_err("Fat Client failed to store Block Header")?;
+	db.put(BlockHeaderKey(block_number), header.clone());
 
 	// Fat client partition upload logic
 	let positions: Vec<Position> = dimensions
