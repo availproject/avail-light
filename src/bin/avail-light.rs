@@ -278,8 +278,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		},
 	};
 
-	db.put(LatestHeaderKey, block_header.number)
-		.wrap_err("Coldn't store Latest Header in DB.")?;
+	db.put(LatestHeaderKey, block_header.number);
 	let sync_range = cfg.sync_range(block_header.number);
 
 	let ws_clients = api::v2::types::WsClients::default();
@@ -360,8 +359,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	);
 
 	if cfg.sync_start_block.is_some() {
-		db.put(IsSyncedKey, false)
-			.expect("Avail Light Client couldn't store IsSynced flag in DB.");
+		db.put(IsSyncedKey, false);
 		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_client::run(
 			sync_client,
 			sync_network_client,
@@ -381,8 +379,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	} else {
 		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
 		// set the flag in the db, signaling across that we don't need to sync
-		db.put(IsFinalitySyncedKey, true)
-			.wrap_err("Avail Light Client failed to set IsFinalitySynced flag in DB.")?;
+		db.put(IsFinalitySyncedKey, true);
 	}
 
 	let static_config_params = StaticConfigParams {
