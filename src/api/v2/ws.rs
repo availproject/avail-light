@@ -5,6 +5,7 @@ use super::{
 use crate::{
 	api::v2::types::{Error, Sender},
 	types::{RuntimeConfig, State},
+	utils::spawn_in_span,
 };
 use color_eyre::{eyre::WrapErr, Result};
 use futures::{FutureExt, StreamExt};
@@ -34,7 +35,7 @@ pub async fn connect(
 		return;
 	};
 
-	tokio::task::spawn(receiver_stream.forward(web_socket_sender).map(|result| {
+	spawn_in_span(receiver_stream.forward(web_socket_sender).map(|result| {
 		if let Err(error) = result {
 			error!("Error sending web socket message: {error}");
 		}

@@ -10,7 +10,7 @@ use kate_recovery::{
 };
 use std::sync::Arc;
 use tokio::{task::JoinSet, time::Instant};
-use tracing::debug;
+use tracing::{debug, Instrument};
 
 async fn verify_proof(
 	public_parameters: Arc<PublicParameters>,
@@ -39,12 +39,15 @@ pub async fn verify(
 	let mut tasks = JoinSet::new();
 
 	for cell in cells {
-		tasks.spawn(verify_proof(
-			public_parameters.clone(),
-			dimensions,
-			commitments[cell.position.row as usize],
-			cell.clone(),
-		));
+		tasks.spawn(
+			verify_proof(
+				public_parameters.clone(),
+				dimensions,
+				commitments[cell.position.row as usize],
+				cell.clone(),
+			)
+			.in_current_span(),
+		);
 	}
 
 	let mut results = Vec::with_capacity(cells.len());

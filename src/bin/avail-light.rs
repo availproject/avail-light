@@ -12,6 +12,7 @@ use avail_light::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{CliOpts, IdentityConfig, LibP2PConfig, Network, OtelConfig, RuntimeConfig, State},
+	utils::spawn_in_span,
 };
 use clap::Parser;
 use color_eyre::{
@@ -27,8 +28,9 @@ use std::{
 	sync::{Arc, Mutex},
 };
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level, Subscriber};
+use tracing::{error, info, metadata::ParseLevelError, span, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
+use uuid::Uuid;
 
 #[cfg(feature = "network-analysis")]
 use avail_light::network::p2p::analyzer;
@@ -71,22 +73,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-async fn run(shutdown: Controller<String>) -> Result<()> {
-	let opts = CliOpts::parse();
-
-	let mut cfg: RuntimeConfig = RuntimeConfig::default();
-	cfg.load_runtime_config(&opts)?;
-
-	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
-
-	if opts.logs_json || cfg.log_format_json {
-		tracing::subscriber::set_global_default(json_subscriber(log_level))
-			.expect("global json subscriber is set")
-	} else {
-		tracing::subscriber::set_global_default(default_subscriber(log_level))
-			.expect("global default subscriber is set")
-	}
-
+async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) -> Result<()> {
 	if opts.avail_passphrase.is_some() {
 		warn!("Using deprecated CLI parameter `--avail-passphrase`, use `--avail-suri` instead.");
 	}
@@ -111,10 +98,6 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		"Avail ss58 address: {}, public key: {}",
 		&identity_cfg.avail_address, &identity_cfg.avail_public_key
 	);
-
-	if let Some(error) = parse_error {
-		warn!("Using default log level: {}", error);
-	}
 
 	if opts.clean && Path::new(&cfg.avail_path).exists() {
 		info!("Cleaning up local state directory");
@@ -178,7 +161,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		_rocks_db,
 	);
 
-	tokio::spawn(
+	spawn_in_span(
 		shutdown.with_cancel(
 			p2p_event_loop
 				.await
@@ -201,7 +184,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
-	tokio::spawn(shutdown.with_cancel(async move {
+	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let bs_result = p2p_clone
 			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
@@ -217,7 +200,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	}));
 
 	#[cfg(feature = "network-analysis")]
-	tokio::task::spawn(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
+	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
 
 	let pp = Arc::new(kate_recovery::couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
@@ -245,7 +228,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
-	let rpc_subscriptions_handle = tokio::spawn(shutdown.with_cancel(shutdown.with_trigger(
+	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
 		"Subscription loop failure triggered shutdown".to_string(),
 		async {
 			let result = rpc_subscriptions.run().await;
@@ -303,13 +286,13 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		shutdown: shutdown.clone(),
 		p2p_client: p2p_client.clone(),
 	};
-	tokio::task::spawn(shutdown.with_cancel(server.bind()));
+	spawn_in_span(shutdown.with_cancel(server.bind()));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
 
 	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
 		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		tokio::task::spawn(shutdown.with_cancel(avail_light::app_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
 			p2p_client.clone(),
@@ -325,20 +308,20 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		data_rx
 	});
 
-	tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
+	spawn_in_span(shutdown.with_cancel(api::v2::publish(
 		api::v2::types::Topic::HeaderVerified,
 		publish_rpc_event_receiver,
 		ws_clients.clone(),
 	)));
 
-	tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
+	spawn_in_span(shutdown.with_cancel(api::v2::publish(
 		api::v2::types::Topic::ConfidenceAchieved,
 		block_tx.subscribe(),
 		ws_clients.clone(),
 	)));
 
 	if let Some(data_rx) = data_rx {
-		tokio::task::spawn(shutdown.with_cancel(api::v2::publish(
+		spawn_in_span(shutdown.with_cancel(api::v2::publish(
 			api::v2::types::Topic::DataVerified,
 			data_rx,
 			ws_clients,
@@ -348,7 +331,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
 		let partition = cfg.crawl.crawl_block_matrix_partition;
-		tokio::task::spawn(shutdown.with_cancel(avail_light::crawl_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light::crawl_client::run(
 			crawler_rpc_event_receiver,
 			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
@@ -369,7 +352,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	if cfg.sync_start_block.is_some() {
 		state.lock().unwrap().synced.replace(false);
-		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light::sync_client::run(
 			sync_client,
 			sync_network_client,
 			(&cfg).into(),
@@ -381,7 +364,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 
 	if cfg.sync_finality_enable {
 		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
-		tokio::task::spawn(shutdown.with_cancel(avail_light::sync_finality::run(
+		spawn_in_span(shutdown.with_cancel(avail_light::sync_finality::run(
 			sync_finality,
 			shutdown.clone(),
 			state.clone(),
@@ -403,7 +386,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 		telemetry_flush_interval: cfg.ot_flush_block_interval,
 	};
 
-	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(
+	spawn_in_span(shutdown.with_cancel(avail_light::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
@@ -419,7 +402,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	if let Some(partition) = cfg.block_matrix_partition {
 		let fat_client = avail_light::fat_client::new(p2p_client.clone(), rpc_client.clone());
 
-		tokio::task::spawn(shutdown.with_cancel(avail_light::fat_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light::fat_client::run(
 			fat_client,
 			db.clone(),
 			(&cfg).into(),
@@ -431,7 +414,7 @@ async fn run(shutdown: Controller<String>) -> Result<()> {
 	} else {
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
-		tokio::task::spawn(shutdown.with_cancel(avail_light::light_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light::light_client::run(
 			db.clone(),
 			light_network_client,
 			(&cfg).into(),
@@ -538,10 +521,35 @@ pub async fn main() -> Result<()> {
 	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
 
-	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
-	tokio::spawn(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
+	let opts = CliOpts::parse();
 
-	if let Err(error) = run(shutdown.clone()).await {
+	let mut cfg: RuntimeConfig = RuntimeConfig::default();
+	cfg.load_runtime_config(&opts)
+		.expect("runtime configuration is loaded");
+
+	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
+
+	let logs_json = opts.logs_json || cfg.log_format_json;
+	if logs_json {
+		tracing::subscriber::set_global_default(json_subscriber(log_level))
+			.expect("global json subscriber is set");
+	} else {
+		tracing::subscriber::set_global_default(default_subscriber(log_level))
+			.expect("global default subscriber is set");
+	};
+
+	// Do not enter span if logs format is not JSON
+	let span = span!(Level::INFO, "run", id = Uuid::new_v4().to_string());
+	let _enter = if logs_json { Some(span.enter()) } else { None };
+
+	if let Some(error) = parse_error {
+		warn!("Using default log level: {}", error);
+	}
+
+	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
+	spawn_in_span(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
+
+	if let Err(error) = run(cfg, opts, shutdown.clone()).await {
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};
