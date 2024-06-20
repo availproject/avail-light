@@ -102,9 +102,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
-				self.db
-					.put(LatestHeaderKey, header.clone().number)
-					.expect("Couldn't store Latest Header in DB.");
+				self.db.put(LatestHeaderKey, header.clone().number);
 				info!("Header no.: {}", header.number);
 
 				// if new validator set becomes active, replace the current one
@@ -176,25 +174,19 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				// store Finality Checkpoint if finality is synced
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
-					self.db
-						.put(
-							FinalitySyncCheckpointKey,
-							FinalitySyncCheckpoint {
-								set_id: self.block_data.current_valset.set_id,
-								number: header.number,
-								validator_set: self.block_data.current_valset.validator_set.clone(),
-							},
-						)
-						.expect("Can store FinalitySyncCheckpoint to the DB");
+					self.db.put(
+						FinalitySyncCheckpointKey,
+						FinalitySyncCheckpoint {
+							set_id: self.block_data.current_valset.set_id,
+							number: header.number,
+							validator_set: self.block_data.current_valset.validator_set.clone(),
+						},
+					);
 				} else {
 					// to avoid reading from db all the time,
 					// after finality is synced, it will not be necessary to read the state
 
-					finality_synced = self
-						.db
-						.get(IsFinalitySyncedKey)
-						.expect("Can read IsFinalitySynced from the DB")
-						.unwrap_or(false)
+					finality_synced = self.db.get(IsFinalitySyncedKey).unwrap_or(false)
 				}
 
 				// try and get get all the skipped blocks, if they exist
@@ -241,14 +233,11 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				let mut verified_header = self
 					.db
 					.get(VerifiedHeaderKey)
-					.expect("Light Client failed to fetch Verified Header from DB.")
 					.unwrap_or_else(|| BlockRange::init(header.number));
 				// mutate value
 				verified_header.last = header.number;
 				// and store in DB
-				self.db
-					.put(VerifiedHeaderKey, verified_header)
-					.expect("Light Client failed to store Verified Header in DB.");
+				self.db.put(VerifiedHeaderKey, verified_header);
 
 				// finally, send the Verified Block Header
 				self.event_sender

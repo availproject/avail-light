@@ -203,7 +203,7 @@ impl<D: Database> Client<D> {
 			},
 		}
 		// if retries were not successful, find another Node where this could still be done
-		if let Some(connected_node) = self.db.get(RpcNodeKey)? {
+		if let Some(connected_node) = self.db.get(RpcNodeKey) {
 			warn!(
 				"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
 				connected_node.host
