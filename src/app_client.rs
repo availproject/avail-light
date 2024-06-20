@@ -395,8 +395,7 @@ async fn process_block(
 	debug!(block_number, "Storing data into database");
 
 	// store encoded App Data into the database
-	db.put(AppDataKey(app_id.0, block_number), data.clone())
-		.wrap_err("App Client failed to store App Data into database")?;
+	db.put(AppDataKey(app_id.0, block_number), data.clone());
 
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
 	debug!(block_number, "Stored {bytes_count} bytes into database");
@@ -434,22 +433,14 @@ pub async fn run(
 		match sync_range.contains(&block_number) {
 			true => {
 				// initialize DB data on startup
-				db.put(VerifiedSyncDataKey, BlockRange::init(block_number))
-					.expect("App Client Failed to initialize Verified Sync Data in DB.");
+				db.put(VerifiedSyncDataKey, BlockRange::init(block_number));
 			},
 			false => {
-				db.put(VerifiedDataKey, BlockRange::init(block_number))
-					.expect("App Client Failed to initialize Verified Data in DB.");
+				db.put(VerifiedDataKey, BlockRange::init(block_number));
 			},
 		}
-		if db
-			.get(IsSyncedKey)
-			.expect("App Client couldn't fetch IsSynced flag from DB.")
-			== Some(false)
-			&& sync_range.clone().last() == Some(block_number)
-		{
-			db.put(IsSyncedKey, true)
-				.expect("App Client couldn't store IsSynced flag in DB.");
+		if db.get(IsSyncedKey) == Some(false) && sync_range.clone().last() == Some(block_number) {
+			db.put(IsSyncedKey, true);
 		};
 	}
 
