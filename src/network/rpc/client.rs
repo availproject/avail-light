@@ -83,7 +83,7 @@ impl<D: Database> Client<D> {
 
 		// update application wide State with the newly connected Node
 		// store the currently persisted node from DB implementation
-		_ = db.put(RpcNodeKey, node);
+		db.put(RpcNodeKey, node);
 
 		Ok(Self {
 			subxt_client: Arc::new(RwLock::new(client)),
@@ -237,7 +237,7 @@ impl<D: Database> Client<D> {
 			// retries gave results,
 			// update db with currently connected Node and keep a reference to the created Client
 			*self.subxt_client.write().await = client;
-			_ = self.db.put(RpcNodeKey, node);
+			self.db.put(RpcNodeKey, node);
 
 			return Ok(result);
 		}
