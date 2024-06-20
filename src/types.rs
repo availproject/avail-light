@@ -92,6 +92,9 @@ pub struct CliOpts {
 	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[arg(long, value_parser = block_matrix_partition_format::parse)]
 	pub block_matrix_partition: Option<Partition>,
+	/// Set logs format to JSON
+	#[arg(long)]
+	pub logs_json: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
