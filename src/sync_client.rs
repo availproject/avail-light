@@ -46,12 +46,12 @@ use tracing::{error, info, warn};
 #[automock]
 pub trait Client {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
-	fn is_confidence_stored(&self, block_number: u32) -> Result<bool>;
-	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()>;
-	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()>;
-	fn store_verified_sync_header(&self, block_number: u32) -> Result<()>;
-	fn store_latest_sync(&self, block_number: u32) -> Result<()>;
-	fn store_is_synced(&self, is_synced: bool) -> Result<()>;
+	fn is_confidence_stored(&self, block_number: u32) -> bool;
+	fn store_verified_cell_count(&self, count: u32, block_number: u32);
+	fn store_achieved_sync_confidence(&self, block_number: u32);
+	fn store_verified_sync_header(&self, block_number: u32);
+	fn store_latest_sync(&self, block_number: u32);
+	fn store_is_synced(&self, is_synced: bool);
 }
 
 #[derive(Clone)]
@@ -69,11 +69,7 @@ impl<T: Database + Sync> SyncClient<T> {
 #[async_trait]
 impl<T: Database + Sync> Client for SyncClient<T> {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
-		if let Some(header) = self
-			.db
-			.get(BlockHeaderKey(block_number))
-			.wrap_err("Failed to get block header from the DB")?
-		{
+		if let Some(header) = self.db.get(BlockHeaderKey(block_number)) {
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			return Ok((header, hash));
 		}
@@ -84,66 +80,49 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 			.await
 			.wrap_err("Failed to get block header from the RPC")?;
 
-		self.db
-			.put(BlockHeaderKey(block_number), header.clone())
-			.wrap_err("Failed to store blcok header in the DB")?;
+		self.db.put(BlockHeaderKey(block_number), header.clone());
 
 		Ok((header, hash))
 	}
 
-	fn is_confidence_stored(&self, block_number: u32) -> Result<bool> {
-		self.db
-			.get(VerifiedCellCountKey(block_number))
-			.wrap_err("Failed to get verified cell count from the DB")
-			.map(|c: Option<u32>| c.is_some())
+	fn is_confidence_stored(&self, block_number: u32) -> bool {
+		self.db.get(VerifiedCellCountKey(block_number)).is_some()
 	}
 
-	fn store_verified_cell_count(&self, count: u32, block_number: u32) -> Result<()> {
-		self.db
-			.put(VerifiedCellCountKey(block_number), count)
-			.wrap_err("Failed to store verified cell count in the DB")
+	fn store_verified_cell_count(&self, count: u32, block_number: u32) {
+		self.db.put(VerifiedCellCountKey(block_number), count)
 	}
 
-	fn store_achieved_sync_confidence(&self, block_number: u32) -> Result<()> {
+	fn store_achieved_sync_confidence(&self, block_number: u32) {
 		// get the current BlockRange stored in DB under this key
 		let mut block_range = self
 			.db
 			.get(AchievedSyncConfidenceKey)
-			.wrap_err("Failed to get sync confidence achieved from the DB")?
 			.unwrap_or_else(|| BlockRange::init(block_number));
 		// mutate the value
 		block_range.last = block_number;
 		// store mutated value back in the DB
-		self.db
-			.put(AchievedSyncConfidenceKey, block_range)
-			.wrap_err("Failed to store achived sync confidence in the DB")
+		self.db.put(AchievedSyncConfidenceKey, block_range);
 	}
 
-	fn store_verified_sync_header(&self, block_number: u32) -> Result<()> {
+	fn store_verified_sync_header(&self, block_number: u32) {
 		// get the current BlockRange stored in DB under this key
 		let mut block_range = self
 			.db
 			.get(VerifiedSyncHeaderKey)
-			.wrap_err("Failed to fetch verified sync header from the DB")?
 			.unwrap_or_else(|| BlockRange::init(block_number));
 		// mutate the value
 		block_range.last = block_number;
 		// store mutated value back in the DB
-		self.db
-			.put(VerifiedSyncHeaderKey, block_range)
-			.wrap_err("Failed to store verified sync header in the DB")
+		self.db.put(VerifiedSyncHeaderKey, block_range);
 	}
 
-	fn store_latest_sync(&self, block_number: u32) -> Result<()> {
-		self.db
-			.put(LatestSyncKey, block_number)
-			.wrap_err("Failed to store latest sync block in the DB")
+	fn store_latest_sync(&self, block_number: u32) {
+		self.db.put(LatestSyncKey, block_number)
 	}
 
-	fn store_is_synced(&self, is_synced: bool) -> Result<()> {
-		self.db
-			.put(IsSyncedKey, is_synced)
-			.wrap_err("Failed to store IsSynced flag in the DB")
+	fn store_is_synced(&self, is_synced: bool) {
+		self.db.put(IsSyncedKey, is_synced)
 	}
 }
 
@@ -195,7 +174,7 @@ async fn process_block(
 	}
 
 	// write verified cell count into on-disk database
-	client.store_verified_cell_count(verified.try_into()?, block_number)?;
+	client.store_verified_cell_count(verified.try_into()?, block_number);
 
 	let confidence = Some(calculate_confidence(verified as u32));
 	let client_msg =
@@ -236,14 +215,8 @@ pub async fn run(
 	for block_number in sync_range {
 		// TODO: This is still an ambiguous check since data fetch can fail.
 		// We should write block status in DB explicitly.
-		match client.is_confidence_stored(block_number) {
-			Ok(false) => (),
-			Ok(true) => continue,
-			Err(error) => {
-				// TODO: Is it valid to have skipped block?
-				error!(block_number, "Cannot process block: {error:#}");
-				continue;
-			},
+		if client.is_confidence_stored(block_number) {
+			continue;
 		};
 
 		let (header, header_hash) = match client.get_header_by_block_number(block_number).await {
@@ -254,15 +227,9 @@ pub async fn run(
 			},
 		};
 
-		if let Err(error) = client.store_latest_sync(block_number) {
-			error!(block_number, "Cannot process block: {error:#}");
-			continue;
-		};
+		client.store_latest_sync(block_number);
 		// TODO: Add proper header verification on sync
-		if let Err(error) = client.store_verified_sync_header(block_number) {
-			error!(block_number, "Cannot process block: {error:#}");
-			continue;
-		}
+		client.store_verified_sync_header(block_number);
 
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
@@ -277,15 +244,13 @@ pub async fn run(
 		.await
 		{
 			error!(block_number, "Cannot process block: {error:#}");
-		} else if let Err(error) = client.store_achieved_sync_confidence(block_number) {
-			error!(block_number, "Cannot process block: {error:#}");
+		} else {
+			client.store_achieved_sync_confidence(block_number);
 		}
 	}
 
 	if cfg.is_last_step {
-		client
-			.store_is_synced(true)
-			.expect("Failed to store IsSynced flag in the DB");
+		client.store_is_synced(true);
 	}
 }
 
@@ -417,11 +382,11 @@ mod tests {
 		mock_client
 			.expect_is_confidence_stored()
 			.with(eq(2))
-			.returning(|_| Ok(true));
+			.returning(|_| true);
 		mock_client
 			.expect_store_verified_cell_count()
 			.withf(move |_, block_number| *block_number == 2)
-			.returning(move |_, _| Ok(()));
+			.returning(move |_, _| ());
 		process_block(
 			&mock_client,
 			&mock_network_client,
@@ -507,7 +472,7 @@ mod tests {
 		mock_client
 			.expect_store_verified_cell_count()
 			.withf(move |_, block_number| *block_number == 2)
-			.returning(move |_, _| Ok(()));
+			.returning(move |_, _| ());
 		process_block(
 			&mock_client,
 			&mock_network_client,
