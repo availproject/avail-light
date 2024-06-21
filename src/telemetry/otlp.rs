@@ -220,6 +220,7 @@ impl super::Metrics for Metrics {
 fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<u64>> {
 	[
 		MetricCounter::Starts,
+		MetricCounter::Up,
 		MetricCounter::SessionBlocks,
 		MetricCounter::OutgoingConnectionErrors,
 		MetricCounter::IncomingConnectionErrors,
