@@ -94,14 +94,12 @@ pub async fn block(
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
-		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	let confidence = db
 		.get(VerifiedCellCountKey(block_number))
-		.map_err(Error::internal_server_error)?
 		.map(calculate_confidence);
 
 	Ok(Block::new(block_status, confidence))
@@ -116,7 +114,6 @@ pub async fn block_header(
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
-		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
@@ -129,7 +126,7 @@ pub async fn block_header(
 	};
 
 	db.get(BlockHeaderKey(block_number))
-		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
+		.ok_or_else(|| eyre!("Header not found"))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
 }
@@ -145,7 +142,6 @@ pub async fn block_data(
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
-		.map_err(Error::internal_server_error)?
 		.map(|primitives::Header { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
@@ -154,9 +150,7 @@ pub async fn block_data(
 		return Err(Error::bad_request_unknown("Block data is not available"));
 	};
 
-	let data = db
-		.get(AppDataKey(app_id, block_number))
-		.map_err(Error::internal_server_error)?;
+	let data = db.get(AppDataKey(app_id, block_number));
 
 	let Some(data) = data else {
 		return Ok(DataResponse {

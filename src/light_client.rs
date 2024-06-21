@@ -19,7 +19,7 @@
 
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::Result;
 use kate_recovery::{commitments, matrix::Dimensions};
 use sp_core::blake2_256;
 use std::{sync::Arc, time::Instant};
@@ -64,16 +64,11 @@ pub async fn process_block(
 			// get current currently stored Achieved Confidence
 			let mut achieved_confidence = db
 				.get(AchievedConfidenceKey)
-				.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?
 				.unwrap_or_else(|| BlockRange::init(block_number));
 
 			achieved_confidence.last = block_number;
-
-			db.put(AchievedConfidenceKey, achieved_confidence)
-				.wrap_err("Light Client failed to store Achieved Confidence in DB.")?;
-
-			db.put(BlockHeaderKey(block_number), header)
-				.wrap_err("Light Client failed to store Block Header")?;
+			db.put(AchievedConfidenceKey, achieved_confidence);
+			db.put(BlockHeaderKey(block_number), header);
 
 			return Ok(None);
 		},
@@ -146,19 +141,16 @@ pub async fn process_block(
 	}
 
 	// write Verified Cell Count into on-disk db
-	db.put(VerifiedCellCountKey(block_number), verified as u32)
-		.wrap_err("Light Client failed to store Confidence Factor")?;
+	db.put(VerifiedCellCountKey(block_number), verified as u32);
 
 	// get currently stored Achieved Confidence
 	let mut achieved_confidence = db
 		.get(AchievedConfidenceKey)
-		.wrap_err("Light Client failed to fetch Achieved Confidence from DB.")?
 		.unwrap_or_else(|| BlockRange::init(block_number));
 
 	achieved_confidence.last = block_number;
 
-	db.put(AchievedConfidenceKey, achieved_confidence)
-		.wrap_err("Light Client failed to store Achieved Confidence in DB.")?;
+	db.put(AchievedConfidenceKey, achieved_confidence);
 
 	let confidence = calculate_confidence(verified as u32);
 	info!(
@@ -179,8 +171,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	db.put(BlockHeaderKey(block_number), header)
-		.wrap_err("Light Client failed to store Block Header")?;
+	db.put(BlockHeaderKey(block_number), header);
 
 	Ok(Some(confidence))
 }

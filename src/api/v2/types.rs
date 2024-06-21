@@ -170,41 +170,20 @@ impl Reply for SubmitResponse {
 
 impl Status {
 	pub fn new(config: &RuntimeConfig, db: impl Database) -> Self {
-		let historical_sync = db
-			.get(IsSyncedKey)
-			.expect("Failed to get IsSynced flag from the DB")
-			.map(|synced| HistoricalSync {
-				synced,
-				available: db
-					.get(AchievedSyncConfidenceKey)
-					.expect("Failed to get achieved sync confidence from the DB")
-					.map(From::from),
-				app_data: db
-					.get(VerifiedSyncDataKey)
-					.expect("Failed to get verified sync data from the DB")
-					.map(From::from),
-			});
+		let historical_sync = db.get(IsSyncedKey).map(|synced| HistoricalSync {
+			synced,
+			available: db.get(AchievedSyncConfidenceKey).map(From::from),
+			app_data: db.get(VerifiedSyncDataKey).map(From::from),
+		});
 
 		let blocks = Blocks {
-			latest: db
-				.get(LatestHeaderKey)
-				.expect("Failed to get latest header from the DB")
-				.unwrap_or_default(),
-			available: db
-				.get(AchievedConfidenceKey)
-				.expect("Failed to get achieved confidence from the DB")
-				.map(From::from),
-			app_data: db
-				.get(VerifiedDataKey)
-				.expect("Failed to get verified data from the DB")
-				.map(From::from),
+			latest: db.get(LatestHeaderKey).unwrap_or_default(),
+			available: db.get(AchievedConfidenceKey).map(From::from),
+			app_data: db.get(VerifiedDataKey).map(From::from),
 			historical_sync,
 		};
 
-		let node = db
-			.get(RpcNodeKey)
-			.expect("Failed to get RPC node from the DB")
-			.unwrap_or_default();
+		let node = db.get(RpcNodeKey).unwrap_or_default();
 
 		Status {
 			modes: config.into(),
@@ -290,17 +269,13 @@ pub fn block_status(
 	block_number: u32,
 	extension: impl OptionalExtension,
 ) -> Option<BlockStatus> {
-	let latest = db
-		.get(LatestHeaderKey)
-		.expect("Failed to getlatest header from the DB")
-		.unwrap_or_default();
+	let latest = db.get(LatestHeaderKey).unwrap_or_default();
 	if block_number > latest {
 		return None;
 	};
 
 	let first_block = db
 		.get(VerifiedHeaderKey)
-		.expect("Failed to get verified header from DB")
 		.map_or(latest, |range| range.first);
 
 	let first_sync_block = sync_start_block.unwrap_or(first_block);
@@ -316,7 +291,6 @@ pub fn block_status(
 	if block_number < first_block {
 		let has_verified_sync_data = db
 			.get(VerifiedSyncDataKey)
-			.expect("Failed to get verified sync data from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_sync_data {
@@ -325,7 +299,6 @@ pub fn block_status(
 
 		let has_achieved_sync_confidence = db
 			.get(AchievedSyncConfidenceKey)
-			.expect("Failed to get achieved sync confidence from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_achieved_sync_confidence {
@@ -334,16 +307,13 @@ pub fn block_status(
 
 		let has_verified_sync_header = db
 			.get(VerifiedSyncHeaderKey)
-			.expect("Failed to get verified sync header")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_sync_header {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
 
-		let latest_sync = db
-			.get(LatestSyncKey)
-			.expect("Failed to get latest sync key from the DB");
+		let latest_sync = db.get(LatestSyncKey);
 		let is_sync_latest = latest_sync.map(|latest| block_number == latest);
 		if is_sync_latest.unwrap_or(false) {
 			return Some(BlockStatus::VerifyingHeader);
@@ -351,7 +321,6 @@ pub fn block_status(
 	} else {
 		let has_verified_data = db
 			.get(VerifiedDataKey)
-			.expect("Failed to get verified data from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_data {
@@ -360,7 +329,6 @@ pub fn block_status(
 
 		let has_achieved_confidence = db
 			.get(AchievedConfidenceKey)
-			.expect("Failed to get achieved confidence from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_achieved_confidence {
@@ -369,7 +337,6 @@ pub fn block_status(
 
 		let has_verified_header = db
 			.get(VerifiedHeaderKey)
-			.expect("Failed to get verified header from the DB")
 			.map_or(false, |range| range.contains(block_number));
 
 		if has_verified_header {

@@ -1,6 +1,5 @@
 use super::{keys::*, *};
 use crate::data::Database;
-use color_eyre::eyre::{eyre, Result};
 use std::{
 	collections::HashMap,
 	sync::{Arc, RwLock},
@@ -23,24 +22,24 @@ impl Default for MemoryDB {
 }
 
 impl Database for MemoryDB {
-	fn put<T: RecordKey>(&self, key: T, value: T::Type) -> Result<()> {
+	fn put<T: RecordKey>(&self, key: T, value: T::Type) {
 		let mut map = self.map.write().expect("Lock acquired");
 
-		map.insert(key.into(), serde_json::to_string(&value)?);
-		Ok(())
+		map.insert(
+			key.into(),
+			serde_json::to_string(&value).expect("Encoding data for MemoryDB failed"),
+		);
 	}
 
-	fn get<T: RecordKey>(&self, key: T) -> Result<Option<T::Type>> {
+	fn get<T: RecordKey>(&self, key: T) -> Option<T::Type> {
 		let map = self.map.read().expect("Lock acquired");
 		map.get(&key.into())
-			.map(|value| serde_json::from_str(value).map_err(|error| eyre!("{error}")))
-			.transpose()
+			.map(|value| serde_json::from_str(value).expect("Decoding data from MemoryDB failed"))
 	}
 
-	fn delete<T: RecordKey>(&self, key: T) -> Result<()> {
+	fn delete<T: RecordKey>(&self, key: T) {
 		let mut map = self.map.write().expect("Lock acquired");
 		map.remove(&key.into());
-		Ok(())
 	}
 }
 
