@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.10.0
+## [1.10.0](https://github.com/availproject/avail-light/releases/tag/v1.10.0) - 2024-06-24
 
 - Application wide state is now persisted and not being kept in heap
 - Persistance failures are handled within specific implementation
