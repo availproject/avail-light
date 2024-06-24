@@ -37,11 +37,13 @@ const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
-const MINIMUM_SUPPORTED_VERSION: &str = "1.9.2";
+const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
+const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
 pub const DEV_FLAG_GENHASH: &str = "DEV";
 pub const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
 pub const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
 pub const IDENTITY_AGENT_BASE: &str = "avail-light-client";
+pub const IDENTITY_AGENT_ROLE: &str = "light-client";
 pub const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
 #[derive(Parser)]
@@ -749,6 +751,7 @@ pub struct IdentifyConfig {
 #[derive(Clone)]
 pub struct AgentVersion {
 	pub base_version: String,
+	pub role: String,
 	pub client_type: String,
 	pub release_version: String,
 }
@@ -757,8 +760,8 @@ impl fmt::Display for AgentVersion {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(
 			f,
-			"{}/{}/{}",
-			self.base_version, self.release_version, self.client_type
+			"{}/{}/{}/{}",
+			self.base_version, self.role, self.release_version, self.client_type,
 		)
 	}
 }
@@ -768,14 +771,15 @@ impl FromStr for AgentVersion {
 
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		let parts: Vec<&str> = s.split('/').collect();
-		if parts.len() != 3 {
+		if parts.len() != 4 {
 			return Err("Failed to parse agent version".to_owned());
 		}
 
 		Ok(AgentVersion {
 			base_version: parts[0].to_string(),
-			release_version: parts[1].to_string(),
-			client_type: parts[2].to_string(),
+			role: parts[1].to_string(),
+			release_version: parts[2].to_string(),
+			client_type: parts[3].to_string(),
 		})
 	}
 }
@@ -784,6 +788,7 @@ impl IdentifyConfig {
 	fn new() -> Self {
 		let agent_version = AgentVersion {
 			base_version: IDENTITY_AGENT_BASE.to_string(),
+			role: IDENTITY_AGENT_ROLE.to_string(),
 			release_version: clap::crate_version!().to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
 		};
@@ -797,13 +802,17 @@ impl IdentifyConfig {
 
 impl AgentVersion {
 	pub fn is_supported(&self) -> bool {
-		match (
-			Version::parse(&self.release_version),
-			Version::parse(MINIMUM_SUPPORTED_VERSION),
-		) {
-			(Ok(release_version), Ok(minimum_version)) => release_version >= minimum_version,
-			(_, _) => false,
-		}
+		let minimum_version = if self.role == "bootstrap" {
+			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
+		} else {
+			MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION
+		};
+
+		Version::parse(&self.release_version)
+			.and_then(|release_version| {
+				Version::parse(minimum_version).map(|min_version| release_version >= min_version)
+			})
+			.unwrap_or(false)
 	}
 }
 
