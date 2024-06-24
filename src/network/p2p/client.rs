@@ -296,22 +296,48 @@ impl Command for CountKademliaPeers {
 }
 
 struct GetLocalInfo {
+	peer_id: Option<PeerId>,
 	response_sender: Option<oneshot::Sender<Result<LocalInfo>>>,
 }
 
 impl Command for GetLocalInfo {
 	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
+		let (peer_id, peer_multiaddr) = match self.peer_id {
+			Some(peer) => {
+				let mut multiaddrs: Vec<String> = Vec::new();
+				for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
+					for item in bucket.iter() {
+						if *item.node.key.preimage() == peer {
+							for addr in item.node.value.iter() {
+								if addr.iter().any(|protocol| match protocol {
+									libp2p::multiaddr::Protocol::Ip4(ip) => is_global(ip),
+									_ => false,
+								}) {
+									multiaddrs.push(addr.to_string());
+								}
+							}
+						}
+					}
+				}
+
+				(peer.to_string(), if multiaddrs.is_empty() { None } else { Some(multiaddrs) })
+			},
+			None => (entries.peer_id().to_string(), None),
+		};
+
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
 			.unwrap()
 			.send(Ok(LocalInfo {
-				peer_id: entries.peer_id().to_string(),
+				peer_id,
+				peer_multiaddr,
 				local_listeners: entries.listeners(),
 				external_listeners: entries.external_address(),
 			}))
 			.expect("GetLocalInfo receiver dropped");
+
 		Ok(())
 	}
 
@@ -595,9 +621,10 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_local_info(&self) -> Result<LocalInfo> {
+	pub async fn get_local_info(&self, peer_id: Option<PeerId>) -> Result<LocalInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetLocalInfo {
+				peer_id,
 				response_sender: Some(response_sender),
 			})
 		})
