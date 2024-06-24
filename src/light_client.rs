@@ -19,24 +19,21 @@
 
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::Result;
 use kate_recovery::{commitments, matrix::Dimensions};
 use sp_core::blake2_256;
-use std::{
-	sync::{Arc, Mutex},
-	time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 use tracing::{error, info};
 
 use crate::{
-	data::{Database, Key},
+	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	network::{
 		self,
 		rpc::{self, Event},
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, ClientChannels, LightClientConfig, OptionBlockRange, State},
+	types::{self, BlockRange, ClientChannels, LightClientConfig},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -47,7 +44,6 @@ pub async fn process_block(
 	cfg: &LightClientConfig,
 	header: Header,
 	received_at: Instant,
-	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>> {
 	metrics.count(MetricCounter::SessionBlocks).await;
 	metrics
@@ -65,11 +61,14 @@ pub async fn process_block(
 	let (required, verified, unverified) = match extract_kate(&header.extension) {
 		None => {
 			info!("Skipping block without header extension");
+			// get current currently stored Achieved Confidence
+			let mut achieved_confidence = db
+				.get(AchievedConfidenceKey)
+				.unwrap_or_else(|| BlockRange::init(block_number));
 
-			state.lock().unwrap().confidence_achieved.set(block_number);
-
-			db.put(Key::BlockHeader(block_number), header)
-				.wrap_err("Light Client failed to store Block Header")?;
+			achieved_confidence.last = block_number;
+			db.put(AchievedConfidenceKey, achieved_confidence);
+			db.put(BlockHeaderKey(block_number), header);
 
 			return Ok(None);
 		},
@@ -141,11 +140,17 @@ pub async fn process_block(
 		return Ok(None);
 	}
 
-	// write confidence factor into on-disk database
-	db.put(Key::VerifiedCellCount(block_number), verified as u32)
-		.wrap_err("Light Client failed to store Confidence Factor")?;
+	// write Verified Cell Count into on-disk db
+	db.put(VerifiedCellCountKey(block_number), verified as u32);
 
-	state.lock().unwrap().confidence_achieved.set(block_number);
+	// get currently stored Achieved Confidence
+	let mut achieved_confidence = db
+		.get(AchievedConfidenceKey)
+		.unwrap_or_else(|| BlockRange::init(block_number));
+
+	achieved_confidence.last = block_number;
+
+	db.put(AchievedConfidenceKey, achieved_confidence);
 
 	let confidence = calculate_confidence(verified as u32);
 	info!(
@@ -166,8 +171,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	db.put(Key::BlockHeader(block_number), header)
-		.wrap_err("Light Client failed to store Block Header")?;
+	db.put(BlockHeaderKey(block_number), header);
 
 	Ok(Some(confidence))
 }
@@ -187,7 +191,6 @@ pub async fn run(
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
 	metrics: Arc<impl Metrics>,
-	state: Arc<Mutex<State>>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 ) {
@@ -222,7 +225,6 @@ pub async fn run(
 			&cfg,
 			header.clone(),
 			received_at,
-			state.clone(),
 		)
 		.await;
 		let confidence = match process_block_result {
@@ -254,7 +256,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		data::mem_db,
+		data,
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
 		telemetry,
 		types::RuntimeConfig,
@@ -286,7 +288,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
@@ -331,7 +333,6 @@ mod tests {
 				},
 			}),
 		};
-		let state = Arc::new(Mutex::new(State::default()));
 		let recv = Instant::now();
 		mock_network_client
 			.expect_fetch_verified()
@@ -357,7 +358,6 @@ mod tests {
 			&cfg,
 			header,
 			recv,
-			state,
 		)
 		.await
 		.unwrap();

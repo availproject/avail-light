@@ -1,9 +1,9 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
-	data::{Database, Key},
+	data::{AchievedConfidenceKey, AppDataKey, Database, VerifiedCellCountKey},
 	network::rpc::cell_count_for_confidence,
-	types::{Mode, OptionBlockRange, RuntimeConfig, State},
+	types::{BlockRange, Mode, RuntimeConfig},
 	utils::calculate_confidence,
 };
 use avail_subxt::{
@@ -14,8 +14,11 @@ use base64::{engine::general_purpose, Engine};
 use codec::Decode;
 use color_eyre::{eyre::WrapErr, Result};
 use num::{BigUint, FromPrimitive};
-use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
+
+fn get_achived_confidence(db: &impl Database) -> Option<BlockRange> {
+	db.get(AchievedConfidenceKey)
+}
 
 fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block as u64)?;
@@ -31,24 +34,18 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 pub fn confidence(
 	block_num: u32,
 	db: impl Database,
-	state: Arc<Mutex<State>>,
 	cfg: RuntimeConfig,
 ) -> ClientResponse<ConfidenceResponse> {
-	fn is_synced(block_num: u32, state: Arc<Mutex<State>>) -> bool {
-		let state = state.lock().unwrap();
-		match &state.confidence_achieved {
-			Some(range) => block_num <= range.last,
-			None => false,
-		}
+	fn is_synced(block_num: u32, db: impl Database) -> bool {
+		get_achived_confidence(&db).map_or(false, |range| block_num <= range.last)
 	}
 
 	info!("Got request for confidence for block {block_num}");
 
-	let count = match db.get(Key::VerifiedCellCount(block_num)) {
-		Ok(Some(count)) => count,
-		Ok(None) if is_synced(block_num, state) => cell_count_for_confidence(cfg.confidence),
-		Ok(None) => return ClientResponse::NotFinalized,
-		Err(error) => return ClientResponse::Error(error),
+	let count = match db.get(VerifiedCellCountKey(block_num)) {
+		Some(count) => count,
+		None if is_synced(block_num, db) => cell_count_for_confidence(cfg.confidence),
+		None => return ClientResponse::NotFinalized,
 	};
 
 	let confidence = calculate_confidence(count);
@@ -63,17 +60,12 @@ pub fn confidence(
 	response
 }
 
-pub fn status(
-	app_id: Option<u32>,
-	state: Arc<Mutex<State>>,
-	db: impl Database,
-) -> ClientResponse<Status> {
-	let state = state.lock().unwrap();
-	let Some(last) = state.confidence_achieved.last() else {
+pub fn status(app_id: Option<u32>, db: impl Database) -> ClientResponse<Status> {
+	let Some(BlockRange { last, .. }) = get_achived_confidence(&db) else {
 		return ClientResponse::NotFound;
 	};
-	let res = match db.get(Key::VerifiedCellCount(last)) {
-		Ok(Some(count)) => {
+	let res = match db.get(VerifiedCellCountKey(last)) {
+		Some(count) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
 				block_num: last,
@@ -81,21 +73,19 @@ pub fn status(
 				app_id,
 			})
 		},
-		Ok(None) => ClientResponse::NotFound,
-
-		Err(e) => ClientResponse::Error(e),
+		None => ClientResponse::NotFound,
 	};
 	info!("Returning status: {res:?}");
 	res
 }
 
-pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockResponse> {
+pub fn latest_block(db: impl Database) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
-	let state = state.lock().unwrap();
-	match state.confidence_achieved.last() {
-		None => ClientResponse::NotFound,
-		Some(latest_block) => ClientResponse::Normal(LatestBlockResponse { latest_block }),
-	}
+	let Some(BlockRange { last, .. }) = get_achived_confidence(&db) else {
+		return ClientResponse::NotFound;
+	};
+
+	ClientResponse::Normal(LatestBlockResponse { latest_block: last })
 }
 
 pub fn appdata(
@@ -103,35 +93,29 @@ pub fn appdata(
 	query: AppDataQuery,
 	db: impl Database,
 	app_id: Option<u32>,
-	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
-		data: Result<Option<Vec<Vec<u8>>>>,
+		data: Option<Vec<Vec<u8>>>,
 	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
 		let xts = data.map(|e| {
-			e.map(|e| {
-				e.iter()
-					.enumerate()
-					.map(|(i, raw)| {
-						<_ as Decode>::decode(&mut &raw[..])
-							.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
-					})
-					.collect::<Result<Vec<_>>>()
-			})
+			e.iter()
+				.enumerate()
+				.map(|(i, raw)| {
+					<_ as Decode>::decode(&mut &raw[..])
+						.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
+				})
+				.collect::<Result<Vec<_>>>()
 		});
 		match xts {
-			Ok(Some(Ok(s))) => Ok(Some(s)),
-			Ok(Some(Err(e))) => Err(e),
-			Ok(None) => Ok(None),
-			Err(e) => Err(e),
+			Some(Ok(s)) => Ok(Some(s)),
+			Some(Err(e)) => Err(e),
+			None => Ok(None),
 		}
 	}
 	info!("Got request for AppData for block {block_num}");
-	let state = state.lock().unwrap();
-	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
 	let res = match decode_app_data_to_extrinsics(
-		db.get(Key::AppData(app_id.unwrap_or(0u32), block_num)),
+		db.get(AppDataKey(app_id.unwrap_or(0u32), block_num)),
 	) {
 		Ok(Some(data)) => {
 			if !decode {
@@ -155,10 +139,9 @@ pub fn appdata(
 			}
 		},
 
-		Ok(None) => match last {
-			Some(last) if block_num == last => ClientResponse::InProcess,
-			_ => ClientResponse::NotFound,
-		},
+		Ok(None) => get_achived_confidence(&db)
+			.filter(|range| block_num == range.last)
+			.map_or(ClientResponse::NotFound, |_| ClientResponse::InProcess),
 		Err(e) => ClientResponse::Error(e),
 	};
 	debug!("Returning AppData: {res:?}");

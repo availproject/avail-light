@@ -1,7 +1,9 @@
 # Changelog
 
-## 1.9.3
+## 1.10.0
 
+- Application wide state is now persisted and not being kept in heap
+- Persistance failures are handled within specific implementation
 - Don't fail on any failed signature in the justification, only if there is no supermajority of valid signatures. Log the failed signature details.
 - Add `run id` to the logs, unique per run and generated on startup, if the log format is JSON
 - Fixed initialization of the `avail.light.up` counter
@@ -20,7 +22,7 @@
 
 - Add `hex` network support to the `--network` CLI parameter
 - Introduce `avail.light` namespace to the metrics
-- Postpone flushing aggregated counters to maintanence step
+- Postpone flushing aggregated counters to maintenance step
 
 ## [v1.9.0](https://github.com/availproject/avail-light/releases/tag/v1.9.0) - 2024-06-04
 

@@ -25,7 +25,7 @@ use std::{sync::Arc, time::Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-	data::{Database, Key},
+	data::{BlockHeaderKey, Database},
 	network::{
 		p2p::Client as P2pClient,
 		rpc::{Client as RpcClient, Event},
@@ -45,12 +45,15 @@ pub trait Client {
 }
 
 #[derive(Clone)]
-pub struct FatClient {
+pub struct FatClient<T: Database> {
 	p2p_client: P2pClient,
-	rpc_client: RpcClient,
+	rpc_client: RpcClient<T>,
 }
 
-pub fn new(p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient {
+pub fn new(
+	p2p_client: P2pClient,
+	rpc_client: RpcClient<impl Database>,
+) -> FatClient<impl Database> {
 	FatClient {
 		p2p_client,
 		rpc_client,
@@ -58,7 +61,7 @@ pub fn new(p2p_client: P2pClient, rpc_client: RpcClient) -> FatClient {
 }
 
 #[async_trait]
-impl Client for FatClient {
+impl<T: Database + Sync> Client for FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
@@ -116,8 +119,7 @@ pub async fn process_block(
 	// another competing thread, which syncs all block headers
 	// in range [0, LATEST], where LATEST = latest block number
 	// when this process started
-	db.put(Key::BlockHeader(block_number), header)
-		.wrap_err("Fat Client failed to store Block Header")?;
+	db.put(BlockHeaderKey(block_number), header.clone());
 
 	// Fat client partition upload logic
 	let positions: Vec<Position> = dimensions
@@ -264,7 +266,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{data::mem_db, telemetry, types::RuntimeConfig};
+	use crate::{data, telemetry, types::RuntimeConfig};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -365,7 +367,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn process_block_successful() {
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
 		let mut mock_client = MockClient::new();
 		mock_client
 			.expect_get_kate_proof()

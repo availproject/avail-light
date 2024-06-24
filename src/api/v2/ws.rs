@@ -4,13 +4,14 @@ use super::{
 };
 use crate::{
 	api::v2::types::{Error, Sender},
-	types::{RuntimeConfig, State},
+	data::Database,
+	types::RuntimeConfig,
 	utils::spawn_in_span,
 };
 use color_eyre::{eyre::WrapErr, Result};
 use futures::{FutureExt, StreamExt};
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{error, log::warn};
@@ -24,7 +25,7 @@ pub async fn connect(
 	version: Version,
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
-	state: Arc<Mutex<State>>,
+	db: impl Database + Clone,
 ) {
 	let (web_socket_sender, mut web_socket_receiver) = web_socket.split();
 	let (sender, receiver) = mpsc::unbounded_channel();
@@ -62,17 +63,17 @@ pub async fn connect(
 		};
 
 		let submitter = submitter.clone();
-		let state = state.clone();
 
-		let send_result = match handle_request(message, &version, &config, submitter, state).await {
-			Ok(response) => send(sender.clone(), response),
-			Err(error) => {
-				if let Some(cause) = error.cause.as_ref() {
-					error!("Failed to handle request: {cause:#}");
-				};
-				send::<WsError>(sender.clone(), error.into())
-			},
-		};
+		let send_result =
+			match handle_request(message, &version, &config, submitter, db.clone()).await {
+				Ok(response) => send(sender.clone(), response),
+				Err(error) => {
+					if let Some(cause) = error.cause.as_ref() {
+						error!("Failed to handle request: {cause:#}");
+					};
+					send::<WsError>(sender.clone(), error.into())
+				},
+			};
 
 		if let Err(error) = send_result {
 			warn!("Error sending message: {error:#}");
@@ -85,7 +86,7 @@ async fn handle_request(
 	version: &Version,
 	config: &RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit>>,
-	state: Arc<Mutex<State>>,
+	db: impl Database,
 ) -> Result<WsResponse, Error> {
 	let request = Request::try_from(message).map_err(|error| {
 		Error::bad_request_unknown(&format!("Failed to parse request: {error}"))
@@ -95,8 +96,7 @@ async fn handle_request(
 	match request.payload {
 		Payload::Version => Ok(Response::new(request_id, version.clone()).into()),
 		Payload::Status => {
-			let state = state.lock().expect("State lock can be acquired");
-			let status = Status::new(config, &state);
+			let status = Status::new(config, db);
 			Ok(Response::new(request_id, status).into())
 		},
 		Payload::Submit(transaction) => {

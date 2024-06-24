@@ -25,10 +25,13 @@ use warp::{
 };
 
 use crate::{
-	network::rpc::Event as RpcEvent,
-	types::{
-		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
+	data::{
+		AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, IsSyncedKey, LatestHeaderKey,
+		LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+		VerifiedSyncHeaderKey,
 	},
+	network::rpc::Event as RpcEvent,
+	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig},
 	utils::{decode_app_data, OptionalExtension},
 };
 
@@ -55,8 +58,8 @@ pub struct BlockRange {
 	pub last: u32,
 }
 
-impl From<&types::BlockRange> for BlockRange {
-	fn from(value: &types::BlockRange) -> Self {
+impl From<types::BlockRange> for BlockRange {
+	fn from(value: types::BlockRange) -> Self {
 		BlockRange {
 			first: value.first,
 			last: value.last,
@@ -166,21 +169,21 @@ impl Reply for SubmitResponse {
 }
 
 impl Status {
-	pub fn new(config: &RuntimeConfig, state: &State) -> Self {
-		let historical_sync = state.synced.map(|synced| HistoricalSync {
+	pub fn new(config: &RuntimeConfig, db: impl Database) -> Self {
+		let historical_sync = db.get(IsSyncedKey).map(|synced| HistoricalSync {
 			synced,
-			available: state.sync_confidence_achieved.as_ref().map(From::from),
-			app_data: state.sync_data_verified.as_ref().map(From::from),
+			available: db.get(AchievedSyncConfidenceKey).map(From::from),
+			app_data: db.get(VerifiedSyncDataKey).map(From::from),
 		});
 
 		let blocks = Blocks {
-			latest: state.latest,
-			available: state.confidence_achieved.as_ref().map(From::from),
-			app_data: state.data_verified.as_ref().map(From::from),
+			latest: db.get(LatestHeaderKey).unwrap_or_default(),
+			available: db.get(AchievedConfidenceKey).map(From::from),
+			app_data: db.get(VerifiedDataKey).map(From::from),
 			historical_sync,
 		};
 
-		let node = state.connected_node.clone();
+		let node = db.get(RpcNodeKey).unwrap_or_default();
 
 		Status {
 			modes: config.into(),
@@ -262,15 +265,19 @@ pub enum BlockStatus {
 
 pub fn block_status(
 	sync_start_block: &Option<u32>,
-	state: &State,
+	db: impl Database,
 	block_number: u32,
 	extension: impl OptionalExtension,
 ) -> Option<BlockStatus> {
-	if block_number > state.latest {
+	let latest = db.get(LatestHeaderKey).unwrap_or_default();
+	if block_number > latest {
 		return None;
 	};
 
-	let first_block = state.header_verified.first().unwrap_or(state.latest);
+	let first_block = db
+		.get(VerifiedHeaderKey)
+		.map_or(latest, |range| range.first);
+
 	let first_sync_block = sync_start_block.unwrap_or(first_block);
 
 	if block_number < first_sync_block {
@@ -282,30 +289,60 @@ pub fn block_status(
 	};
 
 	if block_number < first_block {
-		if state.sync_data_verified.contains(block_number) {
+		let has_verified_sync_data = db
+			.get(VerifiedSyncDataKey)
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_sync_data {
 			return Some(BlockStatus::Finished);
 		}
-		if state.sync_confidence_achieved.contains(block_number) {
+
+		let has_achieved_sync_confidence = db
+			.get(AchievedSyncConfidenceKey)
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_achieved_sync_confidence {
 			return Some(BlockStatus::VerifyingData);
 		}
-		if state.sync_header_verified.contains(block_number) {
+
+		let has_verified_sync_header = db
+			.get(VerifiedSyncHeaderKey)
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_sync_header {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
-		let is_sync_latest = state.sync_latest.map(|latest| block_number == latest);
+
+		let latest_sync = db.get(LatestSyncKey);
+		let is_sync_latest = latest_sync.map(|latest| block_number == latest);
 		if is_sync_latest.unwrap_or(false) {
 			return Some(BlockStatus::VerifyingHeader);
 		}
 	} else {
-		if state.data_verified.contains(block_number) {
+		let has_verified_data = db
+			.get(VerifiedDataKey)
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_data {
 			return Some(BlockStatus::Finished);
 		}
-		if state.confidence_achieved.contains(block_number) {
+
+		let has_achieved_confidence = db
+			.get(AchievedConfidenceKey)
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_achieved_confidence {
 			return Some(BlockStatus::VerifyingData);
 		}
-		if state.header_verified.contains(block_number) {
+
+		let has_verified_header = db
+			.get(VerifiedHeaderKey)
+			.map_or(false, |range| range.contains(block_number));
+
+		if has_verified_header {
 			return Some(BlockStatus::VerifyingConfidence);
 		}
-		if state.latest == block_number {
+		if latest == block_number {
 			return Some(BlockStatus::VerifyingHeader);
 		}
 	}
@@ -818,7 +855,12 @@ mod tests {
 
 	use crate::{
 		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
-		types::{OptionBlockRange, State},
+		data::{
+			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, LatestHeaderKey,
+			LatestSyncKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+			VerifiedSyncHeaderKey,
+		},
+		types::BlockRange,
 		utils::{spawn_in_span, OptionalExtension},
 	};
 
@@ -962,228 +1004,268 @@ mod tests {
 
 	#[test]
 	fn block_status_none() {
-		let mut state = State::default();
-		assert_eq!(block_status(&None, &state, 1, ExtensionNone), None);
-		state.latest = 10;
-		assert_ne!(block_status(&None, &state, 1, ExtensionNone), None);
-		assert_eq!(block_status(&None, &state, 11, ExtensionNone), None);
+		let db = data::MemoryDB::default();
+		assert_eq!(block_status(&None, db.clone(), 1, ExtensionNone), None);
+		_ = db.put(LatestHeaderKey, 10);
+		assert_ne!(block_status(&None, db.clone(), 1, ExtensionNone), None);
+		assert_eq!(block_status(&None, db.clone(), 11, ExtensionNone), None);
 	}
 
 	#[test]
 	fn block_status_unavailable() {
-		let state = State {
-			latest: 10,
-			..Default::default()
-		};
+		let db = data::MemoryDB::default();
 		let unavailable = Some(BlockStatus::Unavailable);
+		_ = db.put(LatestHeaderKey, 10);
 		assert_eq!(
-			block_status(&Some(1), &state, 0, ExtensionNone),
+			block_status(&Some(1), db.clone(), 0, ExtensionNone),
 			unavailable
 		);
 		assert_eq!(
-			block_status(&Some(10), &state, 0, ExtensionNone),
+			block_status(&Some(10), db.clone(), 0, ExtensionNone),
 			unavailable
 		);
 		assert_eq!(
-			block_status(&Some(10), &state, 9, ExtensionNone),
+			block_status(&Some(10), db.clone(), 9, ExtensionNone),
 			unavailable
 		);
 		assert_ne!(
-			block_status(&Some(9), &state, 9, ExtensionNone),
+			block_status(&Some(9), db.clone(), 9, ExtensionNone),
 			unavailable
 		);
 	}
 
 	#[test]
 	fn block_status_pending() {
-		let state = State {
-			latest: 5,
-			..Default::default()
-		};
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 5);
 		let pending = Some(BlockStatus::Pending);
-		assert_eq!(block_status(&Some(0), &state, 0, ExtensionSome), pending);
-		assert_eq!(block_status(&Some(0), &state, 1, ExtensionSome), pending);
-		assert_eq!(block_status(&Some(0), &state, 4, ExtensionSome), pending);
-		assert_ne!(block_status(&Some(0), &state, 5, ExtensionSome), pending);
+		assert_eq!(
+			block_status(&Some(0), db.clone(), 0, ExtensionSome),
+			pending
+		);
+		assert_eq!(
+			block_status(&Some(0), db.clone(), 1, ExtensionSome),
+			pending
+		);
+		assert_eq!(
+			block_status(&Some(0), db.clone(), 4, ExtensionSome),
+			pending
+		);
+		assert_ne!(
+			block_status(&Some(0), db.clone(), 5, ExtensionSome),
+			pending
+		);
 	}
 
 	#[test]
 	fn block_status_verifying_header() {
-		let mut state = State::default();
+		let db = data::MemoryDB::default();
 		let verifying_header = Some(BlockStatus::VerifyingHeader);
 		assert_eq!(
-			block_status(&Some(0), &state, 0, ExtensionSome),
+			block_status(&Some(0), db.clone(), 0, ExtensionSome),
 			verifying_header
 		);
-		state.latest = 1;
+		_ = db.put(LatestHeaderKey, 1);
 		assert_eq!(
-			block_status(&Some(0), &state, 1, ExtensionSome),
+			block_status(&Some(0), db.clone(), 1, ExtensionSome),
 			verifying_header
 		);
-		state.latest = 10;
+		_ = db.put(LatestHeaderKey, 10);
 		assert_eq!(
-			block_status(&Some(0), &state, 10, ExtensionSome),
+			block_status(&Some(0), db.clone(), 10, ExtensionSome),
 			verifying_header
 		);
-		state.latest = 11;
+		_ = db.put(LatestHeaderKey, 11);
 		assert_ne!(
-			block_status(&Some(10), &state, 10, ExtensionSome),
+			block_status(&Some(10), db.clone(), 10, ExtensionSome),
 			verifying_header
 		);
 
-		let mut state = State {
-			latest: 5,
-			sync_latest: Some(1),
-			..Default::default()
-		};
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 5);
+		_ = db.put(LatestSyncKey, 1);
 		assert_eq!(
-			block_status(&Some(1), &state, 1, ExtensionSome),
+			block_status(&Some(1), db.clone(), 1, ExtensionSome),
 			verifying_header
 		);
-		state.sync_latest = Some(2);
+		_ = db.put(LatestSyncKey, 2);
 		assert_eq!(
-			block_status(&Some(1), &state, 2, ExtensionSome),
+			block_status(&Some(1), db.clone(), 2, ExtensionSome),
 			verifying_header
 		);
 		assert_ne!(
-			block_status(&Some(1), &state, 3, ExtensionSome),
+			block_status(&Some(1), db.clone(), 3, ExtensionSome),
 			verifying_header
 		);
 	}
 
 	#[test]
 	fn block_status_verifying_confidence() {
-		let mut state = State::default();
+		let mut db = data::MemoryDB::default();
 		let verifying_confidence = Some(BlockStatus::VerifyingConfidence);
-		state.latest = 10;
-		state.header_verified.set(1);
+		_ = db.put(LatestHeaderKey, 10);
+		let mut verified_header = BlockRange::init(1);
+		_ = db.put(VerifiedHeaderKey, verified_header.clone());
 		assert_eq!(
-			block_status(&None, &state, 1, ExtensionSome),
+			block_status(&None, db.clone(), 1, ExtensionSome),
 			verifying_confidence
 		);
-		state.confidence_achieved.set(1);
-		state.header_verified.set(5);
-		state.confidence_achieved.set(4);
+		let mut achieved_confidence = BlockRange::init(1);
+		achieved_confidence.last = 4;
+		_ = db.put(AchievedConfidenceKey, achieved_confidence);
+		verified_header.last = 5;
+		_ = db.put(VerifiedHeaderKey, verified_header);
 		assert_eq!(
-			block_status(&None, &state, 5, ExtensionSome),
+			block_status(&None, db.clone(), 5, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&None, &state, 4, ExtensionSome),
+			block_status(&None, db.clone(), 4, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&None, &state, 6, ExtensionSome),
+			block_status(&None, db.clone(), 6, ExtensionSome),
 			verifying_confidence
 		);
 
-		let mut state = State {
-			latest: 10,
-			..Default::default()
-		};
-		state.sync_header_verified.set(1);
+		db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+
+		let mut verified_sync_header = BlockRange::init(1);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
 		assert_eq!(
-			block_status(&Some(1), &state, 1, ExtensionSome),
+			block_status(&Some(1), db.clone(), 1, ExtensionSome),
 			verifying_confidence
 		);
-		state.sync_confidence_achieved.set(1);
-		state.sync_header_verified.set(5);
-		state.sync_confidence_achieved.set(4);
+		let mut achieved_sync_confidence = BlockRange::init(1);
+		achieved_sync_confidence.last = 4;
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
+		verified_sync_header.last = 5;
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
 		assert_eq!(
-			block_status(&Some(1), &state, 5, ExtensionSome),
+			block_status(&Some(1), db.clone(), 5, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&Some(1), &state, 4, ExtensionSome),
+			block_status(&Some(1), db.clone(), 4, ExtensionSome),
 			verifying_confidence
 		);
 		assert_ne!(
-			block_status(&Some(1), &state, 6, ExtensionSome),
+			block_status(&Some(1), db.clone(), 6, ExtensionSome),
 			verifying_confidence
 		);
 	}
 
 	#[test]
 	fn block_status_verifying_data() {
-		let mut state = State::default();
+		let mut db = data::MemoryDB::default();
 		let verifying_data = Some(BlockStatus::VerifyingData);
-		state.latest = 10;
-		state.header_verified.set(1);
-		state.confidence_achieved.set(1);
+		_ = db.put(LatestHeaderKey, 10);
+		let mut verified_header = BlockRange::init(1);
+		let mut achieved_confidence = BlockRange::init(1);
+		_ = db.put(AchievedConfidenceKey, achieved_confidence.clone());
+		_ = db.put(VerifiedHeaderKey, verified_header.clone());
 		assert_eq!(
-			block_status(&None, &state, 1, ExtensionSome),
-			verifying_data
-		);
-		state.data_verified.set(1);
-		state.header_verified.set(5);
-		state.confidence_achieved.set(5);
-		state.data_verified.set(4);
-		assert_eq!(
-			block_status(&None, &state, 5, ExtensionSome),
-			verifying_data
-		);
-		assert_ne!(
-			block_status(&None, &state, 4, ExtensionSome),
-			verifying_data
-		);
-		assert_ne!(
-			block_status(&None, &state, 6, ExtensionSome),
+			block_status(&None, db.clone(), 1, ExtensionSome),
 			verifying_data
 		);
 
-		let mut state = State {
-			latest: 10,
-			..Default::default()
-		};
-		state.sync_header_verified.set(1);
-		state.sync_confidence_achieved.set(1);
+		let mut verified_data = BlockRange::init(1);
+		verified_data.last = 4;
+		_ = db.put(VerifiedDataKey, verified_data);
+		verified_header.last = 5;
+		_ = db.put(VerifiedHeaderKey, verified_header);
+		achieved_confidence.last = 5;
+		_ = db.put(AchievedConfidenceKey, achieved_confidence);
 		assert_eq!(
-			block_status(&Some(1), &state, 1, ExtensionSome),
-			verifying_data
-		);
-		state.sync_data_verified.set(1);
-		state.sync_header_verified.set(5);
-		state.sync_confidence_achieved.set(5);
-		state.sync_data_verified.set(4);
-		assert_eq!(
-			block_status(&Some(1), &state, 5, ExtensionSome),
+			block_status(&None, db.clone(), 5, ExtensionSome),
 			verifying_data
 		);
 		assert_ne!(
-			block_status(&Some(1), &state, 4, ExtensionSome),
+			block_status(&None, db.clone(), 4, ExtensionSome),
 			verifying_data
 		);
 		assert_ne!(
-			block_status(&Some(1), &state, 6, ExtensionSome),
+			block_status(&None, db.clone(), 6, ExtensionSome),
+			verifying_data
+		);
+
+		db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+
+		let mut verified_sync_header = BlockRange::init(1);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
+		let mut achieved_sync_confidence = BlockRange::init(1);
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence.clone());
+		assert_eq!(
+			block_status(&Some(1), db.clone(), 1, ExtensionSome),
+			verifying_data
+		);
+		let mut verified_sync_data = BlockRange::init(1);
+		verified_sync_data.last = 4;
+		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
+		verified_sync_header.last = 5;
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
+		achieved_sync_confidence.last = 5;
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
+		assert_eq!(
+			block_status(&Some(1), db.clone(), 5, ExtensionSome),
+			verifying_data
+		);
+		assert_ne!(
+			block_status(&Some(1), db.clone(), 4, ExtensionSome),
+			verifying_data
+		);
+		assert_ne!(
+			block_status(&Some(1), db.clone(), 6, ExtensionSome),
 			verifying_data
 		);
 	}
 
 	#[test]
 	fn block_status_finished() {
-		let mut state = State::default();
+		let mut db = data::MemoryDB::default();
 		let finished = Some(BlockStatus::Finished);
-		state.latest = 10;
-		state.header_verified.set(1);
-		state.data_verified.set(1);
-		assert_eq!(block_status(&None, &state, 1, ExtensionSome), finished);
-		state.header_verified.set(5);
-		state.data_verified.set(5);
-		assert_eq!(block_status(&None, &state, 4, ExtensionSome), finished);
-		assert_eq!(block_status(&None, &state, 5, ExtensionSome), finished);
-		assert_ne!(block_status(&None, &state, 6, ExtensionSome), finished);
+		_ = db.put(LatestHeaderKey, 10);
+		let mut verified_header = BlockRange::init(1);
+		_ = db.put(VerifiedHeaderKey, verified_header.clone());
+		let mut verified_data = BlockRange::init(1);
+		_ = db.put(VerifiedDataKey, verified_data.clone());
+		assert_eq!(block_status(&None, db.clone(), 1, ExtensionSome), finished);
+		verified_header.last = 5;
+		_ = db.put(VerifiedHeaderKey, verified_header);
+		verified_data.last = 5;
+		_ = db.put(VerifiedDataKey, verified_data);
+		assert_eq!(block_status(&None, db.clone(), 4, ExtensionSome), finished);
+		assert_eq!(block_status(&None, db.clone(), 5, ExtensionSome), finished);
+		assert_ne!(block_status(&None, db.clone(), 6, ExtensionSome), finished);
 
-		let mut state = State {
-			latest: 10,
-			..Default::default()
-		};
-		state.sync_header_verified.set(1);
-		state.sync_data_verified.set(1);
-		assert_eq!(block_status(&Some(1), &state, 1, ExtensionSome), finished);
-		state.sync_header_verified.set(5);
-		state.sync_data_verified.set(5);
-		assert_eq!(block_status(&Some(1), &state, 4, ExtensionSome), finished);
-		assert_eq!(block_status(&Some(1), &state, 5, ExtensionSome), finished);
-		assert_ne!(block_status(&Some(1), &state, 6, ExtensionSome), finished);
+		db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+
+		let mut verified_sync_header = BlockRange::init(1);
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header.clone());
+		let mut verified_sync_data = BlockRange::init(1);
+		_ = db.put(VerifiedSyncDataKey, verified_sync_data.clone());
+		assert_eq!(
+			block_status(&Some(1), db.clone(), 1, ExtensionSome),
+			finished
+		);
+		verified_sync_header.last = 5;
+		_ = db.put(VerifiedSyncHeaderKey, verified_sync_header);
+		verified_sync_data.last = 5;
+		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
+		assert_eq!(
+			block_status(&Some(1), db.clone(), 4, ExtensionSome),
+			finished
+		);
+		assert_eq!(
+			block_status(&Some(1), db.clone(), 5, ExtensionSome),
+			finished
+		);
+		assert_ne!(
+			block_status(&Some(1), db.clone(), 6, ExtensionSome),
+			finished
+		);
 	}
 }
