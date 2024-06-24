@@ -339,6 +339,7 @@ Returns a reachable multiaddress for a peer on the light client P2P network.
 If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated bellow.
 
 In case of an error the following response is received:
+
 1. 400 Bad Request with a message `Peer not found in the routing table or its IP is not public.`
 
 Request:
