@@ -355,7 +355,10 @@ impl Command for GetExternalPeerInfo {
 			Ok(None)
 		} else {
 			Ok(Some(PeerInfo {
-				peer_id: self.peer_id.map(|peer| peer.to_string()).expect("Could not retrieve peerID"),
+				peer_id: self
+					.peer_id
+					.map(|peer| peer.to_string())
+					.expect("Could not retrieve peerID"),
 				peer_multiaddr: Some(multiaddrs),
 				local_listeners: entries.listeners(),
 				external_listeners: entries.external_address(),

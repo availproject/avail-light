@@ -171,12 +171,12 @@ mod tests {
 		}
 	}
 
-	impl From<JsonGrandpaJustification> for GrandpaJustification {
-		fn from(val: JsonGrandpaJustification) -> Self {
+	impl Into<GrandpaJustification> for JsonGrandpaJustification {
+		fn into(self) -> GrandpaJustification {
 			GrandpaJustification {
-				round: val.round,
-				commit: val.commit,
-				votes_ancestries: val.votes_ancestries,
+				round: self.round,
+				commit: self.commit,
+				votes_ancestries: self.votes_ancestries,
 			}
 		}
 	}
