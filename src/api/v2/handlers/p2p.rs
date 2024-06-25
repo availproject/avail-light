@@ -107,14 +107,14 @@ pub async fn get_peer_multiaddr(
 		.map_err(Error::internal_server_error)?;
 
 	if let Some(info) = external_peer_info {
-		return Ok(MultiAddressResponse {
+		Ok(MultiAddressResponse {
 			multiaddress: info.peer_multiaddr,
 			peer_id: info.peer_id,
-		});
+		})
 	} else {
-		return Err(Error::bad_request_unknown(
+		Err(Error::bad_request_unknown(
 			"Peer not found in the routing table or its IP is not public.",
-		));
+		))
 	}
 }
 

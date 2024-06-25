@@ -330,24 +330,24 @@ mod tests {
 		};
 		let db = MemoryDB::default();
 
-		_ = db.put(IsSyncedKey, false);
-		_ = db.put(LatestHeaderKey, 30);
+		db.put(IsSyncedKey, false);
+		db.put(LatestHeaderKey, 30);
 
 		let mut achieved_confidence = BlockRange::init(20);
 		achieved_confidence.last = 29;
-		_ = db.put(AchievedConfidenceKey, achieved_confidence);
+		db.put(AchievedConfidenceKey, achieved_confidence);
 
 		let mut verified_sync_data = BlockRange::init(10);
 		verified_sync_data.last = 18;
-		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
+		db.put(VerifiedSyncDataKey, verified_sync_data);
 
 		let mut verified_data = BlockRange::init(20);
 		verified_data.last = 29;
-		_ = db.put(VerifiedDataKey, verified_data.clone());
+		db.put(VerifiedDataKey, verified_data.clone());
 
 		let mut achieved_sync_confidence = BlockRange::init(10);
 		achieved_sync_confidence.last = 19;
-		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
+		db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
 		let route = super::status_route(runtime_config, db);
 		let response = warp::test::request()
@@ -371,7 +371,7 @@ mod tests {
 	async fn block_route_not_found(latest: u32, block_number: u32) {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, latest);
+		db.put(LatestHeaderKey, latest);
 		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -386,10 +386,10 @@ mod tests {
 	async fn block_route_incomplete() {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
-		_ = db.put(VerifiedDataKey, BlockRange::init(10));
-		_ = db.put(BlockHeaderKey(10), incomplete_header());
+		db.put(LatestHeaderKey, 10);
+		db.put(VerifiedHeaderKey, BlockRange::init(10));
+		db.put(VerifiedDataKey, BlockRange::init(10));
+		db.put(BlockHeaderKey(10), incomplete_header());
 		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -408,11 +408,11 @@ mod tests {
 	async fn block_route_finished() {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
-		_ = db.put(VerifiedDataKey, BlockRange::init(10));
-		_ = db.put(VerifiedCellCountKey(10), 4);
-		_ = db.put(BlockHeaderKey(10), header());
+		db.put(LatestHeaderKey, 10);
+		db.put(VerifiedHeaderKey, BlockRange::init(10));
+		db.put(VerifiedDataKey, BlockRange::init(10));
+		db.put(VerifiedCellCountKey(10), 4);
+		db.put(BlockHeaderKey(10), header());
 		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -437,10 +437,10 @@ mod tests {
 			..Default::default()
 		};
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(9));
-		_ = db.put(LatestSyncKey, 5);
-		_ = db.put(BlockHeaderKey(block_number), header());
+		db.put(LatestHeaderKey, 10);
+		db.put(VerifiedHeaderKey, BlockRange::init(9));
+		db.put(LatestSyncKey, 5);
+		db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -455,7 +455,7 @@ mod tests {
 	async fn block_header_route_not_found() {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
+		db.put(LatestHeaderKey, 10);
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -506,9 +506,9 @@ mod tests {
 	async fn block_header_route_ok() {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 1);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(1));
-		_ = db.put(BlockHeaderKey(1), header());
+		db.put(LatestHeaderKey, 1);
+		db.put(VerifiedHeaderKey, BlockRange::init(1));
+		db.put(BlockHeaderKey(1), header());
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -534,12 +534,12 @@ mod tests {
 			..Default::default()
 		};
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
-		_ = db.put(AchievedConfidenceKey, BlockRange::init(9));
-		_ = db.put(VerifiedDataKey, BlockRange::init(8));
-		_ = db.put(LatestSyncKey, 5);
-		_ = db.put(BlockHeaderKey(block_number), header());
+		db.put(LatestHeaderKey, 10);
+		db.put(VerifiedHeaderKey, BlockRange::init(10));
+		db.put(AchievedConfidenceKey, BlockRange::init(9));
+		db.put(VerifiedDataKey, BlockRange::init(8));
+		db.put(LatestSyncKey, 5);
+		db.put(BlockHeaderKey(block_number), header());
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -554,7 +554,7 @@ mod tests {
 	async fn block_data_route_not_found() {
 		let config = RuntimeConfig::default();
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
+		db.put(LatestHeaderKey, 10);
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -571,11 +571,11 @@ mod tests {
 			..Default::default()
 		};
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(5));
-		_ = db.put(AchievedConfidenceKey, BlockRange::init(5));
-		_ = db.put(VerifiedDataKey, BlockRange::init(5));
-		_ = db.put(BlockHeaderKey(5), header());
+		db.put(LatestHeaderKey, 10);
+		db.put(VerifiedHeaderKey, BlockRange::init(5));
+		db.put(AchievedConfidenceKey, BlockRange::init(5));
+		db.put(VerifiedDataKey, BlockRange::init(5));
+		db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -596,11 +596,11 @@ mod tests {
 			..Default::default()
 		};
 		let db = data::MemoryDB::default();
-		_ = db.put(LatestHeaderKey, 10);
-		_ = db.put(VerifiedHeaderKey, BlockRange::init(5));
-		_ = db.put(AchievedConfidenceKey, BlockRange::init(5));
-		_ = db.put(VerifiedDataKey, BlockRange::init(5));
-		_ = db.put(
+		db.put(LatestHeaderKey, 10);
+		db.put(VerifiedHeaderKey, BlockRange::init(5));
+		db.put(AchievedConfidenceKey, BlockRange::init(5));
+		db.put(VerifiedDataKey, BlockRange::init(5));
+		db.put(
 			AppDataKey(1, 5),
 			vec![vec![
 				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
@@ -612,7 +612,7 @@ mod tests {
 				10,
 			]],
 		);
-		_ = db.put(BlockHeaderKey(5), header());
+		db.put(BlockHeaderKey(5), header());
 		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -776,24 +776,24 @@ mod tests {
 
 		let mut test = MockSetup::new(config, None).await;
 
-		_ = test.db.put(LatestHeaderKey, 30);
-		_ = test.db.put(IsSyncedKey, false);
+		test.db.put(LatestHeaderKey, 30);
+		test.db.put(IsSyncedKey, false);
 
 		let mut achieved_confidence = BlockRange::init(20);
 		achieved_confidence.last = 29;
-		_ = test.db.put(AchievedConfidenceKey, achieved_confidence);
+		test.db.put(AchievedConfidenceKey, achieved_confidence);
 
 		let mut verified_sync_data = BlockRange::init(10);
 		verified_sync_data.last = 18;
-		_ = test.db.put(VerifiedSyncDataKey, verified_sync_data);
+		test.db.put(VerifiedSyncDataKey, verified_sync_data);
 
 		let mut verified_data = BlockRange::init(20);
 		verified_data.last = 29;
-		_ = test.db.put(VerifiedDataKey, verified_data);
+		test.db.put(VerifiedDataKey, verified_data);
 
 		let mut achieved_sync_confidence = BlockRange::init(10);
 		achieved_sync_confidence.last = 19;
-		_ = test
+		test
 			.db
 			.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 

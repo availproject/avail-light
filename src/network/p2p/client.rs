@@ -334,8 +334,8 @@ struct GetExternalPeerInfo {
 
 impl Command for GetExternalPeerInfo {
 	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
+		let mut multiaddrs: Vec<String> = Vec::new();
 		if let Some(peer) = self.peer_id {
-			let mut multiaddrs: Vec<String> = Vec::new();
 			for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
 				for item in bucket.iter() {
 					if *item.node.key.preimage() == peer {
@@ -349,24 +349,24 @@ impl Command for GetExternalPeerInfo {
 					}
 				}
 			}
-
-			self.response_sender
-				.take()
-				.unwrap()
-				.send(Ok(Some(PeerInfo {
-					peer_id: peer.to_string(),
-					peer_multiaddr: Some(multiaddrs),
-					local_listeners: entries.listeners(),
-					external_listeners: entries.external_address(),
-				})))
-				.expect("GetExternalPeerInfo receiver dropped");
-		} else {
-			self.response_sender
-				.take()
-				.unwrap()
-				.send(Ok(None))
-				.expect("GetExternalPeerInfo receiver dropped");
 		}
+
+		let response = if multiaddrs.is_empty() || self.peer_id.is_none() {
+			Ok(None)
+		} else {
+			Ok(Some(PeerInfo {
+				peer_id: self.peer_id.map(|peer| peer.to_string()).expect("Could not retrieve peerID"),
+				peer_multiaddr: Some(multiaddrs),
+				local_listeners: entries.listeners(),
+				external_listeners: entries.external_address(),
+			}))
+		};
+
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(response)
+			.expect("GetExternalPeerInfo receiver dropped");
 
 		Ok(())
 	}
