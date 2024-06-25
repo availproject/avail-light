@@ -5,13 +5,15 @@ use avail_light::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
-	maintenance::StaticConfigParams,
 	network::{self, p2p, rpc},
 	shutdown::Controller,
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
-	types::{CliOpts, IdentityConfig, LibP2PConfig, Network, OtelConfig, RuntimeConfig, State},
+	types::{
+		CliOpts, IdentityConfig, LibP2PConfig, MaintenanceConfig, Network, OtelConfig,
+		RuntimeConfig,
+	},
 	utils::spawn_in_span,
 };
 use clap::Parser;
