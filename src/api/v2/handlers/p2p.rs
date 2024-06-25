@@ -107,7 +107,7 @@ pub async fn get_peer_multiaddr(
 		.map_err(Error::internal_server_error)?;
 
 	if local_info.peer_multiaddr.is_none() {
-		return Err(Error::bad_request_unknown("Peer not found in the routing table."));
+		return Err(Error::bad_request_unknown("Peer not found in the routing table or its IP is not public."));
 	}
 
 	Ok(MultiAddressResponse {

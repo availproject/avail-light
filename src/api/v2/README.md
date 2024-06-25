@@ -335,8 +335,11 @@ Content-Type: application/json
 
 ## **POST** `/v2/p2p/peers/get-multiaddress`
 
-Returns a multi address for a peer on the light client P2P network.
+Returns a reachable multiaddress for a peer on the light client P2P network.
 If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated bellow.
+
+In case of an error the following response is received:
+1. 400 Bad Request with a message `Peer not found in the routing table or its IP is not public.`
 
 Request:
 
@@ -354,8 +357,8 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "peer_id": {peer_id},
-  "multiaddress": "{multi-address}",
+  "peer_id": {target-peers-peer-id},
+  "multiaddress": "{target-peers-multi-address}",
   
 }
 ```
