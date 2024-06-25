@@ -2,12 +2,13 @@
 
 ## [1.10.1]
 
+- Add peer multiaddress endpoint
 - Replace logic behind adding new peers in the Identify protocol handler to use Kademlia protocol name string instead of Identify agent string
 
 ## [1.10.0](https://github.com/availproject/avail-light/releases/tag/v1.10.0) - 2024-06-24
 
 - Application wide state is now persisted and not being kept in heap
-- Persistance failures are handled within specific implementation
+- Persistence failures are handled within specific implementation
 - Don't fail on any failed signature in the justification, only if there is no supermajority of valid signatures. Log the failed signature details.
 - Add `run id` to the logs, unique per run and generated on startup, if the log format is JSON
 - Fixed initialization of the `avail.light.up` counter

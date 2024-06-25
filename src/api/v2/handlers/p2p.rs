@@ -53,6 +53,23 @@ impl Reply for ExternalPeerDialResponse {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct PeerInfoQuery {
+	pub peer_id: Option<PeerId>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiAddressResponse {
+	pub multiaddress: Option<Vec<String>>,
+	pub peer_id: String,
+}
+
+impl Reply for MultiAddressResponse {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct ExternalPeerMultiaddress {
 	pub multiaddress: Multiaddr,
 	pub peer_id: PeerId,
@@ -78,6 +95,27 @@ pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, 
 		routing_table_peers_count,
 		routing_table_external_peers_count,
 	})
+}
+
+pub async fn get_peer_multiaddr(
+	p2p_client: p2p::Client,
+	query: PeerInfoQuery,
+) -> Result<MultiAddressResponse, Error> {
+	let external_peer_info = p2p_client
+		.get_external_peer_info(query.peer_id)
+		.await
+		.map_err(Error::internal_server_error)?;
+
+	if let Some(info) = external_peer_info {
+		Ok(MultiAddressResponse {
+			multiaddress: info.peer_multiaddr,
+			peer_id: info.peer_id,
+		})
+	} else {
+		Err(Error::bad_request_unknown(
+			"Peer not found in the routing table or its IP is not public.",
+		))
+	}
 }
 
 pub async fn dial_external_peer(

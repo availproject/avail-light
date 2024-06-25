@@ -1,6 +1,6 @@
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, Command, CommandSender, EventLoopEntries,
-	LocalInfo, QueryChannel, SendableCommand,
+	PeerInfo, QueryChannel, SendableCommand,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -296,7 +296,7 @@ impl Command for CountKademliaPeers {
 }
 
 struct GetLocalInfo {
-	response_sender: Option<oneshot::Sender<Result<LocalInfo>>>,
+	response_sender: Option<oneshot::Sender<Result<PeerInfo>>>,
 }
 
 impl Command for GetLocalInfo {
@@ -306,12 +306,14 @@ impl Command for GetLocalInfo {
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(LocalInfo {
+			.send(Ok(PeerInfo {
 				peer_id: entries.peer_id().to_string(),
+				peer_multiaddr: None,
 				local_listeners: entries.listeners(),
 				external_listeners: entries.external_address(),
 			}))
 			.expect("GetLocalInfo receiver dropped");
+
 		Ok(())
 	}
 
@@ -322,6 +324,63 @@ impl Command for GetLocalInfo {
 			.unwrap()
 			.send(Err(error))
 			.expect("GetLocalInfo receiver dropped");
+	}
+}
+
+struct GetExternalPeerInfo {
+	peer_id: Option<PeerId>,
+	response_sender: Option<oneshot::Sender<Result<Option<PeerInfo>>>>,
+}
+
+impl Command for GetExternalPeerInfo {
+	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
+		let mut multiaddrs: Vec<String> = Vec::new();
+		if let Some(peer) = self.peer_id {
+			for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
+				for item in bucket.iter() {
+					if *item.node.key.preimage() == peer {
+						for addr in item.node.value.iter() {
+							if addr.iter().any(
+								|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
+							) {
+								multiaddrs.push(addr.to_string());
+							}
+						}
+					}
+				}
+			}
+		}
+
+		let response = if multiaddrs.is_empty() || self.peer_id.is_none() {
+			Ok(None)
+		} else {
+			Ok(Some(PeerInfo {
+				peer_id: self
+					.peer_id
+					.map(|peer| peer.to_string())
+					.expect("Could not retrieve peerID"),
+				peer_multiaddr: Some(multiaddrs),
+				local_listeners: entries.listeners(),
+				external_listeners: entries.external_address(),
+			}))
+		};
+
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(response)
+			.expect("GetExternalPeerInfo receiver dropped");
+
+		Ok(())
+	}
+
+	fn abort(&mut self, error: Report) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("GetExternalPeerInfo receiver dropped");
 	}
 }
 
@@ -595,9 +654,22 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_local_info(&self) -> Result<LocalInfo> {
+	pub async fn get_local_info(&self) -> Result<PeerInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetLocalInfo {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn get_external_peer_info(
+		&self,
+		peer_id: Option<PeerId>,
+	) -> Result<Option<PeerInfo>> {
+		self.execute_sync(|response_sender| {
+			Box::new(GetExternalPeerInfo {
+				peer_id,
 				response_sender: Some(response_sender),
 			})
 		})

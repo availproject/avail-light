@@ -134,8 +134,9 @@ pub struct Behaviour {
 }
 
 #[derive(Debug)]
-pub struct LocalInfo {
+pub struct PeerInfo {
 	pub peer_id: String,
+	pub peer_multiaddr: Option<Vec<String>>,
 	pub local_listeners: Vec<String>,
 	pub external_listeners: Vec<String>,
 }

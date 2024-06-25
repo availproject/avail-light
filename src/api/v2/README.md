@@ -333,6 +333,37 @@ Content-Type: application/json
 }
 ```
 
+## **POST** `/v2/p2p/peers/get-multiaddress`
+
+Returns a reachable multiaddress for a peer on the light client P2P network.
+If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated bellow.
+
+In case of an error the following response is received:
+
+1. 400 Bad Request with a message `Peer not found in the routing table or its IP is not public.`
+
+Request:
+
+```yaml
+POST /v2/p2p/peers/get-multiaddress HTTP/1.1
+{
+  "peer_id": "{target-peers-peer-id}"
+}
+```
+
+Response:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "peer_id": {target-peers-peer-id},
+  "multiaddress": "{target-peers-multi-address}",
+  
+}
+```
+
 ## Errors
 
 In case of an error, endpoints will return a response with `500 Internal Server Error` status code, and a descriptive error message:
