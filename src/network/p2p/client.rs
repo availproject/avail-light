@@ -309,10 +309,9 @@ impl Command for GetLocalInfo {
 					for item in bucket.iter() {
 						if *item.node.key.preimage() == peer {
 							for addr in item.node.value.iter() {
-								if addr.iter().any(|protocol| match protocol {
-									libp2p::multiaddr::Protocol::Ip4(ip) => is_global(ip),
-									_ => false,
-								}) {
+								if addr.iter().any(
+									|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
+								) {
 									multiaddrs.push(addr.to_string());
 								}
 							}
@@ -320,7 +319,14 @@ impl Command for GetLocalInfo {
 					}
 				}
 
-				(peer.to_string(), if multiaddrs.is_empty() { None } else { Some(multiaddrs) })
+				(
+					peer.to_string(),
+					if multiaddrs.is_empty() {
+						None
+					} else {
+						Some(multiaddrs)
+					},
+				)
 			},
 			None => (entries.peer_id().to_string(), None),
 		};
