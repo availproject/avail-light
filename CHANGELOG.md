@@ -2,7 +2,6 @@
 
 ## [1.10.1]
 
-- Replace logic behind adding new peers in the Identify protocol handler to use Kademlia protocol name string instead of Identify agent string
 - Add peer multiaddress endpoint
 - Replace logic behind adding new peers in the Identify protocol handler to use Kademlia protocol name string instead of Identify agent string
 

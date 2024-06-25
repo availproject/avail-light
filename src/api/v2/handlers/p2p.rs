@@ -77,7 +77,7 @@ pub struct ExternalPeerMultiaddress {
 
 pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, Error> {
 	let local_info = p2p_client
-		.get_local_info(None)
+		.get_local_info()
 		.await
 		.map_err(Error::internal_server_error)?;
 
@@ -101,21 +101,21 @@ pub async fn get_peer_multiaddr(
 	p2p_client: p2p::Client,
 	query: PeerInfoQuery,
 ) -> Result<MultiAddressResponse, Error> {
-	let local_info = p2p_client
-		.get_local_info(query.peer_id)
+	let external_peer_info = p2p_client
+		.get_external_peer_info(query.peer_id)
 		.await
 		.map_err(Error::internal_server_error)?;
 
-	if local_info.peer_multiaddr.is_none() {
+	if let Some(info) = external_peer_info {
+		return Ok(MultiAddressResponse {
+			multiaddress: info.peer_multiaddr,
+			peer_id: info.peer_id,
+		})
+	} else {
 		return Err(Error::bad_request_unknown(
 			"Peer not found in the routing table or its IP is not public.",
 		));
 	}
-
-	Ok(MultiAddressResponse {
-		multiaddress: local_info.peer_multiaddr,
-		peer_id: local_info.peer_id,
-	})
 }
 
 pub async fn dial_external_peer(
