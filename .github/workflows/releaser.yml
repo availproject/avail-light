@@ -141,6 +141,21 @@ jobs:
              overwrite: true
              file_glob: true
 
+  deploy_lightclients:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        
+      - name: Trigger repository_dispatch
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github.everest-preview+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            https://api.github.com/repos/availproject/avail-light-infra/dispatches \
+            -d '{"event_type":"binary_release","client_payload":{"avail_light_version":"${{ env.TAG_NAME }}"}}'
+
   # build avail image and publish to dockerhub
   docker_build_push:
     needs: [binary_publish]
