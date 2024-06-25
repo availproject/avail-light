@@ -110,7 +110,7 @@ pub async fn get_peer_multiaddr(
 		return Ok(MultiAddressResponse {
 			multiaddress: info.peer_multiaddr,
 			peer_id: info.peer_id,
-		})
+		});
 	} else {
 		return Err(Error::bad_request_unknown(
 			"Peer not found in the routing table or its IP is not public.",

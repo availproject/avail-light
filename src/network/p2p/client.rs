@@ -349,7 +349,7 @@ impl Command for GetExternalPeerInfo {
 					}
 				}
 			}
-		
+
 			self.response_sender
 				.take()
 				.unwrap()
@@ -367,7 +367,7 @@ impl Command for GetExternalPeerInfo {
 				.send(Ok(None))
 				.expect("GetExternalPeerInfo receiver dropped");
 		}
-		
+
 		Ok(())
 	}
 
@@ -660,7 +660,10 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_external_peer_info(&self, peer_id: Option<PeerId>) -> Result<Option<PeerInfo>> {
+	pub async fn get_external_peer_info(
+		&self,
+		peer_id: Option<PeerId>,
+	) -> Result<Option<PeerInfo>> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetExternalPeerInfo {
 				peer_id,
