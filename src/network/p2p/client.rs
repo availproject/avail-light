@@ -692,17 +692,7 @@ impl Client {
 		.await
 	}
 
-	pub async fn change_kademlia_mode(&self, mode: Mode) -> Result<()> {
-		self.execute_sync(|response_sender| {
-			Box::new(ChangeKademliaMode {
-				response_sender: Some(response_sender),
-				mode,
-			})
-		})
-		.await
-	}
-
-	pub async fn get_local_info(&self) -> Result<LocalInfo> {
+	pub async fn get_local_info(&self) -> Result<PeerInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetLocalInfo {
 				response_sender: Some(response_sender),
