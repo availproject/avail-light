@@ -55,7 +55,11 @@ pub async fn process_block(
 	if maintenance_config.automatic_server_mode {
 		// Check external reachability and local hardware availability
 		let local_info = p2p_client.get_local_info().await?;
-		if !local_info.external_listeners.is_empty() && check_system_resources() {
+		if !local_info.external_listeners.is_empty()
+			&& check_system_resources(
+				maintenance_config.total_memory_gb_threshold,
+				maintenance_config.num_cpus_threshold,
+			) {
 			info!("Switching Kademlia mode to server!");
 			_ = p2p_client.change_kademlia_mode(Mode::Server);
 		}
@@ -109,9 +113,7 @@ pub async fn run(
 	}
 }
 
-// Total available memory > 16GB
-// CPU core count > 4
-fn check_system_resources() -> bool {
+fn check_system_resources(total_memory_gb_threshold: f64, num_cpus_threshold: usize) -> bool {
 	let sys = System::new_all();
 
 	let total_memory_gb = sys.total_memory() as f64 / 1_073_741_824.0;
@@ -122,5 +124,5 @@ fn check_system_resources() -> bool {
 		total_memory_gb, num_cpus
 	);
 
-	total_memory_gb > 16.0 && num_cpus > 4
+	total_memory_gb > total_memory_gb_threshold && num_cpus > num_cpus_threshold
 }

@@ -447,6 +447,8 @@ pub struct RuntimeConfig {
 	pub ot_export_period: u64,
 	pub ot_export_timeout: u64,
 	pub ot_flush_block_interval: u32,
+	pub total_memory_gb_threshold: f64,
+	pub num_cpus_threshold: usize,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
@@ -882,6 +884,8 @@ pub struct MaintenanceConfig {
 	pub pruning_interval: u32,
 	pub telemetry_flush_interval: u32,
 	pub automatic_server_mode: bool,
+	pub total_memory_gb_threshold: f64,
+	pub num_cpus_threshold: usize,
 }
 
 impl From<&RuntimeConfig> for MaintenanceConfig {
@@ -893,6 +897,8 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 			pruning_interval: val.store_pruning_interval,
 			telemetry_flush_interval: val.ot_flush_block_interval,
 			automatic_server_mode: val.automatic_server_mode,
+			total_memory_gb_threshold: val.total_memory_gb_threshold,
+			num_cpus_threshold: val.num_cpus_threshold,
 		}
 	}
 }
@@ -924,6 +930,8 @@ impl Default for RuntimeConfig {
 			ot_export_period: 300,
 			ot_export_timeout: 10,
 			ot_flush_block_interval: 15,
+			total_memory_gb_threshold: 16.0,
+			num_cpus_threshold: 4,
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
