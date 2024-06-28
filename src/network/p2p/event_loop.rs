@@ -415,7 +415,7 @@ impl EventLoop {
 							})
 							.collect();
 
-					let _ = self.swarm.behaviour_mut().identify.push(peer_ids);
+					self.swarm.behaviour_mut().identify.push(peer_ids);
 				},
 				mdns::Event::Expired(addrs_list) => {
 					addrs_list.into_iter().for_each(|(peer_id, multiaddr)| {
