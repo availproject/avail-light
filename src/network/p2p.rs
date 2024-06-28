@@ -8,7 +8,7 @@ use libp2p::{
 	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
-use std::collections::HashMap;
+use std::{collections::HashMap, net::Ipv4Addr};
 use tokio::sync::{
 	mpsc::{self},
 	oneshot,
@@ -134,8 +134,9 @@ pub struct Behaviour {
 }
 
 #[derive(Debug)]
-pub struct LocalInfo {
+pub struct PeerInfo {
 	pub peer_id: String,
+	pub peer_multiaddr: Option<Vec<String>>,
 	pub local_listeners: Vec<String>,
 	pub external_listeners: Vec<String>,
 }
@@ -250,4 +251,21 @@ pub fn keypair(cfg: &LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)
 	};
 	let peer_id = PeerId::from(keypair.public()).to_string();
 	Ok((keypair, peer_id))
+}
+
+// Returns [`true`] if the address appears to be globally reachable
+// Take from the unstable std::net implementation
+pub fn is_global(ip: Ipv4Addr) -> bool {
+	!(ip.octets()[0] == 0
+		|| ip.is_private()
+		|| ip.is_loopback()
+		|| ip.is_link_local()
+		// addresses reserved for future protocols (`192.0.0.0/24`)
+		// .9 and .10 are documented as globally reachable so they're excluded
+		|| (
+			ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0
+			&& ip.octets()[3] != 9 && ip.octets()[3] != 10
+		)
+		|| ip.is_documentation()
+		|| ip.is_broadcast())
 }

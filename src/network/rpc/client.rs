@@ -16,7 +16,7 @@ use color_eyre::{
 use futures::{Stream, TryFutureExt, TryStreamExt};
 use kate_recovery::{data::Cell, matrix::Position};
 use sp_core::{bytes::from_hex, ed25519::Public, U256};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use subxt::{
 	backend::{
 		legacy::rpc_methods::{BlockNumber, StorageKey},
@@ -36,23 +36,24 @@ use super::{Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
+	data::{Database, RpcNodeKey},
 	shutdown::Controller,
-	types::{RetryConfig, State, DEV_FLAG_GENHASH},
+	types::{RetryConfig, DEV_FLAG_GENHASH},
 };
 
 #[derive(Clone)]
-pub struct Client {
+pub struct Client<T: Database> {
 	subxt_client: Arc<RwLock<Arc<AvailClient>>>,
-	state: Arc<Mutex<State>>,
+	db: T,
 	nodes: Nodes,
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
 }
 
-impl Client {
+impl<D: Database> Client<D> {
 	pub async fn new(
-		state: Arc<Mutex<State>>,
+		db: D,
 		nodes: Nodes,
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
@@ -81,11 +82,12 @@ impl Client {
 		};
 
 		// update application wide State with the newly connected Node
-		state.lock().unwrap().connected_node = node;
+		// store the currently persisted node from DB implementation
+		db.put(RpcNodeKey, node);
 
 		Ok(Self {
 			subxt_client: Arc::new(RwLock::new(client)),
-			state,
+			db,
 			nodes,
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
@@ -201,41 +203,48 @@ impl Client {
 			},
 		}
 		// if retries were not successful, find another Node where this could still be done
-		let connected_node = self.state.lock().unwrap().connected_node.clone();
-		warn!(
-			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
-			connected_node.host
-		);
-		// shuffle nodes, if possible
-		let nodes = self.nodes.shuffle(connected_node.host);
-		// go through available Nodes, try to connect, Retry connecting if needed
-		let (client, node, result) = match self
-			.shutdown
-			.with_cancel(Retry::spawn(self.retry_config.clone(), || async {
-				let nodes = nodes.clone();
-				Self::try_connect_and_execute(
-					nodes,
-					ExpectedNodeVariant::default(),
-					&self.expected_genesis_hash,
-					move |client| f(client).map_err(Report::from),
-				)
+		if let Some(connected_node) = self.db.get(RpcNodeKey) {
+			warn!(
+				"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
+				connected_node.host
+			);
+
+			// shuffle nodes, if possible
+			let nodes = self.nodes.shuffle(connected_node.host);
+			// go through available Nodes, try to connect, Retry connecting if needed
+			let (client, node, result) = match self
+				.shutdown
+				.with_cancel(Retry::spawn(self.retry_config.clone(), || async {
+					let nodes = nodes.clone();
+					Self::try_connect_and_execute(
+						nodes,
+						ExpectedNodeVariant::default(),
+						&self.expected_genesis_hash,
+						move |client| f(client).map_err(Report::from),
+					)
+					.await
+				}))
 				.await
-			}))
-			.await
-		{
-			Ok(res) => res?,
-			Err(err) => {
-				return Err(eyre!(
+			{
+				Ok(res) => res?,
+				Err(err) => {
+					return Err(eyre!(
 					"RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
 				))
-			},
-		};
+				},
+			};
 
-		// retries gave results, update currently connected Node and created Client
-		*self.subxt_client.write().await = client;
-		self.state.lock().unwrap().connected_node = node;
+			// retries gave results,
+			// update db with currently connected Node and keep a reference to the created Client
+			*self.subxt_client.write().await = client;
+			self.db.put(RpcNodeKey, node);
 
-		Ok(result)
+			return Ok(result);
+		}
+
+		Err(eyre!(
+			"Couldn't find a persisted Node that was connected previously."
+		))
 	}
 
 	async fn create_subxt_subscriptions(

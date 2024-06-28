@@ -1,6 +1,6 @@
 //! Shared light client structs and enums.
 use crate::network::p2p::{MemoryStoreConfig, ProvidersConfig, RocksDBStoreConfig};
-use crate::network::rpc::{Event, Node as RpcNode};
+use crate::network::rpc::Event;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -37,10 +37,13 @@ const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
-const MINIMUM_SUPPORTED_VERSION: &str = "1.9.2";
+const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
+const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
 pub const DEV_FLAG_GENHASH: &str = "DEV";
-pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
+pub const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
+pub const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
 pub const IDENTITY_AGENT_BASE: &str = "avail-light-client";
+pub const IDENTITY_AGENT_ROLE: &str = "light-client";
 pub const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
 #[derive(Parser)]
@@ -92,6 +95,9 @@ pub struct CliOpts {
 	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[arg(long, value_parser = block_matrix_partition_format::parse)]
 	pub block_matrix_partition: Option<Partition>,
+	/// Set logs format to JSON
+	#[arg(long)]
+	pub logs_json: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -595,14 +601,20 @@ pub struct LibP2PConfig {
 	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
+	pub genesis_hash: String,
 }
 
 impl From<&LibP2PConfig> for libp2p::kad::Config {
 	fn from(cfg: &LibP2PConfig) -> Self {
-		// Use identify protocol_version as Kademlia protocol name
-		let kademlia_protocol_name =
-			libp2p::StreamProtocol::try_from_owned(cfg.identify.protocol_version.clone())
-				.expect("Invalid Kademlia protocol name");
+		let mut genhash_short = cfg.genesis_hash.trim_start_matches("0x").to_string();
+		genhash_short.truncate(6);
+
+		let kademlia_protocol_name = libp2p::StreamProtocol::try_from_owned(format!(
+			"{id}-{gen_hash}",
+			id = KADEMLIA_PROTOCOL_BASE,
+			gen_hash = genhash_short
+		))
+		.expect("Invalid Kademlia protocol name");
 
 		// create Kademlia Config
 		let mut kad_cfg = libp2p::kad::Config::default();
@@ -652,7 +664,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
-			identify: val.into(),
+			identify: IdentifyConfig::new(),
 			autonat: val.into(),
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
@@ -664,6 +676,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			per_connection_event_buffer_size: val.per_connection_event_buffer_size,
 			dial_concurrency_factor: std::num::NonZeroU8::new(val.dial_concurrency_factor)
 				.expect("Invalid dial concurrency factor"),
+			genesis_hash: val.genesis_hash.clone(),
 		}
 	}
 }
@@ -738,9 +751,8 @@ pub struct IdentifyConfig {
 #[derive(Clone)]
 pub struct AgentVersion {
 	pub base_version: String,
+	pub role: String,
 	pub client_type: String,
-	// Kademlia client or server mode
-	pub kademlia_mode: String,
 	pub release_version: String,
 }
 
@@ -749,7 +761,7 @@ impl fmt::Display for AgentVersion {
 		write!(
 			f,
 			"{}/{}/{}/{}",
-			self.base_version, self.release_version, self.client_type, self.kademlia_mode
+			self.base_version, self.role, self.release_version, self.client_type,
 		)
 	}
 }
@@ -765,52 +777,42 @@ impl FromStr for AgentVersion {
 
 		Ok(AgentVersion {
 			base_version: parts[0].to_string(),
-			release_version: parts[1].to_string(),
-			client_type: parts[2].to_string(),
-			kademlia_mode: parts[3].to_string(),
+			role: parts[1].to_string(),
+			release_version: parts[2].to_string(),
+			client_type: parts[3].to_string(),
 		})
 	}
 }
 
-impl From<&RuntimeConfig> for IdentifyConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		let mut genhash_short = val.genesis_hash.trim_start_matches("0x").to_string();
-		genhash_short.truncate(6);
-
-		let kademlia_mode = if val.is_fat_client() {
-			// Fat client is implicitly server mode
-			KademliaMode::Server.to_string()
-		} else {
-			val.operation_mode.to_string()
-		};
-
+impl IdentifyConfig {
+	fn new() -> Self {
 		let agent_version = AgentVersion {
 			base_version: IDENTITY_AGENT_BASE.to_string(),
+			role: IDENTITY_AGENT_ROLE.to_string(),
 			release_version: clap::crate_version!().to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
-			kademlia_mode,
 		};
 
 		Self {
 			agent_version,
-			protocol_version: format!(
-				"{id}-{gen_hash}",
-				id = IDENTITY_PROTOCOL,
-				gen_hash = genhash_short
-			),
+			protocol_version: IDENTITY_PROTOCOL.to_owned(),
 		}
 	}
 }
 
 impl AgentVersion {
 	pub fn is_supported(&self) -> bool {
-		match (
-			Version::parse(&self.release_version),
-			Version::parse(MINIMUM_SUPPORTED_VERSION),
-		) {
-			(Ok(release_version), Ok(minimum_version)) => release_version >= minimum_version,
-			(_, _) => false,
-		}
+		let minimum_version = if self.role == "bootstrap" {
+			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
+		} else {
+			MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION
+		};
+
+		Version::parse(&self.release_version)
+			.and_then(|release_version| {
+				Version::parse(minimum_version).map(|min_version| release_version >= min_version)
+			})
+			.unwrap_or(false)
 	}
 }
 
@@ -1145,7 +1147,7 @@ impl IdentityConfig {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct BlockRange {
 	pub first: u32,
 	pub last: u32,
@@ -1162,65 +1164,20 @@ impl BlockRange {
 	}
 }
 
-#[derive(Default)]
-pub struct State {
-	pub synced: Option<bool>,
-	pub latest: u32,
-	pub header_verified: Option<BlockRange>,
-	pub confidence_achieved: Option<BlockRange>,
-	pub data_verified: Option<BlockRange>,
-	pub sync_latest: Option<u32>,
-	pub sync_header_verified: Option<BlockRange>,
-	pub sync_confidence_achieved: Option<BlockRange>,
-	pub sync_data_verified: Option<BlockRange>,
-	pub finality_synced: bool,
-	pub connected_node: RpcNode,
-}
-
-pub trait OptionBlockRange {
-	fn set(&mut self, block_number: u32);
-	fn first(&self) -> Option<u32>;
-	fn last(&self) -> Option<u32>;
-	fn contains(&self, block_number: u32) -> bool;
-}
-
-impl OptionBlockRange for Option<BlockRange> {
-	fn set(&mut self, block_number: u32) {
-		match self {
-			Some(range) => range.last = block_number,
-			None => *self = Some(BlockRange::init(block_number)),
-		};
-	}
-
-	fn first(&self) -> Option<u32> {
-		self.as_ref().map(|range| range.first)
-	}
-
-	fn last(&self) -> Option<u32> {
-		self.as_ref().map(|range| range.last)
-	}
-
-	fn contains(&self, block_number: u32) -> bool {
-		self.as_ref()
-			.map(|range| range.contains(block_number))
-			.unwrap_or(false)
-	}
-}
-
 #[derive(Debug, Encode)]
 pub enum SignerMessage {
 	_DummyMessage(u32),
 	PrecommitMessage(Precommit),
 }
 
-#[derive(Clone, Debug, Decode, Encode, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
 pub struct Precommit {
 	pub target_hash: H256,
 	/// The target block's number
 	pub target_number: u32,
 }
 
-#[derive(Clone, Debug, Decode, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
 pub struct SignedPrecommit {
 	pub precommit: Precommit,
 	/// The signature on the message.
@@ -1228,7 +1185,7 @@ pub struct SignedPrecommit {
 	/// The Id of the signer.
 	pub id: ed25519::Public,
 }
-#[derive(Clone, Debug, Decode, Deserialize)]
+#[derive(Clone, Debug, Decode, Encode, Serialize, Deserialize)]
 pub struct Commit {
 	pub target_hash: H256,
 	/// The target block's number.
@@ -1237,7 +1194,7 @@ pub struct Commit {
 	pub precommits: Vec<SignedPrecommit>,
 }
 
-#[derive(Clone, Debug, Decode)]
+#[derive(Clone, Debug, Decode, Encode, Serialize)]
 pub struct GrandpaJustification {
 	pub round: u64,
 	pub commit: Commit,

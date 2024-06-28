@@ -1,15 +1,11 @@
 use avail_subxt::{primitives::Header, utils::H256};
-use codec::Decode;
+use codec::{Decode, Encode};
 use color_eyre::{eyre::eyre, Result};
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use serde::{de, Deserialize};
+use serde::{de, Deserialize, Serialize};
 use sp_core::bytes::from_hex;
-use std::{
-	collections::HashSet,
-	fmt::Display,
-	sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, fmt::Display};
 use tokio::{
 	sync::broadcast,
 	time::{self, timeout},
@@ -20,7 +16,7 @@ use crate::{
 	data::Database,
 	network::rpc,
 	shutdown::Controller,
-	types::{GrandpaJustification, RetryConfig, State},
+	types::{GrandpaJustification, RetryConfig},
 };
 
 mod client;
@@ -74,7 +70,7 @@ impl<'de> Deserialize<'de> for WrappedProof {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct Node {
 	pub host: String,
 	pub system_version: String,
@@ -189,16 +185,15 @@ impl<'a> Iterator for NodesIterator<'a> {
 	}
 }
 
-pub async fn init<T: Database>(
+pub async fn init<T: Database + Clone>(
 	db: T,
-	state: Arc<Mutex<State>>,
 	nodes: &[String],
 	genesis_hash: &str,
 	retry_config: RetryConfig,
 	shutdown: Controller<String>,
-) -> Result<(Client, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
+) -> Result<(Client<T>, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
 	let rpc_client = Client::new(
-		state.clone(),
+		db.clone(),
 		Nodes::new(nodes),
 		genesis_hash,
 		retry_config,
@@ -207,8 +202,7 @@ pub async fn init<T: Database>(
 	.await?;
 	// create output channel for RPC Subscription Events
 	let (event_sender, _) = broadcast::channel(1000);
-	let subscriptions =
-		SubscriptionLoop::new(state, db, rpc_client.clone(), event_sender.clone()).await?;
+	let subscriptions = SubscriptionLoop::new(db, rpc_client.clone(), event_sender.clone()).await?;
 
 	Ok((rpc_client, event_sender, subscriptions))
 }

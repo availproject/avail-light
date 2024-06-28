@@ -5,20 +5,19 @@ use sp_core::{
 	blake2_256,
 	ed25519::{self, Public},
 };
-use std::{
-	sync::{Arc, Mutex},
-	time::Instant,
-};
+use std::time::Instant;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, trace};
 
 use super::{Client, Subscription};
 use crate::{
-	data::Database,
-	data::{FinalitySyncCheckpoint, Key},
+	data::{
+		Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey, IsFinalitySyncedKey,
+		LatestHeaderKey, VerifiedHeaderKey,
+	},
 	finality::{check_finality, ValidatorSet},
-	types::{GrandpaJustification, OptionBlockRange, State},
+	types::{BlockRange, GrandpaJustification},
 	utils::filter_auth_set_changes,
 };
 
@@ -39,20 +38,14 @@ struct BlockData {
 }
 
 pub struct SubscriptionLoop<T: Database> {
-	rpc_client: Client,
+	rpc_client: Client<T>,
 	event_sender: Sender<Event>,
-	state: Arc<Mutex<State>>,
 	db: T,
 	block_data: BlockData,
 }
 
-impl<T: Database> SubscriptionLoop<T> {
-	pub async fn new(
-		state: Arc<Mutex<State>>,
-		db: T,
-		rpc_client: Client,
-		event_sender: Sender<Event>,
-	) -> Result<Self> {
+impl<T: Database + Clone> SubscriptionLoop<T> {
+	pub async fn new(db: T, rpc_client: Client<T>, event_sender: Sender<Event>) -> Result<Self> {
 		// get the Hash of the Finalized Head [with Retries]
 		let last_finalized_block_hash = rpc_client.get_finalized_head_hash().await?;
 
@@ -74,7 +67,6 @@ impl<T: Database> SubscriptionLoop<T> {
 		Ok(Self {
 			rpc_client,
 			event_sender,
-			state,
 			db,
 			block_data: BlockData {
 				justifications: Default::default(),
@@ -110,7 +102,7 @@ impl<T: Database> SubscriptionLoop<T> {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
-				self.state.lock().unwrap().latest = header.clone().number;
+				self.db.put(LatestHeaderKey, header.clone().number);
 				info!("Header no.: {}", header.number);
 
 				// if new validator set becomes active, replace the current one
@@ -179,23 +171,22 @@ impl<T: Database> SubscriptionLoop<T> {
 
 				is_final.expect("Finality check failed");
 
-				// To avoid locking the global state all the time, after finality is synced, it will not be necessary to read the state
-				if !finality_synced {
-					finality_synced = self.state.lock().unwrap().finality_synced;
-				}
 				// store Finality Checkpoint if finality is synced
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
-					self.db
-						.put(
-							Key::FinalitySyncCheckpoint,
-							FinalitySyncCheckpoint {
-								set_id: self.block_data.current_valset.set_id,
-								number: header.number,
-								validator_set: self.block_data.current_valset.validator_set.clone(),
-							},
-						)
-						.unwrap();
+					self.db.put(
+						FinalitySyncCheckpointKey,
+						FinalitySyncCheckpoint {
+							set_id: self.block_data.current_valset.set_id,
+							number: header.number,
+							validator_set: self.block_data.current_valset.validator_set.clone(),
+						},
+					);
+				} else {
+					// to avoid reading from db all the time,
+					// after finality is synced, it will not be necessary to read the state
+
+					finality_synced = self.db.get(IsFinalitySyncedKey).unwrap_or(false)
 				}
 
 				// try and get get all the skipped blocks, if they exist
@@ -238,12 +229,17 @@ impl<T: Database> SubscriptionLoop<T> {
 				// reset Last Finalized Block Header
 				self.block_data.last_finalized_block_header = Some(header.clone());
 
+				// get currently stored Verified Header
+				let mut verified_header = self
+					.db
+					.get(VerifiedHeaderKey)
+					.unwrap_or_else(|| BlockRange::init(header.number));
+				// mutate value
+				verified_header.last = header.number;
+				// and store in DB
+				self.db.put(VerifiedHeaderKey, verified_header);
+
 				// finally, send the Verified Block Header
-				self.state
-					.lock()
-					.unwrap()
-					.header_verified
-					.set(header.number);
 				self.event_sender
 					.send(Event::HeaderUpdate {
 						header,

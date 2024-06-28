@@ -9,17 +9,14 @@ use super::{
 };
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
-	data::{Database, Key},
-	types::{RuntimeConfig, State},
+	data::{AppDataKey, BlockHeaderKey, Database, VerifiedCellCountKey},
+	types::RuntimeConfig,
 	utils::calculate_confidence,
 };
 use avail_subxt::primitives;
 use color_eyre::{eyre::eyre, Result};
 use hyper::StatusCode;
-use std::{
-	convert::Infallible,
-	sync::{Arc, Mutex},
-};
+use std::{convert::Infallible, sync::Arc};
 use tracing::error;
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
@@ -52,7 +49,7 @@ pub async fn ws(
 	version: Version,
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
-	state: Arc<Mutex<State>>,
+	db: impl Database + Clone + Send + 'static,
 ) -> Result<impl Reply, Rejection> {
 	if !clients.has_subscription(&subscription_id).await {
 		return Err(warp::reject::not_found());
@@ -66,14 +63,13 @@ pub async fn ws(
 			version,
 			config,
 			submitter.clone(),
-			state.clone(),
+			db.clone(),
 		)
 	}))
 }
 
-pub fn status(config: RuntimeConfig, state: Arc<Mutex<State>>) -> impl Reply {
-	let state = state.lock().expect("Lock should be acquired");
-	Status::new(&config, &state)
+pub fn status(config: RuntimeConfig, db: impl Database) -> impl Reply {
+	Status::new(&config, db)
 }
 
 pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {
@@ -92,22 +88,18 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 pub async fn block(
 	block_number: u32,
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
-	db: impl Database,
+	db: impl Database + Clone,
 ) -> Result<impl Reply, Error> {
-	let state = state.lock().expect("Lock should be acquired");
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
-		.get(Key::BlockHeader(block_number))
-		.map_err(Error::internal_server_error)?
+		.get(BlockHeaderKey(block_number))
 		.map(|primitives::Header { extension, .. }| extension)
-		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
+		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	let confidence = db
-		.get(Key::VerifiedCellCount(block_number))
-		.map_err(Error::internal_server_error)?
+		.get(VerifiedCellCountKey(block_number))
 		.map(calculate_confidence);
 
 	Ok(Block::new(block_status, confidence))
@@ -116,17 +108,14 @@ pub async fn block(
 pub async fn block_header(
 	block_number: u32,
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
-	db: impl Database,
+	db: impl Database + Clone,
 ) -> Result<Header, Error> {
-	let state = state.lock().expect("Lock should be acquired");
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
-		.get(Key::BlockHeader(block_number))
-		.map_err(Error::internal_server_error)?
+		.get(BlockHeaderKey(block_number))
 		.map(|primitives::Header { extension, .. }| extension)
-		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
+		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	if matches!(
@@ -136,8 +125,8 @@ pub async fn block_header(
 		return Err(Error::bad_request_unknown("Block header is not available"));
 	};
 
-	db.get::<primitives::Header>(Key::BlockHeader(block_number))
-		.and_then(|header| header.ok_or_else(|| eyre!("Header not found")))
+	db.get(BlockHeaderKey(block_number))
+		.ok_or_else(|| eyre!("Header not found"))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
 }
@@ -146,28 +135,22 @@ pub async fn block_data(
 	block_number: u32,
 	query: DataQuery,
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
-	db: impl Database,
+	db: impl Database + Clone,
 ) -> Result<DataResponse, Error> {
-	let state = state.lock().expect("Lock should be acquired");
-
 	let app_id = config.app_id.ok_or(Error::not_found())?;
 	let sync_start_block = &config.sync_start_block;
 
 	let block_status = db
-		.get(Key::BlockHeader(block_number))
-		.map_err(Error::internal_server_error)?
+		.get(BlockHeaderKey(block_number))
 		.map(|primitives::Header { extension, .. }| extension)
-		.and_then(|extension| block_status(sync_start_block, &state, block_number, extension))
+		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
 	if block_status != BlockStatus::Finished {
 		return Err(Error::bad_request_unknown("Block data is not available"));
 	};
 
-	let data = db
-		.get::<Vec<Vec<u8>>>(Key::AppData(app_id, block_number))
-		.map_err(Error::internal_server_error)?;
+	let data = db.get(AppDataKey(app_id, block_number));
 
 	let Some(data) = data else {
 		return Ok(DataResponse {

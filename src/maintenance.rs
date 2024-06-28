@@ -6,7 +6,7 @@ use tracing::{debug, error, info};
 use crate::{
 	network::p2p::Client as P2pClient,
 	shutdown::Controller,
-	telemetry::{MetricValue, Metrics},
+	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::BlockVerified,
 };
 
@@ -52,8 +52,8 @@ pub async fn process_block(
 		.await
 		.wrap_err("Unable to get Kademlia map size")?;
 
-	let peers_num = p2p_client.count_dht_entries().await?;
-	info!("Number of connected peers: {peers_num}");
+	let (peers_num, pub_peers_num) = p2p_client.count_dht_entries().await?;
+	info!("Number of peers in the routing table: {peers_num}. Number of peers with public IPs: {pub_peers_num}.");
 
 	let connected_peers = p2p_client.list_connected_peers().await?;
 	debug!("Connected peers: {:?}", connected_peers);
@@ -76,7 +76,7 @@ pub async fn process_block(
 			static_config_params.query_timeout,
 		))
 		.await;
-	metrics.record(MetricValue::Up()).await;
+	metrics.count(MetricCounter::Up).await;
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())

@@ -1,8 +1,4 @@
-use std::{
-	convert::Infallible,
-	fmt::Display,
-	sync::{Arc, Mutex},
-};
+use std::{convert::Infallible, fmt::Display, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
@@ -16,7 +12,7 @@ use crate::{
 	api::v2::types::Topic,
 	data::Database,
 	network::{p2p, rpc::Client},
-	types::{IdentityConfig, RuntimeConfig, State},
+	types::{IdentityConfig, RuntimeConfig},
 };
 
 mod handlers;
@@ -53,24 +49,22 @@ fn version_route(
 
 fn status_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
+		.and(with_db(db))
 		.map(handlers::status)
 }
 
 fn block_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.then(handlers::block)
 		.map(log_internal_server_error)
@@ -78,13 +72,11 @@ fn block_route(
 
 fn block_header_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "header")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.then(handlers::block_header)
 		.map(log_internal_server_error)
@@ -92,14 +84,12 @@ fn block_header_route(
 
 fn block_data_route(
 	config: RuntimeConfig,
-	state: Arc<Mutex<State>>,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "data")
 		.and(warp::get())
 		.and(warp::query::<DataQuery>())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || state.clone()))
 		.and(with_db(db))
 		.then(handlers::block_data)
 		.map(log_internal_server_error)
@@ -137,6 +127,17 @@ fn p2p_peers_dial_route(
 		.map(log_internal_server_error)
 }
 
+fn p2p_peer_multiaddr_route(
+	p2p_client: p2p::Client,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "p2p" / "peers" / "get-multiaddress")
+		.and(warp::post())
+		.and(warp::any().map(move || p2p_client.clone()))
+		.and(warp::body::json())
+		.then(handlers::p2p::get_peer_multiaddr)
+		.map(log_internal_server_error)
+}
+
 fn subscriptions_route(
 	clients: WsClients,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -152,7 +153,7 @@ fn ws_route(
 	version: Version,
 	config: RuntimeConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
-	state: Arc<Mutex<State>>,
+	db: impl Database + Clone + Send + 'static,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "ws" / String)
 		.and(warp::ws())
@@ -160,7 +161,7 @@ fn ws_route(
 		.and(warp::any().map(move || version.clone()))
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || submitter.clone()))
-		.and(warp::any().map(move || state.clone()))
+		.and(with_db(db))
 		.and_then(handlers::ws)
 }
 
@@ -206,12 +207,11 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 pub fn routes(
 	version: String,
 	network_version: String,
-	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	identity_config: IdentityConfig,
-	rpc_client: Client,
+	rpc_client: Client<impl Database + Send + Sync + Clone + 'static>,
 	ws_clients: WsClients,
-	db: impl Database + Clone + Send,
+	db: impl Database + Clone + Send + 'static,
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
@@ -230,19 +230,16 @@ pub fn routes(
 	});
 
 	version_route(version.clone())
-		.or(status_route(config.clone(), state.clone()))
-		.or(block_route(config.clone(), state.clone(), db.clone()))
-		.or(block_header_route(
-			config.clone(),
-			state.clone(),
-			db.clone(),
-		))
-		.or(block_data_route(config.clone(), state.clone(), db.clone()))
+		.or(status_route(config.clone(), db.clone()))
+		.or(block_route(config.clone(), db.clone()))
+		.or(block_header_route(config.clone(), db.clone()))
+		.or(block_data_route(config.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
-		.or(ws_route(ws_clients, version, config, submitter, state))
+		.or(ws_route(ws_clients, version, config, submitter, db.clone()))
 		.or(p2p_local_info_route(p2p_client.clone()))
 		.or(p2p_peers_dial_route(p2p_client.clone()))
+		.or(p2p_peer_multiaddr_route(p2p_client.clone()))
 		.recover(handle_rejection)
 }
 
@@ -254,9 +251,12 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
-		data::Key,
-		data::{mem_db, Database},
-		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
+		data::{
+			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
+			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, VerifiedCellCountKey,
+			VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+		},
+		types::{BlockRange, RuntimeConfig},
 	};
 	use async_trait::async_trait;
 	use avail_subxt::{api::runtime_types::avail_core::AppId, utils::H256};
@@ -270,11 +270,7 @@ mod tests {
 	};
 	use hyper::StatusCode;
 	use kate_recovery::matrix::Partition;
-	use std::{
-		collections::HashSet,
-		str::FromStr,
-		sync::{Arc, Mutex},
-	};
+	use std::{collections::HashSet, str::FromStr, sync::Arc};
 	use subxt::config::substrate::Digest;
 	use test_case::test_case;
 	use uuid::Uuid;
@@ -305,8 +301,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn status_route_defaults() {
-		let state = Arc::new(Mutex::new(State::default()));
-		let route = super::status_route(RuntimeConfig::default(), state);
+		let db = MemoryDB::default();
+		let route = super::status_route(RuntimeConfig::default(), db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -332,22 +328,28 @@ mod tests {
 			}),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = 30;
-			state.confidence_achieved.set(20);
-			state.confidence_achieved.set(29);
-			state.data_verified.set(20);
-			state.data_verified.set(29);
-			state.synced.replace(false);
-			state.sync_confidence_achieved.set(10);
-			state.sync_confidence_achieved.set(19);
-			state.sync_data_verified.set(10);
-			state.sync_data_verified.set(18);
-		}
+		let db = MemoryDB::default();
 
-		let route = super::status_route(runtime_config, state);
+		_ = db.put(IsSyncedKey, false);
+		_ = db.put(LatestHeaderKey, 30);
+
+		let mut achieved_confidence = BlockRange::init(20);
+		achieved_confidence.last = 29;
+		_ = db.put(AchievedConfidenceKey, achieved_confidence);
+
+		let mut verified_sync_data = BlockRange::init(10);
+		verified_sync_data.last = 18;
+		_ = db.put(VerifiedSyncDataKey, verified_sync_data);
+
+		let mut verified_data = BlockRange::init(20);
+		verified_data.last = 29;
+		_ = db.put(VerifiedDataKey, verified_data.clone());
+
+		let mut achieved_sync_confidence = BlockRange::init(10);
+		achieved_sync_confidence.last = 19;
+		_ = db.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
+
+		let route = super::status_route(runtime_config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -368,13 +370,9 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_not_found(latest: u32, block_number: u32) {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = latest;
-		}
-		let db = mem_db::MemoryDB::default();
-		let route = super::block_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, latest);
+		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}"))
@@ -387,16 +385,12 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_incomplete() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = 10;
-			state.header_verified.set(10);
-			state.data_verified.set(10);
-		}
-		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(10), incomplete_header());
-		let route = super::block_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
+		_ = db.put(VerifiedDataKey, BlockRange::init(10));
+		_ = db.put(BlockHeaderKey(10), incomplete_header());
+		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/10")
@@ -413,17 +407,13 @@ mod tests {
 	#[tokio::test]
 	async fn block_route_finished() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State::default()));
-		{
-			let mut state = state.lock().unwrap();
-			state.latest = 10;
-			state.header_verified.set(10);
-			state.data_verified.set(10);
-		}
-		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::VerifiedCellCount(10), 4);
-		_ = db.put(Key::BlockHeader(10), header());
-		let route = super::block_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
+		_ = db.put(VerifiedDataKey, BlockRange::init(10));
+		_ = db.put(VerifiedCellCountKey(10), 4);
+		_ = db.put(BlockHeaderKey(10), header());
+		let route = super::block_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/10")
@@ -446,16 +436,12 @@ mod tests {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			sync_latest: Some(5),
-			header_verified: Some(BlockRange::init(9)),
-			..Default::default()
-		}));
-
-		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(block_number), header());
-		let route = super::block_header_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(9));
+		_ = db.put(LatestSyncKey, 5);
+		_ = db.put(BlockHeaderKey(block_number), header());
+		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/header"))
@@ -468,12 +454,9 @@ mod tests {
 	#[tokio::test]
 	async fn block_header_route_not_found() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
-		let db = mem_db::MemoryDB::default();
-		let route = super::block_header_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/header")
@@ -522,14 +505,11 @@ mod tests {
 	#[tokio::test]
 	async fn block_header_route_ok() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State {
-			latest: 1,
-			header_verified: Some(BlockRange::init(1)),
-			..Default::default()
-		}));
-		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(1), header());
-		let route = super::block_header_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 1);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(1));
+		_ = db.put(BlockHeaderKey(1), header());
+		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/1/header")
@@ -553,17 +533,14 @@ mod tests {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			sync_latest: Some(5),
-			header_verified: Some(BlockRange::init(10)),
-			confidence_achieved: Some(BlockRange::init(9)),
-			data_verified: Some(BlockRange::init(8)),
-			..Default::default()
-		}));
-		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(block_number), header());
-		let route = super::block_data_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(10));
+		_ = db.put(AchievedConfidenceKey, BlockRange::init(9));
+		_ = db.put(VerifiedDataKey, BlockRange::init(8));
+		_ = db.put(LatestSyncKey, 5);
+		_ = db.put(BlockHeaderKey(block_number), header());
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}/data"))
@@ -576,12 +553,9 @@ mod tests {
 	#[tokio::test]
 	async fn block_data_route_not_found() {
 		let config = RuntimeConfig::default();
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			..Default::default()
-		}));
-		let db = mem_db::MemoryDB::default();
-		let route = super::block_data_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/11/data")
@@ -596,16 +570,13 @@ mod tests {
 			app_id: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			header_verified: Some(BlockRange::init(5)),
-			confidence_achieved: Some(BlockRange::init(5)),
-			data_verified: Some(BlockRange::init(5)),
-			..Default::default()
-		}));
-		let db = mem_db::MemoryDB::default();
-		_ = db.put(Key::BlockHeader(5), header());
-		let route = super::block_data_route(config, state, db);
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(5));
+		_ = db.put(AchievedConfidenceKey, BlockRange::init(5));
+		_ = db.put(VerifiedDataKey, BlockRange::init(5));
+		_ = db.put(BlockHeaderKey(5), header());
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -624,16 +595,13 @@ mod tests {
 			app_id: Some(1),
 			..Default::default()
 		};
-		let state = Arc::new(Mutex::new(State {
-			latest: 10,
-			header_verified: Some(BlockRange::init(5)),
-			confidence_achieved: Some(BlockRange::init(5)),
-			data_verified: Some(BlockRange::init(5)),
-			..Default::default()
-		}));
-		let db = mem_db::MemoryDB::default();
+		let db = data::MemoryDB::default();
+		_ = db.put(LatestHeaderKey, 10);
+		_ = db.put(VerifiedHeaderKey, BlockRange::init(5));
+		_ = db.put(AchievedConfidenceKey, BlockRange::init(5));
+		_ = db.put(VerifiedDataKey, BlockRange::init(5));
 		_ = db.put(
-			Key::AppData(1, 5),
+			AppDataKey(1, 5),
 			vec![vec![
 				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
 				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
@@ -644,8 +612,8 @@ mod tests {
 				10,
 			]],
 		);
-		_ = db.put(Key::BlockHeader(5), header());
-		let route = super::block_data_route(config, state, db);
+		_ = db.put(BlockHeaderKey(5), header());
+		let route = super::block_data_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/blocks/5/data")
@@ -748,7 +716,7 @@ mod tests {
 
 	struct MockSetup {
 		ws_client: warp::test::WsClient,
-		state: Arc<Mutex<State>>,
+		db: MemoryDB,
 	}
 
 	impl MockSetup {
@@ -759,13 +727,13 @@ mod tests {
 				.subscribe(&client_uuid, Subscription::default())
 				.await;
 
-			let state = Arc::new(Mutex::new(State::default()));
+			let db = MemoryDB::default();
 			let route = super::ws_route(
 				clients.clone(),
 				v1(),
 				config.clone(),
 				submitter.map(Arc::new),
-				state.clone(),
+				db.clone(),
 			);
 			let ws_client = warp::test::ws()
 				.path(&format!("/v2/ws/{client_uuid}"))
@@ -773,7 +741,7 @@ mod tests {
 				.await
 				.expect("handshake");
 
-			MockSetup { ws_client, state }
+			MockSetup { ws_client, db }
 		}
 
 		async fn ws_send_text(&mut self, message: &str) -> String {
@@ -808,19 +776,26 @@ mod tests {
 
 		let mut test = MockSetup::new(config, None).await;
 
-		{
-			let mut state = test.state.lock().unwrap();
-			state.latest = 30;
-			state.confidence_achieved.set(20);
-			state.confidence_achieved.set(29);
-			state.data_verified.set(20);
-			state.data_verified.set(29);
-			state.synced.replace(false);
-			state.sync_confidence_achieved.set(10);
-			state.sync_confidence_achieved.set(19);
-			state.sync_data_verified.set(10);
-			state.sync_data_verified.set(18);
-		}
+		_ = test.db.put(LatestHeaderKey, 30);
+		_ = test.db.put(IsSyncedKey, false);
+
+		let mut achieved_confidence = BlockRange::init(20);
+		achieved_confidence.last = 29;
+		_ = test.db.put(AchievedConfidenceKey, achieved_confidence);
+
+		let mut verified_sync_data = BlockRange::init(10);
+		verified_sync_data.last = 18;
+		_ = test.db.put(VerifiedSyncDataKey, verified_sync_data);
+
+		let mut verified_data = BlockRange::init(20);
+		verified_data.last = 29;
+		_ = test.db.put(VerifiedDataKey, verified_data);
+
+		let mut achieved_sync_confidence = BlockRange::init(10);
+		achieved_sync_confidence.last = 19;
+		_ = test
+			.db
+			.put(AchievedSyncConfidenceKey, achieved_sync_confidence);
 
 		let gen_hash = H256::default();
 		let expected = format!(

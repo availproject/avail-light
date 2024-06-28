@@ -17,10 +17,20 @@ use color_eyre::{
 	eyre::{self, eyre, WrapErr},
 	Result,
 };
+use futures::Future;
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
+use tracing::Instrument;
+
+pub fn spawn_in_span<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+	F: Future + Send + 'static,
+	F::Output: Send + 'static,
+{
+	tokio::spawn(future.in_current_span())
+}
 
 pub fn decode_app_data(data: &[u8]) -> Result<Option<Vec<u8>>> {
 	let extrisic: AppUncheckedExtrinsic =

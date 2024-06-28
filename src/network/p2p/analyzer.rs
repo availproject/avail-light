@@ -49,7 +49,7 @@ pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 
 	// Spawn result handler
 	if is_one_capture_active {
-		tokio::task::spawn(async move {
+		tokio::spawn(async move {
 			let mut interval = time::interval(Duration::from_secs(sampling_interval));
 			loop {
 				interval.tick().await;

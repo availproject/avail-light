@@ -1,7 +1,23 @@
 # Changelog
 
-## 1.9.2
+## [1.10.1](https://github.com/availproject/avail-light/releases/tag/v1.10.1) - 2024-06-26
 
+- Add peer multiaddress endpoint
+- Replace logic behind adding new peers in the Identify protocol handler to use Kademlia protocol name string instead of Identify agent string
+
+## [1.10.0](https://github.com/availproject/avail-light/releases/tag/v1.10.0) - 2024-06-24
+
+- Application wide state is now persisted and not being kept in heap
+- Persistence failures are handled within specific implementation
+- Don't fail on any failed signature in the justification, only if there is no supermajority of valid signatures. Log the failed signature details.
+- Add `run id` to the logs, unique per run and generated on startup, if the log format is JSON
+- Fixed initialization of the `avail.light.up` counter
+
+## [1.9.2](https://github.com/availproject/avail-light/releases/tag/v1.9.2) - 2024-06-20
+
+- Change `avail.light.up` metric type to counter
+- Add `--logs-json` CLI flag
+- Change the way peer counting is done and expose it through the P2P diagnostic API. Add the count of peers with external addresses.
 - Add `--block-matrix-partition` CLI parameter
 - Introduce network name to metrics
 - Support enforcing minimum protocol version for agents on p2p network
@@ -11,7 +27,7 @@
 
 - Add `hex` network support to the `--network` CLI parameter
 - Introduce `avail.light` namespace to the metrics
-- Postpone flushing aggregated counters to maintanence step
+- Postpone flushing aggregated counters to maintenance step
 
 ## [v1.9.0](https://github.com/availproject/avail-light/releases/tag/v1.9.0) - 2024-06-04
 

@@ -249,7 +249,15 @@ This API is intended to be used for P2P network observability and diagnostics.
 
 ## **GET** `/v2/p2p/local/info`
 
-Returns `peer_id` and a list of listeners with both local and external addresses. External addresses are only populated once confirmed externally by the bootstrap.
+Returns:
+
+- `peer_id`
+- list of listeners with local addresses
+- list of listeners with external addresses
+- number of clients found in peers routing table
+- number of clients with non-private addresses found in the routing table
+
+External addresses are only populated once confirmed externally by the bootstrap.
 
 ```yaml
 HTTP/1.1 200 OK
@@ -265,8 +273,10 @@ Content-Type: application/json
     ],
     "external": [
       "{multi-address}"
-    ]
-  }
+    ],
+  },
+  "routing_table_peers_count": "{num}",
+  "routing_table_external_peers_count": "{num}",
 }
 ```
 
@@ -320,6 +330,37 @@ Content-Type: application/json
     "error": "wrong-peer-id",
     "description": "The peerID obtained on the connection is not matching the one provided. User provided peerID: 12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRA. Observed peerID: 12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT."
   }
+}
+```
+
+## **POST** `/v2/p2p/peers/get-multiaddress`
+
+Returns a reachable multiaddress for a peer on the light client P2P network.
+If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated bellow.
+
+In case of an error the following response is received:
+
+1. 400 Bad Request with a message `Peer not found in the routing table or its IP is not public.`
+
+Request:
+
+```yaml
+POST /v2/p2p/peers/get-multiaddress HTTP/1.1
+{
+  "peer_id": "{target-peers-peer-id}"
+}
+```
+
+Response:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "peer_id": {target-peers-peer-id},
+  "multiaddress": "{target-peers-multi-address}",
+  
 }
 ```
 
