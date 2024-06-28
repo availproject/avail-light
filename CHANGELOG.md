@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.10.2]
+## [1.10.2](https://github.com/availproject/avail-light/releases/tag/v1.10.1) - 2024-06-28
 
 - Prevent light clients in Kademlia client mode from getting added to routing table at mDNS step.
 - Fix a connectivity bug that caused peers to be removed from the routing table on connection error
