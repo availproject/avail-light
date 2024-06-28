@@ -399,9 +399,9 @@ impl EventLoop {
 					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 				},
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
-				match event {
-					mdns::Event::Discovered(addrs_list) => {
+			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
+				mdns::Event::Discovered(addrs_list) => {
+					let peer_ids: Vec<PeerId> =
 						addrs_list
 							.into_iter()
 							.filter(|(peer_id, multiaddr)| {
@@ -409,31 +409,32 @@ impl EventLoop {
 									.to_string()
 									.contains(Protocol::P2p(*peer_id).tag())
 							})
-							.for_each(|(peer_id, multiaddr)| {
+							.map(|(peer_id, multiaddr)| {
 								trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
+								peer_id
+							})
+							.collect();
 
-								let _ = self.swarm.dial(multiaddr);
-							});
-					},
-					mdns::Event::Expired(addrs_list) => {
-						addrs_list.into_iter().for_each(|(peer_id, multiaddr)| {
-							trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
+					let _ = self.swarm.behaviour_mut().identify.push(peer_ids);
+				},
+				mdns::Event::Expired(addrs_list) => {
+					addrs_list.into_iter().for_each(|(peer_id, multiaddr)| {
+						trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 
-							if self
-								.swarm
+						if self
+							.swarm
+							.behaviour_mut()
+							.mdns
+							.discovered_nodes()
+							.any(|&p| p == peer_id)
+						{
+							self.swarm
 								.behaviour_mut()
-								.mdns
-								.discovered_nodes()
-								.any(|&p| p == peer_id)
-							{
-								self.swarm
-									.behaviour_mut()
-									.kademlia
-									.remove_address(&peer_id, &multiaddr);
-							}
-						});
-					},
-				}
+								.kademlia
+								.remove_address(&peer_id, &multiaddr);
+						}
+					});
+				},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {
