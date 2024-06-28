@@ -15,7 +15,7 @@ use libp2p::{
 	ping,
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
-		ConnectionError, SwarmEvent,
+		SwarmEvent,
 	},
 	upnp, Multiaddr, PeerId, Swarm,
 };
@@ -384,8 +384,8 @@ impl EventLoop {
 								.add_address(&peer_id, addr);
 						}
 					} else {
-						// Block and remove non-Avail peers
-						debug!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+						// Block and remove non-compatible peers
+						debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 					}
 				},
@@ -503,11 +503,6 @@ impl EventLoop {
 						..
 					} => {
 						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
-
-						if let Some(ConnectionError::IO(_)) = cause {
-							// remove peer with failed connection
-							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-						}
 					},
 					SwarmEvent::IncomingConnection { .. } => {
 						metrics.count(MetricCounter::IncomingConnections).await;
@@ -551,7 +546,7 @@ impl EventLoop {
 									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
 								{
 									let removed_peer_id = peer.node.key.preimage();
-									debug!("Removed peer {removed_peer_id} from the routing table");
+									debug!("Removed peer {removed_peer_id} from the routing table. Cause: {error}");
 								}
 							}
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
