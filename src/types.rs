@@ -423,6 +423,8 @@ pub struct RuntimeConfig {
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
 	pub operation_mode: KademliaMode,
+	/// Sets the automatic Kademlia server mode switch (default: true)
+	pub automatic_server_mode: bool,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
@@ -445,6 +447,8 @@ pub struct RuntimeConfig {
 	pub ot_export_period: u64,
 	pub ot_export_timeout: u64,
 	pub ot_flush_block_interval: u32,
+	pub total_memory_gb_threshold: f64,
+	pub num_cpus_threshold: usize,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
@@ -696,6 +700,7 @@ pub struct KademliaConfig {
 	pub max_kad_record_size: usize,
 	pub max_kad_provided_keys: usize,
 	pub kademlia_mode: KademliaMode,
+	pub automatic_server_mode: bool,
 }
 
 impl From<&RuntimeConfig> for KademliaConfig {
@@ -715,6 +720,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 			max_kad_record_size: val.max_kad_record_size as usize,
 			max_kad_provided_keys: val.max_kad_provided_keys as usize,
 			kademlia_mode: val.operation_mode,
+			automatic_server_mode: val.automatic_server_mode,
 		}
 	}
 }
@@ -870,6 +876,33 @@ impl From<&RuntimeConfig> for OtelConfig {
 	}
 }
 
+#[derive(Clone, Copy)]
+pub struct MaintenanceConfig {
+	pub block_confidence_treshold: f64,
+	pub replication_factor: u16,
+	pub query_timeout: u32,
+	pub pruning_interval: u32,
+	pub telemetry_flush_interval: u32,
+	pub automatic_server_mode: bool,
+	pub total_memory_gb_threshold: f64,
+	pub num_cpus_threshold: usize,
+}
+
+impl From<&RuntimeConfig> for MaintenanceConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		MaintenanceConfig {
+			block_confidence_treshold: val.confidence,
+			replication_factor: val.replication_factor,
+			query_timeout: val.query_timeout,
+			pruning_interval: val.store_pruning_interval,
+			telemetry_flush_interval: val.ot_flush_block_interval,
+			automatic_server_mode: val.automatic_server_mode,
+			total_memory_gb_threshold: val.total_memory_gb_threshold,
+			num_cpus_threshold: val.num_cpus_threshold,
+		}
+	}
+}
+
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
@@ -897,6 +930,8 @@ impl Default for RuntimeConfig {
 			ot_export_period: 300,
 			ot_export_timeout: 10,
 			ot_flush_block_interval: 15,
+			total_memory_gb_threshold: 16.0,
+			num_cpus_threshold: 4,
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
@@ -932,6 +967,7 @@ impl Default for RuntimeConfig {
 				max_delay: 10,
 				retries: 6,
 			}),
+			automatic_server_mode: true,
 		}
 	}
 }

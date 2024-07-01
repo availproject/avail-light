@@ -13,7 +13,7 @@ use kate_recovery::{
 	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
-	kad::{store::RecordStore, PeerRecord, Quorum, Record, RecordKey},
+	kad::{store::RecordStore, Mode, PeerRecord, Quorum, Record, RecordKey},
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
@@ -416,6 +416,34 @@ impl Command for ListConnectedPeers {
 	}
 }
 
+struct ChangeKademliaMode {
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+	mode: Mode,
+}
+
+impl Command for ChangeKademliaMode {
+	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
+		entries.behavior_mut().kademlia.set_mode(Some(self.mode));
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("CountDHTPeers receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: Report) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("CountDHTPeers receiver dropped");
+	}
+}
+
 struct ReduceKademliaMapSize {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
@@ -649,6 +677,16 @@ impl Client {
 		self.execute_sync(|response_sender| {
 			Box::new(ListConnectedPeers {
 				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
+	pub async fn change_kademlia_mode(&self, mode: Mode) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(ChangeKademliaMode {
+				response_sender: Some(response_sender),
+				mode,
 			})
 		})
 		.await

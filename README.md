@@ -208,6 +208,8 @@ sync_finality_enable = false
 # Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far below this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
 record_ttl = 86400
+# Enables the automatic Kademlia mode switch from default client to server. (default: true).
+automatic_server_mode = true
 # Sets the (re-)publication interval of stored records, in seconds. This interval should be significantly shorter than the record TTL, ensure records do not expire prematurely. (default: 12h).
 # Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
 # This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
