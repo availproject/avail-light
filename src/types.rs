@@ -434,7 +434,7 @@ pub struct RuntimeConfig {
 	pub dht_parallelization_limit: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	pub query_proof_rpc_parallel_tasks: usize,
-	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0).
+	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
 	pub block_processing_delay: Option<u32>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[serde(with = "block_matrix_partition_format")]
