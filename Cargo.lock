@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "0.1.0"
+version = "1.11.0"
 dependencies = [
  "avail-core",
  "avail-light-engine",
@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-compatibility-test"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "avail-light-engine",
  "clap 4.5.8",
@@ -1031,7 +1031,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
- "tracing-subscriber 0.3.18",
  "uuid",
  "void",
  "warp",
