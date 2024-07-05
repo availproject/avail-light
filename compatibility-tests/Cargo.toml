@@ -1,5 +1,5 @@
 [package]
-name = "avail-light-compatibility-test"
+name = "avail-light-compatibility-tests"
 version = "0.0.0"
 edition = "2021"
 repository = "https://github.com/availproject/avail-light"

@@ -1,7 +1,7 @@
 [workspace]
 members = [
 	"client",
-	"compatibility-test",
+	"compatibility-tests",
 	"engine",
 ]
 resolver = "2"
