@@ -2,13 +2,12 @@
 name = "avail-light-compatibility-test"
 version = "0.0.0"
 edition = "2021"
-description = "Avail Light compatibility tests"
 repository = "https://github.com/availproject/avail-light"
+description = "Avail Light compatibility tests"
 
 [dependencies]
-avail-light-engine = { path = "../engine" }
-
 # Internal deps
+avail-light-engine = { workspace = true }
 kate-recovery = { workspace = true }
 
 clap = { workspace = true }

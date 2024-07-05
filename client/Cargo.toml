@@ -2,14 +2,13 @@
 name = "avail-light-client"
 version = "1.11.0"
 edition = "2021"
-description = "Avail network p2p Light Client"
 repository = "https://github.com/availproject/avail-light"
+description = "Avail network p2p Light Client"
 
 [dependencies]
-avail-light-engine = { path = "../engine" }
-
 # Internal deps
 avail-core = { workspace = true }
+avail-light-engine = { workspace = true }
 kate-recovery = { workspace = true }
 
 better-panic = "0.3.0"
