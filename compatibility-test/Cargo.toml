@@ -1,0 +1,13 @@
+[package]
+name = "avail-light-compatibility-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+avail-light-engine = {path = "../engine"}
+
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
+
+clap = { version = "4.3.23", features = ["derive", "cargo"] }
+color-eyre = "0.6.2"
+tokio = { version = "1.35", features = ["full"] }

@@ -1,5 +1,5 @@
 <div align="Center">
-<h1>avail-light</h1>
+<h1>avail-light-client</h1>
 <h3> Light client for the Avail blockchain</h3>
 </div>
 

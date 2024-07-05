@@ -1,0 +1,44 @@
+[package]
+name = "avail-light-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+avail-light-engine = {path = "../engine"}
+
+avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
+
+better-panic = "0.3.0"
+clap = { version = "4.3.23", features = ["derive", "cargo"] }
+color-eyre = "0.6.2"
+libp2p = { version = "0.53.2", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+hex = "0.4"
+sp-core = { version = "28.0.0", features = ["serde"] }
+strip-ansi-escapes = "0.2.0"
+tokio = { version = "1.35", features = ["full"] }
+tracing = "0.1.35"
+tracing-subscriber = { version = "0.3.15", features = ["json", "env-filter"] }
+uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"
+
+[dev-dependencies]
+hex-literal = "0.4.0"
+proptest = "1.0.0"
+test-case = "3.2.1"
+
+[profile.debug-fast]
+inherits = "release"
+debug = true
+
+[profile.dev]
+
+[profile.release]
+incremental = false
+
+[profile.maxperf]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
