@@ -2,19 +2,19 @@
 name = "avail-light-engine"
 version = "0.0.0"
 authors = ["Avail Team"]
-description = "Avail Light core driving library"
 edition = "2021"
-repository = "https://github.com/availproject/avail-light.git"
+repository = "https://github.com/availproject/avail-light"
+description = "Avail Light core driving library"
 
 [dependencies]
 # TODO: Remove direct dependency after relevant traits are implemented in avail-subxt
 subxt = "0.34"
 
 # Internal deps
-avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
-avail-subxt = { version = "0.5", git = "https://github.com/availproject/avail.git", tag = "v2.1.0.0-rc1" }
-dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
+avail-core = { workspace = true }
+avail-subxt = { workspace = true }
+dusk-plonk = { workspace = true }
+kate-recovery = { workspace = true }
 
 # 3rd-party
 async-std = { version = "1.12.0", features = ["attributes"] }
@@ -68,13 +68,6 @@ opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
 subxt-signer = "0.34.0"
 
-# Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
-[patch.crates-io]
-sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-sp-runtime = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-sp-std = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-
 [dev-dependencies]
 hex-literal = "0.4.0"
 proptest = "1.0.0"
@@ -85,5 +78,3 @@ network-analysis = []
 kademlia-rocksdb = []
 crawl = []
 default = []
-
-

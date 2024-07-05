@@ -1,20 +1,22 @@
 [package]
 name = "avail-light-client"
 version = "1.11.0"
-description = "Avail network p2p Light Client"
 edition = "2021"
+description = "Avail network p2p Light Client"
+repository = "https://github.com/availproject/avail-light"
 
 [dependencies]
 avail-light-engine = { path = "../engine" }
 
-avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
+# Internal deps
+avail-core = { workspace = true }
+kate-recovery = { workspace = true }
 
 better-panic = "0.3.0"
 clap = { workspace = true }
 color-eyre = { workspace = true }
-libp2p = { version = "0.53.2", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
 hex = "0.4"
+libp2p = { version = "0.53.2", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
 sp-core = { version = "28.0.0", features = ["serde"] }
 strip-ansi-escapes = "0.2.0"
 tokio = { workspace = true }
@@ -30,16 +32,8 @@ hex-literal = "0.4.0"
 proptest = "1.0.0"
 test-case = "3.2.1"
 
-[profile.debug-fast]
-inherits = "release"
-debug = true
-
-[profile.dev]
-
-[profile.release]
-incremental = false
-
-[profile.maxperf]
-inherits = "release"
-lto = "fat"
-codegen-units = 1
+[features]
+network-analysis = ["avail-light-engine/network-analysis"]
+kademlia-rocksdb = ["avail-light-engine/kademlia-rocksdb"]
+crawl = ["avail-light-engine/crawl"]
+default = []

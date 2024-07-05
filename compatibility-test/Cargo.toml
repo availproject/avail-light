@@ -1,13 +1,15 @@
 [package]
 name = "avail-light-compatibility-test"
 version = "0.0.0"
-description = "Avail Light compatibility tests"
 edition = "2021"
+description = "Avail Light compatibility tests"
+repository = "https://github.com/availproject/avail-light"
 
 [dependencies]
 avail-light-engine = { path = "../engine" }
 
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
+# Internal deps
+kate-recovery = { workspace = true }
 
 clap = { workspace = true }
 color-eyre = { workspace = true }
