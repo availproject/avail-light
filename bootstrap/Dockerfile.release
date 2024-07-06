@@ -1,0 +1,21 @@
+FROM --platform=$BUILDPLATFORM ubuntu:22.04
+
+ARG TARGETARCH
+ARG BUILDPLATFORM
+
+WORKDIR /var/lib/avail-light
+
+ARG IMAGE_TAG=v0.0.9
+ARG AVAIL_LC_BIN=https://github.com/availproject/avail-light-bootstrap/releases/download/$IMAGE_TAG/avail-light-bootstrap-linux-$TARGETARCH.tar.gz
+
+RUN adduser --disabled-password --gecos "" --no-create-home --uid 1000 avail \
+    && apt update && apt install wget -y \
+    && cd /tmp && wget --no-check-certificate $AVAIL_LC_BIN -O avail-lc.tar.gz && tar -xvf avail-lc.tar.gz \
+    && rm avail-lc.tar.gz && apt clean \
+    && mv ./* /usr/local/bin/avail-light \
+    && chown avail:avail /usr/local/bin/avail-light \
+    && chown -R avail:avail /var/lib/avail-light
+
+USER avail
+
+ENTRYPOINT ["/usr/local/bin/avail-light"]
