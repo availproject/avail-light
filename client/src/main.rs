@@ -30,7 +30,7 @@ use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 use uuid::Uuid;
 
 #[cfg(feature = "network-analysis")]
-use avail_light::network::p2p::analyzer;
+use avail_light_engine::network::p2p::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -50,14 +50,14 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
 		.json()
-		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light_client={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
 
 fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light_client={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
@@ -325,13 +325,13 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
 		let partition = cfg.crawl.crawl_block_matrix_partition;
-		spawn_in_span(shutdown.with_cancel(avail_light::crawl_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_engine::crawl_client::run(
 			crawler_rpc_event_receiver,
 			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
-			partition.unwrap_or(avail_light::crawl_client::ENTIRE_BLOCK),
+			partition.unwrap_or(avail_light_engine::crawl_client::ENTIRE_BLOCK),
 		)));
 	}
 
