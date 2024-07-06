@@ -15,38 +15,39 @@ dusk-plonk = { workspace = true }
 kate-recovery = { workspace = true }
 
 # 3rd-party
-async-std = { version = "1.12.0", features = ["attributes"] }
+async-std = { workspace = true }
 async-stream = "0.3.5"
-async-trait = "0.1.66"
+async-trait = { workspace = true }
 base64 = "0.21.0"
 better-panic = "0.3.0"
 chrono = "0.4.19"
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 color-eyre = { workspace = true }
-confy = "0.4.0"
+confy = { workspace = true }
 derive_more = { version = "0.99.17", features = ["from"] }
 futures = { version = "0.3.15", default-features = false, features = ["std", "async-await"] }
-hex = "0.4"
+hex = { workspace = true }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 itertools = "0.10.5"
 jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 libc = "0.2.150"
-libp2p = { version = "0.53.2", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
-libp2p-allow-block-list = "0.3.0"
+libp2p = { workspace = true }
+libp2p-allow-block-list = { workspace = true }
 mockall = "0.11.3"
-multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
+multihash = { workspace = true }
 num = "0.4.0"
 num_cpus = "1.13.0"
 pcap = "1.1.0"
 rand = "0.8.4"
 rand_chacha = "0.3"
 rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"] }
-semver = "1.0.23"
-serde = { version = "1.0", features = ["derive"] }
+semver = { workspace = true }
+serde = { workspace = true }
 serde_json = "1.0.68"
 smallvec = "1.6.1"
 sp-core = { version = "28.0.0", features = ["serde"] }
 strip-ansi-escapes = "0.2.0"
+subxt-signer = "0.34.0"
 sysinfo = "0.30.12"
 threadpool = "1.8.1"
 tokio = { workspace = true }
@@ -55,15 +56,14 @@ tokio-stream = { version = "0.1.14", features = ["sync"] }
 tokio-util = "0.7.10"
 tracing = { workspace = true }
 uuid = { workspace = true }
-void = "1.0.2"
-warp = "0.3.6"
+void = { workspace = true }
+warp = { workspace = true }
 
 # OpenTelemetry
-opentelemetry = "0.20.0"
-opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] }
-opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
-opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
-subxt-signer = "0.34.0"
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_api = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 
 [dev-dependencies]
 hex-literal = "0.4.0"

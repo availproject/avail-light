@@ -940,6 +940,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "avail-light-bootstrap"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "async-trait",
+ "clap 4.5.8",
+ "confy 0.5.1",
+ "hex",
+ "libp2p",
+ "libp2p-allow-block-list",
+ "multihash 0.14.0",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_api",
+ "opentelemetry_sdk",
+ "semver",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+ "void",
+ "warp",
+]
+
+[[package]]
 name = "avail-light-client"
 version = "1.11.0"
 dependencies = [
@@ -948,7 +974,7 @@ dependencies = [
  "better-panic",
  "clap 4.5.8",
  "color-eyre",
- "confy",
+ "confy 0.4.0",
  "hex",
  "hex-literal",
  "kate-recovery",
@@ -988,7 +1014,7 @@ dependencies = [
  "better-panic",
  "chrono",
  "color-eyre",
- "confy",
+ "confy 0.5.1",
  "derive_more",
  "dusk-plonk",
  "futures",
@@ -1701,8 +1727,20 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2913470204e9e8498a0f31f17f90a0de801ae92c8c5ac18c49af4819e6786697"
 dependencies = [
- "directories",
+ "directories 2.0.2",
  "serde",
+ "toml 0.5.11",
+]
+
+[[package]]
+name = "confy"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e37668cb35145dcfaa1931a5f37fde375eeae8068b4c0d2f289da28a270b2d2c"
+dependencies = [
+ "directories 4.0.1",
+ "serde",
+ "thiserror",
  "toml 0.5.11",
 ]
 
@@ -2212,6 +2250,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "551a778172a450d7fc12e629ca3b0428d00f6afa9a43da1b630d54604e97371c"
 dependencies = [
  "cfg-if 0.1.10",
+ "dirs-sys",
+]
+
+[[package]]
+name = "directories"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f51c5d4ddabd36886dd3e1438cb358cdcb0d7c499cb99cb4ac2e38e18b5cb210"
+dependencies = [
  "dirs-sys",
 ]
 

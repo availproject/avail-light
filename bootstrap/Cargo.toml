@@ -1,0 +1,31 @@
+[package]
+name = "avail-light-bootstrap"
+version = "0.0.0"
+authors = ["Avail Team"]
+edition = "2021"
+repository = "https://github.com/availproject/avail-light"
+description = "Avail network p2p Light Client"
+
+[dependencies]
+anyhow = "1.0.71"
+async-std = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+confy = { workspace = true }
+hex = { workspace = true }
+libp2p = { workspace = true }
+libp2p-allow-block-list = { workspace = true }
+multihash = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+void = { workspace = true }
+warp = { workspace = true }
+
+# OpenTelemetry
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_api = { workspace = true }
+opentelemetry_sdk = { workspace = true }
