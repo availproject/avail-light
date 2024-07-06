@@ -197,7 +197,7 @@ disable_rpc = false
 query_proof_rpc_parallel_tasks = 8
 # Maximum number of cells per request for proof queries (default: 30).
 max_cells_per_rpc = 30
-# Number of seconds to postpone block processing after the block finalized message arrives. (default: 0).
+# Number of seconds to postpone block processing after the block finalized message arrives. (default: 20).
 block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 sync_start_block = 0
