@@ -4,7 +4,7 @@ version = "0.0.0"
 authors = ["Avail Team"]
 edition = "2021"
 repository = "https://github.com/availproject/avail-light"
-description = "Avail network p2p Light Client"
+description = "Avail network Bootstrap Node for p2p Light Client"
 
 [dependencies]
 anyhow = "1.0.71"
