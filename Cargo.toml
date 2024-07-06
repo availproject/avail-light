@@ -4,6 +4,7 @@ members = [
 	"client",
 	"compatibility-tests",
 	"core",
+	"relay"
 ]
 default-members = ["client"]
 resolver = "2"
@@ -20,6 +21,7 @@ dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0
 kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
 avail-light-core = { version = "0.0.0", path = "./core" }
 
+anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.73"
 clap = { version = "4.4.4", features = ["derive", "cargo"] }
