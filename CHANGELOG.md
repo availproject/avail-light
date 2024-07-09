@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Fix storing the state of the verified data range
 - Re-enable automatic Kademlia mode switching from client to server if the pre-requisites are met
 
 ## [1.10.2](https://github.com/availproject/avail-light/releases/tag/v1.10.1) - 2024-06-28
