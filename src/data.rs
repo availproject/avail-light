@@ -90,6 +90,7 @@ impl RecordKey for IsFinalitySyncedKey {
 	type Type = bool;
 }
 
+#[derive(Clone)]
 pub struct VerifiedSyncDataKey;
 
 impl RecordKey for VerifiedSyncDataKey {
@@ -113,6 +114,7 @@ impl RecordKey for LatestSyncKey {
 	type Type = u32;
 }
 
+#[derive(Clone)]
 pub struct VerifiedDataKey;
 
 impl RecordKey for VerifiedDataKey {

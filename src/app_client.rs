@@ -41,7 +41,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	data::{AppDataKey, Database, IsSyncedKey, VerifiedDataKey, VerifiedSyncDataKey},
+	data::{AppDataKey, Database, IsSyncedKey, RecordKey, VerifiedDataKey, VerifiedSyncDataKey},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
@@ -429,16 +429,27 @@ pub async fn run(
 ) {
 	info!("Starting for app {app_id}...");
 
+	fn update_range(
+		db: &impl Database,
+		key: impl RecordKey<Type = BlockRange> + Clone,
+		block_number: u32,
+	) {
+		let mut block_range = db
+			.get(key.clone())
+			.unwrap_or_else(|| BlockRange::init(block_number));
+
+		block_range.last = block_number;
+
+		db.put(key, block_range)
+	}
+
 	fn set_data_verified_state(db: impl Database, sync_range: &Range<u32>, block_number: u32) {
-		match sync_range.contains(&block_number) {
-			true => {
-				// initialize DB data on startup
-				db.put(VerifiedSyncDataKey, BlockRange::init(block_number));
-			},
-			false => {
-				db.put(VerifiedDataKey, BlockRange::init(block_number));
-			},
-		}
+		if sync_range.contains(&block_number) {
+			update_range(&db, VerifiedSyncDataKey, block_number)
+		} else {
+			update_range(&db, VerifiedDataKey, block_number)
+		};
+
 		if db.get(IsSyncedKey) == Some(false) && sync_range.clone().last() == Some(block_number) {
 			db.put(IsSyncedKey, true);
 		};
