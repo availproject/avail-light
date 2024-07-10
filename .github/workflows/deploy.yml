@@ -101,4 +101,3 @@ jobs:
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
             -d '{\"event_type\": \"binary_release\", \"client_payload\":{\"avail_light_version\": \"${{ env.TAG_NAME }}\"}}'\
-            | grep -q "204"
