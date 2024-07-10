@@ -1,0 +1,122 @@
+name: Optimize Build
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            target: x86_64-unknown-linux-gnu
+            rust_target: x86_64-unknown-linux-gnu
+            output_name: avail-light-linux-amd64
+            extra_setup: |
+              sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+          - os: ubuntu-20.04
+            target: aarch64-unknown-linux-gnu
+            rust_target: aarch64-unknown-linux-gnu
+            output_name: avail-light-linux-arm64
+            extra_setup: |
+              sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config librust-openssl-dev build-essential protobuf-compiler
+              rustup target add aarch64-unknown-linux-gnu
+              export BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu'
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc
+
+          - os: macos-14
+            target: aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
+            output_name: avail-light-apple-arm64
+            extra_setup: |
+              rustup target add aarch64-apple-darwin
+
+          - os: macos-13
+            target: x86_64-apple-darwin
+            rust_target: x86_64-apple-darwin
+            output_name: avail-light-apple-x86_64
+            extra_setup: |
+              rustup target add x86_64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo and setup
+        shell: bash
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source "$HOME/.cargo/env"
+          ${{ matrix.extra_setup }}
+
+      - name: Build avail
+        shell: bash
+        run: |
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p avail-light
+          mv target/${{ matrix.rust_target }}/maxperf/avail-light target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
+          pushd target/${{ matrix.rust_target }}/maxperf/
+          tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
+          popd
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.output_name }}-binary
+          path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
+
+  build_crawler_external:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Trigger repository dispatch for crawler build
+        shell: bash
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            ${{ secrets.CRAWLER_BUILD_URL}} \
+            -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ env.TAG_NAME }}\"}}" \
+            | grep -q "204"
+
+  # can extend binary publish 'needs' to include more releases i.e. arm64 in future
+  binary_publish:
+    needs: [build]
+    runs-on: ubuntu-20.04
+    steps:
+         - uses: actions/download-artifact@v2
+           with:
+             name: avail-light-linux-amd64-binary
+         - uses: actions/download-artifact@v2
+           with:
+             name: avail-light-linux-arm64-binary
+         - uses: actions/download-artifact@v2
+           with:
+             name: avail-light-apple-arm64-binary
+         - uses: actions/download-artifact@v2
+           with:
+             name: avail-light-apple-x86_64-binary
+         - name: Prepare
+           id: prepare
+           run: |
+               TAG=${GITHUB_REF#refs/tags/}
+               echo ::set-output name=tag_name::${TAG}
+
+  deploy_lightclients:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        
+      - name: Trigger repository_dispatch
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github.everest-preview+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            https://api.github.com/repos/availproject/avail-light-infra/dispatches \
+            -d '{"event_type":"binary_release","client_payload":{"avail_light_version":"${{ env.TAG_NAME }}"}}'
