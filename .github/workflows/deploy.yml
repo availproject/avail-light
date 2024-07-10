@@ -67,7 +67,6 @@ jobs:
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
   build_crawler_external:
-    if: false
     runs-on: ubuntu-20.04
     steps:
       - name: Extract tag name
