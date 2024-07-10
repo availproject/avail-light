@@ -50,14 +50,14 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
 		.json()
-		.with_env_filter(EnvFilter::new(format!("avail_light_client={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
 
 fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light_client={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
