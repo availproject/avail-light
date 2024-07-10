@@ -6,7 +6,6 @@ on:
 
 jobs:
   build:
-    if: false
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -81,7 +80,7 @@ jobs:
   trigger_deploy_workflow:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger repository_dispatch
+      - name: Trigger repository_dispatch for release
         shell: bash
         run: |
           curl -s -o /dev/null -w "%{http_code}" \
@@ -91,7 +90,7 @@ jobs:
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
             -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}"}}'
                       
-      - name: Trigger repository dispatch for crawler build
+      - name: Trigger repository dispatch for crawler
         if: false
         shell: bash
         run: |
