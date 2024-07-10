@@ -156,6 +156,7 @@ jobs:
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
             -d '{"event_type":"binary_release","client_payload":{"avail_light_version":"${{ env.TAG_NAME }}"}}'
 
+
   # build avail image and publish to dockerhub
   docker_build_push:
     needs: [binary_publish]
