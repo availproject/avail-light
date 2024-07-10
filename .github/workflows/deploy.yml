@@ -11,31 +11,30 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-            target: x86_64-unknown-linux-gnu
+            workspace: avail-light
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
-            extra_setup: |
-              sudo apt-get update && sudo apt-get install -y protobuf-compiler
+            extra_setup: ""
 
           - os: ubuntu-20.04
-            target: aarch64-unknown-linux-gnu
+            workspace: avail-light
             rust_target: aarch64-unknown-linux-gnu
             output_name: avail-light-linux-arm64
             extra_setup: |
-              sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config librust-openssl-dev build-essential protobuf-compiler
+              sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
               rustup target add aarch64-unknown-linux-gnu
               export BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu'
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc
 
           - os: macos-14
-            target: aarch64-apple-darwin
+            workspace: avail-light
             rust_target: aarch64-apple-darwin
             output_name: avail-light-apple-arm64
             extra_setup: |
               rustup target add aarch64-apple-darwin
 
           - os: macos-13
-            target: x86_64-apple-darwin
+            workspace: avail-light
             rust_target: x86_64-apple-darwin
             output_name: avail-light-apple-x86_64
             extra_setup: |
@@ -47,14 +46,15 @@ jobs:
       - name: Install cargo and setup
         shell: bash
         run: |
+          sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source "$HOME/.cargo/env"
-          ${{ matrix.extra_setup }}
 
-      - name: Build avail
+      - name: Build avail-light-client
         shell: bash
         run: |
-          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p avail-light
+          ${{ matrix.extra_setup }}
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
           mv target/${{ matrix.rust_target }}/maxperf/avail-light target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
           pushd target/${{ matrix.rust_target }}/maxperf/
           tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
@@ -66,6 +66,7 @@ jobs:
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
   build_crawler_external:
+    if: false
     runs-on: ubuntu-20.04
     steps:
       - name: Extract tag name
