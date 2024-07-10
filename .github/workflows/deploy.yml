@@ -43,7 +43,7 @@ jobs:
 
           - os: windows-latest
             workspace: avail-light
-            rust_target: i686-pc-windows-msvc
+            rust_target: x86_64-pc-windows-msvc
             output_name: avail-light-windows-i686
             extra_setup: |
               Invoke-WebRequest -Uri https://win.rustup.rs -OutFile rustup-init.exe
@@ -51,7 +51,7 @@ jobs:
               $env:Path += ";$env:USERPROFILE\.cargo\bin"
               rustup --version
               cargo --version
-              rustup target add i686-pc-windows-msvc
+              rustup target add x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v4
