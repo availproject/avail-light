@@ -70,27 +70,17 @@ jobs:
     needs: [build]
     runs-on: ubuntu-20.04
     steps:
-         - uses: actions/download-artifact@v4
-           with:
-             path: binaries
-             pattern: avail-light-*
-             merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          pattern: avail-light-*
+          merge-multiple: true
 
-         - run: ls -R binaries
-
-         - name: Prepare
-           id: prepare
-           run: |
-               TAG=${GITHUB_REF#refs/tags/}
-               echo ::set-output name=tag_name::${TAG}
+      - run: ls -R binaries
 
   trigger_deploy_workflow:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract tag name
-        id: extract_tag
-        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-        
       - name: Trigger repository_dispatch
         shell: bash
         run: |
@@ -101,14 +91,8 @@ jobs:
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
             -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}"}}'
                       
-  trigger_crawler_build:
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Extract tag name
-        id: extract_tag
-        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-
       - name: Trigger repository dispatch for crawler build
+        if: false
         shell: bash
         run: |
           curl -s -o /dev/null -w "%{http_code}" \
@@ -116,5 +100,5 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             ${{ secrets.CRAWLER_BUILD_URL}} \
-            -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ env.TAG_NAME }}\"}}" \
+            -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ github.ref_name }}\"}}" \
             | grep -q "204"
