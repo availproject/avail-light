@@ -60,8 +60,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: ${{ matrix.workspace }
-          target: ${{ matrix.rust_target }
+          bin: ${{ matrix.workspace }}
+          target: ${{ matrix.rust_target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           tar: unix
           zip: windows
