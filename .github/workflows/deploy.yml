@@ -51,22 +51,57 @@ jobs:
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source "$HOME/.cargo/env"
 
-      - name: Build avail-light-client
+      - name: Build ${{ matrix.output_name }}
         shell: bash
         run: |
           ${{ matrix.extra_setup }}
           cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
-          mv target/${{ matrix.rust_target }}/maxperf/avail-light target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
+          mv target/${{ matrix.rust_target }}/maxperf/${{ matrix.workspace }} target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
           pushd target/${{ matrix.rust_target }}/maxperf/
           tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
           popd
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output_name }}-binary
+          name: binaries
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
-  build_crawler_external:
+  binary_publish:
+    needs: [build]
+    runs-on: ubuntu-20.04
+    steps:
+         - uses: actions/download-artifact@v4
+           with:
+             path: binaries
+             pattern: avail-light-*
+             merge-multiple: true
+
+         - run: ls -R binaries
+
+         - name: Prepare
+           id: prepare
+           run: |
+               TAG=${GITHUB_REF#refs/tags/}
+               echo ::set-output name=tag_name::${TAG}
+
+  trigger_deploy_workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract tag name
+        id: extract_tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        
+      - name: Trigger repository_dispatch
+        shell: bash
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            ${{ secrets.INFRA_REPO_URL}} \
+            -d '{\"event_type\": \"binary_release\", \"client_payload\":{\"avail_light_version\": \"${{ env.TAG_NAME }}\"}}'\
+
+  trigger_crawler_build:
     runs-on: ubuntu-20.04
     steps:
       - name: Extract tag name
@@ -83,20 +118,3 @@ jobs:
             ${{ secrets.CRAWLER_BUILD_URL}} \
             -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ env.TAG_NAME }}\"}}" \
             | grep -q "204"
-
-  deploy_lightclients:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Extract tag name
-        id: extract_tag
-        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-        
-      - name: Trigger repository_dispatch
-        shell: bash
-        run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
-            ${{ secrets.INFRA_REPO_URL}} \
-            -d '{\"event_type\": \"binary_release\", \"client_payload\":{\"avail_light_version\": \"${{ env.TAG_NAME }}\"}}'\
