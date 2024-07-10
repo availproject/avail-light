@@ -4,6 +4,7 @@ members = [
 	"compatibility-tests",
 	"engine",
 ]
+default-members = ["client"]
 resolver = "2"
 
 [workspace.package]
