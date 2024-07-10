@@ -79,9 +79,10 @@ jobs:
         run: |
           ${{ matrix.extra_setup }}
           cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
-          Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
-          Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
-
+          Get-ChildItem -Path target\${{ matrix.rust_target }}\maxperf -Recurse
+          # Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
+          # Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
+          
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output_name }}
