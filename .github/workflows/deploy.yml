@@ -45,28 +45,17 @@ jobs:
             workspace: avail-light
             rust_target: i686-pc-windows-msvc
             output_name: avail-light-windows-i686
-            extra_setup: ""
+            extra_setup: |
+              rustup target add i686-pc-windows-msvc
 
     steps:
-      # - uses: actions/checkout@v4
-      # - name: Install cargo and setup on Linux
-      #   if: runner.os == 'Linux'
-      #   shell: bash
-      #   run: |
-      #     sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
-      #     curl https://sh.rustup.rs -sSf | sh -s -- -y
-      #     source "$HOME/.cargo/env"
-
       - uses: actions/checkout@v4
-      - uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: ${{ matrix.workspace }}
-          target: ${{ matrix.rust_target }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tar: unix
-          zip: windows
-          ref: ${{ github.ref }}
-
+      - name: Install cargo and setup
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source "$HOME/.cargo/env"
 
       - name: Build ${{ matrix.output_name }}
         shell: bash
