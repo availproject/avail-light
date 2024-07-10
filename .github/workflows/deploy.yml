@@ -48,24 +48,24 @@ jobs:
             extra_setup: ""
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Install cargo and setup on Linux
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
-          curl https://sh.rustup.rs -sSf | sh -s -- -y
-          source "$HOME/.cargo/env"
+      # - uses: actions/checkout@v4
+      # - name: Install cargo and setup on Linux
+      #   if: runner.os == 'Linux'
+      #   shell: bash
+      #   run: |
+      #     sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
+      #     curl https://sh.rustup.rs -sSf | sh -s -- -y
+      #     source "$HOME/.cargo/env"
 
-      - name: Install dependencies and setup Rust (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force; `
-          iex ((New-Object System.Net.WebClient).DownloadString('https://sh.rustup.rs')); `
-          $env:Path += ";$env:USERPROFILE\.cargo\bin"
-          Invoke-Expression -Command "rustup-init.exe -y"
-          Invoke-Expression -Command "$env:USERPROFILE\.cargo\bin\rustup.exe target add ${{ matrix.rust_target }}"
+      - uses: actions/checkout@v4
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: ${{ matrix.workspace }
+          target: ${{ matrix.rust_target }
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tar: unix
+          zip: windows
+
 
       - name: Build ${{ matrix.output_name }}
         shell: bash
