@@ -47,30 +47,11 @@ pub fn check_finality(
 				&justification.round,
 				&validator_set.set_id, // Set ID is needed here.
 			));
-			let mut is_ok = <ed25519::Pair as Pair>::verify(
+			let is_ok = <ed25519::Pair as Pair>::verify(
 				&precommit.signature,
 				signed_message,
 				&precommit.id,
 			);
-			if !is_ok {
-				warn!(
-					"Signature verification fails with default set_id {}, trying alternatives.",
-					validator_set.set_id
-				);
-				for set_id_m in (validator_set.set_id - 10)..(validator_set.set_id + 10) {
-					let s_m = Encode::encode(&(
-						&SignerMessage::PrecommitMessage(precommit.precommit.clone()),
-						&justification.round,
-						&set_id_m,
-					));
-					is_ok =
-						<ed25519::Pair as Pair>::verify(&precommit.signature, &s_m, &precommit.id);
-					if is_ok {
-						info!("Signature match with set_id={set_id_m}");
-						break;
-					}
-				}
-			}
 
 			let ancestry = confirm_ancestry(
 				&precommit.precommit.target_hash,
