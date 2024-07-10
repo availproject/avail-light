@@ -65,6 +65,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tar: unix
           zip: windows
+          ref: ${{ github.ref }}
 
 
       - name: Build ${{ matrix.output_name }}
