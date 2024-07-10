@@ -41,12 +41,6 @@ jobs:
             extra_setup: |
               rustup target add x86_64-apple-darwin
 
-          - os: windows-latest
-            workspace: avail-light
-            rust_target: i686-pc-windows-msvc
-            output_name: avail-light-windows-i686
-            extra_setup: |
-              rustup target add i686-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v4
