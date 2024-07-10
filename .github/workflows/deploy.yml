@@ -99,8 +99,9 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             ${{ secrets.INFRA_REPO_URL}} \
-            -d '{\"event_type\": \"binary_release\", \"client_payload\":{\"avail_light_version\": \"${{ env.TAG_NAME }}\"}}'\
-
+            -d '{"event_type": "binary_release", "client_payload":{"avail_light_version\: "${{ env.TAG_NAME }}"}}'\
+            | grep -q "204
+            
   trigger_crawler_build:
     runs-on: ubuntu-20.04
     steps:
