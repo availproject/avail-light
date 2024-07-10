@@ -6,6 +6,7 @@ on:
 
 jobs:
   build:
+    if: false
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -84,29 +85,6 @@ jobs:
             -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ env.TAG_NAME }}\"}}" \
             | grep -q "204"
 
-  # can extend binary publish 'needs' to include more releases i.e. arm64 in future
-  binary_publish:
-    needs: [build]
-    runs-on: ubuntu-20.04
-    steps:
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-linux-amd64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-linux-arm64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-apple-arm64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-apple-x86_64-binary
-         - name: Prepare
-           id: prepare
-           run: |
-               TAG=${GITHUB_REF#refs/tags/}
-               echo ::set-output name=tag_name::${TAG}
-
   deploy_lightclients:
     runs-on: ubuntu-latest
     steps:
@@ -115,9 +93,12 @@ jobs:
         run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
         
       - name: Trigger repository_dispatch
+        shell: bash
         run: |
-          curl -X POST \
-            -H "Accept: application/vnd.github.everest-preview+json" \
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
-            -d '{"event_type":"binary_release","client_payload":{"avail_light_version":"${{ env.TAG_NAME }}"}}'
+            -d '{\"event_type\": \"binary_release\", \"client_payload\":{\"avail_light_version\": \"${{ env.TAG_NAME }}\"}}'\
+            | grep -q "204"
