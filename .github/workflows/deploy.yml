@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install cargo and setup
-        if: runner.os == 'Linux'
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
@@ -64,7 +64,7 @@ jobs:
           source "$HOME/.cargo/env"
 
       - name: Build ${{ matrix.output_name }}
-        if: runner.os == 'Linux'
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           ${{ matrix.extra_setup }}
@@ -80,7 +80,7 @@ jobs:
           ${{ matrix.extra_setup }}
           cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
           Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
-          Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz
+          Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
 
       - uses: actions/upload-artifact@v4
         with:
