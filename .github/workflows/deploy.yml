@@ -98,7 +98,15 @@ jobs:
           pattern: avail-light*
           merge-multiple: true
 
-      - run: ls -R binaries
+      - name: publish binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+         repo_token: ${{ secrets.PAT_TOKEN }}
+         file: /home/runner/work/avail-light/avail-light/binaries/avail-light*
+         release_name: ${{ github.ref_name }}
+         tag: ${{ github.ref_name }}
+         overwrite: true
+         file_glob: true
 
   trigger_deploy_workflow:
     needs: [binary_publish]
