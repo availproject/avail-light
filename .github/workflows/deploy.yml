@@ -14,7 +14,8 @@ jobs:
             workspace: avail-light
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
-            extra_setup: ""
+            extra_setup: |
+              rustup target add x86_64-unknown-linux-gnu
 
           - os: ubuntu-20.04
             workspace: avail-light
@@ -40,15 +41,31 @@ jobs:
             extra_setup: |
               rustup target add x86_64-apple-darwin
 
+          - os: windows-latest
+            workspace: avail-light
+            rust_target: i686-pc-windows-msvc
+            output_name: avail-light-windows-i686
+            extra_setup: ""
+
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install cargo and setup
+      - name: Install cargo and setup on Linux
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source "$HOME/.cargo/env"
+
+      - name: Install dependencies and setup Rust (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force; `
+          iex ((New-Object System.Net.WebClient).DownloadString('https://sh.rustup.rs')); `
+          $env:Path += ";$env:USERPROFILE\.cargo\bin"
+          Invoke-Expression -Command "rustup-init.exe -y"
+          Invoke-Expression -Command "$env:USERPROFILE\.cargo\bin\rustup.exe target add ${{ matrix.rust_target }}"
 
       - name: Build ${{ matrix.output_name }}
         shell: bash
@@ -62,7 +79,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: binaries
+          name: binaries/${{ matrix.output_name }}
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
   binary_publish:
@@ -72,13 +89,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: binaries
-          pattern: avail-light-*
           merge-multiple: true
 
       - run: ls -R binaries
 
   trigger_deploy_workflow:
-    runs-on: ubuntu-latest
+    needs: [binary_publish]
+    runs-on: ubuntu-20.04
     steps:
       - name: Trigger repository_dispatch for release
         shell: bash
@@ -101,3 +118,5 @@ jobs:
             ${{ secrets.CRAWLER_BUILD_URL}} \
             -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ github.ref_name }}\"}}" \
             | grep -q "204"
+
+# Add docker step
