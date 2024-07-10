@@ -2,7 +2,6 @@
 name = "avail-light-client"
 version = "1.11.0"
 edition = "2021"
-repository = "https://github.com/availproject/avail-light"
 description = "Avail network p2p Light Client"
 
 [[bin]]

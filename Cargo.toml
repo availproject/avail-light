@@ -6,6 +6,10 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+authors = ["Avail Team"]
+repository = "https://github.com/availproject/avail-light"
+
 [workspace.dependencies]
 # Internal deps
 avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
