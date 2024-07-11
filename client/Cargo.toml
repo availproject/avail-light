@@ -17,6 +17,7 @@ kate-recovery = { workspace = true }
 better-panic = "0.3.0"
 clap = { workspace = true }
 color-eyre = { workspace = true }
+confy = "0.4.0"
 hex = "0.4"
 libp2p = { version = "0.53.2", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
 sp-core = { version = "28.0.0", features = ["serde"] }

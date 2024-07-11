@@ -36,12 +36,13 @@ pub struct MetricAttributes {
 	pub operating_mode: String,
 	pub partition_size: String,
 	pub network: String,
+	pub version: String,
 }
 
 impl Metrics {
 	fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		[
-			KeyValue::new("version", clap::crate_version!()),
+			KeyValue::new("version", self.attributes.version.clone()),
 			KeyValue::new("role", self.attributes.role.clone()),
 			KeyValue::new("origin", self.attributes.origin.to_string()),
 			KeyValue::new("peerID", self.attributes.peer_id.clone()),

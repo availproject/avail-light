@@ -1,5 +1,6 @@
 #![doc = include_str!("../../README.md")]
 
+use crate::cli::{CliOpts, Network};
 use avail_core::AppId;
 use avail_light_engine::{
 	api,
@@ -11,8 +12,8 @@ use avail_light_engine::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
-		CliOpts, IdentityConfig, LibP2PConfig, MaintenanceConfig, Network, OtelConfig,
-		RuntimeConfig,
+		IdentifyConfig, IdentityConfig, LibP2PConfig, MaintenanceConfig, MultiaddrConfig,
+		OtelConfig, RuntimeConfig, SecretKey,
 	},
 	utils::spawn_in_span,
 };
@@ -22,8 +23,8 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::com::AppData;
-use libp2p::{multiaddr::Protocol, Multiaddr};
-use std::{fs, net::Ipv4Addr, path::Path, sync::Arc};
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use std::{fs, net::Ipv4Addr, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, metadata::ParseLevelError, span, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
@@ -108,7 +109,8 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	let (db, _rocks_db) =
 		RocksDB::open(&cfg.avail_path).wrap_err("Avail Light could not initialize database")?;
 
-	let cfg_libp2p: LibP2PConfig = (&cfg).into();
+	let identify = IdentifyConfig::new(version.to_string());
+	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
 	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;
 
 	let metric_attributes = MetricAttributes {
@@ -132,6 +134,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 			})
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
+		version: version.to_string(),
 	};
 
 	let cfg_otel: OtelConfig = (&cfg).into();
@@ -497,6 +500,63 @@ async fn user_signal() {
 	}
 }
 
+mod cli;
+
+pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
+	let mut cfg = if let Some(config_path) = &opts.config {
+		fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
+		confy::load_path(config_path)
+			.wrap_err(format!("Failed to load configuration from {}", config_path))?
+	} else {
+		RuntimeConfig::default()
+	};
+
+	// Flags override the config parameters
+	if let Some(network) = &opts.network {
+		let bootstrap: (PeerId, Multiaddr) = (
+			PeerId::from_str(network.bootstrap_peer_id())
+				.wrap_err("unable to parse default bootstrap peerID")?,
+			Multiaddr::from_str(network.bootstrap_multiaddrr())
+				.wrap_err("unable to parse default bootstrap multi-address")?,
+		);
+		cfg.full_node_ws = vec![network.full_node_ws().to_string()];
+		cfg.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		cfg.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
+		cfg.genesis_hash = network.genesis_hash().to_string();
+	}
+
+	if let Some(loglvl) = &opts.verbosity {
+		cfg.log_level = loglvl.to_string();
+	}
+
+	if let Some(port) = opts.port {
+		cfg.port = port;
+	}
+	if let Some(http_port) = opts.http_server_port {
+		cfg.http_server_port = http_port;
+	}
+	cfg.sync_finality_enable |= opts.finality_sync_enable;
+	cfg.app_id = opts.app_id.or(cfg.app_id);
+	cfg.ws_transport_enable |= opts.ws_transport_enable;
+	if let Some(secret_key) = &opts.private_key {
+		cfg.secret_key = Some(SecretKey::Key {
+			key: secret_key.to_string(),
+		});
+	}
+
+	if let Some(seed) = &opts.seed {
+		cfg.secret_key = Some(SecretKey::Seed {
+			seed: seed.to_string(),
+		})
+	}
+
+	if let Some(partition) = &opts.block_matrix_partition {
+		cfg.block_matrix_partition = Some(*partition)
+	}
+
+	Ok(cfg)
+}
+
 #[tokio::main]
 pub async fn main() -> Result<()> {
 	let shutdown = Controller::new();
@@ -506,9 +566,7 @@ pub async fn main() -> Result<()> {
 
 	let opts = CliOpts::parse();
 
-	let mut cfg: RuntimeConfig = RuntimeConfig::default();
-	cfg.load_runtime_config(&opts)
-		.expect("runtime configuration is loaded");
+	let cfg = load_runtime_config(&opts).expect("runtime configuration is loaded");
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 

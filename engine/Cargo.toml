@@ -21,7 +21,6 @@ async-trait = "0.1.66"
 base64 = "0.21.0"
 better-panic = "0.3.0"
 chrono = "0.4.19"
-clap = { workspace = true }
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 color-eyre = { workspace = true }
 confy = "0.4.0"
