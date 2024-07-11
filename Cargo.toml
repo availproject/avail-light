@@ -2,7 +2,7 @@
 members = [
 	"client",
 	"compatibility-tests",
-	"engine",
+	"core",
 ]
 default-members = ["client"]
 resolver = "2"
@@ -17,7 +17,7 @@ avail-core = { version = "0.6", git = "https://github.com/availproject/avail-cor
 avail-subxt = { version = "0.5", git = "https://github.com/availproject/avail.git", tag = "v2.1.0.0-rc1" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
-avail-light-engine = { version = "0.0.0", path = "./engine" }
+avail-light-core = { version = "0.0.0", path = "./core" }
 
 clap = { version = "4.3.23", features = ["derive", "cargo"] }
 color-eyre = "0.6.2"

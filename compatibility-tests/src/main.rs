@@ -1,4 +1,4 @@
-use avail_light_engine::{
+use avail_light_core::{
 	data::RocksDB,
 	network::rpc,
 	shutdown::Controller,

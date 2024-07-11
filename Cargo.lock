@@ -944,7 +944,7 @@ name = "avail-light-client"
 version = "1.11.0"
 dependencies = [
  "avail-core",
- "avail-light-engine",
+ "avail-light-core",
  "better-panic",
  "clap 4.5.8",
  "color-eyre",
@@ -968,7 +968,7 @@ dependencies = [
 name = "avail-light-compatibility-tests"
 version = "0.0.0"
 dependencies = [
- "avail-light-engine",
+ "avail-light-core",
  "clap 4.5.8",
  "color-eyre",
  "kate-recovery",
@@ -976,7 +976,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "avail-light-engine"
+name = "avail-light-core"
 version = "0.0.0"
 dependencies = [
  "async-std",

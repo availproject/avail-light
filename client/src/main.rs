@@ -2,7 +2,7 @@
 
 use crate::cli::{CliOpts, Network};
 use avail_core::AppId;
-use avail_light_engine::{
+use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
@@ -31,7 +31,7 @@ use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 use uuid::Uuid;
 
 #[cfg(feature = "network-analysis")]
-use avail_light_engine::network::p2p::analyzer;
+use avail_light_core::network::p2p::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -285,12 +285,11 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind()));
 
-	let (block_tx, block_rx) =
-		broadcast::channel::<avail_light_engine::types::BlockVerified>(1 << 7);
+	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
 	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
 		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		spawn_in_span(shutdown.with_cancel(avail_light_engine::app_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
 			p2p_client.clone(),
@@ -328,13 +327,13 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
 		let partition = cfg.crawl.crawl_block_matrix_partition;
-		spawn_in_span(shutdown.with_cancel(avail_light_engine::crawl_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
 			crawler_rpc_event_receiver,
 			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
-			partition.unwrap_or(avail_light_engine::crawl_client::ENTIRE_BLOCK),
+			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
 		)));
 	}
 
@@ -349,7 +348,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 
 	if cfg.sync_start_block.is_some() {
 		db.put(IsSyncedKey, false);
-		spawn_in_span(shutdown.with_cancel(avail_light_engine::sync_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_client::run(
 			sync_client,
 			sync_network_client,
 			(&cfg).into(),
@@ -360,7 +359,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 
 	if cfg.sync_finality_enable {
 		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
-		spawn_in_span(shutdown.with_cancel(avail_light_engine::sync_finality::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_finality::run(
 			sync_finality,
 			shutdown.clone(),
 			block_header.clone(),
@@ -372,7 +371,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
-	tokio::task::spawn(shutdown.with_cancel(avail_light_engine::maintenance::run(
+	tokio::task::spawn(shutdown.with_cancel(avail_light_core::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
@@ -380,16 +379,15 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		shutdown.clone(),
 	)));
 
-	let channels = avail_light_engine::types::ClientChannels {
+	let channels = avail_light_core::types::ClientChannels {
 		block_sender: block_tx,
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
 	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client =
-			avail_light_engine::fat_client::new(p2p_client.clone(), rpc_client.clone());
+		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
 
-		spawn_in_span(shutdown.with_cancel(avail_light_engine::fat_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
 			fat_client,
 			db.clone(),
 			(&cfg).into(),
@@ -401,7 +399,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	} else {
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
-		spawn_in_span(shutdown.with_cancel(avail_light_engine::light_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
 			db.clone(),
 			light_network_client,
 			(&cfg).into(),

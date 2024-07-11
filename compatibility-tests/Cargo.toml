@@ -6,7 +6,7 @@ description = "Avail Light compatibility tests"
 
 [dependencies]
 # Internal deps
-avail-light-engine = { workspace = true }
+avail-light-core = { workspace = true }
 kate-recovery = { workspace = true }
 
 clap = { workspace = true }

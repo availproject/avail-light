@@ -11,7 +11,7 @@ path = "src/main.rs"
 [dependencies]
 # Internal deps
 avail-core = { workspace = true }
-avail-light-engine = { workspace = true }
+avail-light-core = { workspace = true }
 kate-recovery = { workspace = true }
 
 better-panic = "0.3.0"
@@ -36,7 +36,7 @@ proptest = "1.0.0"
 test-case = "3.2.1"
 
 [features]
-network-analysis = ["avail-light-engine/network-analysis"]
-kademlia-rocksdb = ["avail-light-engine/kademlia-rocksdb"]
-crawl = ["avail-light-engine/crawl"]
+network-analysis = ["avail-light-core/network-analysis"]
+kademlia-rocksdb = ["avail-light-core/kademlia-rocksdb"]
+crawl = ["avail-light-core/crawl"]
 default = []

@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use avail_light_engine::types::block_matrix_partition_format;
+use avail_light_core::types::block_matrix_partition_format;
 use clap::{command, Parser, ValueEnum};
 use kate_recovery::matrix::Partition;
 

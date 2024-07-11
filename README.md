@@ -14,6 +14,6 @@ This repository is the central place for the development of the [Avail Light Cli
 
 The main components of this repository are structured as follows:
 
-- `engine/`: This library forms the core of Avail Light Client, providing essential clients and logic for the system.
+- `core/`: This library forms the core of Avail Light Client, providing essential clients and logic for the system.
 - `client/`: Implements all necessary components for the functioning of the Light Client.
 - `compatibility-test/`: This folder contains compatibility tests.
