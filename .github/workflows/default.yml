@@ -48,14 +48,14 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --workspace -- -D warnings
 
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
           # TODO: Replace with "--benches --tests --all-features" when CI is fixed for other features
-          args: --benches --tests --features "default,crawl"
+          args: --workspace --benches --tests --features "default,crawl,kademlia-rocksdb"
         env:
           RUSTFLAGS: "-C instrument-coverage"
           LLVM_PROFILE_FILE: "profile-%p-%m.profraw"
