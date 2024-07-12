@@ -2,7 +2,7 @@ use allow_block_list::BlockedPeers;
 use color_eyre::{eyre::WrapErr, Report, Result};
 use libp2p::{
 	autonat, dcutr, identify, identity,
-	kad::{self, PeerRecord, QueryId},
+	kad::{self, Mode, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
@@ -48,6 +48,7 @@ pub struct EventLoopEntries<'a> {
 		&'a mut HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 	/// <block_num, (total_cells, result_cell_counter, time_stat)>
 	active_blocks: &'a mut HashMap<u32, BlockStat>,
+	kad_mode: &'a Mode,
 }
 
 impl<'a> EventLoopEntries<'a> {
@@ -59,12 +60,14 @@ impl<'a> EventLoopEntries<'a> {
 			oneshot::Sender<Result<ConnectionEstablishedInfo>>,
 		>,
 		active_blocks: &'a mut HashMap<u32, BlockStat>,
+		mode: &'a Mode,
 	) -> Self {
 		Self {
 			swarm,
 			pending_kad_queries,
 			pending_swarm_events,
 			active_blocks,
+			kad_mode: mode,
 		}
 	}
 

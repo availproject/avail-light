@@ -1,9 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
-use libp2p::kad::Mode;
 use std::sync::Arc;
-use sysinfo::System;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -17,7 +15,6 @@ pub async fn process_block(
 	p2p_client: &P2pClient,
 	maintenance_config: MaintenanceConfig,
 	metrics: &Arc<impl Metrics>,
-	is_server: &mut bool,
 ) -> Result<()> {
 	#[cfg(not(feature = "kademlia-rocksdb"))]
 	if block_number % maintenance_config.pruning_interval == 0 {
@@ -52,19 +49,9 @@ pub async fn process_block(
 	let connected_peers = p2p_client.list_connected_peers().await?;
 	debug!("Connected peers: {:?}", connected_peers);
 
-	// Check if Kademlia mode change needs to happen
-	if maintenance_config.automatic_server_mode && !*is_server {
-		// Check external reachability and local hardware availability
-		let local_info = p2p_client.get_local_info().await?;
-		if !local_info.external_listeners.is_empty()
-			&& check_system_resources(
-				maintenance_config.total_memory_gb_threshold,
-				maintenance_config.num_cpus_threshold,
-			) {
-			info!("Switching Kademlia mode to server!");
-			_ = p2p_client.change_kademlia_mode(Mode::Server);
-			*is_server = true;
-		}
+	// Reconfigure Kademlia mode if needed
+	if maintenance_config.automatic_server_mode {
+		_ = p2p_client.reconfigure_kademlia_mode(maintenance_config.into());
 	}
 
 	let peers_num_metric = MetricValue::DHTConnectedPeers(peers_num);
@@ -100,19 +87,10 @@ pub async fn run(
 ) {
 	info!("Starting maintenance...");
 
-	let mut is_server = false;
-
 	loop {
 		let result = match block_receiver.recv().await {
 			Ok(block) => {
-				process_block(
-					block.block_num,
-					&p2p_client,
-					static_config_params,
-					&metrics,
-					&mut is_server,
-				)
-				.await
+				process_block(block.block_num, &p2p_client, static_config_params, &metrics).await
 			},
 			Err(error) => Err(error.into()),
 		};
@@ -122,19 +100,4 @@ pub async fn run(
 			break;
 		}
 	}
-}
-
-fn check_system_resources(total_memory_gb_threshold: f64, num_cpus_threshold: usize) -> bool {
-	let sys = System::new_all();
-
-	let total_memory_gb = sys.total_memory() as f64 / 1_073_741_824.0;
-	let num_cpus = sys.cpus().len();
-
-	trace!(
-		"Total memory: {} GB. CPU core count: {}.",
-		total_memory_gb,
-		num_cpus
-	);
-
-	total_memory_gb > total_memory_gb_threshold && num_cpus > num_cpus_threshold
 }

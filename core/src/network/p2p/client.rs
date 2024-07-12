@@ -1,3 +1,5 @@
+use crate::types::SystemResources;
+
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, Command, CommandSender, EventLoopEntries,
 	PeerInfo, QueryChannel, SendableCommand,
@@ -19,7 +21,7 @@ use libp2p::{
 };
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 #[derive(Clone)]
 pub struct Client {
@@ -416,21 +418,30 @@ impl Command for ListConnectedPeers {
 	}
 }
 
-struct ChangeKademliaMode {
+struct ReconfigureKademliaMode {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
-	mode: Mode,
+	threshold: SystemResources,
 }
 
-impl Command for ChangeKademliaMode {
+impl Command for ReconfigureKademliaMode {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		entries.behavior_mut().kademlia.set_mode(Some(self.mode));
+		if matches!(entries.kad_mode, Mode::Client) && !entries.external_address().is_empty() {
+			let system_resources = SystemResources::current();
+			trace!("{system_resources}");
+
+			if system_resources.is_above(&self.threshold) {
+				info!("Switching Kademlia mode to server!");
+				entries.behavior_mut().kademlia.set_mode(Some(Mode::Server));
+			}
+		}
+
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.take()
 			.unwrap()
 			.send(Ok(()))
-			.expect("CountDHTPeers receiver dropped");
+			.expect("ReconfigureKademliaMode receiver dropped");
 		Ok(())
 	}
 
@@ -440,7 +451,7 @@ impl Command for ChangeKademliaMode {
 			.take()
 			.unwrap()
 			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
+			.expect("ReconfigureKademliaMode receiver dropped");
 	}
 }
 
@@ -682,11 +693,11 @@ impl Client {
 		.await
 	}
 
-	pub async fn change_kademlia_mode(&self, mode: Mode) -> Result<()> {
+	pub async fn reconfigure_kademlia_mode(&self, threshold: SystemResources) -> Result<()> {
 		self.execute_sync(|response_sender| {
-			Box::new(ChangeKademliaMode {
+			Box::new(ReconfigureKademliaMode {
 				response_sender: Some(response_sender),
-				mode,
+				threshold,
 			})
 		})
 		.await
