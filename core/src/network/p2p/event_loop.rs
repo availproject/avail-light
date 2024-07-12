@@ -270,6 +270,9 @@ impl EventLoop {
 					},
 					kad::Event::ModeChanged { new_mode } => {
 						trace!("Kademlia mode changed: {new_mode:?}");
+						if let (Mode::Client, Mode::Server) = (self.kad_mode, new_mode) {
+							metrics.count(MetricCounter::ServerModeSwitch).await;
+						};
 						self.kad_mode = new_mode;
 					},
 					kad::Event::OutboundQueryProgressed {
