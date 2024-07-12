@@ -1,5 +1,3 @@
-use crate::types::SystemResources;
-
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, Command, CommandSender, EventLoopEntries,
 	PeerInfo, QueryChannel, SendableCommand,
@@ -20,6 +18,7 @@ use libp2p::{
 	Multiaddr, PeerId,
 };
 use std::time::{Duration, Instant};
+use sysinfo::System;
 use tokio::sync::oneshot;
 use tracing::{debug, info, trace};
 
@@ -420,16 +419,21 @@ impl Command for ListConnectedPeers {
 
 struct ReconfigureKademliaMode {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
-	threshold: SystemResources,
+	memory_gb_threshold: f64,
+	cpus_threshold: usize,
 }
 
 impl Command for ReconfigureKademliaMode {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
 		if matches!(entries.kad_mode, Mode::Client) && !entries.external_address().is_empty() {
-			let system_resources = SystemResources::current();
-			trace!("{system_resources}");
+			const BYTES_IN_GB: usize = 1024 * 1024 * 1024;
 
-			if system_resources.is_above(&self.threshold) {
+			let system = System::new_all();
+			let memory_gb = system.total_memory() as f64 / BYTES_IN_GB as f64;
+			let cpus = system.cpus().len();
+			trace!("Total memory: {memory_gb} GB, CPU core count: {cpus}");
+
+			if memory_gb > self.memory_gb_threshold && cpus > self.cpus_threshold {
 				info!("Switching Kademlia mode to server!");
 				entries.behavior_mut().kademlia.set_mode(Some(Mode::Server));
 			}
@@ -693,11 +697,16 @@ impl Client {
 		.await
 	}
 
-	pub async fn reconfigure_kademlia_mode(&self, threshold: SystemResources) -> Result<()> {
+	pub async fn reconfigure_kademlia_mode(
+		&self,
+		memory_gb_threshold: f64,
+		cpus_threshold: usize,
+	) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(ReconfigureKademliaMode {
 				response_sender: Some(response_sender),
-				threshold,
+				memory_gb_threshold,
+				cpus_threshold,
 			})
 		})
 		.await

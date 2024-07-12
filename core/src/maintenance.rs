@@ -51,7 +51,10 @@ pub async fn process_block(
 
 	// Reconfigure Kademlia mode if needed
 	if maintenance_config.automatic_server_mode {
-		_ = p2p_client.reconfigure_kademlia_mode(maintenance_config.into());
+		_ = p2p_client.reconfigure_kademlia_mode(
+			maintenance_config.total_memory_gb_threshold,
+			maintenance_config.num_cpus_threshold,
+		);
 	}
 
 	let peers_num_metric = MetricValue::DHTConnectedPeers(peers_num);
