@@ -7,8 +7,8 @@ use libp2p::{
 	identify::{self, Info},
 	identity::Keypair,
 	kad::{
-		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult,
-		QueryStats, RecordKey,
+		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, Mode, QueryId,
+		QueryResult, QueryStats, RecordKey,
 	},
 	mdns,
 	multiaddr::Protocol,
@@ -103,6 +103,7 @@ pub struct EventLoop {
 	active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
+	kad_mode: Mode,
 }
 
 #[derive(PartialEq, Debug)]
@@ -175,6 +176,7 @@ impl EventLoop {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 			},
+			kad_mode: Mode::Client,
 		}
 	}
 
@@ -268,7 +270,7 @@ impl EventLoop {
 					},
 					kad::Event::ModeChanged { new_mode } => {
 						trace!("Kademlia mode changed: {new_mode:?}");
-						// TODO: dynamic change of identify protocols Kad mode
+						self.kad_mode = new_mode;
 					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
@@ -579,6 +581,7 @@ impl EventLoop {
 			&mut self.pending_kad_queries,
 			&mut self.pending_swarm_events,
 			&mut self.active_blocks,
+			&self.kad_mode,
 		)) {
 			command.abort(eyre!(err));
 		}
