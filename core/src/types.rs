@@ -24,7 +24,6 @@ use std::time::{Duration, Instant};
 use subxt_signer::bip39::{Language, Mnemonic};
 use subxt_signer::sr25519::Keypair;
 use subxt_signer::{SecretString, SecretUri};
-use sysinfo::System;
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 use tracing::warn;
@@ -705,7 +704,7 @@ pub struct AgentVersion {
 	pub release_version: String,
 }
 
-impl Display for AgentVersion {
+impl fmt::Display for AgentVersion {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(
 			f,
@@ -1047,44 +1046,5 @@ impl TimeToLive {
 	/// Expiry at instant from now
 	pub fn expires(&self) -> Option<Instant> {
 		Instant::now().checked_add(self.0)
-	}
-}
-
-const BYTES_IN_GB: usize = 1024 * 1024 * 1024;
-
-pub struct SystemResources {
-	pub memory_gb: f64,
-	pub cpus: usize,
-}
-
-impl From<MaintenanceConfig> for SystemResources {
-	fn from(value: MaintenanceConfig) -> Self {
-		Self {
-			memory_gb: value.total_memory_gb_threshold,
-			cpus: value.num_cpus_threshold,
-		}
-	}
-}
-
-impl SystemResources {
-	pub fn current() -> Self {
-		let sys = System::new_all();
-		Self {
-			memory_gb: sys.total_memory() as f64 / BYTES_IN_GB as f64,
-			cpus: sys.cpus().len(),
-		}
-	}
-
-	pub fn is_above(&self, threshold: &SystemResources) -> bool {
-		self.memory_gb > threshold.memory_gb && self.cpus > threshold.cpus
-	}
-}
-
-impl Display for SystemResources {
-	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		let Self { memory_gb, cpus } = self;
-		f.write_str(&format!(
-			"Total memory: {memory_gb} GB, CPU core count: {cpus}"
-		))
 	}
 }
