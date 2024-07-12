@@ -229,6 +229,7 @@ fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<
 		MetricCounter::EstablishedConnections,
 		MetricCounter::IncomingPutRecord,
 		MetricCounter::IncomingGetRecord,
+		MetricCounter::ServerModeSwitch,
 	]
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, &origin))
@@ -303,6 +304,7 @@ mod tests {
 			Starts,
 			IncomingGetRecord,
 			Up,
+			ServerModeSwitch,
 			IncomingPutRecord,
 			Starts,
 		];
@@ -314,6 +316,7 @@ mod tests {
 		expected.insert(IncomingConnectionErrors.name(), 2);
 		expected.insert(IncomingConnections.name(), 1);
 		expected.insert(IncomingGetRecord.name(), 1);
+		expected.insert(ServerModeSwitch.name(), 1);
 		expected.insert(IncomingPutRecord.name(), 1);
 		assert_eq!(result, expected);
 	}
