@@ -14,6 +14,8 @@ This repository is the central place for the development of the [Avail Light Cli
 
 The main components of this repository are structured as follows:
 
-- `core/`: This library forms the core of Avail Light Client, providing essential clients and logic for the system.
+- `bootstrap/`: Implementation of protocols that serve as the entry point to the P2P network of Light Clients. 
 - `client/`: Implements all necessary components for the functioning of the Light Client.
+- `core/`: This library forms the core of Avail Light Client, providing essential clients and logic for the system.
 - `compatibility-test/`: This folder contains compatibility tests.
+- `relay/`: Implements all necessary components to utilize the Circuit Relay transport protocol.
