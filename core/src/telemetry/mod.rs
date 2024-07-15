@@ -16,7 +16,6 @@ pub enum MetricCounter {
 	EstablishedConnections,
 	IncomingPutRecord,
 	IncomingGetRecord,
-	ServerModeSwitch,
 }
 
 pub trait MetricName {
@@ -36,14 +35,13 @@ impl MetricName for MetricCounter {
 			EstablishedConnections => "avail.light.established_connections",
 			IncomingPutRecord => "avail.light.incoming_put_record",
 			IncomingGetRecord => "avail.light.incoming_get_record",
-			ServerModeSwitch => "avail.light.server_mode_switch",
 		}
 	}
 }
 
 impl MetricCounter {
 	fn is_buffered(&self) -> bool {
-		!(matches!(self, MetricCounter::Starts) || matches!(self, MetricCounter::ServerModeSwitch))
+		!matches!(self, MetricCounter::Starts)
 	}
 
 	fn as_last(&self) -> bool {
@@ -54,7 +52,6 @@ impl MetricCounter {
 		match (origin, self) {
 			(Origin::External, MetricCounter::Starts) => true,
 			(Origin::External, MetricCounter::Up) => true,
-			(Origin::External, MetricCounter::ServerModeSwitch) => true,
 			(Origin::External, _) => false,
 			(_, _) => true,
 		}
