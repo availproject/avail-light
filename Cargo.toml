@@ -4,7 +4,7 @@ members = [
 	"client",
 	"compatibility-tests",
 	"core",
-	"relay"
+	"relay",
 ]
 default-members = ["client"]
 resolver = "2"
