@@ -12,6 +12,7 @@ jobs:
         include:
           - os: ubuntu-20.04
             workspace: avail-light-bootstrap
+            binary: avail-light-bootstrap
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-bootstrap-linux-amd64
             extra_setup: |
@@ -19,6 +20,7 @@ jobs:
 
           - os: ubuntu-20.04
             workspace: avail-light-relay
+            binary: avail-light-relay
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-relay-linux-amd64
             extra_setup: |
@@ -26,6 +28,7 @@ jobs:
 
           - os: ubuntu-20.04
             workspace: avail-light-client
+            binary: avail-light
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
             extra_setup: |
@@ -33,6 +36,7 @@ jobs:
 
           - os: ubuntu-20.04
             workspace: avail-light-client
+            binary: avail-light
             rust_target: aarch64-unknown-linux-gnu
             output_name: avail-light-linux-arm64
             extra_setup: |
@@ -43,6 +47,7 @@ jobs:
 
           - os: macos-14
             workspace: avail-light-client
+            binary: avail-light
             rust_target: aarch64-apple-darwin
             output_name: avail-light-apple-arm64
             extra_setup: |
@@ -50,6 +55,7 @@ jobs:
 
           - os: macos-13
             workspace: avail-light-client
+            binary: avail-light
             rust_target: x86_64-apple-darwin
             output_name: avail-light-apple-x86_64
             extra_setup: |
@@ -57,6 +63,7 @@ jobs:
 
           - os: windows-latest
             workspace: avail-light-client
+            binary: avail-light
             rust_target: x86_64-pc-windows-msvc
             output_name: avail-light-x86_64-pc-windows-msvc.exe
             extra_setup: |
@@ -81,7 +88,7 @@ jobs:
         run: |
           ${{ matrix.extra_setup }}
           cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
-          mv target/${{ matrix.rust_target }}/maxperf/${{ matrix.workspace }} target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
+          mv target/${{ matrix.rust_target }}/maxperf/${{ matrix.binary }} target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
           pushd target/${{ matrix.rust_target }}/maxperf/
           tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
       
@@ -91,7 +98,7 @@ jobs:
         run: |
           ${{ matrix.extra_setup }}
           cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
-          Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}.exe" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
+          Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.binary }}.exe" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
           Push-Location -Path "target\${{ matrix.rust_target }}\maxperf\"
           Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
           
