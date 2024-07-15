@@ -1,9 +1,7 @@
 [package]
 name = "avail-light-relay"
-version = "0.0.0"
-authors = ["Avail Team"]
+version = "0.0.2"
 edition = "2021"
-repository = "https://github.com/availproject/avail-light"
 description = "Avail network Relay Node for p2p Light Client"
 
 [dependencies]

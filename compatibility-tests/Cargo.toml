@@ -1,7 +1,6 @@
 [package]
 name = "avail-light-compatibility-tests"
 version = "0.0.0"
-authors = ["Avail Team"]
 edition = "2021"
 description = "Avail Light compatibility tests"
 
