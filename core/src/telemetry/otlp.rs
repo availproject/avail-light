@@ -5,6 +5,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use color_eyre::Result;
+use libp2p::kad::Mode;
 use opentelemetry_api::{
 	global,
 	metrics::{Counter, Meter},
@@ -12,7 +13,7 @@ use opentelemetry_api::{
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 const ATTRIBUTE_NUMBER: usize = 8;
 
@@ -22,7 +23,7 @@ const ATTRIBUTE_NUMBER: usize = 8;
 pub struct Metrics {
 	meter: Meter,
 	counters: HashMap<&'static str, Counter<u64>>,
-	attributes: MetricAttributes,
+	attributes: RwLock<MetricAttributes>,
 	metric_buffer: Arc<Mutex<Vec<MetricValue>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
 }
@@ -40,22 +41,23 @@ pub struct MetricAttributes {
 }
 
 impl Metrics {
-	fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
+	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
+		let attributes = self.attributes.read().await;
 		[
-			KeyValue::new("version", self.attributes.version.clone()),
-			KeyValue::new("role", self.attributes.role.clone()),
-			KeyValue::new("origin", self.attributes.origin.to_string()),
-			KeyValue::new("peerID", self.attributes.peer_id.clone()),
-			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
-			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
-			KeyValue::new("operating_mode", self.attributes.operating_mode.clone()),
-			KeyValue::new("network", self.attributes.network.clone()),
+			KeyValue::new("version", attributes.version.clone()),
+			KeyValue::new("role", attributes.role.clone()),
+			KeyValue::new("origin", attributes.origin.to_string()),
+			KeyValue::new("peerID", attributes.peer_id.clone()),
+			KeyValue::new("avail_address", attributes.avail_address.clone()),
+			KeyValue::new("partition_size", attributes.partition_size.clone()),
+			KeyValue::new("operating_mode", attributes.operating_mode.clone()),
+			KeyValue::new("network", attributes.network.clone()),
 		]
 	}
 
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
 		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes();
+		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_u64(&instrument, value, &attributes)
@@ -65,7 +67,7 @@ impl Metrics {
 
 	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
 		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes();
+		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_f64(&instrument, value, &attributes)
@@ -170,11 +172,12 @@ impl super::Metrics for Metrics {
 	/// Puts counter to the counter buffer if it is allowed.
 	/// If counter is not buffered, counter is incremented.
 	async fn count(&self, counter: super::MetricCounter) {
-		if !counter.is_allowed(&self.attributes.origin) {
+		let attributes = self.attributes.read().await;
+		if !counter.is_allowed(&attributes.origin) {
 			return;
 		}
 		if !counter.is_buffered() {
-			self.counters[&counter.name()].add(1, &self.attributes());
+			self.counters[&counter.name()].add(1, &self.attributes().await);
 			return;
 		}
 		let mut counter_buffer = self.counter_buffer.lock().await;
@@ -183,7 +186,8 @@ impl super::Metrics for Metrics {
 
 	/// Puts metric to the metric buffer if it is allowed.
 	async fn record(&self, value: super::MetricValue) {
-		if !value.is_allowed(&self.attributes.origin) {
+		let attributes = self.attributes.read().await;
+		if !value.is_allowed(&attributes.origin) {
 			return;
 		}
 
@@ -201,8 +205,9 @@ impl super::Metrics for Metrics {
 		let (metrics_u64, metrics_f64) = flatten_metrics(&metric_buffer);
 		metric_buffer.clear();
 
+		let attributes = self.attributes().await;
 		for (counter, value) in counters {
-			self.counters[&counter].add(value, &self.attributes());
+			self.counters[&counter].add(value, &attributes);
 		}
 
 		// TODO: Aggregate errors instead of early return
@@ -215,6 +220,11 @@ impl super::Metrics for Metrics {
 		}
 
 		Ok(())
+	}
+
+	async fn update_operating_mode(&self, mode: Mode) {
+		let mut attributes = self.attributes.write().await;
+		attributes.operating_mode = mode.to_string()
 	}
 }
 
@@ -265,7 +275,7 @@ pub fn initialize(
 	let counters = init_counters(meter.clone(), origin);
 	Ok(Metrics {
 		meter,
-		attributes,
+		attributes: RwLock::new(attributes),
 		counters,
 		metric_buffer: Arc::new(Mutex::new(vec![])),
 		counter_buffer: Arc::new(Mutex::new(vec![])),
