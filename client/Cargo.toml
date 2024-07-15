@@ -1,0 +1,42 @@
+[package]
+name = "avail-light-client"
+version = "1.11.0"
+edition = "2021"
+description = "Avail network p2p Light Client"
+
+[[bin]]
+name = "avail-light"
+path = "src/main.rs"
+
+[dependencies]
+# Internal deps
+avail-core = { workspace = true }
+avail-light-core = { workspace = true }
+kate-recovery = { workspace = true }
+
+better-panic = "0.3.0"
+clap = { workspace = true }
+color-eyre = { workspace = true }
+confy = "0.4.0"
+hex = { workspace = true }
+libp2p = { workspace = true }
+sp-core = { version = "28.0.0", features = ["serde"] }
+strip-ansi-escapes = "0.2.0"
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"
+
+[dev-dependencies]
+hex-literal = "0.4.0"
+proptest = "1.0.0"
+test-case = "3.2.1"
+
+[features]
+network-analysis = ["avail-light-core/network-analysis"]
+kademlia-rocksdb = ["avail-light-core/kademlia-rocksdb"]
+crawl = ["avail-light-core/crawl"]
+default = []

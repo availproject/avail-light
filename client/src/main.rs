@@ -1,7 +1,8 @@
-#![doc = include_str!("../../README.md")]
+#![doc = include_str!("../README.md")]
 
+use crate::cli::{CliOpts, Network};
 use avail_core::AppId;
-use avail_light::{
+use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
@@ -11,8 +12,8 @@ use avail_light::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
-		CliOpts, IdentityConfig, LibP2PConfig, MaintenanceConfig, Network, OtelConfig,
-		RuntimeConfig,
+		IdentifyConfig, IdentityConfig, LibP2PConfig, MaintenanceConfig, MultiaddrConfig,
+		OtelConfig, RuntimeConfig, SecretKey,
 	},
 	utils::spawn_in_span,
 };
@@ -22,15 +23,15 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::com::AppData;
-use libp2p::{multiaddr::Protocol, Multiaddr};
-use std::{fs, net::Ipv4Addr, path::Path, sync::Arc};
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use std::{fs, net::Ipv4Addr, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, metadata::ParseLevelError, span, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 use uuid::Uuid;
 
 #[cfg(feature = "network-analysis")]
-use avail_light::network::p2p::analyzer;
+use avail_light_core::network::p2p::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -108,7 +109,8 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	let (db, _rocks_db) =
 		RocksDB::open(&cfg.avail_path).wrap_err("Avail Light could not initialize database")?;
 
-	let cfg_libp2p: LibP2PConfig = (&cfg).into();
+	let identify = IdentifyConfig::new(version.to_string());
+	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
 	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;
 
 	let metric_attributes = MetricAttributes {
@@ -132,6 +134,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 			})
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
+		version: version.to_string(),
 	};
 
 	let cfg_otel: OtelConfig = (&cfg).into();
@@ -282,11 +285,11 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind()));
 
-	let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
+	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
 	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
 		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		spawn_in_span(shutdown.with_cancel(avail_light::app_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
 			p2p_client.clone(),
@@ -324,13 +327,13 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
 		let partition = cfg.crawl.crawl_block_matrix_partition;
-		spawn_in_span(shutdown.with_cancel(avail_light::crawl_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
 			crawler_rpc_event_receiver,
 			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
-			partition.unwrap_or(avail_light::crawl_client::ENTIRE_BLOCK),
+			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
 		)));
 	}
 
@@ -345,7 +348,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 
 	if cfg.sync_start_block.is_some() {
 		db.put(IsSyncedKey, false);
-		spawn_in_span(shutdown.with_cancel(avail_light::sync_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_client::run(
 			sync_client,
 			sync_network_client,
 			(&cfg).into(),
@@ -356,7 +359,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 
 	if cfg.sync_finality_enable {
 		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
-		spawn_in_span(shutdown.with_cancel(avail_light::sync_finality::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_finality::run(
 			sync_finality,
 			shutdown.clone(),
 			block_header.clone(),
@@ -368,7 +371,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
-	tokio::task::spawn(shutdown.with_cancel(avail_light::maintenance::run(
+	tokio::task::spawn(shutdown.with_cancel(avail_light_core::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
@@ -376,15 +379,15 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		shutdown.clone(),
 	)));
 
-	let channels = avail_light::types::ClientChannels {
+	let channels = avail_light_core::types::ClientChannels {
 		block_sender: block_tx,
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
 	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client = avail_light::fat_client::new(p2p_client.clone(), rpc_client.clone());
+		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
 
-		spawn_in_span(shutdown.with_cancel(avail_light::fat_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
 			fat_client,
 			db.clone(),
 			(&cfg).into(),
@@ -396,7 +399,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	} else {
 		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
-		spawn_in_span(shutdown.with_cancel(avail_light::light_client::run(
+		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
 			db.clone(),
 			light_network_client,
 			(&cfg).into(),
@@ -495,6 +498,63 @@ async fn user_signal() {
 	}
 }
 
+mod cli;
+
+pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
+	let mut cfg = if let Some(config_path) = &opts.config {
+		fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
+		confy::load_path(config_path)
+			.wrap_err(format!("Failed to load configuration from {}", config_path))?
+	} else {
+		RuntimeConfig::default()
+	};
+
+	// Flags override the config parameters
+	if let Some(network) = &opts.network {
+		let bootstrap: (PeerId, Multiaddr) = (
+			PeerId::from_str(network.bootstrap_peer_id())
+				.wrap_err("unable to parse default bootstrap peerID")?,
+			Multiaddr::from_str(network.bootstrap_multiaddrr())
+				.wrap_err("unable to parse default bootstrap multi-address")?,
+		);
+		cfg.full_node_ws = vec![network.full_node_ws().to_string()];
+		cfg.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		cfg.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
+		cfg.genesis_hash = network.genesis_hash().to_string();
+	}
+
+	if let Some(loglvl) = &opts.verbosity {
+		cfg.log_level = loglvl.to_string();
+	}
+
+	if let Some(port) = opts.port {
+		cfg.port = port;
+	}
+	if let Some(http_port) = opts.http_server_port {
+		cfg.http_server_port = http_port;
+	}
+	cfg.sync_finality_enable |= opts.finality_sync_enable;
+	cfg.app_id = opts.app_id.or(cfg.app_id);
+	cfg.ws_transport_enable |= opts.ws_transport_enable;
+	if let Some(secret_key) = &opts.private_key {
+		cfg.secret_key = Some(SecretKey::Key {
+			key: secret_key.to_string(),
+		});
+	}
+
+	if let Some(seed) = &opts.seed {
+		cfg.secret_key = Some(SecretKey::Seed {
+			seed: seed.to_string(),
+		})
+	}
+
+	if let Some(partition) = &opts.block_matrix_partition {
+		cfg.block_matrix_partition = Some(*partition)
+	}
+
+	Ok(cfg)
+}
+
 #[tokio::main]
 pub async fn main() -> Result<()> {
 	let shutdown = Controller::new();
@@ -504,9 +564,7 @@ pub async fn main() -> Result<()> {
 
 	let opts = CliOpts::parse();
 
-	let mut cfg: RuntimeConfig = RuntimeConfig::default();
-	cfg.load_runtime_config(&opts)
-		.expect("runtime configuration is loaded");
+	let cfg = load_runtime_config(&opts).expect("runtime configuration is loaded");
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
