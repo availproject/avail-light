@@ -63,7 +63,7 @@ jobs:
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source "$HOME/.cargo/env"
 
-      - name: Build ${{ matrix.output_name }}
+      - name: Build on linux/mac ${{ matrix.output_name }}
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -73,7 +73,7 @@ jobs:
           pushd target/${{ matrix.rust_target }}/maxperf/
           tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
       
-      - name: Build ${{ matrix.output_name }}
+      - name: Build on windows ${{ matrix.output_name }}
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
