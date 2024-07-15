@@ -1,6 +1,7 @@
 use crate::types::Origin;
 use async_trait::async_trait;
 use color_eyre::Result;
+use libp2p::kad::Mode;
 use mockall::automock;
 
 pub mod otlp;
@@ -144,4 +145,5 @@ pub trait Metrics {
 	async fn count(&self, counter: MetricCounter);
 	async fn record(&self, value: MetricValue);
 	async fn flush(&self) -> Result<()>;
+	async fn update_operating_mode(&self, mode: Mode);
 }
