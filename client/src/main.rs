@@ -371,7 +371,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
-	tokio::task::spawn(shutdown.with_cancel(avail_light_core::maintenance::run(
+	spawn_in_span(shutdown.with_cancel(avail_light_core::maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
