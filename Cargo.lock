@@ -1013,6 +1013,10 @@ dependencies = [
  "base64 0.21.7",
  "better-panic",
  "chrono",
+<<<<<<< HEAD
+=======
+ "clap 4.5.8",
+>>>>>>> cb37a7af (update cargo lock)
  "color-eyre",
  "confy 0.5.1",
  "derive_more",
