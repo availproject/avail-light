@@ -11,14 +11,28 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-            workspace: avail-light
+            workspace: avail-light-bootstrap
+            rust_target: x86_64-unknown-linux-gnu
+            output_name: avail-light-bootstrap-linux-amd64
+            extra_setup: |
+              rustup target add x86_64-unknown-linux-gnu
+
+          - os: ubuntu-20.04
+            workspace: avail-light-relay
+            rust_target: x86_64-unknown-linux-gnu
+            output_name: avail-light-relay-linux-amd64
+            extra_setup: |
+              rustup target add x86_64-unknown-linux-gnu
+
+          - os: ubuntu-20.04
+            workspace: avail-light-client
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
             extra_setup: |
               rustup target add x86_64-unknown-linux-gnu
 
           - os: ubuntu-20.04
-            workspace: avail-light
+            workspace: avail-light-client
             rust_target: aarch64-unknown-linux-gnu
             output_name: avail-light-linux-arm64
             extra_setup: |
@@ -28,29 +42,27 @@ jobs:
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc
 
           - os: macos-14
-            workspace: avail-light
+            workspace: avail-light-client
             rust_target: aarch64-apple-darwin
             output_name: avail-light-apple-arm64
             extra_setup: |
               rustup target add aarch64-apple-darwin
 
           - os: macos-13
-            workspace: avail-light
+            workspace: avail-light-client
             rust_target: x86_64-apple-darwin
             output_name: avail-light-apple-x86_64
             extra_setup: |
               rustup target add x86_64-apple-darwin
 
           - os: windows-latest
-            workspace: avail-light
+            workspace: avail-light-client
             rust_target: x86_64-pc-windows-msvc
             output_name: avail-light-x86_64-pc-windows-msvc.exe
             extra_setup: |
               Invoke-WebRequest -Uri https://win.rustup.rs -OutFile rustup-init.exe
               .\rustup-init.exe -y --default-toolchain stable
               $env:Path += ";$env:USERPROFILE\.cargo\bin"
-              rustup --version
-              cargo --version
               rustup target add x86_64-pc-windows-msvc
 
     steps:
@@ -134,4 +146,35 @@ jobs:
             -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ github.ref_name }}\"}}" \
             | grep -q "204"
 
-# Add docker step
+  # build avail image and publish to dockerhub
+  docker_build_push:
+    needs: [binary_publish]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push images
+        uses: docker/build-push-action@v3
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: .
+          file: ./Dockerfile.release
+          platforms: linux/amd64
+          push: true
+          tags: availj/avail-light:${{ github.ref_name }}
+          build-args: |
+            AVAIL_TAG=${{ github.ref_name }}
