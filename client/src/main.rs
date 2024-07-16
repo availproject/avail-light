@@ -534,6 +534,9 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	if let Some(http_port) = opts.http_server_port {
 		cfg.http_server_port = http_port;
 	}
+	if let Some(avail_path) = &opts.avail_path {
+		cfg.avail_path = avail_path.to_string();
+	}
 	cfg.sync_finality_enable |= opts.finality_sync_enable;
 	cfg.app_id = opts.app_id.or(cfg.app_id);
 	cfg.ws_transport_enable |= opts.ws_transport_enable;

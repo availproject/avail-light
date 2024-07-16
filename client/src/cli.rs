@@ -118,6 +118,9 @@ pub struct CliOpts {
 	/// Run a clean light client, deleting existing avail_path folder
 	#[arg(long)]
 	pub clean: bool,
+	/// Path to the avail_path, where RocksDB stores its data
+	#[arg(long)]
+	pub avail_path: Option<String>,
 	/// Enable finality sync
 	#[arg(short, long, value_name = "finality_sync_enable")]
 	pub finality_sync_enable: bool,

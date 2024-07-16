@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Add `--avail-path` CLI parameter
 - Add `operation-mode` to v2 diagnostics API
 - Add `multiaddress` attribute to metrics
 - Enable `kademlia-rocksdb` by default
