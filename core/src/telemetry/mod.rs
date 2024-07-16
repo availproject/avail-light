@@ -1,7 +1,7 @@
 use crate::types::Origin;
 use async_trait::async_trait;
 use color_eyre::Result;
-use libp2p::kad::Mode;
+use libp2p::{kad::Mode, Multiaddr};
 use mockall::automock;
 
 pub mod otlp;
@@ -146,4 +146,5 @@ pub trait Metrics {
 	async fn record(&self, value: MetricValue);
 	async fn flush(&self) -> Result<()>;
 	async fn update_operating_mode(&self, mode: Mode);
+	async fn update_multiaddress(&self, mode: Multiaddr);
 }

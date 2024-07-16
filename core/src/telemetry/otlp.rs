@@ -5,7 +5,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use color_eyre::Result;
-use libp2p::kad::Mode;
+use libp2p::{kad::Mode, Multiaddr};
 use opentelemetry_api::{
 	global,
 	metrics::{Counter, Meter},
@@ -15,7 +15,7 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, RwLock};
 
-const ATTRIBUTE_NUMBER: usize = 8;
+const ATTRIBUTE_NUMBER: usize = 9;
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
@@ -38,6 +38,7 @@ pub struct MetricAttributes {
 	pub partition_size: String,
 	pub network: String,
 	pub version: String,
+	pub multiaddress: String,
 }
 
 impl Metrics {
@@ -52,6 +53,7 @@ impl Metrics {
 			KeyValue::new("partition_size", attributes.partition_size.clone()),
 			KeyValue::new("operating_mode", attributes.operating_mode.clone()),
 			KeyValue::new("network", attributes.network.clone()),
+			KeyValue::new("multiaddress", attributes.multiaddress.clone()),
 		]
 	}
 
@@ -225,6 +227,11 @@ impl super::Metrics for Metrics {
 	async fn update_operating_mode(&self, mode: Mode) {
 		let mut attributes = self.attributes.write().await;
 		attributes.operating_mode = mode.to_string()
+	}
+
+	async fn update_multiaddress(&self, multiaddress: Multiaddr) {
+		let mut attributes = self.attributes.write().await;
+		attributes.multiaddress = multiaddress.to_string()
 	}
 }
 

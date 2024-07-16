@@ -518,6 +518,7 @@ impl EventLoop {
 							"External reachability confirmed on address: {}",
 							address.to_string()
 						);
+						metrics.update_multiaddress(address).await;
 					},
 					SwarmEvent::ConnectionEstablished {
 						peer_id,
