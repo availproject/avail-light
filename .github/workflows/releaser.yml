@@ -130,6 +130,7 @@ jobs:
          overwrite: true
          file_glob: true
 
+
   trigger_deploy_workflow:
     needs: [binary_publish]
     runs-on: ubuntu-20.04
@@ -142,7 +143,7 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
-            -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}"}}'
+            -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}","bootnode_version": "${{ github.ref_name }}" }}'
                       
       - name: Trigger repository dispatch for crawler
         if: false
