@@ -130,6 +130,7 @@ jobs:
          overwrite: true
          file_glob: true
 
+
   trigger_deploy_workflow:
     needs: [binary_publish]
     runs-on: ubuntu-20.04
