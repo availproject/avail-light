@@ -29,5 +29,5 @@ pub const VERIFIED_HEADER_KEY: &str = "verified_header";
 pub const LATEST_HEADER_KEY: &str = "latest_header";
 /// Key for storing IsSynced boolean
 pub const IS_SYNCED_KEY: &str = "is_synced";
-/// Key for storing PeerKey boolean
+/// Key for storing PeerKey String
 pub const PEER_KEY: &str = "peer_key";
