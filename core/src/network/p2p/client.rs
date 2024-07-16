@@ -309,6 +309,7 @@ impl Command for GetLocalInfo {
 			.unwrap()
 			.send(Ok(PeerInfo {
 				peer_id: entries.peer_id().to_string(),
+				operation_mode: entries.kad_mode.to_string(),
 				peer_multiaddr: None,
 				local_listeners: entries.listeners(),
 				external_listeners: entries.external_address(),
@@ -360,6 +361,7 @@ impl Command for GetExternalPeerInfo {
 					.peer_id
 					.map(|peer| peer.to_string())
 					.expect("Could not retrieve peerID"),
+				operation_mode: entries.kad_mode.to_string(),
 				peer_multiaddr: Some(multiaddrs),
 				local_listeners: entries.listeners(),
 				external_listeners: entries.external_address(),

@@ -252,6 +252,7 @@ This API is intended to be used for P2P network observability and diagnostics.
 Returns:
 
 - `peer_id`
+- kademlia operation mode for `peer_id`
 - list of listeners with local addresses
 - list of listeners with external addresses
 - number of clients found in peers routing table
