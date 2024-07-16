@@ -135,6 +135,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
+		multiaddress: "".to_string(),
 	};
 
 	let cfg_otel: OtelConfig = (&cfg).into();

@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Add `multiaddress` attribute to metrics
 - Enable `kademlia-rocksdb` by default
 - Update operating mode metrics attribute on kademlia mode change
 - Fix storing the state of the verified data range
