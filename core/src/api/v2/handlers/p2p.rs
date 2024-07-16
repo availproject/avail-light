@@ -16,6 +16,7 @@ pub struct Listeners {
 pub struct PeerInfoResponse {
 	peer_id: String,
 	listeners: Listeners,
+	operation_mode: String,
 	routing_table_peers_count: usize,
 	routing_table_external_peers_count: usize,
 }
@@ -88,6 +89,7 @@ pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, 
 
 	Ok(PeerInfoResponse {
 		peer_id: local_info.peer_id,
+		operation_mode: local_info.operation_mode,
 		listeners: Listeners {
 			local: local_info.local_listeners,
 			external: local_info.external_listeners,
