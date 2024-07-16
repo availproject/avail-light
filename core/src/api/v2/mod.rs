@@ -108,12 +108,10 @@ fn submit_route(
 
 fn p2p_local_info_route(
 	p2p_client: p2p::Client,
-	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "p2p" / "local" / "info")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.and(with_db(db))
 		.then(handlers::p2p::get_peer_info)
 		.map(log_internal_server_error)
 }
@@ -239,7 +237,7 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, db.clone()))
-		.or(p2p_local_info_route(p2p_client.clone(), db.clone()))
+		.or(p2p_local_info_route(p2p_client.clone()))
 		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.or(p2p_peer_multiaddr_route(p2p_client.clone()))
 		.recover(handle_rejection)

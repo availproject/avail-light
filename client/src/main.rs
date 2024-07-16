@@ -5,7 +5,7 @@ use avail_core::AppId;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, PeerKey, RocksDB},
+	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
 	network::{self, p2p, rpc},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -112,14 +112,13 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 	let identify = IdentifyConfig::new(version.to_string());
 	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
 	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;
-	let operation_mode = cfg.operation_mode.to_string();
 
 	let metric_attributes = MetricAttributes {
 		role: client_role.into(),
-		peer_id: peer_id.clone(),
+		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: operation_mode.clone(),
+		operating_mode: cfg.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|_| {
@@ -268,7 +267,6 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		},
 	};
 
-	db.put(PeerKey(peer_id), operation_mode);
 	db.put(LatestHeaderKey, block_header.number);
 	let sync_range = cfg.sync_range(block_header.number);
 
