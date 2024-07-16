@@ -200,3 +200,9 @@ impl From<IsSyncedKey> for RocksDBKey {
 		RocksDBKey::app_state(IS_SYNCED_KEY)
 	}
 }
+
+impl From<PeerKey> for RocksDBKey {
+	fn from(_: PeerKey) -> Self {
+		RocksDBKey::app_state(PEER_KEY)
+	}
+}

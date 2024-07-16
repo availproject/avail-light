@@ -1,6 +1,7 @@
 use crate::{
 	api::v2::types::Error,
-	network::p2p::{self},
+	data::{Database, PeerKey},
+	network::p2p,
 };
 use libp2p::{swarm::DialError, Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
@@ -76,11 +77,19 @@ pub struct ExternalPeerMultiaddress {
 	pub peer_id: PeerId,
 }
 
-pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, Error> {
+pub async fn get_peer_info(
+	p2p_client: p2p::Client,
+	db: impl Database + Clone,
+) -> Result<PeerInfoResponse, Error> {
 	let local_info = p2p_client
 		.get_local_info()
 		.await
 		.map_err(Error::internal_server_error)?;
+
+	db.put(
+		PeerKey(local_info.peer_id.clone()),
+		local_info.operation_mode.clone(),
+	);
 
 	let (routing_table_peers_count, routing_table_external_peers_count) = p2p_client
 		.count_dht_entries()

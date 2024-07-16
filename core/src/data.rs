@@ -144,3 +144,9 @@ pub struct IsSyncedKey;
 impl RecordKey for IsSyncedKey {
 	type Type = bool;
 }
+
+pub struct PeerKey(pub String);
+
+impl RecordKey for PeerKey {
+	type Type = String;
+}
