@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Add `operation-mode` to v2 diagnostics API and state persistence store
 - Add `multiaddress` attribute to metrics
 - Enable `kademlia-rocksdb` by default
 - Update operating mode metrics attribute on kademlia mode change
