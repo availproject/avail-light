@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Enable `kademlia-rocksdb` by default
 - Update operating mode metrics attribute on kademlia mode change
 - Fix storing the state of the verified data range
 - Re-enable automatic Kademlia mode switching from client to server if the pre-requisites are met
