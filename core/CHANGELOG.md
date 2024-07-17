@@ -2,6 +2,8 @@
 
 ## [1.11.0]
 
+- Add `client_id` and `execution_id` to metric attributes
+- Add `client_id` and rename `id` to `execution_id` in JSON logs
 - Add `--avail-path` CLI parameter
 - Add `operation-mode` to v2 diagnostics API
 - Add `multiaddress` attribute to metrics
