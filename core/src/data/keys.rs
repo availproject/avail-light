@@ -29,3 +29,5 @@ pub const VERIFIED_HEADER_KEY: &str = "verified_header";
 pub const LATEST_HEADER_KEY: &str = "latest_header";
 /// Key for storing IsSynced boolean
 pub const IS_SYNCED_KEY: &str = "is_synced";
+/// Key for storing ClientID
+pub const CLIENT_ID_KEY: &str = "client_id";

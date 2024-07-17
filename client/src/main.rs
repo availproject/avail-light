@@ -5,7 +5,9 @@ use avail_core::AppId;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
+	data::{
+		ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB, Uuid,
+	},
 	network::{self, p2p, rpc},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -28,7 +30,6 @@ use std::{fs, net::Ipv4Addr, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, metadata::ParseLevelError, span, trace, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
-use uuid::Uuid;
 
 #[cfg(feature = "network-analysis")]
 use avail_light_core::network::p2p::analyzer;
@@ -71,17 +72,12 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) -> Result<()> {
-	if opts.avail_passphrase.is_some() {
-		warn!("Using deprecated CLI parameter `--avail-passphrase`, use `--avail-suri` instead.");
-	}
-
-	let identity_cfg = IdentityConfig::load_or_init(
-		&opts.identity,
-		opts.avail_suri.or(opts.avail_passphrase).as_deref(),
-	)?;
-	info!("Identity loaded from {}", &opts.identity);
-
+async fn run(
+	cfg: RuntimeConfig,
+	identity_cfg: IdentityConfig,
+	db: RocksDB,
+	shutdown: Controller<String>,
+) -> Result<()> {
 	let client_role = if cfg.is_fat_client() {
 		info!("Fat client mode");
 		"fatnode"
@@ -97,17 +93,9 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		&identity_cfg.avail_address, &identity_cfg.avail_public_key
 	);
 
-	if opts.clean && Path::new(&cfg.avail_path).exists() {
-		info!("Cleaning up local state directory");
-		fs::remove_dir_all(&cfg.avail_path).wrap_err("Failed to remove local state directory")?;
-	}
-
 	if cfg.bootstraps.is_empty() {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
-
-	let (db, _rocks_db) =
-		RocksDB::open(&cfg.avail_path).wrap_err("Avail Light could not initialize database")?;
 
 	let identify = IdentifyConfig::new(version.to_string());
 	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
@@ -159,7 +147,7 @@ async fn run(cfg: RuntimeConfig, opts: CliOpts, shutdown: Controller<String>) ->
 		cfg.ws_transport_enable,
 		shutdown.clone(),
 		#[cfg(feature = "kademlia-rocksdb")]
-		_rocks_db,
+		db.db.clone(),
 	);
 
 	spawn_in_span(
@@ -581,8 +569,36 @@ pub async fn main() -> Result<()> {
 			.expect("global default subscriber is set");
 	};
 
+	if opts.avail_passphrase.is_some() {
+		warn!("Using deprecated CLI parameter `--avail-passphrase`, use `--avail-suri` instead.");
+	}
+
+	let identity_cfg = IdentityConfig::load_or_init(
+		&opts.identity,
+		opts.avail_suri.or(opts.avail_passphrase).as_deref(),
+	)?;
+	info!("Identity loaded from {}", &opts.identity);
+
+	if opts.clean && Path::new(&cfg.avail_path).exists() {
+		info!("Cleaning up local state directory");
+		fs::remove_dir_all(&cfg.avail_path).wrap_err("Failed to remove local state directory")?;
+	}
+
+	let db = RocksDB::open(&cfg.avail_path).expect("Avail Light could not initialize database");
+
+	let client_id = db.get(ClientIdKey).unwrap_or_else(|| {
+		let client_id = Uuid::new_v4();
+		db.put(ClientIdKey, client_id.clone());
+		client_id
+	});
+
+	let span = span!(
+		Level::INFO,
+		"run",
+		id = Uuid::new_v4().to_string(),
+		client_id = client_id.to_string()
+	);
 	// Do not enter span if logs format is not JSON
-	let span = span!(Level::INFO, "run", id = Uuid::new_v4().to_string());
 	let _enter = if logs_json { Some(span.enter()) } else { None };
 
 	if let Some(error) = parse_error {
@@ -592,7 +608,7 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
 
-	if let Err(error) = run(cfg, opts, shutdown.clone()).await {
+	if let Err(error) = run(cfg, identity_cfg, db, shutdown.clone()).await {
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};

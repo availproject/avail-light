@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RocksDB {
-	db: Arc<rocksdb::DB>,
+	pub db: Arc<rocksdb::DB>,
 }
 
 #[derive(Eq, Hash, PartialEq)]
@@ -23,7 +23,7 @@ impl RocksDBKey {
 }
 
 impl RocksDB {
-	pub fn open(path: &str) -> Result<(RocksDB, Arc<rocksdb::DB>)> {
+	pub fn open(path: &str) -> Result<RocksDB> {
 		let mut kademlia_store_cf_opts = Options::default();
 		kademlia_store_cf_opts
 			.set_compaction_filter_factory(ExpirationCompactionFilterFactory::default());
@@ -37,7 +37,7 @@ impl RocksDB {
 		db_opts.create_missing_column_families(true);
 
 		let db = Arc::new(rocksdb::DB::open_cf_descriptors(&db_opts, path, cf_opts)?);
-		Ok((RocksDB { db: db.clone() }, db))
+		Ok(RocksDB { db })
 	}
 }
 
@@ -198,5 +198,11 @@ impl From<LatestHeaderKey> for RocksDBKey {
 impl From<IsSyncedKey> for RocksDBKey {
 	fn from(_: IsSyncedKey) -> Self {
 		RocksDBKey::app_state(IS_SYNCED_KEY)
+	}
+}
+
+impl From<ClientIdKey> for RocksDBKey {
+	fn from(_: ClientIdKey) -> Self {
+		RocksDBKey::app_state(CLIENT_ID_KEY)
 	}
 }
