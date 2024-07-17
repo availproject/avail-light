@@ -1,5 +1,5 @@
-use anyhow::Context;
-use libp2p::StreamProtocol;
+use anyhow::{anyhow, Context, Error};
+use libp2p::{Multiaddr, PeerId, StreamProtocol};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -22,6 +22,42 @@ pub const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 pub enum SecretKey {
 	Seed { seed: String },
 	Key { key: String },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(try_from = "String")]
+pub struct CompactMultiaddress((PeerId, Multiaddr));
+
+impl TryFrom<String> for CompactMultiaddress {
+	type Error = Error;
+
+	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+		let Some((_, peer_id)) = value.rsplit_once('/') else {
+			return Err(anyhow!("Invalid multiaddress string"));
+		};
+		let peer_id = PeerId::from_str(peer_id)?;
+		let multiaddr = Multiaddr::from_str(&value)?;
+		Ok(CompactMultiaddress((peer_id, multiaddr)))
+	}
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(
+	untagged,
+	expecting = "Valid multiaddress/peer_id string or a tuple (peer_id, multiaddress) expected"
+)]
+pub enum MultiaddrConfig {
+	Compact(CompactMultiaddress),
+	PeerIdAndMultiaddr((PeerId, Multiaddr)),
+}
+
+impl From<&MultiaddrConfig> for (PeerId, Multiaddr) {
+	fn from(value: &MultiaddrConfig) -> Self {
+		match value {
+			MultiaddrConfig::Compact(CompactMultiaddress(value)) => value.clone(),
+			MultiaddrConfig::PeerIdAndMultiaddr(value) => value.clone(),
+		}
+	}
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -52,6 +88,8 @@ pub struct RuntimeConfig {
 	pub autonat_only_global_ips: bool,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub kad_query_timeout: u32,
+	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300s)
 	pub bootstrap_period: u64,
 	/// OpenTelemetry Collector endpoint (default: http://127.0.0.1:4317)
@@ -151,6 +189,7 @@ impl Default for RuntimeConfig {
 			autonat_only_global_ips: true,
 			connection_idle_timeout: 30,
 			kad_query_timeout: 60,
+			bootstraps: vec![],
 			bootstrap_period: 300,
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			metrics_network_dump_interval: 15,
