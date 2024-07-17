@@ -593,8 +593,8 @@ pub async fn main() -> Result<()> {
 	let span = span!(
 		Level::INFO,
 		"run",
-		id = Uuid::new_v4().to_string(),
-		client_id = client_id.to_string()
+		client_id = client_id.to_string(),
+		execution_id = Uuid::new_v4().to_string()
 	);
 	// Do not enter span if logs format is not JSON
 	let _enter = if logs_json { Some(span.enter()) } else { None };
