@@ -234,27 +234,24 @@ async fn build_swarm(
 
 // Keypair function creates identity Keypair for a local node.
 // From such generated keypair it derives multihash identifier of the local peer.
-pub fn keypair(cfg: &LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)> {
-	let keypair = match cfg.secret_key.as_ref() {
+pub fn keypair(secret_key: &SecretKey) -> Result<identity::Keypair> {
+	let keypair = match secret_key {
 		// If seed is provided, generate secret key from seed
-		Some(SecretKey::Seed { seed }) => {
+		SecretKey::Seed { seed } => {
 			let seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
 			identity::Keypair::ed25519_from_bytes(seed_digest)
 				.wrap_err("error generating secret key from seed")?
 		},
 		// Import secret key if provided
-		Some(SecretKey::Key { key }) => {
+		SecretKey::Key { key } => {
 			let mut decoded_key = [0u8; 32];
 			hex::decode_to_slice(key.clone().into_bytes(), &mut decoded_key)
 				.wrap_err("error decoding secret key from config")?;
 			identity::Keypair::ed25519_from_bytes(decoded_key)
 				.wrap_err("error importing secret key")?
 		},
-		// If neither seed nor secret key provided, generate secret key from random seed
-		None => identity::Keypair::generate_ed25519(),
 	};
-	let peer_id = PeerId::from(keypair.public()).to_string();
-	Ok((keypair, peer_id))
+	Ok(keypair)
 }
 
 // Returns [`true`] if the address appears to be globally reachable

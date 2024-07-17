@@ -147,3 +147,9 @@ impl From<ClientIdKey> for HashMapKey {
 		HashMapKey(CLIENT_ID_KEY.to_string())
 	}
 }
+
+impl From<P2PKeypairKey> for HashMapKey {
+	fn from(_: P2PKeypairKey) -> Self {
+		HashMapKey(P2P_KEYPAIR_KEY.to_string())
+	}
+}
