@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RocksDB {
-	pub db: Arc<rocksdb::DB>,
+	db: Arc<rocksdb::DB>,
 }
 
 #[derive(Eq, Hash, PartialEq)]
@@ -38,6 +38,10 @@ impl RocksDB {
 
 		let db = Arc::new(rocksdb::DB::open_cf_descriptors(&db_opts, path, cf_opts)?);
 		Ok(RocksDB { db })
+	}
+
+	pub fn inner(&self) -> Arc<rocksdb::DB> {
+		self.db.clone()
 	}
 }
 

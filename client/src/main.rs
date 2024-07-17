@@ -149,7 +149,7 @@ async fn run(
 		cfg.ws_transport_enable,
 		shutdown.clone(),
 		#[cfg(feature = "kademlia-rocksdb")]
-		db.db.clone(),
+		db.inner(),
 	);
 
 	spawn_in_span(
