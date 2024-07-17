@@ -153,3 +153,9 @@ pub struct ClientIdKey;
 impl RecordKey for ClientIdKey {
 	type Type = Uuid;
 }
+
+pub struct P2PKeypairKey;
+
+impl RecordKey for P2PKeypairKey {
+	type Type = Vec<u8>;
+}

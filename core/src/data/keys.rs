@@ -31,3 +31,5 @@ pub const LATEST_HEADER_KEY: &str = "latest_header";
 pub const IS_SYNCED_KEY: &str = "is_synced";
 /// Key for storing ClientID
 pub const CLIENT_ID_KEY: &str = "client_id";
+/// Key for storing P2P keypair
+pub const P2P_KEYPAIR_KEY: &str = "p2p_keypair";

@@ -210,3 +210,9 @@ impl From<ClientIdKey> for RocksDBKey {
 		RocksDBKey::app_state(CLIENT_ID_KEY)
 	}
 }
+
+impl From<P2PKeypairKey> for RocksDBKey {
+	fn from(_: P2PKeypairKey) -> Self {
+		RocksDBKey::app_state(P2P_KEYPAIR_KEY)
+	}
+}

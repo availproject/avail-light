@@ -5,7 +5,10 @@ use avail_core::AppId;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
+	data::{
+		ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, P2PKeypairKey,
+		RocksDB,
+	},
 	network::{self, p2p, rpc},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -23,7 +26,11 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::com::AppData;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use libp2p::{
+	identity::{self, ed25519},
+	multiaddr::Protocol,
+	Multiaddr, PeerId,
+};
 use std::{fs, net::Ipv4Addr, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, metadata::ParseLevelError, span, trace, warn, Level, Subscriber};
@@ -70,6 +77,21 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
+fn get_or_init_p2p_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
+	if let Some(secret_key) = cfg.secret_key.as_ref() {
+		return p2p::keypair(secret_key);
+	};
+
+	if let Some(mut bytes) = db.get(P2PKeypairKey) {
+		return Ok(ed25519::Keypair::try_from_bytes(&mut bytes[..]).map(From::from)?);
+	};
+
+	let id_keys = identity::Keypair::generate_ed25519();
+	let keypair = id_keys.clone().try_into_ed25519()?;
+	db.put(P2PKeypairKey, keypair.to_bytes().to_vec());
+	Ok(id_keys)
+}
+
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
@@ -99,7 +121,8 @@ async fn run(
 
 	let identify = IdentifyConfig::new(version.to_string());
 	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
-	let (id_keys, peer_id) = p2p::keypair(&cfg_libp2p)?;
+	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
+	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
 		role: client_role.into(),
