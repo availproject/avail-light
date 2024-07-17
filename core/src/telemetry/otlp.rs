@@ -15,7 +15,7 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, RwLock};
 
-const ATTRIBUTE_NUMBER: usize = 9;
+const ATTRIBUTE_NUMBER: usize = 11;
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
@@ -39,6 +39,8 @@ pub struct MetricAttributes {
 	pub network: String,
 	pub version: String,
 	pub multiaddress: String,
+	pub client_id: String,
+	pub execution_id: String,
 }
 
 impl Metrics {
@@ -54,6 +56,8 @@ impl Metrics {
 			KeyValue::new("operating_mode", attributes.operating_mode.clone()),
 			KeyValue::new("network", attributes.network.clone()),
 			KeyValue::new("multiaddress", attributes.multiaddress.clone()),
+			KeyValue::new("client_id", attributes.client_id.clone()),
+			KeyValue::new("execution_id", attributes.execution_id.clone()),
 		]
 	}
 
