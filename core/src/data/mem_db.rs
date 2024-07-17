@@ -141,3 +141,9 @@ impl From<IsSyncedKey> for HashMapKey {
 		HashMapKey(IS_SYNCED_KEY.to_string())
 	}
 }
+
+impl From<ClientIdKey> for HashMapKey {
+	fn from(_: ClientIdKey) -> Self {
+		HashMapKey(CLIENT_ID_KEY.to_string())
+	}
+}
