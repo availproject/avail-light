@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use libp2p::{
 	autonat::{self, InboundProbeEvent, OutboundProbeEvent},
 	futures::StreamExt,
@@ -8,7 +8,11 @@ use libp2p::{
 	swarm::SwarmEvent,
 	Multiaddr, PeerId, Swarm,
 };
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{
+	collections::{hash_map, HashMap},
+	str::FromStr,
+	time::Duration,
+};
 use tokio::{
 	sync::{mpsc, oneshot},
 	time::{interval_at, Instant, Interval},
@@ -24,6 +28,7 @@ enum QueryChannel {
 }
 
 enum SwarmChannel {
+	Dial(oneshot::Sender<Result<()>>),
 	ConnectionEstablished(oneshot::Sender<(PeerId, Multiaddr)>),
 }
 
@@ -221,6 +226,10 @@ impl EventLoop {
 				error,
 			} => {
 				trace!("Outgoing connection error. Connection id: {connection_id}. Peer: {peer_id}. Error: {error}.");
+
+				if let Some(SwarmChannel::Dial(ch)) = self.pending_swarm_events.remove(&peer_id) {
+					_ = ch.send(Err(anyhow!(error)));
+				}
 			},
 			SwarmEvent::ConnectionEstablished {
 				endpoint, peer_id, ..
@@ -228,15 +237,20 @@ impl EventLoop {
 				// while waiting for a first successful connection,
 				// we're interested in a case where we are dialing back
 				if endpoint.is_dialer() {
-					// check if there is a command waiting for a response
-					let local_peer_id = self.swarm.local_peer_id();
-					if let Some(SwarmChannel::ConnectionEstablished(ch)) =
-						self.pending_swarm_events.remove(local_peer_id)
-					{
-						// signal back that we have successfully established a connection,
-						// give us back PeerId and Multiaddress
-						let addr = endpoint.get_remote_address().to_owned();
-						_ = ch.send((peer_id, addr));
+					if let Some(event) = self.pending_swarm_events.remove(&peer_id) {
+						match event {
+							// check if there is a command waiting for a response for established 1st connection
+							SwarmChannel::ConnectionEstablished(ch) => {
+								// signal back that we have successfully established a connection,
+								// give us back PeerId and Multiaddress
+								let addr = endpoint.get_remote_address().to_owned();
+								_ = ch.send((peer_id, addr));
+							},
+							SwarmChannel::Dial(ch) => {
+								// signal back that dial was a success
+								_ = ch.send(Ok(()));
+							},
+						}
 					}
 				}
 			},
@@ -260,6 +274,24 @@ impl EventLoop {
 				_ = match self.swarm.listen_on(addr) {
 					Ok(_) => response_sender.send(Ok(())),
 					Err(err) => response_sender.send(Err(err.into())),
+				}
+			},
+			Command::DialPeer {
+				peer_id,
+				peer_address,
+				response_sender,
+			} => {
+				if let hash_map::Entry::Vacant(e) = self.pending_swarm_events.entry(peer_id) {
+					match self.swarm.dial(peer_address.with(Protocol::P2p(peer_id))) {
+						Ok(()) => {
+							e.insert(SwarmChannel::Dial(response_sender));
+						},
+						Err(e) => {
+							let _ = response_sender.send(Err(anyhow!(e)));
+						},
+					}
+				} else {
+					todo!("Already dialing peer.");
 				}
 			},
 			Command::AddAddress {

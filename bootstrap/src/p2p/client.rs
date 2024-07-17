@@ -41,6 +41,32 @@ impl Client {
 			.context("Sender not to be dropped.")?
 	}
 
+	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::DialPeer {
+				peer_id,
+				peer_address,
+				response_sender,
+			})
+			.await
+			.context("Command receiver should not be dropped.")?;
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
+	}
+
+	pub async fn add_bootstrap_nodes(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
+		for (peer, addr) in nodes {
+			self.dial_peer(peer, addr.clone())
+				.await
+				.context("Dialing Bootstrap peer failed.")?;
+			self.add_address(peer, addr.clone()).await?;
+		}
+
+		Ok(())
+	}
+
 	pub async fn bootstrap(&self) -> Result<()> {
 		// bootstrapping is impossible on an empty DHT table
 		// at least one node is required to be known, so check
@@ -101,6 +127,11 @@ impl Client {
 pub enum Command {
 	StartListening {
 		addr: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	DialPeer {
+		peer_id: PeerId,
+		peer_address: Multiaddr,
 		response_sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
