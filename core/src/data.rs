@@ -1,9 +1,10 @@
-use std::fmt::Display;
-
 use self::rocks_db::RocksDBKey;
-use crate::{network::rpc::Node as RpcNode, types::BlockRange};
+use crate::{
+	network::rpc::Node as RpcNode,
+	types::{BlockRange, Uuid},
+};
 use avail_subxt::primitives::Header;
-use codec::{Decode, Encode, Error, Input};
+use codec::{Decode, Encode};
 #[cfg(test)]
 use mem_db::HashMapKey;
 use serde::{Deserialize, Serialize};
@@ -151,35 +152,4 @@ pub struct ClientIdKey;
 
 impl RecordKey for ClientIdKey {
 	type Type = Uuid;
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Uuid(uuid::Uuid);
-
-impl Uuid {
-	pub fn new_v4() -> Uuid {
-		Self(uuid::Uuid::new_v4())
-	}
-}
-
-impl Display for Uuid {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_str(&self.0.to_string())
-	}
-}
-
-impl Decode for Uuid {
-	fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
-		let mut bytes = [0u8; 16];
-		input.read(&mut bytes)?;
-		uuid::Uuid::from_slice(&bytes)
-			.map_err(|_| Error::from("failed to decode uuid"))
-			.map(Uuid)
-	}
-}
-
-impl Encode for Uuid {
-	fn encode(&self) -> Vec<u8> {
-		self.0.as_bytes().to_vec()
-	}
 }
