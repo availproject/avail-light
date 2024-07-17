@@ -75,6 +75,8 @@ async fn run(
 	identity_cfg: IdentityConfig,
 	db: RocksDB,
 	shutdown: Controller<String>,
+	client_id: Uuid,
+	execution_id: Uuid,
 ) -> Result<()> {
 	let client_role = if cfg.is_fat_client() {
 		info!("Fat client mode");
@@ -122,6 +124,8 @@ async fn run(
 		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
+		client_id: client_id.to_string(),
+		execution_id: execution_id.to_string(),
 	};
 
 	let cfg_otel: OtelConfig = (&cfg).into();
@@ -590,11 +594,13 @@ pub async fn main() -> Result<()> {
 		client_id
 	});
 
+	let execution_id = Uuid::new_v4();
+
 	let span = span!(
 		Level::INFO,
 		"run",
 		client_id = client_id.to_string(),
-		execution_id = Uuid::new_v4().to_string()
+		execution_id = execution_id.to_string()
 	);
 	// Do not enter span if logs format is not JSON
 	let _enter = if logs_json { Some(span.enter()) } else { None };
@@ -606,7 +612,16 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
 
-	if let Err(error) = run(cfg, identity_cfg, db, shutdown.clone()).await {
+	if let Err(error) = run(
+		cfg,
+		identity_cfg,
+		db,
+		shutdown.clone(),
+		client_id,
+		execution_id,
+	)
+	.await
+	{
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};
