@@ -5,9 +5,7 @@ use avail_core::AppId;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{
-		ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB, Uuid,
-	},
+	data::{ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RocksDB},
 	network::{self, p2p, rpc},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -15,7 +13,7 @@ use avail_light_core::{
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
 		IdentifyConfig, IdentityConfig, LibP2PConfig, MaintenanceConfig, MultiaddrConfig,
-		OtelConfig, RuntimeConfig, SecretKey,
+		OtelConfig, RuntimeConfig, SecretKey, Uuid,
 	},
 	utils::spawn_in_span,
 };
