@@ -54,6 +54,7 @@ pub async fn process_block(
 		_ = p2p_client.reconfigure_kademlia_mode(
 			maintenance_config.total_memory_gb_threshold,
 			maintenance_config.num_cpus_threshold,
+			maintenance_config.is_peer_id_generated,
 		);
 	}
 

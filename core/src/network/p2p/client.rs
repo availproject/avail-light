@@ -423,11 +423,15 @@ struct ReconfigureKademliaMode {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 	memory_gb_threshold: f64,
 	cpus_threshold: usize,
+	is_peer_id_generated: bool,
 }
 
 impl Command for ReconfigureKademliaMode {
 	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		if matches!(entries.kad_mode, Mode::Client) && !entries.external_address().is_empty() {
+		if !self.is_peer_id_generated
+			&& matches!(entries.kad_mode, Mode::Client)
+			&& !entries.external_address().is_empty()
+		{
 			const BYTES_IN_GB: usize = 1024 * 1024 * 1024;
 
 			let system = System::new_all();
@@ -703,12 +707,14 @@ impl Client {
 		&self,
 		memory_gb_threshold: f64,
 		cpus_threshold: usize,
+		is_peer_id_generated: bool,
 	) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(ReconfigureKademliaMode {
 				response_sender: Some(response_sender),
 				memory_gb_threshold,
 				cpus_threshold,
+				is_peer_id_generated,
 			})
 		})
 		.await

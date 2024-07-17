@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Disable server mode switch if peer ID is generated
 - Add `client_id` and `execution_id` to metric attributes
 - Add `client_id` and rename `id` to `execution_id` in JSON logs
 - Add `--avail-path` CLI parameter

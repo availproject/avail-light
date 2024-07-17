@@ -828,6 +828,7 @@ pub struct MaintenanceConfig {
 	pub automatic_server_mode: bool,
 	pub total_memory_gb_threshold: f64,
 	pub num_cpus_threshold: usize,
+	pub is_peer_id_generated: bool,
 }
 
 impl From<&RuntimeConfig> for MaintenanceConfig {
@@ -841,6 +842,7 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 			automatic_server_mode: val.automatic_server_mode,
 			total_memory_gb_threshold: val.total_memory_gb_threshold,
 			num_cpus_threshold: val.num_cpus_threshold,
+			is_peer_id_generated: val.secret_key.is_none(),
 		}
 	}
 }
