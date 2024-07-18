@@ -196,6 +196,7 @@ Content-Type: application/json
 }
 ```
 
+If **block_status** is **incomplete**, data will be empty.
 If **block_status** is not **“finished”**, or **app** mode is not enabled, data is not available and the response is:
 
 ```yaml
