@@ -1,4 +1,4 @@
-name: Avail Light Release
+name: Avail Light Client Release
 on:
   push:
     branches-ignore:
