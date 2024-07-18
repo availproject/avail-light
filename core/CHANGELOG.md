@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.11.0]
+## [1.11.0](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.0) - 2024-07-18
 
 - Return empty data on `v2/blocks/{block_number}/data` endpoint in case of `incomplete` blocks
 - Remove deprecation notice from `--avail-passphrase` and fix `--avail-suri` CLI parameter usage
