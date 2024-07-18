@@ -1,0 +1,99 @@
+name: Bootstrap Release
+on:
+  push:
+    branches-ignore:
+      - '**'
+    tags:
+      - 'avail-light-bootstrap-v*.*.*'
+      - 'avail-light-bootstrap-v*.*.*-*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            workspace: avail-light-bootstrap
+            rust_target: x86_64-unknown-linux-gnu
+            output_name: avail-light-bootstrap-linux-amd64
+            extra_setup: |
+              rustup target add x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo and setup
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source "$HOME/.cargo/env"
+
+      - name: Build ${{ matrix.output_name }}
+        shell: bash
+        run: |
+          ${{ matrix.extra_setup }}
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
+          mv target/${{ matrix.rust_target }}/maxperf/${{ matrix.workspace }} target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
+          pushd target/${{ matrix.rust_target }}/maxperf/
+          tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output_name }}
+          path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
+
+  binary_publish:
+    needs: [build]
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          pattern: avail-light-bootstrap-*
+          merge-multiple: true
+
+      - name: publish binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+         repo_token: ${{ secrets.PAT_TOKEN }}
+         file: /home/runner/work/avail-light/avail-light/binaries/avail-light-bootstrap-*
+         release_name: ${{ github.ref_name }}
+         tag: ${{ github.ref_name }}
+         overwrite: true
+         file_glob: true
+
+  trigger_deploy_workflow:
+    needs: [binary_publish]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Trigger repository_dispatch for release
+        shell: bash
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            https://api.github.com/repos/availproject/avail-light-infra/dispatches \
+            -d '{"event_type": "binary_release", "client_payload": {"bootnode_version": "${{ github.ref_name }}" }}'
+
+  # build avail image and publish to dockerhub
+  docker_build_push:
+    needs: [binary_publish]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
