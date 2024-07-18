@@ -440,6 +440,11 @@ impl Command for ReconfigureKademliaMode {
 				entries.behavior_mut().kademlia.set_mode(Some(Mode::Server));
 				*entries.kad_mode = Mode::Server;
 			}
+		} else if matches!(entries.kad_mode, Mode::Server) && entries.external_address().is_empty()
+		{
+			info!("Peer is not externally reachable, switching to client mode.");
+			entries.behavior_mut().kademlia.set_mode(Some(Mode::Client));
+			*entries.kad_mode = Mode::Client;
 		}
 
 		// send result back
