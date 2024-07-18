@@ -26,7 +26,7 @@ use subxt_signer::sr25519::Keypair;
 use subxt_signer::{SecretString, SecretUri};
 use tokio::sync::broadcast;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
-use tracing::warn;
+use tracing::{info, warn};
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -931,32 +931,43 @@ pub struct IdentityConfig {
 	pub avail_public_key: String,
 }
 
+pub fn load_or_init_suri(path: &str) -> Result<String> {
+	#[derive(Default, Serialize, Deserialize)]
+	struct Config {
+		pub avail_secret_uri: Option<String>,
+		// TODO: Deprecated since 1.9.0, remove it once it is safe
+		pub avail_secret_seed_phrase: Option<String>,
+	}
+
+	impl Config {
+		fn avail_secret_uri(&self) -> Option<String> {
+			self.avail_secret_uri
+				.as_ref()
+				.or(self.avail_secret_seed_phrase.as_ref())
+				.cloned()
+		}
+	}
+
+	let mut config: Config = confy::load_path(path)?;
+	info!("Identity loaded from {path}");
+
+	if config.avail_secret_seed_phrase.is_some() {
+		warn!("Using deprecated configuration parameter `avail_secret_seed_phrase`, use `avail_secret_uri` instead.");
+	}
+
+	if let Some(suri) = config.avail_secret_uri() {
+		return Ok(suri);
+	};
+
+	let mnemonic = Mnemonic::generate_in(Language::English, 24)?;
+	config.avail_secret_uri = Some(mnemonic.to_string());
+	confy::store_path(path, &config)?;
+	Ok(mnemonic.to_string())
+}
+
 impl IdentityConfig {
-	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
-		#[derive(Default, Serialize, Deserialize)]
-		struct Config {
-			pub avail_secret_uri: Option<String>,
-			// TODO: Deprecated since 1.9.0, remove it once it is safe
-			pub avail_secret_seed_phrase: Option<String>,
-		}
-
-		let mut config: Config = confy::load_path(path)?;
-
-		if config.avail_secret_seed_phrase.is_some() {
-			warn!("Using deprecated configuration parameter `avail_secret_seed_phrase`, use `avail_secret_uri` instead.");
-		}
-
-		let avail_secret_uri = config.avail_secret_uri.as_ref();
-		let avail_secret_seed_phrase = config.avail_secret_seed_phrase.as_ref();
-		let mut suri = match avail_secret_uri.or(avail_secret_seed_phrase) {
-			None => {
-				let mnemonic = Mnemonic::generate_in(Language::English, 24)?;
-				config.avail_secret_uri = Some(mnemonic.to_string());
-				confy::store_path(path, &config)?;
-				SecretUri::from_str(&mnemonic.to_string())
-			},
-			Some(suri) => SecretUri::from_str(suri),
-		}?;
+	pub fn from_suri(suri: String, password: Option<&String>) -> Result<Self> {
+		let mut suri = SecretUri::from_str(&suri)?;
 
 		if let Some(password) = password {
 			suri.password = Some(SecretString::from_str(password)?);

@@ -136,8 +136,7 @@ pub struct CliOpts {
 	/// Log level
 	#[arg(long)]
 	pub verbosity: Option<LogLevel>,
-	// TODO: Deprecated since 1.9.0, remove it once it is safe
-	/// Avail secret seed phrase password, overrides password from identity file
+	/// Avail secret seed phrase password
 	#[arg(long)]
 	pub avail_passphrase: Option<String>,
 	/// Avail secret URI, overrides parameter from identity file

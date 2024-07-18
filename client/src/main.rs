@@ -15,8 +15,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
-		IdentifyConfig, IdentityConfig, LibP2PConfig, MaintenanceConfig, MultiaddrConfig,
-		OtelConfig, RuntimeConfig, SecretKey, Uuid,
+		load_or_init_suri, IdentifyConfig, IdentityConfig, LibP2PConfig, MaintenanceConfig,
+		MultiaddrConfig, OtelConfig, RuntimeConfig, SecretKey, Uuid,
 	},
 	utils::spawn_in_span,
 };
@@ -595,15 +595,11 @@ pub async fn main() -> Result<()> {
 			.expect("global default subscriber is set");
 	};
 
-	if opts.avail_passphrase.is_some() {
-		warn!("Using deprecated CLI parameter `--avail-passphrase`, use `--avail-suri` instead.");
-	}
-
-	let identity_cfg = IdentityConfig::load_or_init(
-		&opts.identity,
-		opts.avail_suri.or(opts.avail_passphrase).as_deref(),
-	)?;
-	info!("Identity loaded from {}", &opts.identity);
+	let suri = match opts.avail_suri {
+		None => load_or_init_suri(&opts.identity)?,
+		Some(suri) => suri,
+	};
+	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase.as_ref())?;
 
 	if opts.clean && Path::new(&cfg.avail_path).exists() {
 		info!("Cleaning up local state directory");

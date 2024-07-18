@@ -128,7 +128,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
   - `warn`
   - `error`
 - `--avail-suri <SECRET_URI>`: Avail secret URI, flag is optional, overrides secret URI from identity file
-- `--avail-passphrase <PASSPHRASE>`: (DEPRECATED) Avail secret seed phrase password, flag is optional, overrides password from identity file
+- `--avail-passphrase <PASSPHRASE>`: Avail secret seed phrase password, flag is optional
 - `--seed`: Seed string for libp2p keypair generation
 - `--secret-key`: Ed25519 private key for libp2p keypair generation
 
@@ -141,6 +141,8 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 ## Identity
 
 In the Avail network, a light client's identity can be configured using the `identity.toml` file. If not specified, a secret URI will be generated and stored in the identity file when the light client starts. To use an existing secret URI, set the `avail_secret_uri` entry in the `identity.toml` file. Secret URI will be used to derive Sr25519 key pair for signing. Location of the identity file can be specified using `--identity` option. Parameter `avail_secret_seed_phrase` is deprecated and replaced with `avail_secret_uri`. More info can be found on [Substrate URI documentation](https://polkadot.js.org/docs/keyring/start/suri/).
+
+Since identity is stored in plain-text, to improve security, `--avail-passphrase` CLI parameter should be used. For maximum security, avoid using identity file and pass Secret URI through `--avail-suri` CLI parameter.
 
 ## Configuration reference
 
