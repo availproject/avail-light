@@ -171,6 +171,7 @@ async fn run(
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
 		shutdown.clone(),
+		cfg.operation_mode,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);

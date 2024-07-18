@@ -30,7 +30,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{AgentVersion, LibP2PConfig, TimeToLive},
+	types::{AgentVersion, KademliaMode, LibP2PConfig, TimeToLive},
 };
 
 use super::{
@@ -141,6 +141,7 @@ impl EventLoop {
 		is_fat_client: bool,
 		is_ws_transport: bool,
 		shutdown: Controller<String>,
+		kad_mode: KademliaMode,
 		#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_interval;
@@ -176,7 +177,7 @@ impl EventLoop {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 			},
-			kad_mode: Mode::Client,
+			kad_mode: kad_mode.into(),
 		}
 	}
 
