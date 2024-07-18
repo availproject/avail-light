@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Remove deprecation notice from `--avail-passphrase` and fix `--avail-suri` CLI parameter usage
 - Persist generated P2P keypair in database
 - Add `client_id` and `execution_id` to metric attributes
 - Add `client_id` and rename `id` to `execution_id` in JSON logs
