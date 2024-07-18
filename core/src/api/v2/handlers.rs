@@ -146,7 +146,7 @@ pub async fn block_data(
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
-	if block_status != BlockStatus::Finished {
+	if block_status != BlockStatus::Finished && block_status != BlockStatus::Incomplete {
 		return Err(Error::bad_request_unknown("Block data is not available"));
 	};
 

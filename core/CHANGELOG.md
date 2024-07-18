@@ -2,6 +2,7 @@
 
 ## [1.11.0]
 
+- Return empty data on `v2/blocks/{block_number}/data` endpoint in case of `incomplete` blocks
 - Remove deprecation notice from `--avail-passphrase` and fix `--avail-suri` CLI parameter usage
 - Persist generated P2P keypair in database
 - Add `client_id` and `execution_id` to metric attributes
