@@ -583,7 +583,7 @@ impl EventLoop {
 			&mut self.pending_kad_queries,
 			&mut self.pending_swarm_events,
 			&mut self.active_blocks,
-			&self.kad_mode,
+			&mut self.kad_mode,
 		)) {
 			command.abort(eyre!(err));
 		}

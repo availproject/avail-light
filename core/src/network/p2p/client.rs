@@ -438,6 +438,7 @@ impl Command for ReconfigureKademliaMode {
 			if memory_gb > self.memory_gb_threshold && cpus > self.cpus_threshold {
 				info!("Switching Kademlia mode to server!");
 				entries.behavior_mut().kademlia.set_mode(Some(Mode::Server));
+				*entries.kad_mode = Mode::Server;
 			}
 		}
 
