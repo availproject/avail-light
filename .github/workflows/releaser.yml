@@ -4,8 +4,8 @@ on:
     branches-ignore:
       - '**'
     tags:
-      - 'v*.*.*'
-      - 'v*.*.*-*'
+      - 'avail-light-client-v*.*.*'
+      - 'avail-light-client-v*.*.*-*'
 
 jobs:
   build:
