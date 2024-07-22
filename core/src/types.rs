@@ -464,6 +464,8 @@ pub struct RuntimeConfig {
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
 	pub crawl: crate::crawl_client::CrawlConfig,
+	/// Client alias for use in logs and metrics
+	pub client_alias: Option<String>,
 }
 
 impl RuntimeConfig {
@@ -910,6 +912,7 @@ impl Default for RuntimeConfig {
 				retries: 6,
 			}),
 			automatic_server_mode: true,
+			client_alias: None,
 		}
 	}
 }

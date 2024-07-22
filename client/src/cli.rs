@@ -154,4 +154,7 @@ pub struct CliOpts {
 	/// Set logs format to JSON
 	#[arg(long)]
 	pub logs_json: bool,
+	/// Set client alias for use in logs and metrics
+	#[arg(long)]
+	pub client_alias: Option<String>,
 }
