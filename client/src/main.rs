@@ -139,6 +139,7 @@ async fn run(
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
 		execution_id: execution_id.to_string(),
+		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
 	};
 
 	let cfg_otel: OtelConfig = (&cfg).into();
@@ -560,6 +561,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.block_matrix_partition = Some(*partition)
 	}
 
+	if let Some(client_alias) = &opts.client_alias {
+		cfg.client_alias = Some(client_alias.clone())
+	}
+
 	Ok(cfg)
 }
 
@@ -610,7 +615,8 @@ pub async fn main() -> Result<()> {
 		Level::INFO,
 		"run",
 		client_id = client_id.to_string(),
-		execution_id = execution_id.to_string()
+		execution_id = execution_id.to_string(),
+		client_alias = cfg.client_alias.clone().unwrap_or("".to_string())
 	);
 	// Do not enter span if logs format is not JSON
 	let _enter = if logs_json { Some(span.enter()) } else { None };

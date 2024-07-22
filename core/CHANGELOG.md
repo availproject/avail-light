@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.1
+
+- Add `--client-alias` CLI parameter and `client-alias` config parameter for setting human readable alias of the client
+
 ## [1.11.0](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.0) - 2024-07-18
 
 - Return empty data on `v2/blocks/{block_number}/data` endpoint in case of `incomplete` blocks
