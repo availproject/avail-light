@@ -25,7 +25,7 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
-use kate_recovery::com::AppData;
+use kate_recovery::{com::AppData, matrix::Partition};
 use libp2p::{
 	identity::{self, ed25519},
 	multiaddr::Protocol,
@@ -132,17 +132,7 @@ async fn run(
 		operating_mode: cfg.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
-			.map(|_| {
-				format!(
-					"{}/{}",
-					cfg.block_matrix_partition
-						.expect("partition doesn't exist")
-						.number,
-					cfg.block_matrix_partition
-						.expect("partition doesn't exist")
-						.fraction
-				)
-			})
+			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
