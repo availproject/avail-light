@@ -166,7 +166,7 @@ impl EventLoop {
 				}
 
 				if protocols.contains(&self.swarm.behaviour_mut().kademlia.protocol_names()[0]) {
-					debug!("Adding peer {peer_id} to routing table.");
+					trace!("Adding peer {peer_id} to routing table.");
 					for addr in listen_addrs {
 						self.swarm
 							.behaviour_mut()
