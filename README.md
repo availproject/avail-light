@@ -6,8 +6,9 @@ This repository is the central place for the development of the [Avail Light Cli
 
 ## Getting started
 
-- **Main documentation** can be found on https://docs.availproject.org.
+- **Main documentation** can be found on <https://docs.availproject.org>.
 - Want to run a **Light Client node**? Please check this [how-to](https://docs.availproject.org/docs/operate-a-node/run-a-light-client/0010-light-client).
+- Detailed light client [readme](client/README.md)
 - To report bugs, suggest improvements, or request new features, please open an issue on this repository's GitHub page.
 
 ## Repository Structure
