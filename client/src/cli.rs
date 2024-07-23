@@ -9,7 +9,7 @@ pub enum Network {
 	Local,
 	Hex,
 	Turing,
-	Main,
+	Mainnet,
 }
 
 impl Network {
@@ -18,7 +18,7 @@ impl Network {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
 			Network::Hex => "12D3KooWBMwfo5qyoLQDRat86kFcGAiJ2yxKM63rXHMw2rDuNZMA",
 			Network::Turing => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
-			Network::Main => "12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
+			Network::Mainnet => "12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
 		}
 	}
 
@@ -27,7 +27,7 @@ impl Network {
 			Network::Local => "/ip4/127.0.0.1/tcp/39000",
 			Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
 			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
-			Network::Main => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
+			Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
 		}
 	}
 
@@ -36,7 +36,7 @@ impl Network {
 			Network::Local => vec!["ws://127.0.0.1:9944".to_string()],
 			Network::Hex => vec!["wss://rpc-hex-devnet.avail.tools/ws".to_string()],
 			Network::Turing => vec!["wss://turing-rpc.avail.so/ws".to_string()],
-			Network::Main => vec![
+			Network::Mainnet => vec![
 				"wss://mainnet.avail-rpc.com/".to_string(),
 				"wss://avail-mainnet.public.blastapi.io/".to_string(),
 				"wss://mainnet-rpc.avail.so/ws".to_string(),
@@ -49,7 +49,7 @@ impl Network {
 			Network::Local => "http://127.0.0.1:4317",
 			Network::Hex => "http://otel.lightclient.hex.avail.so:4317",
 			Network::Turing => "http://otel.lightclient.turing.avail.so:4317",
-			Network::Main => "http://otel.lightclient.mainnet.avail.so:4317",
+			Network::Mainnet => "http://otel.lightclient.mainnet.avail.so:4317",
 		}
 	}
 
@@ -58,14 +58,14 @@ impl Network {
 			Network::Local => "DEV",
 			Network::Hex => "9d5ea6a5d7631e13028b684a1a0078e3970caa78bd677eaecaf2160304f174fb",
 			Network::Turing => "d3d2f3a3495dc597434a99d7d449ebad6616db45e4e4f178f31cc6fa14378b70",
-			Network::Main => "b91746b45e0346cc2f815a520b9c6cb4d5c0902af848db0a80f85932d2e8276a",
+			Network::Mainnet => "b91746b45e0346cc2f815a520b9c6cb4d5c0902af848db0a80f85932d2e8276a",
 		}
 	}
 
 	pub fn name(genesis_hash: &str) -> String {
 		let network = match genesis_hash {
 			"b91746b45e0346cc2f815a520b9c6cb4d5c0902af848db0a80f85932d2e8276a" => {
-				Network::Main.to_string()
+				Network::Mainnet.to_string()
 			},
 			"9d5ea6a5d7631e13028b684a1a0078e3970caa78bd677eaecaf2160304f174fb" => {
 				Network::Hex.to_string()
@@ -88,7 +88,7 @@ impl fmt::Display for Network {
 			Network::Local => write!(f, "local"),
 			Network::Hex => write!(f, "hex"),
 			Network::Turing => write!(f, "turing"),
-			Network::Main => write!(f, "main"),
+			Network::Mainnet => write!(f, "main"),
 		}
 	}
 }
