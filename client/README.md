@@ -116,6 +116,8 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 ## Options
 
 - `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
+  - `main`: Mainnet
+  - `turing`: Turing testnet
   - `local`: Local development
 - `--config`: Location of the configuration file
 - `--identity`: Location of the identity file
