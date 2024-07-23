@@ -1,7 +1,8 @@
 # Changelog
 
-## 1.11.1
+## [1.11.1](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.1) - 2024-07-23
 
+- Add `main` CLI option for connecting to Avail mainnet
 - Add `--client-alias` CLI parameter and `client-alias` config parameter for setting human readable alias of the client
 
 ## [1.11.0](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.0) - 2024-07-18
