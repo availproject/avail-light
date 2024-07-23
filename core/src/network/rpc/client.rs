@@ -170,7 +170,10 @@ impl<D: Database> Client<D> {
 
 			match result {
 				Err(error) => warn!(host, %error, "Skipping connection with this node"),
-				ok => return ok,
+				ok => {
+					info!("Connected to RPC: {}", host);
+					return ok;
+				},
 			}
 		}
 

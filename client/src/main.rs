@@ -523,7 +523,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 			Multiaddr::from_str(network.bootstrap_multiaddrr())
 				.wrap_err("unable to parse default bootstrap multi-address")?,
 		);
-		cfg.full_node_ws = vec![network.full_node_ws().to_string()];
+		cfg.full_node_ws = network.full_node_ws();
 		cfg.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		cfg.genesis_hash = network.genesis_hash().to_string();
