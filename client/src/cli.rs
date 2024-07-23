@@ -88,7 +88,7 @@ impl fmt::Display for Network {
 			Network::Local => write!(f, "local"),
 			Network::Hex => write!(f, "hex"),
 			Network::Turing => write!(f, "turing"),
-			Network::Mainnet => write!(f, "main"),
+			Network::Mainnet => write!(f, "mainnet"),
 		}
 	}
 }
