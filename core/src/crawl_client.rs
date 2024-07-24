@@ -4,7 +4,7 @@ use crate::{
 		rpc::{self, Event},
 	},
 	telemetry::{MetricValue, Metrics},
-	types::{self, block_matrix_partition_format, Delay},
+	types::{self, block_matrix_partition_format, BlockVerified, Delay},
 };
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,7 @@ pub async fn run(
 	metrics: Arc<impl Metrics>,
 	mode: CrawlMode,
 	partition: Partition,
+	block_sender: broadcast::Sender<BlockVerified>,
 ) {
 	info!("Starting crawl client...");
 
@@ -141,7 +142,12 @@ pub async fn run(
 				.await;
 		}
 
+		if let Err(error) = block_sender.send(block) {
+			error!("Cannot send block verified message: {error}");
+			continue;
+		}
+
 		let elapsed = start.elapsed();
-		info!(block_number, "Crawling block finished in {elapsed:?}")
+		info!(block_number, "Crawling block finished in {elapsed:?}");
 	}
 }
