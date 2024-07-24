@@ -86,6 +86,7 @@ fn get_or_init_p2p_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::
 	Ok(id_keys)
 }
 
+#[cfg(not(feature = "crawl"))]
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
@@ -216,8 +217,6 @@ async fn run(
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
 	let client_rpc_event_receiver = rpc_events.subscribe();
-	#[cfg(feature = "crawl")]
-	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
@@ -319,19 +318,6 @@ async fn run(
 		)));
 	}
 
-	#[cfg(feature = "crawl")]
-	if cfg.crawl.crawl_block {
-		let partition = cfg.crawl.crawl_block_matrix_partition;
-		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
-			crawler_rpc_event_receiver,
-			p2p_client.clone(),
-			cfg.crawl.crawl_block_delay,
-			ot_metrics.clone(),
-			cfg.crawl.crawl_block_mode,
-			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
-		)));
-	}
-
 	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
 	let sync_network_client = network::new(
@@ -409,6 +395,7 @@ async fn run(
 	Ok(())
 }
 
+#[cfg(feature = "crawl")]
 async fn run_crawl(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
@@ -539,7 +526,6 @@ async fn run_crawl(
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
 	let client_rpc_event_receiver = rpc_events.subscribe();
-	#[cfg(feature = "crawl")]
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
@@ -642,7 +628,6 @@ async fn run_crawl(
 		)));
 	}
 
-	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
 		let partition = cfg.crawl.crawl_block_matrix_partition;
 		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
@@ -732,6 +717,7 @@ async fn run_crawl(
 	Ok(())
 }
 
+#[cfg(not(feature = "crawl"))]
 async fn run_fat(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
@@ -863,8 +849,6 @@ async fn run_fat(
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
 	let client_rpc_event_receiver = rpc_events.subscribe();
-	#[cfg(feature = "crawl")]
-	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
@@ -963,19 +947,6 @@ async fn run_fat(
 			api::v2::types::Topic::DataVerified,
 			data_rx,
 			ws_clients,
-		)));
-	}
-
-	#[cfg(feature = "crawl")]
-	if cfg.crawl.crawl_block {
-		let partition = cfg.crawl.crawl_block_matrix_partition;
-		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
-			crawler_rpc_event_receiver,
-			p2p_client.clone(),
-			cfg.crawl.crawl_block_delay,
-			ot_metrics.clone(),
-			cfg.crawl.crawl_block_mode,
-			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
 		)));
 	}
 
@@ -1264,18 +1235,24 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
 
+	#[cfg(feature = "crawl")]
+	if let Err(error) = run_crawl(
+		cfg,
+		identity_cfg,
+		db,
+		shutdown.clone(),
+		client_id,
+		execution_id,
+	)
+	.await
+	{
+		error!("{error:#}");
+		return Err(error.wrap_err("Starting Light Client Crawler failed"));
+	};
+
+	#[cfg(not(feature = "crawl"))]
 	if let Err(error) = if cfg.is_fat_client() {
 		run_fat(
-			cfg,
-			identity_cfg,
-			db,
-			shutdown.clone(),
-			client_id,
-			execution_id,
-		)
-		.await
-	} else if cfg!(feature = "crawl") {
-		run_crawl(
 			cfg,
 			identity_cfg,
 			db,
