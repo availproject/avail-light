@@ -94,14 +94,654 @@ async fn run(
 	client_id: Uuid,
 	execution_id: Uuid,
 ) -> Result<()> {
-	let role = if cfg.is_fat_client() {
-		info!("Fat client mode");
-		"fatnode"
-	} else if cfg!(feature = "crawl") {
-		"crawler"
-	} else {
-		"lightnode"
+	let role = "lightnode";
+
+	let version = clap::crate_version!();
+	info!("Running Avail light client version: {version}. Role: {role}.");
+	info!("Using config: {cfg:?}");
+	info!(
+		"Avail ss58 address: {}, public key: {}",
+		&identity_cfg.avail_address, &identity_cfg.avail_public_key
+	);
+
+	if cfg.bootstraps.is_empty() {
+		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
+	}
+
+	let identify = IdentifyConfig::new(version.to_string());
+	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
+	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
+	let peer_id = PeerId::from(id_keys.public()).to_string();
+
+	let metric_attributes = MetricAttributes {
+		role: role.into(),
+		peer_id,
+		origin: cfg.origin.clone(),
+		avail_address: identity_cfg.avail_public_key.clone(),
+		operating_mode: cfg.operation_mode.to_string(),
+		partition_size: cfg
+			.block_matrix_partition
+			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
+			.unwrap_or("n/a".to_string()),
+		network: Network::name(&cfg.genesis_hash),
+		version: version.to_string(),
+		multiaddress: "".to_string(),
+		client_id: client_id.to_string(),
+		execution_id: execution_id.to_string(),
+		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
 	};
+
+	let cfg_otel: OtelConfig = (&cfg).into();
+	let ot_metrics = Arc::new(
+		telemetry::otlp::initialize(
+			cfg.ot_collector_endpoint.clone(),
+			metric_attributes,
+			cfg.origin.clone(),
+			cfg_otel,
+		)
+		.wrap_err("Unable to initialize OpenTelemetry service")?,
+	);
+
+	// Create sender channel for P2P event loop commands
+	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
+
+	let p2p_event_loop = p2p::EventLoop::new(
+		cfg_libp2p,
+		&id_keys,
+		cfg.is_fat_client(),
+		cfg.ws_transport_enable,
+		shutdown.clone(),
+		cfg.operation_mode,
+		#[cfg(feature = "kademlia-rocksdb")]
+		db.inner(),
+	);
+
+	spawn_in_span(
+		shutdown.with_cancel(
+			p2p_event_loop
+				.await
+				.run(ot_metrics.clone(), p2p_event_loop_receiver),
+		),
+	);
+
+	let p2p_client = p2p::Client::new(
+		p2p_event_loop_sender,
+		cfg.dht_parallelization_limit,
+		cfg.kad_record_ttl,
+	);
+
+	// Start listening on provided port
+	p2p_client
+		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
+		.await
+		.wrap_err("Listening on TCP not to fail.")?;
+	info!("TCP listener started on port {}", cfg.port);
+
+	let p2p_clone = p2p_client.to_owned();
+	let cfg_clone = cfg.to_owned();
+	spawn_in_span(shutdown.with_cancel(async move {
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		let bs_result = p2p_clone
+			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
+			.await;
+		match bs_result {
+			Ok(_) => {
+				info!("Bootstrap done.");
+			},
+			Err(e) => {
+				warn!("Bootstrap process: {e:?}.");
+			},
+		}
+	}));
+
+	#[cfg(feature = "network-analysis")]
+	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
+
+	let pp = Arc::new(kate_recovery::couscous::public_params());
+	let raw_pp = pp.to_raw_var_bytes();
+	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
+	let public_params_len = hex::encode(raw_pp).len();
+	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
+
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+		db.clone(),
+		&cfg.full_node_ws,
+		&cfg.genesis_hash,
+		cfg.retry_config.clone(),
+		shutdown.clone(),
+	)
+	.await?;
+
+	// Subscribing to RPC events before first event is published
+	let publish_rpc_event_receiver = rpc_events.subscribe();
+	let first_header_rpc_event_receiver = rpc_events.subscribe();
+	let client_rpc_event_receiver = rpc_events.subscribe();
+	#[cfg(feature = "crawl")]
+	let crawler_rpc_event_receiver = rpc_events.subscribe();
+
+	// spawn the RPC Network task for Event Loop to run in the background
+	// and shut it down, without delays
+	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
+		"Subscription loop failure triggered shutdown".to_string(),
+		async {
+			let result = rpc_subscriptions.run().await;
+			if let Err(ref err) = result {
+				error!(%err, "Subscription loop ended with error");
+			};
+			result
+		},
+	)));
+
+	info!("Waiting for first finalized header...");
+	let block_header = match shutdown
+		.with_cancel(rpc::wait_for_finalized_header(
+			first_header_rpc_event_receiver,
+			360,
+		))
+		.await
+	{
+		Ok(Err(report)) => {
+			if !rpc_subscriptions_handle.is_finished() {
+				return Err(report);
+			}
+			let Ok(Ok(Err(subscriptions_error))) = rpc_subscriptions_handle.await else {
+				return Err(report);
+			};
+			return Err(eyre!(subscriptions_error));
+		},
+		Ok(Ok(num)) => num,
+		Err(shutdown_reason) => {
+			if !rpc_subscriptions_handle.is_finished() {
+				return Err(eyre!(shutdown_reason));
+			}
+			let Ok(Ok(Err(event_loop_error))) = rpc_subscriptions_handle.await else {
+				return Err(eyre!(shutdown_reason));
+			};
+			return Err(eyre!(event_loop_error));
+		},
+	};
+
+	db.put(LatestHeaderKey, block_header.number);
+	let sync_range = cfg.sync_range(block_header.number);
+
+	let ws_clients = api::v2::types::WsClients::default();
+
+	// Spawn tokio task which runs one http server for handling RPC
+	let server = api::server::Server {
+		db: db.clone(),
+		cfg: cfg.clone(),
+		identity_cfg,
+		version: format!("v{}", clap::crate_version!()),
+		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
+		node_client: rpc_client.clone(),
+		ws_clients: ws_clients.clone(),
+		shutdown: shutdown.clone(),
+		p2p_client: p2p_client.clone(),
+	};
+	spawn_in_span(shutdown.with_cancel(server.bind()));
+
+	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
+
+	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
+		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
+		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
+			(&cfg).into(),
+			db.clone(),
+			p2p_client.clone(),
+			rpc_client.clone(),
+			app_id,
+			block_tx.subscribe(),
+			pp.clone(),
+			sync_range.clone(),
+			data_tx,
+			shutdown.clone(),
+		)));
+		data_rx
+	});
+
+	spawn_in_span(shutdown.with_cancel(api::v2::publish(
+		api::v2::types::Topic::HeaderVerified,
+		publish_rpc_event_receiver,
+		ws_clients.clone(),
+	)));
+
+	spawn_in_span(shutdown.with_cancel(api::v2::publish(
+		api::v2::types::Topic::ConfidenceAchieved,
+		block_tx.subscribe(),
+		ws_clients.clone(),
+	)));
+
+	if let Some(data_rx) = data_rx {
+		spawn_in_span(shutdown.with_cancel(api::v2::publish(
+			api::v2::types::Topic::DataVerified,
+			data_rx,
+			ws_clients,
+		)));
+	}
+
+	#[cfg(feature = "crawl")]
+	if cfg.crawl.crawl_block {
+		let partition = cfg.crawl.crawl_block_matrix_partition;
+		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
+			crawler_rpc_event_receiver,
+			p2p_client.clone(),
+			cfg.crawl.crawl_block_delay,
+			ot_metrics.clone(),
+			cfg.crawl.crawl_block_mode,
+			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
+		)));
+	}
+
+	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
+
+	let sync_network_client = network::new(
+		p2p_client.clone(),
+		rpc_client.clone(),
+		pp.clone(),
+		cfg.disable_rpc,
+	);
+
+	if cfg.sync_start_block.is_some() {
+		db.put(IsSyncedKey, false);
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_client::run(
+			sync_client,
+			sync_network_client,
+			(&cfg).into(),
+			sync_range,
+			block_tx.clone(),
+		)));
+	}
+
+	if cfg.sync_finality_enable {
+		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_finality::run(
+			sync_finality,
+			shutdown.clone(),
+			block_header.clone(),
+		)));
+	} else {
+		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
+		// set the flag in the db, signaling across that we don't need to sync
+		db.put(IsFinalitySyncedKey, true);
+	}
+
+	let static_config_params: MaintenanceConfig = (&cfg).into();
+	spawn_in_span(shutdown.with_cancel(avail_light_core::maintenance::run(
+		p2p_client.clone(),
+		ot_metrics.clone(),
+		block_rx,
+		static_config_params,
+		shutdown.clone(),
+	)));
+
+	let channels = avail_light_core::types::ClientChannels {
+		block_sender: block_tx,
+		rpc_event_receiver: client_rpc_event_receiver,
+	};
+
+	if let Some(partition) = cfg.block_matrix_partition {
+		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
+
+		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
+			fat_client,
+			db.clone(),
+			(&cfg).into(),
+			ot_metrics.clone(),
+			channels,
+			partition,
+			shutdown.clone(),
+		)));
+	} else {
+		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
+
+		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
+			db.clone(),
+			light_network_client,
+			(&cfg).into(),
+			ot_metrics.clone(),
+			channels,
+			shutdown.clone(),
+		)));
+	}
+
+	ot_metrics.count(MetricCounter::Starts).await;
+
+	Ok(())
+}
+
+async fn run_crawl(
+	cfg: RuntimeConfig,
+	identity_cfg: IdentityConfig,
+	db: RocksDB,
+	shutdown: Controller<String>,
+	client_id: Uuid,
+	execution_id: Uuid,
+) -> Result<()> {
+	let role = "crawler";
+
+	let version = clap::crate_version!();
+	info!("Running Avail light client version: {version}. Role: {role}.");
+	info!("Using config: {cfg:?}");
+	info!(
+		"Avail ss58 address: {}, public key: {}",
+		&identity_cfg.avail_address, &identity_cfg.avail_public_key
+	);
+
+	if cfg.bootstraps.is_empty() {
+		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
+	}
+
+	let identify = IdentifyConfig::new(version.to_string());
+	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
+	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
+	let peer_id = PeerId::from(id_keys.public()).to_string();
+
+	let metric_attributes = MetricAttributes {
+		role: role.into(),
+		peer_id,
+		origin: cfg.origin.clone(),
+		avail_address: identity_cfg.avail_public_key.clone(),
+		operating_mode: cfg.operation_mode.to_string(),
+		partition_size: cfg
+			.block_matrix_partition
+			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
+			.unwrap_or("n/a".to_string()),
+		network: Network::name(&cfg.genesis_hash),
+		version: version.to_string(),
+		multiaddress: "".to_string(),
+		client_id: client_id.to_string(),
+		execution_id: execution_id.to_string(),
+		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
+	};
+
+	let cfg_otel: OtelConfig = (&cfg).into();
+	let ot_metrics = Arc::new(
+		telemetry::otlp::initialize(
+			cfg.ot_collector_endpoint.clone(),
+			metric_attributes,
+			cfg.origin.clone(),
+			cfg_otel,
+		)
+		.wrap_err("Unable to initialize OpenTelemetry service")?,
+	);
+
+	// Create sender channel for P2P event loop commands
+	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
+
+	let p2p_event_loop = p2p::EventLoop::new(
+		cfg_libp2p,
+		&id_keys,
+		cfg.is_fat_client(),
+		cfg.ws_transport_enable,
+		shutdown.clone(),
+		cfg.operation_mode,
+		#[cfg(feature = "kademlia-rocksdb")]
+		db.inner(),
+	);
+
+	spawn_in_span(
+		shutdown.with_cancel(
+			p2p_event_loop
+				.await
+				.run(ot_metrics.clone(), p2p_event_loop_receiver),
+		),
+	);
+
+	let p2p_client = p2p::Client::new(
+		p2p_event_loop_sender,
+		cfg.dht_parallelization_limit,
+		cfg.kad_record_ttl,
+	);
+
+	// Start listening on provided port
+	p2p_client
+		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
+		.await
+		.wrap_err("Listening on TCP not to fail.")?;
+	info!("TCP listener started on port {}", cfg.port);
+
+	let p2p_clone = p2p_client.to_owned();
+	let cfg_clone = cfg.to_owned();
+	spawn_in_span(shutdown.with_cancel(async move {
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		let bs_result = p2p_clone
+			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
+			.await;
+		match bs_result {
+			Ok(_) => {
+				info!("Bootstrap done.");
+			},
+			Err(e) => {
+				warn!("Bootstrap process: {e:?}.");
+			},
+		}
+	}));
+
+	#[cfg(feature = "network-analysis")]
+	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
+
+	let pp = Arc::new(kate_recovery::couscous::public_params());
+	let raw_pp = pp.to_raw_var_bytes();
+	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
+	let public_params_len = hex::encode(raw_pp).len();
+	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
+
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+		db.clone(),
+		&cfg.full_node_ws,
+		&cfg.genesis_hash,
+		cfg.retry_config.clone(),
+		shutdown.clone(),
+	)
+	.await?;
+
+	// Subscribing to RPC events before first event is published
+	let publish_rpc_event_receiver = rpc_events.subscribe();
+	let first_header_rpc_event_receiver = rpc_events.subscribe();
+	let client_rpc_event_receiver = rpc_events.subscribe();
+	#[cfg(feature = "crawl")]
+	let crawler_rpc_event_receiver = rpc_events.subscribe();
+
+	// spawn the RPC Network task for Event Loop to run in the background
+	// and shut it down, without delays
+	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
+		"Subscription loop failure triggered shutdown".to_string(),
+		async {
+			let result = rpc_subscriptions.run().await;
+			if let Err(ref err) = result {
+				error!(%err, "Subscription loop ended with error");
+			};
+			result
+		},
+	)));
+
+	info!("Waiting for first finalized header...");
+	let block_header = match shutdown
+		.with_cancel(rpc::wait_for_finalized_header(
+			first_header_rpc_event_receiver,
+			360,
+		))
+		.await
+	{
+		Ok(Err(report)) => {
+			if !rpc_subscriptions_handle.is_finished() {
+				return Err(report);
+			}
+			let Ok(Ok(Err(subscriptions_error))) = rpc_subscriptions_handle.await else {
+				return Err(report);
+			};
+			return Err(eyre!(subscriptions_error));
+		},
+		Ok(Ok(num)) => num,
+		Err(shutdown_reason) => {
+			if !rpc_subscriptions_handle.is_finished() {
+				return Err(eyre!(shutdown_reason));
+			}
+			let Ok(Ok(Err(event_loop_error))) = rpc_subscriptions_handle.await else {
+				return Err(eyre!(shutdown_reason));
+			};
+			return Err(eyre!(event_loop_error));
+		},
+	};
+
+	db.put(LatestHeaderKey, block_header.number);
+	let sync_range = cfg.sync_range(block_header.number);
+
+	let ws_clients = api::v2::types::WsClients::default();
+
+	// Spawn tokio task which runs one http server for handling RPC
+	let server = api::server::Server {
+		db: db.clone(),
+		cfg: cfg.clone(),
+		identity_cfg,
+		version: format!("v{}", clap::crate_version!()),
+		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
+		node_client: rpc_client.clone(),
+		ws_clients: ws_clients.clone(),
+		shutdown: shutdown.clone(),
+		p2p_client: p2p_client.clone(),
+	};
+	spawn_in_span(shutdown.with_cancel(server.bind()));
+
+	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
+
+	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
+		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
+		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
+			(&cfg).into(),
+			db.clone(),
+			p2p_client.clone(),
+			rpc_client.clone(),
+			app_id,
+			block_tx.subscribe(),
+			pp.clone(),
+			sync_range.clone(),
+			data_tx,
+			shutdown.clone(),
+		)));
+		data_rx
+	});
+
+	spawn_in_span(shutdown.with_cancel(api::v2::publish(
+		api::v2::types::Topic::HeaderVerified,
+		publish_rpc_event_receiver,
+		ws_clients.clone(),
+	)));
+
+	spawn_in_span(shutdown.with_cancel(api::v2::publish(
+		api::v2::types::Topic::ConfidenceAchieved,
+		block_tx.subscribe(),
+		ws_clients.clone(),
+	)));
+
+	if let Some(data_rx) = data_rx {
+		spawn_in_span(shutdown.with_cancel(api::v2::publish(
+			api::v2::types::Topic::DataVerified,
+			data_rx,
+			ws_clients,
+		)));
+	}
+
+	#[cfg(feature = "crawl")]
+	if cfg.crawl.crawl_block {
+		let partition = cfg.crawl.crawl_block_matrix_partition;
+		spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
+			crawler_rpc_event_receiver,
+			p2p_client.clone(),
+			cfg.crawl.crawl_block_delay,
+			ot_metrics.clone(),
+			cfg.crawl.crawl_block_mode,
+			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
+		)));
+	}
+
+	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
+
+	let sync_network_client = network::new(
+		p2p_client.clone(),
+		rpc_client.clone(),
+		pp.clone(),
+		cfg.disable_rpc,
+	);
+
+	if cfg.sync_start_block.is_some() {
+		db.put(IsSyncedKey, false);
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_client::run(
+			sync_client,
+			sync_network_client,
+			(&cfg).into(),
+			sync_range,
+			block_tx.clone(),
+		)));
+	}
+
+	if cfg.sync_finality_enable {
+		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
+		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_finality::run(
+			sync_finality,
+			shutdown.clone(),
+			block_header.clone(),
+		)));
+	} else {
+		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
+		// set the flag in the db, signaling across that we don't need to sync
+		db.put(IsFinalitySyncedKey, true);
+	}
+
+	let static_config_params: MaintenanceConfig = (&cfg).into();
+	spawn_in_span(shutdown.with_cancel(avail_light_core::maintenance::run(
+		p2p_client.clone(),
+		ot_metrics.clone(),
+		block_rx,
+		static_config_params,
+		shutdown.clone(),
+	)));
+
+	let channels = avail_light_core::types::ClientChannels {
+		block_sender: block_tx,
+		rpc_event_receiver: client_rpc_event_receiver,
+	};
+
+	if let Some(partition) = cfg.block_matrix_partition {
+		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
+
+		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
+			fat_client,
+			db.clone(),
+			(&cfg).into(),
+			ot_metrics.clone(),
+			channels,
+			partition,
+			shutdown.clone(),
+		)));
+	} else {
+		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
+
+		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
+			db.clone(),
+			light_network_client,
+			(&cfg).into(),
+			ot_metrics.clone(),
+			channels,
+			shutdown.clone(),
+		)));
+	}
+
+	ot_metrics.count(MetricCounter::Starts).await;
+
+	Ok(())
+}
+
+async fn run_fat(
+	cfg: RuntimeConfig,
+	identity_cfg: IdentityConfig,
+	db: RocksDB,
+	shutdown: Controller<String>,
+	client_id: Uuid,
+	execution_id: Uuid,
+) -> Result<()> {
+	info!("Fat client mode");
+	let role = "fatnode";
 
 	let version = clap::crate_version!();
 	info!("Running Avail light client version: {version}. Role: {role}.");
@@ -624,16 +1264,37 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));
 
-	if let Err(error) = run(
-		cfg,
-		identity_cfg,
-		db,
-		shutdown.clone(),
-		client_id,
-		execution_id,
-	)
-	.await
-	{
+	if let Err(error) = if cfg.is_fat_client() {
+		run_fat(
+			cfg,
+			identity_cfg,
+			db,
+			shutdown.clone(),
+			client_id,
+			execution_id,
+		)
+		.await
+	} else if cfg!(feature = "crawl") {
+		run_crawl(
+			cfg,
+			identity_cfg,
+			db,
+			shutdown.clone(),
+			client_id,
+			execution_id,
+		)
+		.await
+	} else {
+		run(
+			cfg,
+			identity_cfg,
+			db,
+			shutdown.clone(),
+			client_id,
+			execution_id,
+		)
+		.await
+	} {
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};
