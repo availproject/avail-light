@@ -46,12 +46,6 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
-	"crawler"
-} else {
-	"lightnode"
-};
-
 /// Light Client for Avail Blockchain
 
 fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
@@ -100,15 +94,17 @@ async fn run(
 	client_id: Uuid,
 	execution_id: Uuid,
 ) -> Result<()> {
-	let client_role = if cfg.is_fat_client() {
+	let role = if cfg.is_fat_client() {
 		info!("Fat client mode");
 		"fatnode"
+	} else if cfg!(feature = "crawl") {
+		"crawler"
 	} else {
-		CLIENT_ROLE
+		"lightnode"
 	};
 
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}. Role: {client_role}.");
+	info!("Running Avail light client version: {version}. Role: {role}.");
 	info!("Using config: {cfg:?}");
 	info!(
 		"Avail ss58 address: {}, public key: {}",
@@ -125,7 +121,7 @@ async fn run(
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
-		role: client_role.into(),
+		role: role.into(),
 		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
