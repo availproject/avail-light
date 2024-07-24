@@ -1,22 +1,14 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::{CliOpts, Network};
-use avail_core::AppId;
 use avail_light_core::{
-	api,
-	consts::EXPECTED_SYSTEM_VERSION,
-	data::{
-		ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, P2PKeypairKey,
-		RocksDB,
-	},
-	network::{self, p2p, rpc},
+	data::{ClientIdKey, Database, LatestHeaderKey, P2PKeypairKey, RocksDB},
+	network::{p2p, rpc},
 	shutdown::Controller,
-	sync_client::SyncClient,
-	sync_finality::SyncFinality,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
-		load_or_init_suri, IdentifyConfig, IdentityConfig, LibP2PConfig, MaintenanceConfig,
-		MultiaddrConfig, OtelConfig, RuntimeConfig, SecretKey, Uuid,
+		load_or_init_suri, IdentifyConfig, IdentityConfig, KademliaMode, LibP2PConfig,
+		MaintenanceConfig, MultiaddrConfig, OtelConfig, RuntimeConfig, SecretKey, Uuid,
 	},
 	utils::spawn_in_span,
 };
@@ -25,7 +17,7 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
-use kate_recovery::{com::AppData, matrix::Partition};
+use kate_recovery::matrix::Partition;
 use libp2p::{
 	identity::{self, ed25519},
 	multiaddr::Protocol,
@@ -33,10 +25,30 @@ use libp2p::{
 };
 use std::{fs, net::Ipv4Addr, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, metadata::ParseLevelError, span, trace, warn, Level, Subscriber};
+use tracing::{error, info, metadata::ParseLevelError, span, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
+#[cfg(not(feature = "crawl"))]
+use avail_core::AppId;
+
+#[cfg(not(feature = "crawl"))]
+use avail_light_core::{
+	api,
+	consts::EXPECTED_SYSTEM_VERSION,
+	data::{IsFinalitySyncedKey, IsSyncedKey},
+	network,
+	sync_client::SyncClient,
+	sync_finality::SyncFinality,
+};
+
+#[cfg(not(feature = "crawl"))]
+use kate_recovery::com::AppData;
+
+#[cfg(not(feature = "crawl"))]
+use tracing::trace;
+
 #[cfg(feature = "network-analysis")]
+#[cfg(not(feature = "crawl"))]
 use avail_light_core::network::p2p::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
@@ -95,10 +107,8 @@ async fn run(
 	client_id: Uuid,
 	execution_id: Uuid,
 ) -> Result<()> {
-	let role = "lightnode";
-
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}. Role: {role}.");
+	info!("Running Avail Light Client version: {version}.");
 	info!("Using config: {cfg:?}");
 	info!(
 		"Avail ss58 address: {}, public key: {}",
@@ -115,7 +125,7 @@ async fn run(
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
-		role: role.into(),
+		role: "lightnode".into(),
 		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
@@ -404,10 +414,8 @@ async fn run_crawl(
 	client_id: Uuid,
 	execution_id: Uuid,
 ) -> Result<()> {
-	let role = "crawler";
-
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}. Role: {role}.");
+	info!("Running Avail Light Client Crawler version: {version}");
 	info!("Using config: {cfg:?}");
 	info!(
 		"Avail ss58 address: {}, public key: {}",
@@ -424,13 +432,14 @@ async fn run_crawl(
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
-		role: role.into(),
+		role: "crawler".into(),
 		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: cfg.operation_mode.to_string(),
+		operating_mode: KademliaMode::Client.to_string(),
 		partition_size: cfg
-			.block_matrix_partition
+			.crawl
+			.crawl_block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
@@ -461,7 +470,7 @@ async fn run_crawl(
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
 		shutdown.clone(),
-		cfg.operation_mode,
+		KademliaMode::Client,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
@@ -504,16 +513,7 @@ async fn run_crawl(
 		}
 	}));
 
-	#[cfg(feature = "network-analysis")]
-	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
-
-	let pp = Arc::new(kate_recovery::couscous::public_params());
-	let raw_pp = pp.to_raw_var_bytes();
-	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
-	let public_params_len = hex::encode(raw_pp).len();
-	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-
-	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+	let (_, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
 		&cfg.genesis_hash,
@@ -523,9 +523,7 @@ async fn run_crawl(
 	.await?;
 
 	// Subscribing to RPC events before first event is published
-	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
-	let client_rpc_event_receiver = rpc_events.subscribe();
 	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
@@ -571,62 +569,8 @@ async fn run_crawl(
 	};
 
 	db.put(LatestHeaderKey, block_header.number);
-	let sync_range = cfg.sync_range(block_header.number);
-
-	let ws_clients = api::v2::types::WsClients::default();
-
-	// Spawn tokio task which runs one http server for handling RPC
-	let server = api::server::Server {
-		db: db.clone(),
-		cfg: cfg.clone(),
-		identity_cfg,
-		version: format!("v{}", clap::crate_version!()),
-		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
-		node_client: rpc_client.clone(),
-		ws_clients: ws_clients.clone(),
-		shutdown: shutdown.clone(),
-		p2p_client: p2p_client.clone(),
-	};
-	spawn_in_span(shutdown.with_cancel(server.bind()));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
-
-	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
-		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
-			(&cfg).into(),
-			db.clone(),
-			p2p_client.clone(),
-			rpc_client.clone(),
-			app_id,
-			block_tx.subscribe(),
-			pp.clone(),
-			sync_range.clone(),
-			data_tx,
-			shutdown.clone(),
-		)));
-		data_rx
-	});
-
-	spawn_in_span(shutdown.with_cancel(api::v2::publish(
-		api::v2::types::Topic::HeaderVerified,
-		publish_rpc_event_receiver,
-		ws_clients.clone(),
-	)));
-
-	spawn_in_span(shutdown.with_cancel(api::v2::publish(
-		api::v2::types::Topic::ConfidenceAchieved,
-		block_tx.subscribe(),
-		ws_clients.clone(),
-	)));
-
-	if let Some(data_rx) = data_rx {
-		spawn_in_span(shutdown.with_cancel(api::v2::publish(
-			api::v2::types::Topic::DataVerified,
-			data_rx,
-			ws_clients,
-		)));
-	}
 
 	if cfg.crawl.crawl_block {
 		let partition = cfg.crawl.crawl_block_matrix_partition;
@@ -637,40 +581,8 @@ async fn run_crawl(
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
 			partition.unwrap_or(avail_light_core::crawl_client::ENTIRE_BLOCK),
+			block_tx,
 		)));
-	}
-
-	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
-
-	let sync_network_client = network::new(
-		p2p_client.clone(),
-		rpc_client.clone(),
-		pp.clone(),
-		cfg.disable_rpc,
-	);
-
-	if cfg.sync_start_block.is_some() {
-		db.put(IsSyncedKey, false);
-		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_client::run(
-			sync_client,
-			sync_network_client,
-			(&cfg).into(),
-			sync_range,
-			block_tx.clone(),
-		)));
-	}
-
-	if cfg.sync_finality_enable {
-		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
-		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_finality::run(
-			sync_finality,
-			shutdown.clone(),
-			block_header.clone(),
-		)));
-	} else {
-		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
-		// set the flag in the db, signaling across that we don't need to sync
-		db.put(IsFinalitySyncedKey, true);
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
@@ -681,36 +593,6 @@ async fn run_crawl(
 		static_config_params,
 		shutdown.clone(),
 	)));
-
-	let channels = avail_light_core::types::ClientChannels {
-		block_sender: block_tx,
-		rpc_event_receiver: client_rpc_event_receiver,
-	};
-
-	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
-
-		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
-			fat_client,
-			db.clone(),
-			(&cfg).into(),
-			ot_metrics.clone(),
-			channels,
-			partition,
-			shutdown.clone(),
-		)));
-	} else {
-		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
-
-		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
-			db.clone(),
-			light_network_client,
-			(&cfg).into(),
-			ot_metrics.clone(),
-			channels,
-			shutdown.clone(),
-		)));
-	}
 
 	ot_metrics.count(MetricCounter::Starts).await;
 
@@ -727,10 +609,9 @@ async fn run_fat(
 	execution_id: Uuid,
 ) -> Result<()> {
 	info!("Fat client mode");
-	let role = "fatnode";
 
 	let version = clap::crate_version!();
-	info!("Running Avail light client version: {version}. Role: {role}.");
+	info!("Running Avail Light Fat Client version: {version}.");
 	info!("Using config: {cfg:?}");
 	info!(
 		"Avail ss58 address: {}, public key: {}",
@@ -747,11 +628,11 @@ async fn run_fat(
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
-		role: role.into(),
+		role: "fatnode".into(),
 		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: cfg.operation_mode.to_string(),
+		operating_mode: KademliaMode::Client.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
@@ -784,7 +665,7 @@ async fn run_fat(
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
 		shutdown.clone(),
-		cfg.operation_mode,
+		KademliaMode::Client,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
