@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "1.11.1"
+version = "1.11.2"
 dependencies = [
  "avail-core",
  "avail-light-core",

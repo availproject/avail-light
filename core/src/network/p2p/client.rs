@@ -420,7 +420,7 @@ impl Command for ListConnectedPeers {
 }
 
 struct ReconfigureKademliaMode {
-	response_sender: Option<oneshot::Sender<Result<()>>>,
+	response_sender: Option<oneshot::Sender<Result<Mode>>>,
 	memory_gb_threshold: f64,
 	cpus_threshold: usize,
 }
@@ -452,7 +452,7 @@ impl Command for ReconfigureKademliaMode {
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(()))
+			.send(Ok(*entries.kad_mode))
 			.expect("ReconfigureKademliaMode receiver dropped");
 		Ok(())
 	}
@@ -709,7 +709,7 @@ impl Client {
 		&self,
 		memory_gb_threshold: f64,
 		cpus_threshold: usize,
-	) -> Result<()> {
+	) -> Result<Mode> {
 		self.execute_sync(|response_sender| {
 			Box::new(ReconfigureKademliaMode {
 				response_sender: Some(response_sender),

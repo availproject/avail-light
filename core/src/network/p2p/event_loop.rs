@@ -272,7 +272,6 @@ impl EventLoop {
 					kad::Event::ModeChanged { new_mode } => {
 						trace!("Kademlia mode changed: {new_mode:?}");
 						self.kad_mode = new_mode;
-						metrics.update_operating_mode(new_mode).await
 					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
