@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.11.2]
+
+- Fix `operating_mode` metric attribute not switching properly when Kademlia mode changes
+
 ## [1.11.1](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.1) - 2024-07-23
 
 - Add `mainnet` CLI option for connecting to Avail mainnet
