@@ -1,8 +1,8 @@
 use crate::api::v2::handlers::p2p::MultiAddressResponse;
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global, Command, CommandSender, EventLoopEntries,
-	PeerInfo, QueryChannel, SendableCommand,
+	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, CommandSender,
+	EventLoopEntries, PeerInfo, QueryChannel, SendableCommand,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -268,14 +268,12 @@ impl Command for CountKademliaPeers {
 		let mut peers_with_non_pvt_addr: usize = 0;
 		for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
 			for item in bucket.iter() {
-				for protocol in item.node.value.iter().flat_map(|addr| addr.iter()) {
-					if let libp2p::multiaddr::Protocol::Ip4(ip) = protocol {
-						if is_global(ip) {
-							peers_with_non_pvt_addr += 1;
-							// We just need to hit the first external address
-							break;
-						}
-					};
+				for address in item.node.value.iter() {
+					if is_multiaddr_global(address) {
+						peers_with_non_pvt_addr += 1;
+						// We just need to hit the first external address
+						break;
+					}
 				}
 				total_peers += 1;
 			}
