@@ -613,10 +613,6 @@ async fn run_fat(
 	let version = clap::crate_version!();
 	info!("Running Avail Light Fat Client version: {version}.");
 	info!("Using config: {cfg:?}");
-	info!(
-		"Avail ss58 address: {}, public key: {}",
-		&identity_cfg.avail_address, &identity_cfg.avail_public_key
-	);
 
 	if cfg.bootstraps.is_empty() {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
@@ -708,15 +704,6 @@ async fn run_fat(
 		}
 	}));
 
-	#[cfg(feature = "network-analysis")]
-	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
-
-	let pp = Arc::new(kate_recovery::couscous::public_params());
-	let raw_pp = pp.to_raw_var_bytes();
-	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
-	let public_params_len = hex::encode(raw_pp).len();
-	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
@@ -727,7 +714,6 @@ async fn run_fat(
 	.await?;
 
 	// Subscribing to RPC events before first event is published
-	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
 	let client_rpc_event_receiver = rpc_events.subscribe();
 
@@ -774,82 +760,8 @@ async fn run_fat(
 	};
 
 	db.put(LatestHeaderKey, block_header.number);
-	let sync_range = cfg.sync_range(block_header.number);
-
-	let ws_clients = api::v2::types::WsClients::default();
-
-	// Spawn tokio task which runs one http server for handling RPC
-	let server = api::server::Server {
-		db: db.clone(),
-		cfg: cfg.clone(),
-		identity_cfg,
-		version: format!("v{}", clap::crate_version!()),
-		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
-		node_client: rpc_client.clone(),
-		ws_clients: ws_clients.clone(),
-		shutdown: shutdown.clone(),
-		p2p_client: p2p_client.clone(),
-	};
-	spawn_in_span(shutdown.with_cancel(server.bind()));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
-
-	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
-		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
-		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
-			(&cfg).into(),
-			db.clone(),
-			p2p_client.clone(),
-			rpc_client.clone(),
-			app_id,
-			block_tx.subscribe(),
-			pp.clone(),
-			sync_range.clone(),
-			data_tx,
-			shutdown.clone(),
-		)));
-		data_rx
-	});
-
-	spawn_in_span(shutdown.with_cancel(api::v2::publish(
-		api::v2::types::Topic::HeaderVerified,
-		publish_rpc_event_receiver,
-		ws_clients.clone(),
-	)));
-
-	spawn_in_span(shutdown.with_cancel(api::v2::publish(
-		api::v2::types::Topic::ConfidenceAchieved,
-		block_tx.subscribe(),
-		ws_clients.clone(),
-	)));
-
-	if let Some(data_rx) = data_rx {
-		spawn_in_span(shutdown.with_cancel(api::v2::publish(
-			api::v2::types::Topic::DataVerified,
-			data_rx,
-			ws_clients,
-		)));
-	}
-
-	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
-
-	let sync_network_client = network::new(
-		p2p_client.clone(),
-		rpc_client.clone(),
-		pp.clone(),
-		cfg.disable_rpc,
-	);
-
-	if cfg.sync_start_block.is_some() {
-		db.put(IsSyncedKey, false);
-		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_client::run(
-			sync_client,
-			sync_network_client,
-			(&cfg).into(),
-			sync_range,
-			block_tx.clone(),
-		)));
-	}
 
 	if cfg.sync_finality_enable {
 		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
@@ -888,17 +800,6 @@ async fn run_fat(
 			ot_metrics.clone(),
 			channels,
 			partition,
-			shutdown.clone(),
-		)));
-	} else {
-		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
-
-		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
-			db.clone(),
-			light_network_client,
-			(&cfg).into(),
-			ot_metrics.clone(),
-			channels,
 			shutdown.clone(),
 		)));
 	}
