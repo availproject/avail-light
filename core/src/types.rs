@@ -1,5 +1,7 @@
 //! Shared light client structs and enums.
-use crate::network::p2p::{MemoryStoreConfig, ProvidersConfig, RocksDBStoreConfig};
+#[cfg(not(feature = "kademlia-rocksdb"))]
+use crate::network::p2p::MemoryStoreConfig;
+use crate::network::p2p::{ProvidersConfig, RocksDBStoreConfig};
 use crate::network::rpc::Event;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
@@ -581,6 +583,7 @@ impl From<&LibP2PConfig> for libp2p::kad::Config {
 	}
 }
 
+#[cfg(not(feature = "kademlia-rocksdb"))]
 impl From<&LibP2PConfig> for MemoryStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
 		MemoryStoreConfig {
