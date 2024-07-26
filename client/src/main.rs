@@ -248,8 +248,10 @@ async fn run(
 			360,
 		))
 		.await
+		.map_err(|shutdown_reason| eyre!(shutdown_reason))
+		.and_then(|inner| inner)
 	{
-		Ok(Err(report)) => {
+		Err(report) => {
 			if !rpc_subscriptions_handle.is_finished() {
 				return Err(report);
 			}
@@ -258,16 +260,7 @@ async fn run(
 			};
 			return Err(eyre!(subscriptions_error));
 		},
-		Ok(Ok(num)) => num,
-		Err(shutdown_reason) => {
-			if !rpc_subscriptions_handle.is_finished() {
-				return Err(eyre!(shutdown_reason));
-			}
-			let Ok(Ok(Err(event_loop_error))) = rpc_subscriptions_handle.await else {
-				return Err(eyre!(shutdown_reason));
-			};
-			return Err(eyre!(event_loop_error));
-		},
+		Ok(num) => num,
 	};
 
 	db.put(LatestHeaderKey, block_header.number);
@@ -546,8 +539,10 @@ async fn run_crawl(
 			360,
 		))
 		.await
+		.map_err(|shutdown_reason| eyre!(shutdown_reason))
+		.and_then(|inner| inner)
 	{
-		Ok(Err(report)) => {
+		Err(report) => {
 			if !rpc_subscriptions_handle.is_finished() {
 				return Err(report);
 			}
@@ -556,16 +551,7 @@ async fn run_crawl(
 			};
 			return Err(eyre!(subscriptions_error));
 		},
-		Ok(Ok(num)) => num,
-		Err(shutdown_reason) => {
-			if !rpc_subscriptions_handle.is_finished() {
-				return Err(eyre!(shutdown_reason));
-			}
-			let Ok(Ok(Err(event_loop_error))) = rpc_subscriptions_handle.await else {
-				return Err(eyre!(shutdown_reason));
-			};
-			return Err(eyre!(event_loop_error));
-		},
+		Ok(num) => num,
 	};
 
 	db.put(LatestHeaderKey, block_header.number);
@@ -737,8 +723,10 @@ async fn run_fat(
 			360,
 		))
 		.await
+		.map_err(|shutdown_reason| eyre!(shutdown_reason))
+		.and_then(|inner| inner)
 	{
-		Ok(Err(report)) => {
+		Err(report) => {
 			if !rpc_subscriptions_handle.is_finished() {
 				return Err(report);
 			}
@@ -747,16 +735,7 @@ async fn run_fat(
 			};
 			return Err(eyre!(subscriptions_error));
 		},
-		Ok(Ok(num)) => num,
-		Err(shutdown_reason) => {
-			if !rpc_subscriptions_handle.is_finished() {
-				return Err(eyre!(shutdown_reason));
-			}
-			let Ok(Ok(Err(event_loop_error))) = rpc_subscriptions_handle.await else {
-				return Err(eyre!(shutdown_reason));
-			};
-			return Err(eyre!(event_loop_error));
-		},
+		Ok(num) => num,
 	};
 
 	db.put(LatestHeaderKey, block_header.number);
