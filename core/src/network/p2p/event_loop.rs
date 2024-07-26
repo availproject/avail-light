@@ -28,7 +28,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-	network::p2p::is_global,
+	network::p2p::is_multiaddr_global,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{AgentVersion, KademliaMode, LibP2PConfig, TimeToLive},
@@ -521,9 +521,7 @@ impl EventLoop {
 							"External reachability confirmed on address: {}",
 							address.to_string()
 						);
-						if address.iter().any(
-							|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
-						) {
+						if is_multiaddr_global(&address) {
 							info!(
 								"Public reachability confirmed on address: {}",
 								address.to_string()

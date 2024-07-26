@@ -5,7 +5,7 @@ use libp2p::{
 	kad::{self, Mode, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
+	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
 use std::{collections::HashMap, net::Ipv4Addr};
@@ -272,4 +272,31 @@ pub fn is_global(ip: Ipv4Addr) -> bool {
 		)
 		|| ip.is_documentation()
 		|| ip.is_broadcast())
+}
+
+// Returns [`true`] if the multi-address IP appears to be globally reachable
+pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
+	address
+		.iter()
+		.any(|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use test_case::test_case;
+
+	#[test_case("/ip4/159.73.143.3/tcp/37000" => true ; "Global IPv4")]
+	#[test_case("/ip4/192.168.0.1/tcp/37000" => false ; "Local (192.168) IPv4")]
+	#[test_case("/ip4/172.16.10.11/tcp/37000" => false ; "Local (172.16) IPv4")]
+	#[test_case("/ip4/127.0.0.1/tcp/37000" => false ; "Loopback IPv4")]
+	#[test_case("" => false ; "Empty multiaddr")]
+	fn test_is_multiaddr_global(addr_str: &str) -> bool {
+		let addr = if addr_str.is_empty() {
+			Multiaddr::empty()
+		} else {
+			addr_str.parse().unwrap()
+		};
+		is_multiaddr_global(&addr)
+	}
 }
