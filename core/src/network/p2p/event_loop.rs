@@ -272,6 +272,9 @@ impl EventLoop {
 					},
 					kad::Event::ModeChanged { new_mode } => {
 						trace!("Kademlia mode changed: {new_mode:?}");
+						// This event should not be automatically triggered because the mode changes are handled explicitly through the LC logic
+						self.kad_mode = new_mode;
+						metrics.update_operating_mode(new_mode).await
 					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
