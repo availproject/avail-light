@@ -28,6 +28,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
+	network::p2p::is_global,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{AgentVersion, KademliaMode, LibP2PConfig, TimeToLive},
@@ -271,7 +272,6 @@ impl EventLoop {
 					},
 					kad::Event::ModeChanged { new_mode } => {
 						trace!("Kademlia mode changed: {new_mode:?}");
-						self.kad_mode = new_mode;
 					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
@@ -518,6 +518,14 @@ impl EventLoop {
 							"External reachability confirmed on address: {}",
 							address.to_string()
 						);
+						if address.iter().any(
+							|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
+						) {
+							info!(
+								"Public reachability confirmed on address: {}",
+								address.to_string()
+							);
+						};
 						metrics.update_multiaddress(address).await;
 					},
 					SwarmEvent::ConnectionEstablished {
@@ -528,7 +536,6 @@ impl EventLoop {
 						..
 					} => {
 						metrics.count(MetricCounter::EstablishedConnections).await;
-						endpoint.get_remote_address();
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 							_ = ch.send(Ok(ConnectionEstablishedInfo {
