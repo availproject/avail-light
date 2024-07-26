@@ -2,6 +2,8 @@
 
 ## [1.11.2]
 
+- Introduce public address filter for external addresses and add additional log entry
+- Refactor the `/peers/get-multiaddress` endpoint so that it returns all of the peers multi-addresses
 - Fix `operating_mode` metric attribute not switching properly when Kademlia mode changes
 
 ## [1.11.1](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.1) - 2024-07-23
