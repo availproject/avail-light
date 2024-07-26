@@ -145,6 +145,7 @@ pub struct PeerInfo {
 	pub peer_multiaddr: Option<Vec<String>>,
 	pub local_listeners: Vec<String>,
 	pub external_listeners: Vec<String>,
+	pub public_listeners: Vec<String>,
 }
 
 fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {

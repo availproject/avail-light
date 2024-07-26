@@ -15,7 +15,7 @@ use crate::{
 	types::{IdentityConfig, RuntimeConfig},
 };
 
-mod handlers;
+pub mod handlers;
 mod transactions;
 pub mod types;
 mod ws;

@@ -7,6 +7,7 @@ use warp::reply::Reply;
 pub struct Listeners {
 	pub local: Vec<String>,
 	pub external: Vec<String>,
+	pub public: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -52,12 +53,12 @@ impl Reply for ExternalPeerDialResponse {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PeerInfoQuery {
-	pub peer_id: Option<PeerId>,
+	pub peer_id: PeerId,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultiAddressResponse {
-	pub multiaddress: Option<Vec<String>>,
+	pub multiaddress_list: Vec<String>,
 	pub peer_id: String,
 }
 
@@ -90,6 +91,7 @@ pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, 
 		listeners: Listeners {
 			local: local_info.local_listeners,
 			external: local_info.external_listeners,
+			public: vec![],
 		},
 		routing_table_peers_count,
 		routing_table_external_peers_count,
@@ -105,16 +107,7 @@ pub async fn get_peer_multiaddr(
 		.await
 		.map_err(Error::internal_server_error)?;
 
-	if let Some(info) = external_peer_info {
-		Ok(MultiAddressResponse {
-			multiaddress: info.peer_multiaddr,
-			peer_id: info.peer_id,
-		})
-	} else {
-		Err(Error::bad_request_unknown(
-			"Peer not found in the routing table or its IP is not public.",
-		))
-	}
+	Ok(external_peer_info)
 }
 
 pub async fn dial_external_peer(
