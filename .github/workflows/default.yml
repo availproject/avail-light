@@ -12,9 +12,17 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # NOTE: if disc space is low after the clean-up, switch to `self-hosted` runner
     steps:
       - uses: actions/checkout@v4
+
+      # Remove everything except large packages, to keep LLVM environment
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-chain: true
+          large-packages: false
+
       - uses: actions/cache@v4
         with:
           path: |
