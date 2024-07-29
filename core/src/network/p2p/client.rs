@@ -1,8 +1,6 @@
-use crate::api::v2::handlers::p2p::MultiAddressResponse;
-
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, CommandSender,
-	EventLoopEntries, PeerInfo, QueryChannel, SendableCommand,
+	EventLoopEntries, MultiAddressInfo, PeerInfo, QueryChannel, SendableCommand,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -340,18 +338,18 @@ impl Command for GetLocalInfo {
 
 struct GetExternalPeerInfo {
 	peer_id: PeerId,
-	response_sender: Option<oneshot::Sender<Result<MultiAddressResponse>>>,
+	response_sender: Option<oneshot::Sender<Result<MultiAddressInfo>>>,
 }
 
 impl Command for GetExternalPeerInfo {
 	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
-		let mut multiaddress_list: Vec<String> = Vec::new();
+		let mut multiaddresses: Vec<String> = Vec::new();
 
 		for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
 			for item in bucket.iter() {
 				if *item.node.key.preimage() == self.peer_id {
 					for addr in item.node.value.iter() {
-						multiaddress_list.push(addr.to_string());
+						multiaddresses.push(addr.to_string());
 					}
 				}
 			}
@@ -360,8 +358,8 @@ impl Command for GetExternalPeerInfo {
 		self.response_sender
 			.take()
 			.unwrap()
-			.send(Ok(MultiAddressResponse {
-				multiaddress_list,
+			.send(Ok(MultiAddressInfo {
+				multiaddresses,
 				peer_id: self.peer_id.to_string(),
 			}))
 			.expect("GetExternalPeerInfo receiver dropped");
@@ -721,7 +719,7 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_external_peer_info(&self, peer_id: PeerId) -> Result<MultiAddressResponse> {
+	pub async fn get_external_peer_info(&self, peer_id: PeerId) -> Result<MultiAddressInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(GetExternalPeerInfo {
 				peer_id,
