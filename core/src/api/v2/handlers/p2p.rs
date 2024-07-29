@@ -1,4 +1,7 @@
-use crate::{api::v2::types::Error, network::p2p};
+use crate::{
+	api::v2::types::Error,
+	network::p2p::{self, MultiAddressInfo},
+};
 use libp2p::{swarm::DialError, Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use warp::reply::Reply;
@@ -56,15 +59,12 @@ pub struct PeerInfoQuery {
 	pub peer_id: PeerId,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MultiAddressResponse {
-	pub multiaddress_list: Vec<String>,
-	pub peer_id: String,
-}
+#[derive(Debug)]
+pub struct MultiAddressResponse(MultiAddressInfo);
 
 impl Reply for MultiAddressResponse {
 	fn into_response(self) -> warp::reply::Response {
-		warp::reply::json(&self).into_response()
+		warp::reply::json(&self.0).into_response()
 	}
 }
 
@@ -107,7 +107,7 @@ pub async fn get_peer_multiaddr(
 		.await
 		.map_err(Error::internal_server_error)?;
 
-	Ok(external_peer_info)
+	Ok(MultiAddressResponse(external_peer_info))
 }
 
 pub async fn dial_external_peer(
