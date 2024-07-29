@@ -8,6 +8,7 @@ use libp2p::{
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::Ipv4Addr};
 use tokio::sync::{
 	mpsc::{self},
@@ -146,6 +147,12 @@ pub struct PeerInfo {
 	pub local_listeners: Vec<String>,
 	pub external_listeners: Vec<String>,
 	pub public_listeners: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MultiAddressInfo {
+	multiaddresses: Vec<String>,
+	peer_id: String,
 }
 
 fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {
