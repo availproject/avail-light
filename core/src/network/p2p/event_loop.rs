@@ -22,8 +22,8 @@ use libp2p::{
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
-	sync::oneshot,
-	time::{interval_at, Instant, Interval},
+	sync::{oneshot, Mutex},
+	time::{self, interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -191,9 +191,21 @@ impl EventLoop {
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
 
+		let event_count = Arc::new(Mutex::new(0));
+		let start_time = Instant::now();
+		// Log events count every 30 seconds
+		// Events-per-second would spam the event loop too much
+		let report_interval = Duration::from_secs(30);
+		let mut report_timer = time::interval(report_interval);
+
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
+				event = self.swarm.next() => {
+					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
+					let mut count = event_count.lock().await;
+					*count += 1;
+					metrics.count(MetricCounter::EventLoopEvent).await;
+				},
 				command = command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					//
@@ -203,6 +215,13 @@ impl EventLoop {
 					},
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
+				_ = report_timer.tick() => {
+					let count = *event_count.lock().await;
+					let elapsed = start_time.elapsed();
+					let events_num = count as f64 / elapsed.as_secs_f64() * 30.0;
+					info!("Events per 30s: {:.2}", events_num);
+					*event_count.lock().await = 0;
+				},
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
 				_ = self.shutdown.triggered_shutdown() => {

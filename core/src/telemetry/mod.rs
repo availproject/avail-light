@@ -18,6 +18,7 @@ pub enum MetricCounter {
 	EstablishedConnections,
 	IncomingPutRecord,
 	IncomingGetRecord,
+	EventLoopEvent,
 }
 
 pub trait MetricName {
@@ -37,6 +38,7 @@ impl MetricName for MetricCounter {
 			EstablishedConnections => "avail.light.established_connections",
 			IncomingPutRecord => "avail.light.incoming_put_record",
 			IncomingGetRecord => "avail.light.incoming_get_record",
+			EventLoopEvent => "avail.light.event_loop_event",
 		}
 	}
 }
