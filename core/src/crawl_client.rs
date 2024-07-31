@@ -3,8 +3,8 @@ use crate::{
 		p2p::Client,
 		rpc::{self, Event},
 	},
-	telemetry::{MetricValue, Metrics},
-	types::{self, block_matrix_partition_format, BlockVerified, Delay},
+	telemetry::{metric, otlp::Record, MetricName, Metrics},
+	types::{self, block_matrix_partition_format, BlockVerified, Delay, Origin},
 };
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
@@ -53,6 +53,46 @@ impl Default for CrawlConfig {
 	}
 }
 
+#[derive(Clone)]
+enum CrawlMetricValue {
+	CellsSuccessRate(f64),
+	RowsSuccessRate(f64),
+	BlockDelay(f64),
+}
+
+impl MetricName for CrawlMetricValue {
+	fn name(&self) -> &'static str {
+		use CrawlMetricValue::*;
+		match self {
+			CellsSuccessRate(_) => "avail.light.crawl.cells_success_rate",
+			RowsSuccessRate(_) => "avail.light.crawl.rows_success_rate",
+			BlockDelay(_) => "avail.light.crawl.block_delay",
+		}
+	}
+}
+impl From<CrawlMetricValue> for Record {
+	fn from(value: CrawlMetricValue) -> Self {
+		use CrawlMetricValue::*;
+		use Record::*;
+
+		let name = value.name();
+
+		match value {
+			CellsSuccessRate(number) => AvgF64(name, number),
+			RowsSuccessRate(number) => AvgF64(name, number),
+			BlockDelay(number) => AvgF64(name, number),
+		}
+	}
+}
+
+impl metric::Value for CrawlMetricValue {
+	// Metric filter for external peers
+	// Only the metrics we wish to send to OTel should be in this list
+	fn is_allowed(&self, origin: &Origin) -> bool {
+		matches!(origin, Origin::Internal)
+	}
+}
+
 pub async fn run(
 	mut message_rx: broadcast::Receiver<Event>,
 	network_client: Client,
@@ -88,7 +128,7 @@ pub async fn run(
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 			let _ = metrics
-				.record(MetricValue::CrawlBlockDelay(seconds.as_secs() as f64))
+				.record(CrawlMetricValue::BlockDelay(seconds.as_secs() as f64))
 				.await;
 		}
 		let block_number = block.block_num;
@@ -116,7 +156,7 @@ pub async fn run(
 				partition, success_rate, total, fetched, "Fetched block cells",
 			);
 			let _ = metrics
-				.record(MetricValue::CrawlCellsSuccessRate(success_rate))
+				.record(CrawlMetricValue::CellsSuccessRate(success_rate))
 				.await;
 		}
 
@@ -138,7 +178,7 @@ pub async fn run(
 				success_rate, total, fetched, "Fetched block rows"
 			);
 			let _ = metrics
-				.record(MetricValue::CrawlRowsSuccessRate(success_rate))
+				.record(CrawlMetricValue::RowsSuccessRate(success_rate))
 				.await;
 		}
 

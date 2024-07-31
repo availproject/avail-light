@@ -118,13 +118,6 @@ impl From<MetricValue> for Record {
 			RPCFetched(number) => AvgF64(name, number),
 			RPCFetchDuration(number) => AvgF64(name, number),
 			RPCCallDuration(number) => AvgF64(name, number),
-
-			#[cfg(feature = "crawl")]
-			CrawlCellsSuccessRate(number) => AvgF64(name, number),
-			#[cfg(feature = "crawl")]
-			CrawlRowsSuccessRate(number) => AvgF64(name, number),
-			#[cfg(feature = "crawl")]
-			CrawlBlockDelay(number) => AvgF64(name, number),
 		}
 	}
 }
@@ -343,20 +336,20 @@ mod tests {
 		assert_eq!(result, expected);
 	}
 
-	fn flatten_metric_values(
+	fn flatten_metrics(
 		values: Vec<MetricValue>,
 	) -> (HashMap<&'static str, u64>, HashMap<&'static str, f64>) {
-		flatten_metrics(&values.into_iter().map(Into::into).collect::<Vec<Record>>())
+		super::flatten_metrics(&values.into_iter().map(Into::into).collect::<Vec<Record>>())
 	}
 
 	#[test]
 	fn test_flatten_metrics() {
-		let (m_u64, m_f64) = flatten_metric_values(vec![]);
+		let (m_u64, m_f64) = flatten_metrics(vec![]);
 		assert!(m_u64.is_empty());
 		assert!(m_f64.is_empty());
 
 		let buffer = vec![MetricValue::BlockConfidence(90.0)];
-		let (m_u64, m_f64) = flatten_metric_values(buffer);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert!(m_u64.is_empty());
 		assert_eq!(m_f64.len(), 1);
 		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&90.0));
@@ -366,7 +359,7 @@ mod tests {
 			MetricValue::BlockHeight(1),
 			MetricValue::BlockConfidence(93.0),
 		];
-		let (m_u64, m_f64) = flatten_metric_values(buffer);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&1));
 		assert_eq!(m_f64.len(), 1);
@@ -381,7 +374,7 @@ mod tests {
 			MetricValue::BlockHeight(10),
 			MetricValue::BlockHeight(1),
 		];
-		let (m_u64, m_f64) = flatten_metric_values(buffer);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&10));
 		assert_eq!(m_f64.len(), 1);
@@ -398,7 +391,7 @@ mod tests {
 			MetricValue::DHTConnectedPeers(80),
 			MetricValue::BlockConfidence(98.0),
 		];
-		let (m_u64, m_f64) = flatten_metric_values(buffer);
+		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&999));
 		assert_eq!(m_f64.len(), 4);

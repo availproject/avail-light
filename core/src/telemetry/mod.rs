@@ -82,13 +82,6 @@ pub enum MetricValue {
 	RPCFetched(f64),
 	RPCFetchDuration(f64),
 	RPCCallDuration(f64),
-
-	#[cfg(feature = "crawl")]
-	CrawlCellsSuccessRate(f64),
-	#[cfg(feature = "crawl")]
-	CrawlRowsSuccessRate(f64),
-	#[cfg(feature = "crawl")]
-	CrawlBlockDelay(f64),
 }
 
 impl MetricName for MetricValue {
@@ -115,13 +108,6 @@ impl MetricName for MetricValue {
 			RPCFetched(_) => "avail.light.rpc.fetched",
 			RPCFetchDuration(_) => "avail.light.rpc.fetch_duration",
 			RPCCallDuration(_) => "avail.light.rpc.call_duration",
-
-			#[cfg(feature = "crawl")]
-			CrawlCellsSuccessRate(_) => "avail.light.crawl.cells_success_rate",
-			#[cfg(feature = "crawl")]
-			CrawlRowsSuccessRate(_) => "avail.light.crawl.rows_success_rate",
-			#[cfg(feature = "crawl")]
-			CrawlBlockDelay(_) => "avail.light.crawl.block_delay",
 		}
 	}
 }
