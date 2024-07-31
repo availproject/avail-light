@@ -141,15 +141,11 @@ impl metric::Value for MetricValue {
 }
 
 #[async_trait]
-pub trait Metrics<V>
-where
-	V: metric::Value,
-	Record: From<V>,
-{
+pub trait Metrics {
 	async fn count(&self, counter: MetricCounter);
 	async fn record<T>(&self, value: T)
 	where
-		T: Into<V> + Send;
+		T: metric::Value + Into<Record> + Send;
 	async fn flush(&self) -> Result<()>;
 	async fn update_operating_mode(&self, mode: Mode);
 	async fn update_multiaddress(&self, mode: Multiaddr);

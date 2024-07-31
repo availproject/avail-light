@@ -14,15 +14,11 @@ pub mod tests {
 	pub struct MockMetrics {}
 
 	#[async_trait]
-	impl<V> Metrics<V> for MockMetrics
-	where
-		V: metric::Value,
-		Record: From<V>,
-	{
+	impl Metrics for MockMetrics {
 		async fn count(&self, _: MetricCounter) {}
-		async fn record<T: Into<V>>(&self, _: T)
+		async fn record<T>(&self, _: T)
 		where
-			T: Into<V> + Send,
+			T: metric::Value + Into<Record> + Send,
 		{
 		}
 		async fn flush(&self) -> eyre::Result<()> {

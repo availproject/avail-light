@@ -40,7 +40,7 @@ use crate::{
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
-	metrics: &Arc<impl Metrics<MetricValue>>,
+	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
 	header: Header,
 	received_at: Instant,
@@ -190,7 +190,7 @@ pub async fn run(
 	db: impl Database + Clone,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
-	metrics: Arc<impl Metrics<MetricValue>>,
+	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 ) {

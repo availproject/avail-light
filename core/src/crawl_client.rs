@@ -57,7 +57,7 @@ pub async fn run(
 	mut message_rx: broadcast::Receiver<Event>,
 	network_client: Client,
 	delay: u64,
-	metrics: Arc<impl Metrics<MetricValue>>,
+	metrics: Arc<impl Metrics>,
 	mode: CrawlMode,
 	partition: Partition,
 	block_sender: broadcast::Sender<BlockVerified>,

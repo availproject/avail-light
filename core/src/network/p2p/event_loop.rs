@@ -30,7 +30,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
 	network::p2p::is_multiaddr_global,
 	shutdown::Controller,
-	telemetry::{metric, otlp::Record, MetricCounter, MetricValue, Metrics},
+	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{AgentVersion, KademliaMode, LibP2PConfig, TimeToLive},
 };
 
@@ -182,14 +182,7 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run<V>(
-		mut self,
-		metrics: Arc<impl Metrics<V>>,
-		mut command_receiver: CommandReceiver,
-	) where
-		V: metric::Value + From<MetricValue>,
-		Record: From<V>,
-	{
+	pub async fn run(mut self, metrics: Arc<impl Metrics>, mut command_receiver: CommandReceiver) {
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
@@ -228,14 +221,11 @@ impl EventLoop {
 	}
 
 	#[tracing::instrument(level = "trace", skip(self, metrics))]
-	async fn handle_event<V>(
+	async fn handle_event(
 		&mut self,
 		event: SwarmEvent<BehaviourEvent>,
-		metrics: Arc<impl Metrics<V>>,
-	) where
-		V: metric::Value + From<MetricValue>,
-		Record: From<V>,
-	{
+		metrics: Arc<impl Metrics>,
+	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
@@ -664,16 +654,13 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_put_result<V>(
+	async fn handle_put_result(
 		&mut self,
 		key: RecordKey,
 		stats: QueryStats,
 		is_error: bool,
-		metrics: Arc<impl Metrics<V>>,
-	) where
-		V: metric::Value + From<MetricValue>,
-		Record: From<V>,
-	{
+		metrics: Arc<impl Metrics>,
+	) {
 		let block_num = match key.clone().try_into() {
 			Ok(DHTKey::Cell(block_num, _, _)) => block_num,
 			Ok(DHTKey::Row(block_num, _)) => block_num,

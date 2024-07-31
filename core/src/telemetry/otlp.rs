@@ -20,14 +20,11 @@ const ATTRIBUTE_NUMBER: usize = 12;
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
 #[derive(Debug)]
-pub struct Metrics<V>
-where
-	V: metric::Value,
-{
+pub struct Metrics {
 	meter: Meter,
 	counters: HashMap<&'static str, Counter<u64>>,
 	attributes: RwLock<MetricAttributes>,
-	metric_buffer: Arc<Mutex<Vec<V>>>,
+	metric_buffer: Arc<Mutex<Vec<Record>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
 }
 
@@ -47,10 +44,7 @@ pub struct MetricAttributes {
 	pub client_alias: String,
 }
 
-impl<V> Metrics<V>
-where
-	V: metric::Value,
-{
+impl Metrics {
 	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		let attributes = self.attributes.read().await;
 		[
@@ -90,6 +84,7 @@ where
 	}
 }
 
+#[derive(Debug)]
 pub enum Record {
 	MaxU64(&'static str, u64),
 	AvgF64(&'static str, f64),
@@ -155,16 +150,14 @@ fn flatten_counters(buffer: &[MetricCounter]) -> HashMap<&'static str, u64> {
 /// Aggregates buffered metrics into `u64` or `f64` values, depending on the metric.
 /// Returned values are a `HashMap`s where the keys are the metric name,
 /// and values are the aggregations (avg, max, etc.) of those metrics.
-fn flatten_metrics(
-	buffer: &[impl Into<Record> + Clone],
-) -> (HashMap<&'static str, u64>, HashMap<&'static str, f64>) {
+fn flatten_metrics(buffer: &[Record]) -> (HashMap<&'static str, u64>, HashMap<&'static str, f64>) {
 	let mut u64_maximums: HashMap<&'static str, Vec<u64>> = HashMap::new();
 	let mut f64_averages: HashMap<&'static str, Vec<f64>> = HashMap::new();
 
 	for value in buffer {
-		match value.clone().into() {
-			Record::MaxU64(name, number) => u64_maximums.entry(name).or_default().push(number),
-			Record::AvgF64(name, number) => f64_averages.entry(name).or_default().push(number),
+		match value {
+			Record::MaxU64(name, number) => u64_maximums.entry(name).or_default().push(*number),
+			Record::AvgF64(name, number) => f64_averages.entry(name).or_default().push(*number),
 		}
 	}
 
@@ -182,11 +175,7 @@ fn flatten_metrics(
 }
 
 #[async_trait]
-impl<V> super::Metrics<V> for Metrics<V>
-where
-	V: metric::Value,
-	Record: From<V>,
-{
+impl super::Metrics for Metrics {
 	/// Puts counter to the counter buffer if it is allowed.
 	/// If counter is not buffered, counter is incremented.
 	async fn count(&self, counter: super::MetricCounter) {
@@ -205,16 +194,15 @@ where
 	/// Puts metric to the metric buffer if it is allowed.
 	async fn record<T>(&self, value: T)
 	where
-		T: Into<V> + Send,
+		T: metric::Value + Into<Record> + Send,
 	{
-		let value: V = value.into();
 		let attributes = self.attributes.read().await;
 		if !value.is_allowed(&attributes.origin) {
 			return;
 		}
 
 		let mut metric_buffer = self.metric_buffer.lock().await;
-		metric_buffer.push(value);
+		metric_buffer.push(value.into());
 	}
 
 	/// Calculates counters and average metrics, and flushes buffers to the collector.
@@ -278,7 +266,7 @@ pub fn initialize(
 	attributes: MetricAttributes,
 	origin: Origin,
 	ot_config: OtelConfig,
-) -> Result<Metrics<MetricValue>> {
+) -> Result<Metrics> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),
@@ -355,30 +343,36 @@ mod tests {
 		assert_eq!(result, expected);
 	}
 
+	fn flatten_metric_values(
+		values: Vec<MetricValue>,
+	) -> (HashMap<&'static str, u64>, HashMap<&'static str, f64>) {
+		flatten_metrics(&values.into_iter().map(Into::into).collect::<Vec<Record>>())
+	}
+
 	#[test]
 	fn test_flatten_metrics() {
-		let (m_u64, m_f64) = flatten_metrics(&[] as &[MetricValue]);
+		let (m_u64, m_f64) = flatten_metric_values(vec![]);
 		assert!(m_u64.is_empty());
 		assert!(m_f64.is_empty());
 
-		let buffer = &[MetricValue::BlockConfidence(90.0)];
-		let (m_u64, m_f64) = flatten_metrics(buffer);
+		let buffer = vec![MetricValue::BlockConfidence(90.0)];
+		let (m_u64, m_f64) = flatten_metric_values(buffer);
 		assert!(m_u64.is_empty());
 		assert_eq!(m_f64.len(), 1);
 		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&90.0));
 
-		let buffer = &[
+		let buffer = vec![
 			MetricValue::BlockConfidence(90.0),
 			MetricValue::BlockHeight(1),
 			MetricValue::BlockConfidence(93.0),
 		];
-		let (m_u64, m_f64) = flatten_metrics(buffer);
+		let (m_u64, m_f64) = flatten_metric_values(buffer);
 		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&1));
 		assert_eq!(m_f64.len(), 1);
 		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&91.5));
 
-		let buffer = &[
+		let buffer = vec![
 			MetricValue::BlockConfidence(90.0),
 			MetricValue::BlockHeight(1),
 			MetricValue::BlockConfidence(93.0),
@@ -387,13 +381,13 @@ mod tests {
 			MetricValue::BlockHeight(10),
 			MetricValue::BlockHeight(1),
 		];
-		let (m_u64, m_f64) = flatten_metrics(buffer);
+		let (m_u64, m_f64) = flatten_metric_values(buffer);
 		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&10));
 		assert_eq!(m_f64.len(), 1);
 		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&93.75));
 
-		let buffer = &[
+		let buffer = vec![
 			MetricValue::DHTConnectedPeers(90),
 			MetricValue::DHTFetchDuration(1.0),
 			MetricValue::DHTPutSuccess(10.0),
@@ -404,7 +398,7 @@ mod tests {
 			MetricValue::DHTConnectedPeers(80),
 			MetricValue::BlockConfidence(98.0),
 		];
-		let (m_u64, m_f64) = flatten_metrics(buffer);
+		let (m_u64, m_f64) = flatten_metric_values(buffer);
 		assert_eq!(m_u64.len(), 1);
 		assert_eq!(m_u64.get("avail.light.block.height"), Some(&999));
 		assert_eq!(m_f64.len(), 4);

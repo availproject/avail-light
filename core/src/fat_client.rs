@@ -78,7 +78,7 @@ impl<T: Database + Sync> Client for FatClient<T> {
 pub async fn process_block(
 	client: &impl Client,
 	db: impl Database,
-	metrics: &Arc<impl Metrics<MetricValue>>,
+	metrics: &Arc<impl Metrics>,
 	cfg: &FatClientConfig,
 	header: &Header,
 	received_at: Instant,
@@ -204,7 +204,7 @@ pub async fn run(
 	client: impl Client,
 	db: impl Database + Clone,
 	cfg: FatClientConfig,
-	metrics: Arc<impl Metrics<MetricValue>>,
+	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	partition: Partition,
 	shutdown: Controller<String>,
