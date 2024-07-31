@@ -2,8 +2,9 @@ use crate::types::Origin;
 use async_trait::async_trait;
 use color_eyre::Result;
 use libp2p::{kad::Mode, Multiaddr};
-use mockall::automock;
+use otlp::Record;
 
+pub mod metric;
 pub mod otlp;
 
 #[derive(Debug, PartialEq)]
@@ -125,7 +126,7 @@ impl MetricName for MetricValue {
 	}
 }
 
-impl MetricValue {
+impl metric::Value for MetricValue {
 	// Metric filter for external peers
 	// Only the metrics we wish to send to OTel should be in this list
 	fn is_allowed(&self, origin: &Origin) -> bool {
@@ -139,11 +140,16 @@ impl MetricValue {
 	}
 }
 
-#[automock]
 #[async_trait]
-pub trait Metrics {
+pub trait Metrics<V>
+where
+	V: metric::Value,
+	Record: From<V>,
+{
 	async fn count(&self, counter: MetricCounter);
-	async fn record(&self, value: MetricValue);
+	async fn record<T>(&self, value: T)
+	where
+		T: Into<V> + Send;
 	async fn flush(&self) -> Result<()>;
 	async fn update_operating_mode(&self, mode: Mode);
 	async fn update_multiaddress(&self, mode: Multiaddr);

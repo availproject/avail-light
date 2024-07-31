@@ -40,7 +40,7 @@ use crate::{
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
-	metrics: &Arc<impl Metrics>,
+	metrics: &Arc<impl Metrics<MetricValue>>,
 	cfg: &LightClientConfig,
 	header: Header,
 	received_at: Instant,
@@ -190,7 +190,7 @@ pub async fn run(
 	db: impl Database + Clone,
 	network_client: impl network::Client,
 	cfg: LightClientConfig,
-	metrics: Arc<impl Metrics>,
+	metrics: Arc<impl Metrics<MetricValue>>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 ) {
@@ -258,7 +258,7 @@ mod tests {
 	use crate::{
 		data,
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
-		telemetry,
+		telemetry::metric::tests,
 		types::RuntimeConfig,
 	};
 	use avail_subxt::{
@@ -348,13 +348,10 @@ mod tests {
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 
-		let mut mock_metrics = telemetry::MockMetrics::new();
-		mock_metrics.expect_count().returning(|_| ());
-		mock_metrics.expect_record().returning(|_| ());
 		process_block(
 			db,
 			&mock_network_client,
-			&Arc::new(mock_metrics),
+			&Arc::new(tests::MockMetrics {}),
 			&cfg,
 			header,
 			recv,

@@ -1,4 +1,4 @@
-use super::{MetricCounter, MetricValue};
+use super::{metric, MetricCounter, MetricValue};
 use crate::{
 	telemetry::MetricName,
 	types::{Origin, OtelConfig},
@@ -20,11 +20,14 @@ const ATTRIBUTE_NUMBER: usize = 12;
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
 #[derive(Debug)]
-pub struct Metrics {
+pub struct Metrics<V>
+where
+	V: metric::Value,
+{
 	meter: Meter,
 	counters: HashMap<&'static str, Counter<u64>>,
 	attributes: RwLock<MetricAttributes>,
-	metric_buffer: Arc<Mutex<Vec<MetricValue>>>,
+	metric_buffer: Arc<Mutex<Vec<V>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
 }
 
@@ -44,7 +47,10 @@ pub struct MetricAttributes {
 	pub client_alias: String,
 }
 
-impl Metrics {
+impl<V> Metrics<V>
+where
+	V: metric::Value,
+{
 	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
 		let attributes = self.attributes.read().await;
 		[
@@ -84,7 +90,7 @@ impl Metrics {
 	}
 }
 
-enum Record {
+pub enum Record {
 	MaxU64(&'static str, u64),
 	AvgF64(&'static str, f64),
 }
@@ -176,7 +182,11 @@ fn flatten_metrics(
 }
 
 #[async_trait]
-impl super::Metrics for Metrics {
+impl<V> super::Metrics<V> for Metrics<V>
+where
+	V: metric::Value,
+	Record: From<V>,
+{
 	/// Puts counter to the counter buffer if it is allowed.
 	/// If counter is not buffered, counter is incremented.
 	async fn count(&self, counter: super::MetricCounter) {
@@ -193,7 +203,11 @@ impl super::Metrics for Metrics {
 	}
 
 	/// Puts metric to the metric buffer if it is allowed.
-	async fn record(&self, value: super::MetricValue) {
+	async fn record<T>(&self, value: T)
+	where
+		T: Into<V> + Send,
+	{
+		let value: V = value.into();
 		let attributes = self.attributes.read().await;
 		if !value.is_allowed(&attributes.origin) {
 			return;
@@ -264,7 +278,7 @@ pub fn initialize(
 	attributes: MetricAttributes,
 	origin: Origin,
 	ot_config: OtelConfig,
-) -> Result<Metrics> {
+) -> Result<Metrics<MetricValue>> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),

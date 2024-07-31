@@ -14,7 +14,7 @@ pub async fn process_block(
 	block_number: u32,
 	p2p_client: &P2pClient,
 	maintenance_config: MaintenanceConfig,
-	metrics: &Arc<impl Metrics>,
+	metrics: &Arc<impl Metrics<MetricValue>>,
 ) -> Result<()> {
 	#[cfg(not(feature = "kademlia-rocksdb"))]
 	if block_number % maintenance_config.pruning_interval == 0 {
@@ -87,7 +87,7 @@ pub async fn process_block(
 
 pub async fn run(
 	p2p_client: P2pClient,
-	metrics: Arc<impl Metrics>,
+	metrics: Arc<impl Metrics<MetricValue>>,
 	mut block_receiver: broadcast::Receiver<BlockVerified>,
 	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
