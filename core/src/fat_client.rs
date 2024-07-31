@@ -266,7 +266,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{data, telemetry, types::RuntimeConfig};
+	use crate::{data, telemetry::metric::tests, types::RuntimeConfig};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -379,14 +379,10 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { Ok(()) }));
 
-		let mut mock_metrics = telemetry::MockMetrics::new();
-		mock_metrics.expect_count().returning(|_| ());
-		mock_metrics.expect_record().returning(|_| ());
-
 		process_block(
 			&mock_client,
 			db,
-			&Arc::new(mock_metrics),
+			&Arc::new(tests::MockMetrics {}),
 			&FatClientConfig::from(&RuntimeConfig::default()),
 			&default_header(),
 			Instant::now(),

@@ -2,8 +2,9 @@ use crate::types::Origin;
 use async_trait::async_trait;
 use color_eyre::Result;
 use libp2p::{kad::Mode, Multiaddr};
-use mockall::automock;
+use otlp::Record;
 
+pub mod metric;
 pub mod otlp;
 
 #[derive(Debug, PartialEq)]
@@ -81,13 +82,6 @@ pub enum MetricValue {
 	RPCFetched(f64),
 	RPCFetchDuration(f64),
 	RPCCallDuration(f64),
-
-	#[cfg(feature = "crawl")]
-	CrawlCellsSuccessRate(f64),
-	#[cfg(feature = "crawl")]
-	CrawlRowsSuccessRate(f64),
-	#[cfg(feature = "crawl")]
-	CrawlBlockDelay(f64),
 }
 
 impl MetricName for MetricValue {
@@ -114,18 +108,11 @@ impl MetricName for MetricValue {
 			RPCFetched(_) => "avail.light.rpc.fetched",
 			RPCFetchDuration(_) => "avail.light.rpc.fetch_duration",
 			RPCCallDuration(_) => "avail.light.rpc.call_duration",
-
-			#[cfg(feature = "crawl")]
-			CrawlCellsSuccessRate(_) => "avail.light.crawl.cells_success_rate",
-			#[cfg(feature = "crawl")]
-			CrawlRowsSuccessRate(_) => "avail.light.crawl.rows_success_rate",
-			#[cfg(feature = "crawl")]
-			CrawlBlockDelay(_) => "avail.light.crawl.block_delay",
 		}
 	}
 }
 
-impl MetricValue {
+impl metric::Value for MetricValue {
 	// Metric filter for external peers
 	// Only the metrics we wish to send to OTel should be in this list
 	fn is_allowed(&self, origin: &Origin) -> bool {
@@ -139,11 +126,12 @@ impl MetricValue {
 	}
 }
 
-#[automock]
 #[async_trait]
 pub trait Metrics {
 	async fn count(&self, counter: MetricCounter);
-	async fn record(&self, value: MetricValue);
+	async fn record<T>(&self, value: T)
+	where
+		T: metric::Value + Into<Record> + Send;
 	async fn flush(&self) -> Result<()>;
 	async fn update_operating_mode(&self, mode: Mode);
 	async fn update_multiaddress(&self, mode: Multiaddr);
