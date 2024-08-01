@@ -25,5 +25,4 @@ warp = { workspace = true }
 # OpenTelemetry
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
-opentelemetry_api = { workspace = true }
 opentelemetry_sdk = { workspace = true }

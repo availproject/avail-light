@@ -1,6 +1,6 @@
 use anyhow::{Error, Ok, Result};
 use async_trait::async_trait;
-use opentelemetry_api::{global, metrics::Meter, KeyValue};
+use opentelemetry::{global, metrics::Meter, KeyValue};
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::time::Duration;
 use tokio::sync::RwLock;
