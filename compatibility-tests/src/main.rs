@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use avail_light_core::{
 	data::RocksDB,
 	network::rpc,
@@ -26,7 +28,7 @@ async fn main() -> Result<()> {
 
 	let retry_cfg = RetryConfig::Exponential(ExponentialConfig {
 		base: 10,
-		max_delay: 4000,
+		max_delay: Duration::from_millis(4000),
 		retries: 4,
 	});
 
