@@ -192,6 +192,70 @@ impl Display for Origin {
 	}
 }
 
+pub mod option_duration_seconds_format {
+	use super::duration_seconds_format;
+	use serde::{self, Deserialize, Deserializer, Serializer};
+	use std::time::Duration;
+
+	pub fn serialize<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		match duration {
+			Some(duration) => duration_seconds_format::serialize(duration, serializer),
+			None => serializer.serialize_none(),
+		}
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let value = Option::<u64>::deserialize(deserializer)?;
+		Ok(value.map(Duration::from_secs))
+	}
+}
+
+pub mod duration_seconds_format {
+	use serde::{self, Deserialize, Deserializer, Serializer};
+	use std::time::Duration;
+
+	pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		serializer.serialize_u64(duration.as_secs())
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let value = u64::deserialize(deserializer)?;
+		Ok(Duration::from_secs(value))
+	}
+}
+
+pub mod duration_millis_format {
+	use serde::{self, Deserialize, Deserializer, Serializer};
+	use std::time::Duration;
+
+	pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		serializer.serialize_u128(duration.as_millis())
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let value = u64::deserialize(deserializer)?;
+		Ok(Duration::from_millis(value))
+	}
+}
+
 pub mod block_matrix_partition_format {
 	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
@@ -298,14 +362,14 @@ impl IntoIterator for RetryConfig {
 		match self {
 			RetryConfig::Exponential(config) => ExponentialBackoff::from_millis(config.base)
 				.factor(1000)
-				.max_delay(Duration::from_millis(config.max_delay))
+				.max_delay(config.max_delay)
 				.map(jitter)
 				.take(config.retries)
 				.collect::<Vec<Duration>>()
 				.into_iter(),
 			RetryConfig::Fibonacci(config) => FibonacciBackoff::from_millis(config.base)
 				.factor(1000)
-				.max_delay(Duration::from_millis(config.max_delay))
+				.max_delay(config.max_delay)
 				.map(jitter)
 				.take(config.retries)
 				.collect::<Vec<Duration>>()
@@ -317,14 +381,16 @@ impl IntoIterator for RetryConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExponentialConfig {
 	pub base: u64,
-	pub max_delay: u64,
+	#[serde(with = "duration_millis_format")]
+	pub max_delay: Duration,
 	pub retries: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FibonacciConfig {
 	pub base: u64,
-	pub max_delay: u64,
+	#[serde(with = "duration_millis_format")]
+	pub max_delay: Duration,
 	pub retries: usize,
 }
 
@@ -347,17 +413,22 @@ pub struct RuntimeConfig {
 	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 	pub autonat_only_global_ips: bool,
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
-	pub autonat_throttle: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_throttle: Duration,
 	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
-	pub autonat_retry_interval: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_retry_interval: Duration,
 	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
-	pub autonat_refresh_interval: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_refresh_interval: Duration,
 	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
-	pub autonat_boot_delay: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_boot_delay: Duration,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
-	pub bootstrap_period: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub bootstrap_period: Duration,
 	pub operation_mode: KademliaMode,
 	/// Sets the automatic Kademlia server mode switch (default: true)
 	pub automatic_server_mode: bool,
@@ -390,7 +461,8 @@ pub struct RuntimeConfig {
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
-	pub block_processing_delay: Option<u32>,
+	#[serde(with = "option_duration_seconds_format")]
+	pub block_processing_delay: Option<Duration>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
@@ -409,20 +481,24 @@ pub struct RuntimeConfig {
 	/// Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this
 	/// value - not greater than 1hr.
 	/// Record TTL, publication and replication intervals are co-dependent, meaning that TTL >> publication_interval >> replication_interval.
-	pub kad_record_ttl: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub kad_record_ttl: Duration,
 	/// Sets the (re-)publication interval of stored records in seconds. (default: 12h).
 	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
 	/// This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
-	pub publication_interval: u32,
+	#[serde(with = "duration_seconds_format")]
+	pub publication_interval: Duration,
 	/// Sets the (re-)replication interval for stored records in seconds. (default: 3h).
 	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
 	/// This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
-	pub replication_interval: u32,
+	#[serde(with = "duration_seconds_format")]
+	pub replication_interval: Duration,
 	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
 	pub replication_factor: u16,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
-	pub connection_idle_timeout: u64,
+	#[serde(with = "duration_seconds_format")]
+	pub connection_idle_timeout: Duration,
 	pub max_negotiating_inbound_streams: usize,
 	pub task_command_buffer_size: usize,
 	pub per_connection_event_buffer_size: usize,
@@ -430,7 +506,8 @@ pub struct RuntimeConfig {
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub store_pruning_interval: u32,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
-	pub query_timeout: u32,
+	#[serde(with = "duration_seconds_format")]
+	pub query_timeout: Duration,
 	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
 	pub query_parallelism: u16,
 	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
@@ -485,10 +562,7 @@ impl Delay {
 
 impl From<&RuntimeConfig> for LightClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
-		let block_processing_delay = val
-			.block_processing_delay
-			.map(|v| Duration::from_secs(v.into()));
-
+		let block_processing_delay = val.block_processing_delay;
 		LightClientConfig {
 			confidence: val.confidence,
 			block_processing_delay: Delay(block_processing_delay),
@@ -510,17 +584,13 @@ pub struct FatClientConfig {
 
 impl From<&RuntimeConfig> for FatClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
-		let block_processing_delay = val
-			.block_processing_delay
-			.map(|v| Duration::from_secs(v.into()));
-
 		FatClientConfig {
 			full_nodes_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
-			block_processing_delay: Delay(block_processing_delay),
+			block_processing_delay: Delay(val.block_processing_delay),
 			block_matrix_partition: val.block_matrix_partition,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
 		}
@@ -609,8 +679,8 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			autonat: val.into(),
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
-			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
-			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout),
+			bootstrap_interval: val.bootstrap_period,
+			connection_idle_timeout: val.connection_idle_timeout,
 			max_negotiating_inbound_streams: val.max_negotiating_inbound_streams,
 			task_command_buffer_size: std::num::NonZeroUsize::new(val.task_command_buffer_size)
 				.expect("Invalid task command buffer size"),
@@ -643,12 +713,12 @@ pub struct KademliaConfig {
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		Self {
-			kad_record_ttl: Duration::from_secs(val.kad_record_ttl),
+			kad_record_ttl: val.kad_record_ttl,
 			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
 				.expect("Invalid replication factor"),
-			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
-			publication_interval: Some(Duration::from_secs(val.publication_interval.into())),
-			query_timeout: Duration::from_secs(val.query_timeout.into()),
+			record_replication_interval: Some(val.replication_interval),
+			publication_interval: Some(val.publication_interval),
+			query_timeout: val.query_timeout,
 			query_parallelism: std::num::NonZeroUsize::new(val.query_parallelism as usize)
 				.expect("Invalid query parallelism value"),
 			caching_max_peers: val.caching_max_peers,
@@ -675,10 +745,10 @@ pub struct AutoNATConfig {
 impl From<&RuntimeConfig> for AutoNATConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		Self {
-			retry_interval: Duration::from_secs(val.autonat_retry_interval),
-			refresh_interval: Duration::from_secs(val.autonat_refresh_interval),
-			boot_delay: Duration::from_secs(val.autonat_boot_delay),
-			throttle_server_period: Duration::from_secs(val.autonat_throttle),
+			retry_interval: val.autonat_retry_interval,
+			refresh_interval: val.autonat_refresh_interval,
+			boot_delay: val.autonat_boot_delay,
+			throttle_server_period: val.autonat_throttle,
 			only_global_ips: val.autonat_only_global_ips,
 		}
 	}
@@ -725,7 +795,7 @@ impl From<&RuntimeConfig> for AppClientConfig {
 pub struct MaintenanceConfig {
 	pub block_confidence_treshold: f64,
 	pub replication_factor: u16,
-	pub query_timeout: u32,
+	pub query_timeout: Duration,
 	pub pruning_interval: u32,
 	pub telemetry_flush_interval: u32,
 	pub automatic_server_mode: bool,
@@ -757,12 +827,12 @@ impl Default for RuntimeConfig {
 			ws_transport_enable: false,
 			secret_key: None,
 			autonat_only_global_ips: false,
-			autonat_refresh_interval: 360,
-			autonat_retry_interval: 20,
-			autonat_throttle: 1,
-			autonat_boot_delay: 5,
+			autonat_refresh_interval: Duration::from_secs(360),
+			autonat_retry_interval: Duration::from_secs(20),
+			autonat_throttle: Duration::from_secs(1),
+			autonat_boot_delay: Duration::from_secs(5),
 			bootstraps: vec![],
-			bootstrap_period: 3600,
+			bootstrap_period: Duration::from_secs(3600),
 			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			genesis_hash: "DEV".to_owned(),
@@ -778,23 +848,23 @@ impl Default for RuntimeConfig {
 			disable_rpc: false,
 			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
-			block_processing_delay: Some(20),
+			block_processing_delay: Some(Duration::from_secs(20)),
 			block_matrix_partition: None,
 			sync_start_block: None,
 			sync_finality_enable: false,
 			max_cells_per_rpc: Some(30),
-			kad_record_ttl: 24 * 60 * 60,
+			kad_record_ttl: Duration::from_secs(24 * 60 * 60),
 			threshold: 5000,
 			replication_factor: 5,
-			publication_interval: 12 * 60 * 60,
-			replication_interval: 3 * 60 * 60,
-			connection_idle_timeout: 30,
+			publication_interval: Duration::from_secs(12 * 60 * 60),
+			replication_interval: Duration::from_secs(3 * 60 * 60),
+			connection_idle_timeout: Duration::from_secs(30),
 			max_negotiating_inbound_streams: 128,
 			task_command_buffer_size: 32,
 			per_connection_event_buffer_size: 7,
 			dial_concurrency_factor: 8,
 			store_pruning_interval: 180,
-			query_timeout: 10,
+			query_timeout: Duration::from_secs(10),
 			query_parallelism: 3,
 			caching_max_peers: 1,
 			disjoint_query_paths: false,
@@ -807,7 +877,7 @@ impl Default for RuntimeConfig {
 			operation_mode: KademliaMode::Client,
 			retry_config: RetryConfig::Fibonacci(FibonacciConfig {
 				base: 1,
-				max_delay: 10,
+				max_delay: Duration::from_millis(10),
 				retries: 6,
 			}),
 			automatic_server_mode: true,

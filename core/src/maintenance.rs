@@ -76,7 +76,7 @@ pub async fn process_block(
 		.await;
 	metrics
 		.record(MetricValue::DHTQueryTimeout(
-			maintenance_config.query_timeout,
+			maintenance_config.query_timeout.as_secs() as u32,
 		))
 		.await;
 	metrics.count(MetricCounter::Up).await;

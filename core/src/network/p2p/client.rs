@@ -28,7 +28,7 @@ pub struct Client {
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
-	ttl: u64,
+	ttl: Duration,
 }
 
 struct DHTCell(Cell);
@@ -38,12 +38,12 @@ impl DHTCell {
 		self.0.reference(block)
 	}
 
-	fn dht_record(&self, block: u32, ttl: u64) -> Record {
+	fn dht_record(&self, block: u32, ttl: Duration) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
 			value: self.0.content.to_vec(),
 			publisher: None,
-			expires: Instant::now().checked_add(Duration::from_secs(ttl)),
+			expires: Instant::now().checked_add(ttl),
 		}
 	}
 }
@@ -54,12 +54,12 @@ impl DHTRow {
 		self.0 .0.reference(block)
 	}
 
-	fn dht_record(&self, block: u32, ttl: u64) -> Record {
+	fn dht_record(&self, block: u32, ttl: Duration) -> Record {
 		Record {
 			key: self.0 .0.reference(block).as_bytes().to_vec().into(),
 			value: self.0 .1.clone(),
 			publisher: None,
-			expires: Instant::now().checked_add(Duration::from_secs(ttl)),
+			expires: Instant::now().checked_add(ttl),
 		}
 	}
 }
@@ -567,7 +567,7 @@ impl Command for AddAutonatServer {
 }
 
 impl Client {
-	pub fn new(sender: CommandSender, dht_parallelization_limit: usize, ttl: u64) -> Self {
+	pub fn new(sender: CommandSender, dht_parallelization_limit: usize, ttl: Duration) -> Self {
 		Self {
 			command_sender: sender,
 			dht_parallelization_limit,
