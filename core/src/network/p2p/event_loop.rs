@@ -28,10 +28,10 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-	network::p2p::is_multiaddr_global,
+	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{AgentVersion, KademliaMode, LibP2PConfig, TimeToLive},
+	types::{KademliaMode, LibP2PConfig, TimeToLive},
 };
 
 use super::{
