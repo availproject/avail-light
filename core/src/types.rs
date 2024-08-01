@@ -539,7 +539,6 @@ impl From<&RuntimeConfig> for FatClientConfig {
 pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
 	pub port: u16,
-	pub identify: IdentifyConfig,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
 	pub relays: Vec<(PeerId, Multiaddr)>,
@@ -608,13 +607,11 @@ impl From<&LibP2PConfig> for RocksDBStoreConfig {
 	}
 }
 
-impl From<(&RuntimeConfig, IdentifyConfig)> for LibP2PConfig {
-	fn from(pair: (&RuntimeConfig, IdentifyConfig)) -> Self {
-		let (val, identify) = pair;
+impl From<&RuntimeConfig> for LibP2PConfig {
+	fn from(val: &RuntimeConfig) -> Self {
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
-			identify,
 			autonat: val.into(),
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
@@ -694,13 +691,6 @@ impl From<&RuntimeConfig> for AutoNATConfig {
 }
 
 #[derive(Clone)]
-pub struct IdentifyConfig {
-	pub agent_version: AgentVersion,
-	/// Contains Avail genesis hash
-	pub protocol_version: String,
-}
-
-#[derive(Clone)]
 pub struct AgentVersion {
 	pub base_version: String,
 	pub role: String,
@@ -736,23 +726,16 @@ impl FromStr for AgentVersion {
 	}
 }
 
-impl IdentifyConfig {
-	pub fn new(version: String) -> Self {
-		let agent_version = AgentVersion {
+impl AgentVersion {
+	pub fn new(version: &str) -> Self {
+		Self {
 			base_version: IDENTITY_AGENT_BASE.to_string(),
 			role: IDENTITY_AGENT_ROLE.to_string(),
-			release_version: version,
+			release_version: version.to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
-		};
-
-		Self {
-			agent_version,
-			protocol_version: IDENTITY_PROTOCOL.to_owned(),
 		}
 	}
-}
 
-impl AgentVersion {
 	pub fn is_supported(&self) -> bool {
 		let minimum_version = if self.role == "bootstrap" {
 			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION

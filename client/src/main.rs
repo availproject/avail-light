@@ -7,8 +7,8 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
-		load_or_init_suri, IdentifyConfig, IdentityConfig, KademliaMode, LibP2PConfig,
-		MaintenanceConfig, MultiaddrConfig, RuntimeConfig, SecretKey, Uuid,
+		load_or_init_suri, IdentityConfig, KademliaMode, LibP2PConfig, MaintenanceConfig,
+		MultiaddrConfig, RuntimeConfig, SecretKey, Uuid,
 	},
 	utils::spawn_in_span,
 };
@@ -119,8 +119,7 @@ async fn run(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let identify = IdentifyConfig::new(version.to_string());
-	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
+	let cfg_libp2p: LibP2PConfig = (&cfg).into();
 	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
@@ -152,6 +151,7 @@ async fn run(
 
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg_libp2p,
+		version,
 		&id_keys,
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
@@ -413,8 +413,7 @@ async fn run_crawl(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let identify = IdentifyConfig::new(version.to_string());
-	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
+	let cfg_libp2p: LibP2PConfig = (&cfg).into();
 	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
@@ -447,6 +446,7 @@ async fn run_crawl(
 
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg_libp2p,
+		version,
 		&id_keys,
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
@@ -592,8 +592,7 @@ async fn run_fat(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let identify = IdentifyConfig::new(version.to_string());
-	let cfg_libp2p: LibP2PConfig = (&cfg, identify).into();
+	let cfg_libp2p: LibP2PConfig = (&cfg).into();
 	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
@@ -625,6 +624,7 @@ async fn run_fat(
 
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg_libp2p,
+		version,
 		&id_keys,
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
