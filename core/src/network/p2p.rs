@@ -8,14 +8,14 @@ use libp2p::{
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
+use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::Ipv4Addr};
+use std::{collections::HashMap, fmt, net::Ipv4Addr, str::FromStr};
 use tokio::sync::{
 	mpsc::{self},
 	oneshot,
 };
 use tracing::info;
-
 #[cfg(feature = "network-analysis")]
 pub mod analyzer;
 mod client;
@@ -24,8 +24,8 @@ mod kad_mem_providers;
 #[cfg(not(feature = "kademlia-rocksdb"))]
 mod kad_mem_store;
 mod kad_rocksdb_store;
-
-use crate::types::{AgentVersion, LibP2PConfig, SecretKey, IDENTITY_PROTOCOL};
+use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
+use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
@@ -33,9 +33,77 @@ pub use kad_mem_providers::ProvidersConfig;
 pub use kad_mem_store::MemoryStoreConfig;
 pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
 pub use kad_rocksdb_store::RocksDBStoreConfig;
-
-use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
 use libp2p_allow_block_list as allow_block_list;
+
+const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
+const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
+const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
+const IDENTITY_AGENT_BASE: &str = "avail-light-client";
+const IDENTITY_AGENT_ROLE: &str = "light-client";
+const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
+
+#[derive(Clone)]
+struct AgentVersion {
+	pub base_version: String,
+	pub role: String,
+	pub client_type: String,
+	pub release_version: String,
+}
+
+impl fmt::Display for AgentVersion {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let AgentVersion {
+			base_version,
+			role,
+			client_type,
+			release_version,
+		} = self;
+		write!(f, "{base_version}/{role}/{release_version}/{client_type}",)
+	}
+}
+
+impl FromStr for AgentVersion {
+	type Err = String;
+
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+		let parts: Vec<&str> = s.split('/').collect();
+		if parts.len() != 4 {
+			return Err("Failed to parse agent version".to_owned());
+		}
+
+		Ok(AgentVersion {
+			base_version: parts[0].to_string(),
+			role: parts[1].to_string(),
+			release_version: parts[2].to_string(),
+			client_type: parts[3].to_string(),
+		})
+	}
+}
+
+impl AgentVersion {
+	fn new(version: &str) -> Self {
+		Self {
+			base_version: IDENTITY_AGENT_BASE.to_string(),
+			role: IDENTITY_AGENT_ROLE.to_string(),
+			release_version: version.to_string(),
+			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
+		}
+	}
+
+	fn is_supported(&self) -> bool {
+		let minimum_version = if self.role == "bootstrap" {
+			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
+		} else {
+			MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION
+		};
+
+		Version::parse(&self.release_version)
+			.and_then(|release_version| {
+				Version::parse(minimum_version).map(|min_version| release_version >= min_version)
+			})
+			.unwrap_or(false)
+	}
+}
 
 #[derive(Debug)]
 pub enum QueryChannel {
