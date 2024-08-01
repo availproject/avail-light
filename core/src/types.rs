@@ -3,6 +3,7 @@
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::p2p::{ProvidersConfig, RocksDBStoreConfig};
 use crate::network::rpc::Event;
+use crate::telemetry::otlp::OtelConfig;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -385,10 +386,8 @@ pub struct RuntimeConfig {
 	pub origin: Origin,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
-	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
-	pub ot_collector_endpoint: String,
-	pub ot_export_period: u64,
-	pub ot_export_timeout: u64,
+	#[serde(flatten)]
+	pub otel: OtelConfig,
 	pub ot_flush_block_interval: u32,
 	pub total_memory_gb_threshold: f64,
 	pub num_cpus_threshold: usize,
@@ -806,23 +805,6 @@ impl From<&RuntimeConfig> for AppClientConfig {
 	}
 }
 
-#[derive(Clone, Debug)]
-pub struct OtelConfig {
-	pub ot_collector_endpoint: String,
-	pub ot_export_period: u64,
-	pub ot_export_timeout: u64,
-}
-
-impl From<&RuntimeConfig> for OtelConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		OtelConfig {
-			ot_collector_endpoint: val.ot_collector_endpoint.clone(),
-			ot_export_period: val.ot_export_period,
-			ot_export_timeout: val.ot_export_timeout,
-		}
-	}
-}
-
 #[derive(Clone, Copy)]
 pub struct MaintenanceConfig {
 	pub block_confidence_treshold: f64,
@@ -873,9 +855,7 @@ impl Default for RuntimeConfig {
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
-			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
-			ot_export_period: 300,
-			ot_export_timeout: 10,
+			otel: Default::default(),
 			ot_flush_block_interval: 15,
 			total_memory_gb_threshold: 16.0,
 			num_cpus_threshold: 4,
