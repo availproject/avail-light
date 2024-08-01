@@ -10,7 +10,7 @@ use libp2p::{
 use multihash::{self, Hasher};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt, net::Ipv4Addr, str::FromStr};
+use std::{collections::HashMap, fmt, net::Ipv4Addr, str::FromStr, time::Duration};
 use tokio::sync::{
 	mpsc::{self},
 	oneshot,
@@ -25,7 +25,7 @@ mod kad_mem_providers;
 mod kad_mem_store;
 mod kad_rocksdb_store;
 use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::types::{duration_seconds_format, LibP2PConfig, SecretKey};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
@@ -232,6 +232,38 @@ fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p:
 		.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
 }
 
+/// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(default)]
+pub struct AutoNATConfig {
+	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_retry_interval: Duration,
+	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_refresh_interval: Duration,
+	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_boot_delay: Duration,
+	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+	#[serde(with = "duration_seconds_format")]
+	pub autonat_throttle: Duration,
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+	pub autonat_only_global_ips: bool,
+}
+
+impl Default for AutoNATConfig {
+	fn default() -> Self {
+		Self {
+			autonat_retry_interval: Duration::from_secs(20),
+			autonat_refresh_interval: Duration::from_secs(360),
+			autonat_boot_delay: Duration::from_secs(5),
+			autonat_throttle: Duration::from_secs(1),
+			autonat_only_global_ips: false,
+		}
+	}
+}
+
 async fn build_swarm(
 	cfg: &LibP2PConfig,
 	version: &str,
@@ -245,11 +277,11 @@ async fn build_swarm(
 
 	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {
-		retry_interval: cfg.autonat.retry_interval,
-		refresh_interval: cfg.autonat.refresh_interval,
-		boot_delay: cfg.autonat.boot_delay,
-		throttle_server_period: cfg.autonat.throttle_server_period,
-		only_global_ips: cfg.autonat.only_global_ips,
+		retry_interval: cfg.autonat.autonat_retry_interval,
+		refresh_interval: cfg.autonat.autonat_refresh_interval,
+		boot_delay: cfg.autonat.autonat_boot_delay,
+		throttle_server_period: cfg.autonat.autonat_throttle,
+		only_global_ips: cfg.autonat.autonat_only_global_ips,
 		..Default::default()
 	};
 

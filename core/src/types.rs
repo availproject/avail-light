@@ -1,7 +1,7 @@
 //! Shared light client structs and enums.
 #[cfg(not(feature = "kademlia-rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
-use crate::network::p2p::{ProvidersConfig, RocksDBStoreConfig};
+use crate::network::p2p::{AutoNATConfig, ProvidersConfig, RocksDBStoreConfig};
 use crate::network::rpc::Event;
 use crate::telemetry::otlp::OtelConfig;
 use crate::utils::{extract_app_lookup, extract_kate};
@@ -411,19 +411,8 @@ pub struct RuntimeConfig {
 	pub port: u16,
 	pub ws_transport_enable: bool,
 	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
-	pub autonat_only_global_ips: bool,
-	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
-	#[serde(with = "duration_seconds_format")]
-	pub autonat_throttle: Duration,
-	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
-	#[serde(with = "duration_seconds_format")]
-	pub autonat_retry_interval: Duration,
-	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
-	#[serde(with = "duration_seconds_format")]
-	pub autonat_refresh_interval: Duration,
-	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
-	#[serde(with = "duration_seconds_format")]
-	pub autonat_boot_delay: Duration,
+	#[serde(flatten)]
+	pub autonat: AutoNATConfig,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
@@ -676,7 +665,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
-			autonat: val.into(),
+			autonat: val.autonat.clone(),
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: val.bootstrap_period,
@@ -728,28 +717,6 @@ impl From<&RuntimeConfig> for KademliaConfig {
 			max_kad_provided_keys: val.max_kad_provided_keys as usize,
 			kademlia_mode: val.operation_mode,
 			automatic_server_mode: val.automatic_server_mode,
-		}
-	}
-}
-
-/// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
-#[derive(Clone)]
-pub struct AutoNATConfig {
-	pub retry_interval: Duration,
-	pub refresh_interval: Duration,
-	pub boot_delay: Duration,
-	pub throttle_server_period: Duration,
-	pub only_global_ips: bool,
-}
-
-impl From<&RuntimeConfig> for AutoNATConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		Self {
-			retry_interval: val.autonat_retry_interval,
-			refresh_interval: val.autonat_refresh_interval,
-			boot_delay: val.autonat_boot_delay,
-			throttle_server_period: val.autonat_throttle,
-			only_global_ips: val.autonat_only_global_ips,
 		}
 	}
 }
@@ -826,11 +793,7 @@ impl Default for RuntimeConfig {
 			port: 37000,
 			ws_transport_enable: false,
 			secret_key: None,
-			autonat_only_global_ips: false,
-			autonat_refresh_interval: Duration::from_secs(360),
-			autonat_retry_interval: Duration::from_secs(20),
-			autonat_throttle: Duration::from_secs(1),
-			autonat_boot_delay: Duration::from_secs(5),
+			autonat: Default::default(),
 			bootstraps: vec![],
 			bootstrap_period: Duration::from_secs(3600),
 			relays: Vec::new(),
