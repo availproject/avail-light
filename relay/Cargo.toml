@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-relay"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "Avail network Relay Node for p2p Light Client"
 

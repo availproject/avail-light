@@ -2,6 +2,7 @@
 
 ## [1.11.2]
 
+- Bump `otel` version to `0.24.0`
 - Introduce public address filter for external addresses and add additional log entry
 - Refactor the `/peers/get-multiaddress` endpoint so that it returns all of the peers multi-addresses
 - Fix `operating_mode` metric attribute not switching properly when Kademlia mode changes
