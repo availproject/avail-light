@@ -6,7 +6,7 @@ use crate::{
 use async_trait::async_trait;
 use color_eyre::Result;
 use libp2p::{kad::Mode, Multiaddr};
-use opentelemetry_api::{
+use opentelemetry::{
 	global,
 	metrics::{Counter, Meter},
 	KeyValue,

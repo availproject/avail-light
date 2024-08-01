@@ -41,10 +41,9 @@ void = "1.0.2"
 warp = "0.3.6"
 
 # OpenTelemetry
-opentelemetry = "0.20.0"
-opentelemetry-otlp = { version = "0.13.0", features = ["grpc-tonic", "metrics"] }
-opentelemetry_api = { version = "0.20.0", features = ["metrics"] }
-opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
+opentelemetry = "0.24.0"
+opentelemetry-otlp = { version = "0.17.0", features = ["grpc-tonic", "metrics"] }
+opentelemetry_sdk = { version = "0.24.1", features = ["metrics", "rt-tokio"] }
 
 # Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
 [patch.crates-io]
