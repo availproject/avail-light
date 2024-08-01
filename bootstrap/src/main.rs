@@ -131,6 +131,12 @@ async fn run() -> Result<()> {
 	info!("Started listening for TCP traffic on port: {:?}.", cfg.port);
 
 	info!("Bootstrap node starting ...");
+	// add bootstrap nodes, if provided
+	if !cfg.bootstraps.is_empty() {
+		network_client
+			.add_bootstrap_nodes(cfg.bootstraps.iter().map(Into::into).collect())
+			.await?;
+	}
 	network_client.bootstrap().await?;
 	info!("Bootstrap done.");
 	loop_handle.await?;
