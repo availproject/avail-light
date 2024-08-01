@@ -3,6 +3,7 @@
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::p2p::{ProvidersConfig, RocksDBStoreConfig};
 use crate::network::rpc::Event;
+use crate::telemetry::otlp::OtelConfig;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -385,10 +386,8 @@ pub struct RuntimeConfig {
 	pub origin: Origin,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
-	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
-	pub ot_collector_endpoint: String,
-	pub ot_export_period: u64,
-	pub ot_export_timeout: u64,
+	#[serde(flatten)]
+	pub otel: OtelConfig,
 	pub ot_flush_block_interval: u32,
 	pub total_memory_gb_threshold: f64,
 	pub num_cpus_threshold: usize,
@@ -540,7 +539,6 @@ impl From<&RuntimeConfig> for FatClientConfig {
 pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
 	pub port: u16,
-	pub identify: IdentifyConfig,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
 	pub relays: Vec<(PeerId, Multiaddr)>,
@@ -609,13 +607,11 @@ impl From<&LibP2PConfig> for RocksDBStoreConfig {
 	}
 }
 
-impl From<(&RuntimeConfig, IdentifyConfig)> for LibP2PConfig {
-	fn from(pair: (&RuntimeConfig, IdentifyConfig)) -> Self {
-		let (val, identify) = pair;
+impl From<&RuntimeConfig> for LibP2PConfig {
+	fn from(val: &RuntimeConfig) -> Self {
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
-			identify,
 			autonat: val.into(),
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
@@ -695,13 +691,6 @@ impl From<&RuntimeConfig> for AutoNATConfig {
 }
 
 #[derive(Clone)]
-pub struct IdentifyConfig {
-	pub agent_version: AgentVersion,
-	/// Contains Avail genesis hash
-	pub protocol_version: String,
-}
-
-#[derive(Clone)]
 pub struct AgentVersion {
 	pub base_version: String,
 	pub role: String,
@@ -737,23 +726,16 @@ impl FromStr for AgentVersion {
 	}
 }
 
-impl IdentifyConfig {
-	pub fn new(version: String) -> Self {
-		let agent_version = AgentVersion {
+impl AgentVersion {
+	pub fn new(version: &str) -> Self {
+		Self {
 			base_version: IDENTITY_AGENT_BASE.to_string(),
 			role: IDENTITY_AGENT_ROLE.to_string(),
-			release_version: version,
+			release_version: version.to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
-		};
-
-		Self {
-			agent_version,
-			protocol_version: IDENTITY_PROTOCOL.to_owned(),
 		}
 	}
-}
 
-impl AgentVersion {
 	pub fn is_supported(&self) -> bool {
 		let minimum_version = if self.role == "bootstrap" {
 			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
@@ -802,23 +784,6 @@ impl From<&RuntimeConfig> for AppClientConfig {
 			dht_parallelization_limit: val.dht_parallelization_limit,
 			disable_rpc: val.disable_rpc,
 			threshold: val.threshold,
-		}
-	}
-}
-
-#[derive(Clone, Debug)]
-pub struct OtelConfig {
-	pub ot_collector_endpoint: String,
-	pub ot_export_period: u64,
-	pub ot_export_timeout: u64,
-}
-
-impl From<&RuntimeConfig> for OtelConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		OtelConfig {
-			ot_collector_endpoint: val.ot_collector_endpoint.clone(),
-			ot_export_period: val.ot_export_period,
-			ot_export_timeout: val.ot_export_timeout,
 		}
 	}
 }
@@ -873,9 +838,7 @@ impl Default for RuntimeConfig {
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
-			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
-			ot_export_period: 300,
-			ot_export_timeout: 10,
+			otel: Default::default(),
 			ot_flush_block_interval: 15,
 			total_memory_gb_threshold: 16.0,
 			num_cpus_threshold: 4,

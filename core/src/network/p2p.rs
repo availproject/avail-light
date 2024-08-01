@@ -25,7 +25,7 @@ mod kad_mem_providers;
 mod kad_mem_store;
 mod kad_rocksdb_store;
 
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::types::{AgentVersion, LibP2PConfig, SecretKey, IDENTITY_PROTOCOL};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
@@ -166,14 +166,14 @@ fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p:
 
 async fn build_swarm(
 	cfg: &LibP2PConfig,
+	version: &str,
 	id_keys: &libp2p::identity::Keypair,
 	kad_store: Store,
 	is_ws_transport: bool,
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config
-	let identify_cfg =
-		identify::Config::new(cfg.identify.protocol_version.clone(), id_keys.public())
-			.with_agent_version(cfg.identify.agent_version.to_string());
+	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), id_keys.public())
+		.with_agent_version(AgentVersion::new(version).to_string());
 
 	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {

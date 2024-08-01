@@ -1,8 +1,5 @@
 use super::{metric, MetricCounter, MetricValue};
-use crate::{
-	telemetry::MetricName,
-	types::{Origin, OtelConfig},
-};
+use crate::{telemetry::MetricName, types::Origin};
 use async_trait::async_trait;
 use color_eyre::Result;
 use libp2p::{kad::Mode, Multiaddr};
@@ -12,6 +9,7 @@ use opentelemetry::{
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, RwLock};
 
@@ -254,14 +252,32 @@ fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<
 	.collect()
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OtelConfig {
+	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
+	pub ot_collector_endpoint: String,
+	pub ot_export_period: u64,
+	pub ot_export_timeout: u64,
+}
+
+impl Default for OtelConfig {
+	fn default() -> Self {
+		Self {
+			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
+			ot_export_period: 300,
+			ot_export_timeout: 10,
+		}
+	}
+}
+
 pub fn initialize(
-	endpoint: String,
 	attributes: MetricAttributes,
 	origin: Origin,
 	ot_config: OtelConfig,
 ) -> Result<Metrics> {
 	let export_config = ExportConfig {
-		endpoint,
+		endpoint: ot_config.ot_collector_endpoint,
 		timeout: Duration::from_secs(10),
 		protocol: Protocol::Grpc,
 	};

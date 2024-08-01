@@ -136,8 +136,10 @@ type Store = super::kad_mem_store::MemoryStore;
 type Store = super::kad_rocksdb_store::RocksDBStore;
 
 impl EventLoop {
+	#[allow(clippy::too_many_arguments)]
 	pub async fn new(
 		cfg: LibP2PConfig,
+		version: &str,
 		id_keys: &Keypair,
 		is_fat_client: bool,
 		is_ws_transport: bool,
@@ -154,7 +156,7 @@ impl EventLoop {
 			db,
 		);
 
-		let swarm = build_swarm(&cfg, id_keys, store, is_ws_transport)
+		let swarm = build_swarm(&cfg, version, id_keys, store, is_ws_transport)
 			.await
 			.expect("Unable to build swarm.");
 
