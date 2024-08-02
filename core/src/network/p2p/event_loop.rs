@@ -22,7 +22,7 @@ use libp2p::{
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
-	sync::{oneshot, Mutex},
+	sync::oneshot,
 	time::{self, interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
@@ -95,7 +95,7 @@ pub struct ConnectionEstablishedInfo {
 #[derive(Clone)]
 struct EventCounter {
 	start_time: Instant,
-	event_count: Arc<Mutex<f64>>,
+	event_count: u64,
 	report_interval: Duration,
 }
 
@@ -103,25 +103,22 @@ impl EventCounter {
 	fn new(report_interval_seconds: u64) -> Self {
 		EventCounter {
 			start_time: Instant::now(),
-			event_count: Arc::new(Mutex::new(0.0)),
+			event_count: 0,
 			report_interval: Duration::from_secs(report_interval_seconds),
 		}
 	}
 
-	async fn add_event(self) {
-		let mut count = self.event_count.lock().await;
-		*count += 1.0;
+	async fn add_event(&mut self) {
+		self.event_count += 1;
 	}
 
-	async fn count_events(&self) -> f64 {
-		let count = self.event_count.lock().await;
+	async fn count_events(&mut self) -> f64 {
 		let elapsed = self.start_time.elapsed();
-		*count / elapsed.as_secs_f64() * self.report_interval.as_secs_f64()
+		self.event_count as f64 / elapsed.as_secs_f64() * self.report_interval.as_secs_f64()
 	}
 
-	async fn reset_counter(&self) {
-		let mut count = self.event_count.lock().await;
-		*count = 0.0;
+	async fn reset_counter(&mut self) {
+		self.event_count = 0;
 	}
 }
 
@@ -223,14 +220,14 @@ impl EventLoop {
 			.shutdown
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
-		let event_counter = EventCounter::new(30);
+		let mut event_counter = EventCounter::new(30);
 		let mut report_timer = time::interval(event_counter.report_interval);
 
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
-					event_counter.clone().add_event().await;
+					event_counter.add_event().await;
 					metrics.count(MetricCounter::EventLoopEvent).await;
 				},
 				command = command_receiver.recv() => match command {
