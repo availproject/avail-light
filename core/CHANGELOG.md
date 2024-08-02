@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.11.2]
+## [1.12.0]
 
 - Add digest to v2 header API
 - Bump `otel` version to `0.24.0`
