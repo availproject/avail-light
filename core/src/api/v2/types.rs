@@ -1,6 +1,9 @@
-use avail_subxt::api::runtime_types::{
-	avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
-	bounded_collections::bounded_vec::BoundedVec,
+use avail_subxt::{
+	api::runtime_types::{
+		avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
+		bounded_collections::bounded_vec::BoundedVec,
+	},
+	config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::Encode;
@@ -388,6 +391,7 @@ pub struct Header {
 	state_root: H256,
 	extrinsics_root: H256,
 	extension: Extension,
+	digest: Digest,
 }
 
 impl Reply for Header {
@@ -455,6 +459,7 @@ impl TryFrom<avail_subxt::primitives::Header> for Header {
 			state_root: header.state_root,
 			extrinsics_root: header.extrinsics_root,
 			extension: header.extension.try_into()?,
+			digest: header.digest.try_into()?,
 		})
 	}
 }
@@ -479,6 +484,44 @@ impl TryFrom<HeaderExtension> for Extension {
 				})
 			},
 		}
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Digest {
+	pub logs: Vec<DigestItem>,
+}
+
+pub type ConsensusEngineId = [u8; 4];
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+pub enum DigestItem {
+	PreRuntime(ConsensusEngineId, Vec<u8>),
+	Consensus(ConsensusEngineId, Vec<u8>),
+	Seal(ConsensusEngineId, Vec<u8>),
+	Other(Vec<u8>),
+	RuntimeEnvironmentUpdated,
+}
+
+impl TryFrom<ApiDigest> for Digest {
+	type Error = Report;
+
+	fn try_from(digest: ApiDigest) -> Result<Self, Self::Error> {
+		Ok(Digest {
+			logs: digest
+				.logs
+				.into_iter()
+				.map(|log| match log {
+					ApiDigestItem::PreRuntime(id, items) => DigestItem::PreRuntime(id, items),
+					ApiDigestItem::Consensus(id, items) => DigestItem::Consensus(id, items),
+					ApiDigestItem::Seal(id, items) => DigestItem::Seal(id, items),
+					ApiDigestItem::Other(items) => DigestItem::Other(items),
+					ApiDigestItem::RuntimeEnvironmentUpdated => {
+						DigestItem::RuntimeEnvironmentUpdated
+					},
+				})
+				.collect(),
+		})
 	}
 }
 
@@ -865,8 +908,8 @@ mod tests {
 	};
 
 	use super::{
-		block_status, Base64, ConfidenceMessage, DataField, DataMessage, DataTransaction,
-		Subscription, Topic, WsClients,
+		block_status, Base64, ConfidenceMessage, DataField, DataMessage, DataTransaction, Digest,
+		DigestItem, Subscription, Topic, WsClients,
 	};
 
 	fn subscription(topics: Vec<Topic>, fields: Vec<DataField>) -> Subscription {
@@ -894,6 +937,9 @@ mod tests {
 						size: 0,
 						index: vec![],
 					},
+				},
+				digest: Digest {
+					logs: vec![DigestItem::RuntimeEnvironmentUpdated],
 				},
 			},
 		}))

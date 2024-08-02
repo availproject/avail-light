@@ -1,7 +1,8 @@
 # Changelog
 
-## [1.11.2]
+## [1.12.0]
 
+- Add digest to v2 header API
 - Bump `otel` version to `0.24.0`
 - Introduce public address filter for external addresses and add additional log entry
 - Refactor the `/peers/get-multiaddress` endpoint so that it returns all of the peers multi-addresses
