@@ -1,7 +1,8 @@
 //! Shared light client structs and enums.
+use crate::network::p2p::configuration::{AutoNATConfig, KademliaConfig};
 #[cfg(not(feature = "kademlia-rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
-use crate::network::p2p::{AutoNATConfig, ProvidersConfig, RocksDBStoreConfig};
+use crate::network::p2p::{ProvidersConfig, RocksDBStoreConfig};
 use crate::network::rpc::Event;
 use crate::telemetry::otlp::OtelConfig;
 use crate::utils::{extract_app_lookup, extract_kate};
@@ -189,6 +190,26 @@ impl Display for Origin {
 			Origin::External => "external",
 			Origin::Other(val) => val,
 		})
+	}
+}
+
+pub mod non_zero_usize_format {
+	use serde::{self, Deserialize, Deserializer, Serializer};
+	use std::num::NonZeroUsize;
+
+	pub fn serialize<S>(value: &NonZeroUsize, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		serializer.serialize_u128(value.get() as u128)
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let value = usize::deserialize(deserializer)?;
+		NonZeroUsize::new(value).ok_or_else(|| serde::de::Error::custom("expected non-zero usize"))
 	}
 }
 
@@ -418,9 +439,6 @@ pub struct RuntimeConfig {
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub bootstrap_period: Duration,
-	pub operation_mode: KademliaMode,
-	/// Sets the automatic Kademlia server mode switch (default: true)
-	pub automatic_server_mode: bool,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
@@ -463,27 +481,8 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-	/// Kademlia configuration - WARNING: Changing the default values might cause the peer to suffer poor performance!
-	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
-	///
-	/// Time-to-live for DHT entries in seconds (default: 24h).
-	/// Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this
-	/// value - not greater than 1hr.
-	/// Record TTL, publication and replication intervals are co-dependent, meaning that TTL >> publication_interval >> replication_interval.
-	#[serde(with = "duration_seconds_format")]
-	pub kad_record_ttl: Duration,
-	/// Sets the (re-)publication interval of stored records in seconds. (default: 12h).
-	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
-	/// This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
-	#[serde(with = "duration_seconds_format")]
-	pub publication_interval: Duration,
-	/// Sets the (re-)replication interval for stored records in seconds. (default: 3h).
-	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
-	/// This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
-	#[serde(with = "duration_seconds_format")]
-	pub replication_interval: Duration,
-	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
-	pub replication_factor: u16,
+	#[serde(flatten)]
+	pub kademlia: KademliaConfig,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
 	#[serde(with = "duration_seconds_format")]
@@ -494,24 +493,6 @@ pub struct RuntimeConfig {
 	pub dial_concurrency_factor: u8,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub store_pruning_interval: u32,
-	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
-	#[serde(with = "duration_seconds_format")]
-	pub query_timeout: Duration,
-	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
-	pub query_parallelism: u16,
-	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
-	/// If set to 0, caching is disabled.
-	pub caching_max_peers: u16,
-	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
-	pub disjoint_query_paths: bool,
-	/// The maximum number of records. (default: 2400000).
-	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
-	/// (256x512) * 3 * 60
-	pub max_kad_record_number: u64,
-	/// The maximum size of record values, in bytes. (default: 8192).
-	pub max_kad_record_size: u64,
-	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
-	pub max_kad_provided_keys: u64,
 	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
 	/// (default:
 	/// fibonacci:
@@ -619,8 +600,8 @@ impl From<&LibP2PConfig> for libp2p::kad::Config {
 		// create Kademlia Config
 		let mut kad_cfg = libp2p::kad::Config::default();
 		kad_cfg
-			.set_publication_interval(cfg.kademlia.publication_interval)
-			.set_replication_interval(cfg.kademlia.record_replication_interval)
+			.set_publication_interval(Some(cfg.kademlia.publication_interval))
+			.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
 			.set_replication_factor(cfg.kademlia.record_replication_factor)
 			.set_query_timeout(cfg.kademlia.query_timeout)
 			.set_parallelism(cfg.kademlia.query_parallelism)
@@ -666,7 +647,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
 			autonat: val.autonat.clone(),
-			kademlia: val.into(),
+			kademlia: val.kademlia.clone(),
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: val.bootstrap_period,
 			connection_idle_timeout: val.connection_idle_timeout,
@@ -677,46 +658,6 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			dial_concurrency_factor: std::num::NonZeroU8::new(val.dial_concurrency_factor)
 				.expect("Invalid dial concurrency factor"),
 			genesis_hash: val.genesis_hash.clone(),
-		}
-	}
-}
-
-/// Kademlia configuration (see [RuntimeConfig] for details)
-#[derive(Clone)]
-pub struct KademliaConfig {
-	pub kad_record_ttl: Duration,
-	pub record_replication_factor: NonZeroUsize,
-	pub record_replication_interval: Option<Duration>,
-	pub publication_interval: Option<Duration>,
-	pub query_timeout: Duration,
-	pub query_parallelism: NonZeroUsize,
-	pub caching_max_peers: u16,
-	pub disjoint_query_paths: bool,
-	pub max_kad_record_number: usize,
-	pub max_kad_record_size: usize,
-	pub max_kad_provided_keys: usize,
-	pub kademlia_mode: KademliaMode,
-	pub automatic_server_mode: bool,
-}
-
-impl From<&RuntimeConfig> for KademliaConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		Self {
-			kad_record_ttl: val.kad_record_ttl,
-			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
-				.expect("Invalid replication factor"),
-			record_replication_interval: Some(val.replication_interval),
-			publication_interval: Some(val.publication_interval),
-			query_timeout: val.query_timeout,
-			query_parallelism: std::num::NonZeroUsize::new(val.query_parallelism as usize)
-				.expect("Invalid query parallelism value"),
-			caching_max_peers: val.caching_max_peers,
-			disjoint_query_paths: val.disjoint_query_paths,
-			max_kad_record_number: val.max_kad_record_number as usize,
-			max_kad_record_size: val.max_kad_record_size as usize,
-			max_kad_provided_keys: val.max_kad_provided_keys as usize,
-			kademlia_mode: val.operation_mode,
-			automatic_server_mode: val.automatic_server_mode,
 		}
 	}
 }
@@ -774,11 +715,11 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		MaintenanceConfig {
 			block_confidence_treshold: val.confidence,
-			replication_factor: val.replication_factor,
-			query_timeout: val.query_timeout,
+			replication_factor: val.kademlia.record_replication_factor.get() as u16,
+			query_timeout: val.kademlia.query_timeout,
 			pruning_interval: val.store_pruning_interval,
 			telemetry_flush_interval: val.ot_flush_block_interval,
-			automatic_server_mode: val.automatic_server_mode,
+			automatic_server_mode: val.kademlia.automatic_server_mode,
 			total_memory_gb_threshold: val.total_memory_gb_threshold,
 			num_cpus_threshold: val.num_cpus_threshold,
 		}
@@ -816,34 +757,22 @@ impl Default for RuntimeConfig {
 			sync_start_block: None,
 			sync_finality_enable: false,
 			max_cells_per_rpc: Some(30),
-			kad_record_ttl: Duration::from_secs(24 * 60 * 60),
 			threshold: 5000,
-			replication_factor: 5,
-			publication_interval: Duration::from_secs(12 * 60 * 60),
-			replication_interval: Duration::from_secs(3 * 60 * 60),
+			kademlia: Default::default(),
 			connection_idle_timeout: Duration::from_secs(30),
 			max_negotiating_inbound_streams: 128,
 			task_command_buffer_size: 32,
 			per_connection_event_buffer_size: 7,
 			dial_concurrency_factor: 8,
 			store_pruning_interval: 180,
-			query_timeout: Duration::from_secs(10),
-			query_parallelism: 3,
-			caching_max_peers: 1,
-			disjoint_query_paths: false,
-			max_kad_record_number: 2400000,
-			max_kad_record_size: 8192,
-			max_kad_provided_keys: 1024,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: Origin::External,
-			operation_mode: KademliaMode::Client,
 			retry_config: RetryConfig::Fibonacci(FibonacciConfig {
 				base: 1,
 				max_delay: Duration::from_millis(10),
 				retries: 6,
 			}),
-			automatic_server_mode: true,
 			client_alias: None,
 		}
 	}
