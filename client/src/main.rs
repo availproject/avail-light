@@ -128,7 +128,7 @@ async fn run(
 		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: cfg.operation_mode.to_string(),
+		operating_mode: cfg.kademlia.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
@@ -156,7 +156,7 @@ async fn run(
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
 		shutdown.clone(),
-		cfg.operation_mode,
+		cfg.kademlia.operation_mode,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
@@ -172,7 +172,7 @@ async fn run(
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
-		cfg.kad_record_ttl,
+		cfg.kademlia.kad_record_ttl,
 	);
 
 	// Start listening on provided port
@@ -467,7 +467,7 @@ async fn run_crawl(
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
-		cfg.kad_record_ttl,
+		cfg.kademlia.kad_record_ttl,
 	);
 
 	// Start listening on provided port
@@ -645,7 +645,7 @@ async fn run_fat(
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
-		cfg.kad_record_ttl,
+		cfg.kademlia.kad_record_ttl,
 	);
 
 	// Start listening on provided port
