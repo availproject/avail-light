@@ -166,7 +166,12 @@ Content-Type: application/json
         }
       ]
     }
-  }
+  },
+  "digest": {
+    "logs": [
+      "{log}", ...
+    ]
+  },
 }
 ```
 
