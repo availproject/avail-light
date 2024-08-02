@@ -108,17 +108,21 @@ impl EventCounter {
 		}
 	}
 
-	async fn add_event(&mut self) {
+	fn add_event(&mut self) {
 		self.event_count += 1;
 	}
 
-	async fn count_events(&mut self) -> f64 {
+	fn count_events(&mut self) -> f64 {
 		let elapsed = self.start_time.elapsed();
-		self.event_count as f64 / elapsed.as_secs_f64() * self.report_interval.as_secs_f64()
+		self.event_count as f64 / elapsed.as_secs_f64() * self.duration_secs()
 	}
 
-	async fn reset_counter(&mut self) {
+	fn reset_counter(&mut self) {
 		self.event_count = 0;
+	}
+
+	fn duration_secs(&mut self) -> f64 {
+		self.report_interval.as_secs_f64()
 	}
 }
 
@@ -227,7 +231,7 @@ impl EventLoop {
 			tokio::select! {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
-					event_counter.add_event().await;
+					event_counter.add_event();
 					metrics.count(MetricCounter::EventLoopEvent).await;
 				},
 				command = command_receiver.recv() => match command {
@@ -240,8 +244,8 @@ impl EventLoop {
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				_ = report_timer.tick() => {
-					info!("Events per 30s: {:.2}", event_counter.count_events().await);
-					event_counter.reset_counter().await;
+					info!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
+					event_counter.reset_counter();
 				},
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
