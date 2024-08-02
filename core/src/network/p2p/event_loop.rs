@@ -92,6 +92,39 @@ pub struct ConnectionEstablishedInfo {
 	pub num_established: u32,
 }
 
+#[derive(Clone)]
+struct EventCounter {
+	start_time: Instant,
+	event_count: Arc<Mutex<f64>>,
+	report_interval: Duration,
+}
+
+impl EventCounter {
+	fn new(report_interval_seconds: u64) -> Self {
+		EventCounter {
+			start_time: Instant::now(),
+			event_count: Arc::new(Mutex::new(0.0)),
+			report_interval: Duration::from_secs(report_interval_seconds),
+		}
+	}
+
+	async fn add_event(self) {
+		let mut count = self.event_count.lock().await;
+		*count += 1.0;
+	}
+
+	async fn count_events(&self) -> f64 {
+		let count = self.event_count.lock().await;
+		let elapsed = self.start_time.elapsed();
+		*count / elapsed.as_secs_f64() * self.report_interval.as_secs_f64()
+	}
+
+	async fn reset_counter(&self) {
+		let mut count = self.event_count.lock().await;
+		*count = 0.0;
+	}
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	// Tracking Kademlia events
@@ -190,20 +223,14 @@ impl EventLoop {
 			.shutdown
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
-
-		let event_count = Arc::new(Mutex::new(0));
-		let start_time = Instant::now();
-		// Log events count every 30 seconds
-		// Events-per-second would spam the event loop too much
-		let report_interval = Duration::from_secs(30);
-		let mut report_timer = time::interval(report_interval);
+		let event_counter = EventCounter::new(30);
+		let mut report_timer = time::interval(event_counter.report_interval);
 
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
-					let mut count = event_count.lock().await;
-					*count += 1;
+					event_counter.clone().add_event().await;
 					metrics.count(MetricCounter::EventLoopEvent).await;
 				},
 				command = command_receiver.recv() => match command {
@@ -216,11 +243,8 @@ impl EventLoop {
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				_ = report_timer.tick() => {
-					let count = *event_count.lock().await;
-					let elapsed = start_time.elapsed();
-					let events_num = count as f64 / elapsed.as_secs_f64() * 30.0;
-					info!("Events per 30s: {:.2}", events_num);
-					*event_count.lock().await = 0;
+					info!("Events per 30s: {:.2}", event_counter.count_events().await);
+					event_counter.reset_counter().await;
 				},
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
