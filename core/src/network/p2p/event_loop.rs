@@ -181,7 +181,7 @@ impl EventLoop {
 		kad_mode: KademliaMode,
 		#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
 	) -> Self {
-		let bootstrap_interval = cfg.bootstrap_interval;
+		let bootstrap_interval = cfg.bootstrap_period;
 		let peer_id = id_keys.public().to_peer_id();
 		let store = Store::with_config(
 			peer_id,
@@ -194,6 +194,7 @@ impl EventLoop {
 			.await
 			.expect("Unable to build swarm.");
 
+		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
 		Self {
 			swarm,
 			pending_kad_queries: Default::default(),
@@ -202,7 +203,7 @@ impl EventLoop {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
 				is_circuit_established: false,
-				nodes: cfg.relays,
+				nodes: relay_nodes,
 			},
 			bootstrap: BootstrapState {
 				is_startup_done: false,
