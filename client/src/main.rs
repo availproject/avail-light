@@ -3,12 +3,15 @@
 use crate::cli::{CliOpts, Network};
 use avail_light_core::{
 	data::{ClientIdKey, Database, LatestHeaderKey, P2PKeypairKey, RocksDB},
-	network::{p2p, rpc},
+	network::{
+		p2p::{self, configuration::LibP2PConfig},
+		rpc,
+	},
 	shutdown::Controller,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
 	types::{
-		load_or_init_suri, IdentityConfig, KademliaMode, LibP2PConfig, MaintenanceConfig,
-		MultiaddrConfig, RuntimeConfig, SecretKey, Uuid,
+		load_or_init_suri, IdentityConfig, KademliaMode, MaintenanceConfig, MultiaddrConfig,
+		RuntimeConfig, SecretKey, Uuid,
 	},
 	utils::spawn_in_span,
 };

@@ -31,12 +31,12 @@ use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{KademliaMode, LibP2PConfig, TimeToLive},
+	types::{KademliaMode, TimeToLive},
 };
 
 use super::{
-	build_swarm, client::BlockStat, Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries,
-	QueryChannel, SendableCommand,
+	build_swarm, client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent,
+	CommandReceiver, EventLoopEntries, QueryChannel, SendableCommand,
 };
 
 // RelayState keeps track of all things relay related

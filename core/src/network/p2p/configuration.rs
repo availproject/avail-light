@@ -1,6 +1,15 @@
-use crate::types::{duration_seconds_format, KademliaMode};
+#[cfg(not(feature = "kademlia-rocksdb"))]
+use crate::network::p2p::MemoryStoreConfig;
+use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
 use serde::{Deserialize, Serialize};
-use std::{num::NonZeroUsize, time::Duration};
+use std::{
+	num::{NonZeroU8, NonZeroUsize},
+	time::Duration,
+};
+
+use super::{ProvidersConfig, RocksDBStoreConfig};
+
+const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
 
 /// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -99,6 +108,112 @@ impl Default for KademliaConfig {
 			max_kad_provided_keys: 1024,
 			operation_mode: KademliaMode::Client,
 			automatic_server_mode: true,
+		}
+	}
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LibP2PConfig {
+	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
+	/// If set to seed, keypair will be generated from that seed.
+	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
+	/// If `secret_key` is not set, random seed will be used.
+	pub secret_key: Option<SecretKey>,
+	/// P2P service port (default: 37000).
+	pub port: u16,
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+	#[serde(flatten)]
+	pub autonat: AutoNATConfig,
+	#[serde(flatten)]
+	pub kademlia: KademliaConfig,
+	/// Vector of Relay nodes, which are used for hole punching
+	pub relays: Vec<MultiaddrConfig>,
+	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
+	#[serde(with = "duration_seconds_format")]
+	pub bootstrap_period: Duration,
+	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
+	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
+	#[serde(with = "duration_seconds_format")]
+	pub connection_idle_timeout: Duration,
+	pub max_negotiating_inbound_streams: usize,
+	pub task_command_buffer_size: NonZeroUsize,
+	pub per_connection_event_buffer_size: usize,
+	pub dial_concurrency_factor: NonZeroU8,
+	pub genesis_hash: String,
+}
+
+impl Default for LibP2PConfig {
+	fn default() -> Self {
+		Self {
+			secret_key: None,
+			port: 37000,
+			autonat: Default::default(),
+			kademlia: Default::default(),
+			relays: Default::default(),
+			bootstrap_period: Duration::from_secs(3600),
+			connection_idle_timeout: Duration::from_secs(30),
+			max_negotiating_inbound_streams: 128,
+			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
+			per_connection_event_buffer_size: 7,
+			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
+			genesis_hash: "DEV".to_owned(),
+		}
+	}
+}
+
+impl From<&LibP2PConfig> for libp2p::kad::Config {
+	fn from(cfg: &LibP2PConfig) -> Self {
+		let mut genhash_short = cfg.genesis_hash.trim_start_matches("0x").to_string();
+		genhash_short.truncate(6);
+
+		let kademlia_protocol_name = libp2p::StreamProtocol::try_from_owned(format!(
+			"{id}-{gen_hash}",
+			id = KADEMLIA_PROTOCOL_BASE,
+			gen_hash = genhash_short
+		))
+		.expect("Invalid Kademlia protocol name");
+
+		// create Kademlia Config
+		let mut kad_cfg = libp2p::kad::Config::default();
+		kad_cfg
+			.set_publication_interval(Some(cfg.kademlia.publication_interval))
+			.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
+			.set_replication_factor(cfg.kademlia.record_replication_factor)
+			.set_query_timeout(cfg.kademlia.query_timeout)
+			.set_parallelism(cfg.kademlia.query_parallelism)
+			.set_caching(libp2p::kad::Caching::Enabled {
+				max_peers: cfg.kademlia.caching_max_peers,
+			})
+			.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
+			.set_record_filtering(libp2p::kad::StoreInserts::FilterBoth)
+			.set_protocol_names(vec![kademlia_protocol_name]);
+		kad_cfg
+	}
+}
+
+#[cfg(not(feature = "kademlia-rocksdb"))]
+impl From<&LibP2PConfig> for MemoryStoreConfig {
+	fn from(cfg: &LibP2PConfig) -> Self {
+		MemoryStoreConfig {
+			max_records: cfg.kademlia.max_kad_record_number, // ~2hrs
+			max_value_bytes: cfg.kademlia.max_kad_record_size + 1,
+			providers: ProvidersConfig {
+				max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs
+				max_provided_keys: cfg.kademlia.max_kad_provided_keys,
+			},
+		}
+	}
+}
+
+impl From<&LibP2PConfig> for RocksDBStoreConfig {
+	fn from(cfg: &LibP2PConfig) -> Self {
+		RocksDBStoreConfig {
+			max_value_bytes: cfg.kademlia.max_kad_record_size + 1,
+			providers: ProvidersConfig {
+				max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs
+				max_provided_keys: cfg.kademlia.max_kad_provided_keys,
+			},
 		}
 	}
 }
