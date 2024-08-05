@@ -244,7 +244,7 @@ impl EventLoop {
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				_ = report_timer.tick() => {
-					info!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
+					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
 				},
 				// if the shutdown was triggered,
