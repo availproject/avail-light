@@ -23,7 +23,7 @@ use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
 	sync::oneshot,
-	time::{interval_at, Instant, Interval},
+	time::{self, interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -90,6 +90,40 @@ pub struct ConnectionEstablishedInfo {
 	pub endpoint: ConnectedPoint,
 	pub established_in: Duration,
 	pub num_established: u32,
+}
+
+#[derive(Clone)]
+struct EventCounter {
+	start_time: Instant,
+	event_count: u64,
+	report_interval: Duration,
+}
+
+impl EventCounter {
+	fn new(report_interval_seconds: u64) -> Self {
+		EventCounter {
+			start_time: Instant::now(),
+			event_count: 0,
+			report_interval: Duration::from_secs(report_interval_seconds),
+		}
+	}
+
+	fn add_event(&mut self) {
+		self.event_count += 1;
+	}
+
+	fn count_events(&mut self) -> f64 {
+		let elapsed = self.start_time.elapsed();
+		self.event_count as f64 / elapsed.as_secs_f64() * self.duration_secs()
+	}
+
+	fn reset_counter(&mut self) {
+		self.event_count = 0;
+	}
+
+	fn duration_secs(&mut self) -> f64 {
+		self.report_interval.as_secs_f64()
+	}
 }
 
 pub struct EventLoop {
@@ -190,10 +224,16 @@ impl EventLoop {
 			.shutdown
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
+		let mut event_counter = EventCounter::new(30);
+		let mut report_timer = time::interval(event_counter.report_interval);
 
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await,
+				event = self.swarm.next() => {
+					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
+					event_counter.add_event();
+					metrics.count(MetricCounter::EventLoopEvent).await;
+				},
 				command = command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					//
@@ -203,6 +243,10 @@ impl EventLoop {
 					},
 				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
+				_ = report_timer.tick() => {
+					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
+					event_counter.reset_counter();
+				},
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
 				_ = self.shutdown.triggered_shutdown() => {

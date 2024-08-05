@@ -245,6 +245,7 @@ fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<
 		MetricCounter::EstablishedConnections,
 		MetricCounter::IncomingPutRecord,
 		MetricCounter::IncomingGetRecord,
+		MetricCounter::EventLoopEvent,
 	]
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, &origin))
