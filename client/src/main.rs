@@ -119,8 +119,7 @@ async fn run(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let cfg_libp2p: LibP2PConfig = (&cfg).into();
-	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
+	let id_keys = get_or_init_p2p_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
@@ -128,12 +127,12 @@ async fn run(
 		peer_id,
 		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: cfg.kademlia.operation_mode.to_string(),
+		operating_mode: cfg.libp2p.kademlia.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.genesis_hash),
+		network: Network::name(&cfg.libp2p.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
@@ -150,13 +149,13 @@ async fn run(
 	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
 
 	let p2p_event_loop = p2p::EventLoop::new(
-		cfg_libp2p,
+		cfg.libp2p.clone(),
 		version,
 		&id_keys,
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
 		shutdown.clone(),
-		cfg.kademlia.operation_mode,
+		cfg.libp2p.kademlia.operation_mode,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
@@ -172,15 +171,18 @@ async fn run(
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
-		cfg.kademlia.kad_record_ttl,
+		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
 	// Start listening on provided port
 	p2p_client
-		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
+		.start_listening(construct_multiaddress(
+			cfg.ws_transport_enable,
+			cfg.libp2p.port,
+		))
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", cfg.port);
+	info!("TCP listener started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -200,7 +202,7 @@ async fn run(
 	}));
 
 	#[cfg(feature = "network-analysis")]
-	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.port, 10)));
+	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.libp2p.port, 10)));
 
 	let pp = Arc::new(kate_recovery::couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
@@ -211,7 +213,7 @@ async fn run(
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
-		&cfg.genesis_hash,
+		&cfg.libp2p.genesis_hash,
 		cfg.retry_config.clone(),
 		shutdown.clone(),
 	)
@@ -413,8 +415,7 @@ async fn run_crawl(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let cfg_libp2p: LibP2PConfig = (&cfg).into();
-	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
+	let id_keys = get_or_init_p2p_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
@@ -428,7 +429,7 @@ async fn run_crawl(
 			.crawl_block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.genesis_hash),
+		network: Network::name(&cfg.libp2p.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
@@ -445,7 +446,7 @@ async fn run_crawl(
 	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
 
 	let p2p_event_loop = p2p::EventLoop::new(
-		cfg_libp2p,
+		cfg.libp2p.clone(),
 		version,
 		&id_keys,
 		cfg.is_fat_client(),
@@ -467,15 +468,18 @@ async fn run_crawl(
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
-		cfg.kademlia.kad_record_ttl,
+		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
 	// Start listening on provided port
 	p2p_client
-		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
+		.start_listening(construct_multiaddress(
+			cfg.ws_transport_enable,
+			cfg.libp2p.port,
+		))
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", cfg.port);
+	info!("TCP listener started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -497,7 +501,7 @@ async fn run_crawl(
 	let (_, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
-		&cfg.genesis_hash,
+		&cfg.libp2p.genesis_hash,
 		cfg.retry_config.clone(),
 		shutdown.clone(),
 	)
@@ -592,8 +596,7 @@ async fn run_fat(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let cfg_libp2p: LibP2PConfig = (&cfg).into();
-	let id_keys = get_or_init_p2p_keypair(&cfg_libp2p, db.clone())?;
+	let id_keys = get_or_init_p2p_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
@@ -606,7 +609,7 @@ async fn run_fat(
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.genesis_hash),
+		network: Network::name(&cfg.libp2p.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
@@ -623,7 +626,7 @@ async fn run_fat(
 	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
 
 	let p2p_event_loop = p2p::EventLoop::new(
-		cfg_libp2p,
+		cfg.libp2p.clone(),
 		version,
 		&id_keys,
 		cfg.is_fat_client(),
@@ -645,15 +648,18 @@ async fn run_fat(
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
 		cfg.dht_parallelization_limit,
-		cfg.kademlia.kad_record_ttl,
+		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
 	// Start listening on provided port
 	p2p_client
-		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
+		.start_listening(construct_multiaddress(
+			cfg.ws_transport_enable,
+			cfg.libp2p.port,
+		))
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", cfg.port);
+	info!("TCP listener started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -675,7 +681,7 @@ async fn run_fat(
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
-		&cfg.genesis_hash,
+		&cfg.libp2p.genesis_hash,
 		cfg.retry_config.clone(),
 		shutdown.clone(),
 	)
@@ -876,7 +882,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.full_node_ws = network.full_node_ws();
 		cfg.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
-		cfg.genesis_hash = network.genesis_hash().to_string();
+		cfg.libp2p.genesis_hash = network.genesis_hash().to_string();
 	}
 
 	if let Some(loglvl) = &opts.verbosity {
@@ -884,7 +890,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	if let Some(port) = opts.port {
-		cfg.port = port;
+		cfg.libp2p.port = port;
 	}
 	if let Some(http_port) = opts.http_server_port {
 		cfg.http_server_port = http_port;
@@ -896,13 +902,13 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	cfg.app_id = opts.app_id.or(cfg.app_id);
 	cfg.ws_transport_enable |= opts.ws_transport_enable;
 	if let Some(secret_key) = &opts.private_key {
-		cfg.secret_key = Some(SecretKey::Key {
+		cfg.libp2p.secret_key = Some(SecretKey::Key {
 			key: secret_key.to_string(),
 		});
 	}
 
 	if let Some(seed) = &opts.seed {
-		cfg.secret_key = Some(SecretKey::Seed {
+		cfg.libp2p.secret_key = Some(SecretKey::Seed {
 			seed: seed.to_string(),
 		})
 	}
