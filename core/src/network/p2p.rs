@@ -1,5 +1,6 @@
 use allow_block_list::BlockedPeers;
 use color_eyre::{eyre::WrapErr, Report, Result};
+use configuration::LibP2PConfig;
 use libp2p::{
 	autonat, dcutr, identify, identity,
 	kad::{self, Mode, PeerRecord, QueryId},
@@ -26,7 +27,7 @@ mod kad_mem_providers;
 mod kad_mem_store;
 mod kad_rocksdb_store;
 use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::types::SecretKey;
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
