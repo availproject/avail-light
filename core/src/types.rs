@@ -193,26 +193,6 @@ impl Display for Origin {
 	}
 }
 
-pub mod non_zero_usize_format {
-	use serde::{self, Deserialize, Deserializer, Serializer};
-	use std::num::NonZeroUsize;
-
-	pub fn serialize<S>(value: &NonZeroUsize, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		serializer.serialize_u128(value.get() as u128)
-	}
-
-	pub fn deserialize<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
-	where
-		D: Deserializer<'de>,
-	{
-		let value = usize::deserialize(deserializer)?;
-		NonZeroUsize::new(value).ok_or_else(|| serde::de::Error::custom("expected non-zero usize"))
-	}
-}
-
 pub mod option_duration_seconds_format {
 	use super::duration_seconds_format;
 	use serde::{self, Deserialize, Deserializer, Serializer};
@@ -488,9 +468,9 @@ pub struct RuntimeConfig {
 	#[serde(with = "duration_seconds_format")]
 	pub connection_idle_timeout: Duration,
 	pub max_negotiating_inbound_streams: usize,
-	pub task_command_buffer_size: usize,
+	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
-	pub dial_concurrency_factor: u8,
+	pub dial_concurrency_factor: NonZeroU8,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub store_pruning_interval: u32,
 	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
@@ -652,11 +632,9 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			bootstrap_interval: val.bootstrap_period,
 			connection_idle_timeout: val.connection_idle_timeout,
 			max_negotiating_inbound_streams: val.max_negotiating_inbound_streams,
-			task_command_buffer_size: std::num::NonZeroUsize::new(val.task_command_buffer_size)
-				.expect("Invalid task command buffer size"),
+			task_command_buffer_size: val.task_command_buffer_size,
 			per_connection_event_buffer_size: val.per_connection_event_buffer_size,
-			dial_concurrency_factor: std::num::NonZeroU8::new(val.dial_concurrency_factor)
-				.expect("Invalid dial concurrency factor"),
+			dial_concurrency_factor: val.dial_concurrency_factor,
 			genesis_hash: val.genesis_hash.clone(),
 		}
 	}
@@ -761,9 +739,9 @@ impl Default for RuntimeConfig {
 			kademlia: Default::default(),
 			connection_idle_timeout: Duration::from_secs(30),
 			max_negotiating_inbound_streams: 128,
-			task_command_buffer_size: 32,
+			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
 			per_connection_event_buffer_size: 7,
-			dial_concurrency_factor: 8,
+			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
 			store_pruning_interval: 180,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),

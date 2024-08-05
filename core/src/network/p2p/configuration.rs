@@ -1,4 +1,4 @@
-use crate::types::{duration_seconds_format, non_zero_usize_format, KademliaMode};
+use crate::types::{duration_seconds_format, KademliaMode};
 use serde::{Deserialize, Serialize};
 use std::{num::NonZeroUsize, time::Duration};
 
@@ -58,13 +58,11 @@ pub struct KademliaConfig {
 	#[serde(with = "duration_seconds_format")]
 	pub record_replication_interval: Duration,
 	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
-	#[serde(with = "non_zero_usize_format")]
 	pub record_replication_factor: NonZeroUsize,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
 	#[serde(with = "duration_seconds_format")]
 	pub query_timeout: Duration,
 	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
-	#[serde(with = "non_zero_usize_format")]
 	pub query_parallelism: NonZeroUsize,
 	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
 	/// If set to 0, caching is disabled.
