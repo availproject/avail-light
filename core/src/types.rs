@@ -403,28 +403,14 @@ pub struct RuntimeConfig {
 	pub http_server_host: String,
 	/// Light client HTTP server port (default: 7007).
 	pub http_server_port: u16,
-	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
-	/// If set to seed, keypair will be generated from that seed.
-	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
-	/// If `secret_key` is not set, random seed will be used.
-	pub secret_key: Option<SecretKey>,
-	/// P2P service port (default: 37000).
-	pub port: u16,
-	pub ws_transport_enable: bool,
-	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 	#[serde(flatten)]
-	pub autonat: AutoNATConfig,
+	pub ws_transport_enable: bool,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
-	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
-	#[serde(with = "duration_seconds_format")]
-	pub bootstrap_period: Duration,
-	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<MultiaddrConfig>,
+	#[serde(flatten)]
+	pub libp2p: LibP2PConfig,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
-	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
-	pub genesis_hash: String,
 	/// If set, application client is started with given app_id (default: None).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
@@ -461,16 +447,6 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-	#[serde(flatten)]
-	pub kademlia: KademliaConfig,
-	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
-	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
-	#[serde(with = "duration_seconds_format")]
-	pub connection_idle_timeout: Duration,
-	pub max_negotiating_inbound_streams: usize,
-	pub task_command_buffer_size: NonZeroUsize,
-	pub per_connection_event_buffer_size: usize,
-	pub dial_concurrency_factor: NonZeroU8,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub store_pruning_interval: u32,
 	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
@@ -547,20 +523,54 @@ impl From<&RuntimeConfig> for FatClientConfig {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LibP2PConfig {
+	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
+	/// If set to seed, keypair will be generated from that seed.
+	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
+	/// If `secret_key` is not set, random seed will be used.
 	pub secret_key: Option<SecretKey>,
+	/// P2P service port (default: 37000).
 	pub port: u16,
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+	#[serde(flatten)]
 	pub autonat: AutoNATConfig,
+	#[serde(flatten)]
 	pub kademlia: KademliaConfig,
+	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
+	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
+	#[serde(with = "duration_seconds_format")]
 	pub bootstrap_period: Duration,
+	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
+	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
+	#[serde(with = "duration_seconds_format")]
 	pub connection_idle_timeout: Duration,
 	pub max_negotiating_inbound_streams: usize,
 	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
 	pub genesis_hash: String,
+}
+
+impl Default for LibP2PConfig {
+	fn default() -> Self {
+		Self {
+			secret_key: None,
+			port: 37000,
+			autonat: Default::default(),
+			kademlia: Default::default(),
+			relays: Default::default(),
+			bootstrap_period: Duration::from_secs(3600),
+			connection_idle_timeout: Duration::from_secs(30),
+			max_negotiating_inbound_streams: 128,
+			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
+			per_connection_event_buffer_size: 7,
+			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
+			genesis_hash: "DEV".to_owned(),
+		}
+	}
 }
 
 const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
@@ -621,25 +631,6 @@ impl From<&LibP2PConfig> for RocksDBStoreConfig {
 	}
 }
 
-impl From<&RuntimeConfig> for LibP2PConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		Self {
-			secret_key: val.secret_key.clone(),
-			port: val.port,
-			autonat: val.autonat.clone(),
-			kademlia: val.kademlia.clone(),
-			relays: val.relays.clone(),
-			bootstrap_period: val.bootstrap_period,
-			connection_idle_timeout: val.connection_idle_timeout,
-			max_negotiating_inbound_streams: val.max_negotiating_inbound_streams,
-			task_command_buffer_size: val.task_command_buffer_size,
-			per_connection_event_buffer_size: val.per_connection_event_buffer_size,
-			dial_concurrency_factor: val.dial_concurrency_factor,
-			genesis_hash: val.genesis_hash.clone(),
-		}
-	}
-}
-
 /// Sync client configuration (see [RuntimeConfig] for details)
 #[derive(Clone)]
 pub struct SyncClientConfig {
@@ -693,11 +684,11 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		MaintenanceConfig {
 			block_confidence_treshold: val.confidence,
-			replication_factor: val.kademlia.record_replication_factor.get() as u16,
-			query_timeout: val.kademlia.query_timeout,
+			replication_factor: val.libp2p.kademlia.record_replication_factor.get() as u16,
+			query_timeout: val.libp2p.kademlia.query_timeout,
 			pruning_interval: val.store_pruning_interval,
 			telemetry_flush_interval: val.ot_flush_block_interval,
-			automatic_server_mode: val.kademlia.automatic_server_mode,
+			automatic_server_mode: val.libp2p.kademlia.automatic_server_mode,
 			total_memory_gb_threshold: val.total_memory_gb_threshold,
 			num_cpus_threshold: val.num_cpus_threshold,
 		}
@@ -709,15 +700,10 @@ impl Default for RuntimeConfig {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7007,
-			port: 37000,
 			ws_transport_enable: false,
-			secret_key: None,
-			autonat: Default::default(),
 			bootstraps: vec![],
-			bootstrap_period: Duration::from_secs(3600),
-			relays: Vec::new(),
+			libp2p: Default::default(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
-			genesis_hash: "DEV".to_owned(),
 			app_id: None,
 			confidence: 99.9,
 			avail_path: "avail_path".to_owned(),
@@ -736,12 +722,6 @@ impl Default for RuntimeConfig {
 			sync_finality_enable: false,
 			max_cells_per_rpc: Some(30),
 			threshold: 5000,
-			kademlia: Default::default(),
-			connection_idle_timeout: Duration::from_secs(30),
-			max_negotiating_inbound_streams: 128,
-			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
-			per_connection_event_buffer_size: 7,
-			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
 			store_pruning_interval: 180,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
