@@ -15,10 +15,10 @@ const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct AutoNATConfig {
-	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
+	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 20 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_retry_interval: Duration,
-	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
+	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 360 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_refresh_interval: Duration,
 	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
@@ -68,17 +68,19 @@ pub struct KademliaConfig {
 	pub record_replication_interval: Duration,
 	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
 	pub record_replication_factor: NonZeroUsize,
-	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
+	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
+	pub store_pruning_interval: u32,
+	/// Sets the timeout for a single Kademlia query. (default: 10s).
 	#[serde(with = "duration_seconds_format")]
 	pub query_timeout: Duration,
-	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
+	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
 	pub query_parallelism: NonZeroUsize,
 	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
 	/// If set to 0, caching is disabled.
 	pub caching_max_peers: u16,
 	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
 	pub disjoint_query_paths: bool,
-	/// The maximum number of records. (default: 2400000).
+	/// The maximum number of records in the memory store. (default: 2400000)
 	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
 	/// (256x512) * 3 * 60
 	pub max_kad_record_number: usize,
@@ -99,6 +101,7 @@ impl Default for KademliaConfig {
 			publication_interval: Default::default(),
 			record_replication_interval: Duration::from_secs(3 * 60 * 60),
 			record_replication_factor: NonZeroUsize::new(5).unwrap(),
+			store_pruning_interval: 180,
 			query_timeout: Duration::from_secs(10),
 			query_parallelism: NonZeroUsize::new(3).unwrap(),
 			caching_max_peers: 1,
@@ -122,9 +125,10 @@ pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
 	/// P2P service port (default: 37000).
 	pub port: u16,
-	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+	/// AutoNAT configuration
 	#[serde(flatten)]
 	pub autonat: AutoNATConfig,
+	/// Kademlia configuration
 	#[serde(flatten)]
 	pub kademlia: KademliaConfig,
 	/// Vector of Relay nodes, which are used for hole punching
