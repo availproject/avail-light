@@ -241,7 +241,7 @@ pub mod duration_millis_format {
 	where
 		S: Serializer,
 	{
-		serializer.serialize_u128(duration.as_millis())
+		serializer.serialize_u64(duration.as_millis() as u64)
 	}
 
 	pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -399,7 +399,6 @@ pub struct RuntimeConfig {
 	pub http_server_host: String,
 	/// Light client HTTP server port (default: 7007).
 	pub http_server_port: u16,
-	#[serde(flatten)]
 	pub ws_transport_enable: bool,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
@@ -443,8 +442,6 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-	/// Sets the timeout for a single Kademlia query. (default: 60s).
-	pub store_pruning_interval: u32,
 	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
 	/// (default:
 	/// fibonacci:
@@ -452,6 +449,7 @@ pub struct RuntimeConfig {
 	///     max_delay: 10,
 	///     retries: 6,
 	/// )
+	#[serde(flatten)]
 	pub retry_config: RetryConfig,
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
@@ -574,7 +572,7 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 			block_confidence_treshold: val.confidence,
 			replication_factor: val.libp2p.kademlia.record_replication_factor.get() as u16,
 			query_timeout: val.libp2p.kademlia.query_timeout,
-			pruning_interval: val.store_pruning_interval,
+			pruning_interval: val.libp2p.kademlia.store_pruning_interval,
 			telemetry_flush_interval: val.ot_flush_block_interval,
 			automatic_server_mode: val.libp2p.kademlia.automatic_server_mode,
 			total_memory_gb_threshold: val.total_memory_gb_threshold,
@@ -610,7 +608,6 @@ impl Default for RuntimeConfig {
 			sync_finality_enable: false,
 			max_cells_per_rpc: Some(30),
 			threshold: 5000,
-			store_pruning_interval: 180,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: Origin::External,
