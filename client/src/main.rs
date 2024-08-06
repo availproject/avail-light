@@ -135,7 +135,7 @@ async fn run(
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.libp2p.genesis_hash),
+		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
@@ -154,6 +154,7 @@ async fn run(
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg.libp2p.clone(),
 		version,
+		cfg.genesis_hash.as_str(),
 		&id_keys,
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
@@ -216,7 +217,7 @@ async fn run(
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
-		&cfg.libp2p.genesis_hash,
+		&cfg.genesis_hash,
 		cfg.retry_config.clone(),
 		shutdown.clone(),
 	)
@@ -612,7 +613,7 @@ async fn run_fat(
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.libp2p.genesis_hash),
+		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
@@ -631,6 +632,7 @@ async fn run_fat(
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg.libp2p.clone(),
 		version,
+		&cfg.genesis_hash,
 		&id_keys,
 		cfg.is_fat_client(),
 		cfg.ws_transport_enable,
@@ -684,7 +686,7 @@ async fn run_fat(
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
-		&cfg.libp2p.genesis_hash,
+		&cfg.genesis_hash,
 		cfg.retry_config.clone(),
 		shutdown.clone(),
 	)
@@ -885,7 +887,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.full_node_ws = network.full_node_ws();
 		cfg.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
-		cfg.libp2p.genesis_hash = network.genesis_hash().to_string();
+		cfg.genesis_hash = network.genesis_hash().to_string();
 	}
 
 	if let Some(loglvl) = &opts.verbosity {

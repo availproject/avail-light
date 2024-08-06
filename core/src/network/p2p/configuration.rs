@@ -1,6 +1,7 @@
 #[cfg(not(feature = "kademlia-rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
+use libp2p::kad;
 use serde::{Deserialize, Serialize};
 use std::{
 	num::{NonZeroU8, NonZeroUsize},
@@ -8,8 +9,6 @@ use std::{
 };
 
 use super::{ProvidersConfig, RocksDBStoreConfig};
-
-const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
 
 /// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -144,7 +143,6 @@ pub struct LibP2PConfig {
 	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
-	pub genesis_hash: String,
 }
 
 impl Default for LibP2PConfig {
@@ -161,37 +159,25 @@ impl Default for LibP2PConfig {
 			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
 			per_connection_event_buffer_size: 7,
 			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
-			genesis_hash: "DEV".to_owned(),
 		}
 	}
 }
 
-impl From<&LibP2PConfig> for libp2p::kad::Config {
+impl From<&LibP2PConfig> for kad::Config {
 	fn from(cfg: &LibP2PConfig) -> Self {
-		let mut genhash_short = cfg.genesis_hash.trim_start_matches("0x").to_string();
-		genhash_short.truncate(6);
-
-		let kademlia_protocol_name = libp2p::StreamProtocol::try_from_owned(format!(
-			"{id}-{gen_hash}",
-			id = KADEMLIA_PROTOCOL_BASE,
-			gen_hash = genhash_short
-		))
-		.expect("Invalid Kademlia protocol name");
-
 		// create Kademlia Config
-		let mut kad_cfg = libp2p::kad::Config::default();
+		let mut kad_cfg = kad::Config::default();
 		kad_cfg
 			.set_publication_interval(Some(cfg.kademlia.publication_interval))
 			.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
 			.set_replication_factor(cfg.kademlia.record_replication_factor)
 			.set_query_timeout(cfg.kademlia.query_timeout)
 			.set_parallelism(cfg.kademlia.query_parallelism)
-			.set_caching(libp2p::kad::Caching::Enabled {
+			.set_caching(kad::Caching::Enabled {
 				max_peers: cfg.kademlia.caching_max_peers,
 			})
 			.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
-			.set_record_filtering(libp2p::kad::StoreInserts::FilterBoth)
-			.set_protocol_names(vec![kademlia_protocol_name]);
+			.set_record_filtering(kad::StoreInserts::FilterBoth);
 		kad_cfg
 	}
 }
