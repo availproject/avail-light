@@ -171,7 +171,7 @@ async fn run(
 
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
-		cfg.dht_parallelization_limit,
+		cfg.libp2p.dht_parallelization_limit,
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
@@ -464,7 +464,7 @@ async fn run_crawl(
 
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
-		cfg.dht_parallelization_limit,
+		cfg.libp2p.dht_parallelization_limit,
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
@@ -640,7 +640,7 @@ async fn run_fat(
 
 	let p2p_client = p2p::Client::new(
 		p2p_event_loop_sender,
-		cfg.dht_parallelization_limit,
+		cfg.libp2p.dht_parallelization_limit,
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 

@@ -148,6 +148,8 @@ pub struct LibP2PConfig {
 	pub dial_concurrency_factor: NonZeroU8,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<MultiaddrConfig>,
+	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
+	pub dht_parallelization_limit: usize,
 }
 
 impl Default for LibP2PConfig {
@@ -166,6 +168,7 @@ impl Default for LibP2PConfig {
 			per_connection_event_buffer_size: 7,
 			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
 			bootstraps: vec![],
+			dht_parallelization_limit: 20,
 		}
 	}
 }

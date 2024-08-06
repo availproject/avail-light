@@ -423,8 +423,6 @@ pub struct RuntimeConfig {
 	pub num_cpus_threshold: usize,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
-	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
-	pub dht_parallelization_limit: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
@@ -494,7 +492,6 @@ pub struct FatClientConfig {
 	pub full_nodes_ws: Vec<String>,
 	pub confidence: f64,
 	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
 	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Delay,
 	pub block_matrix_partition: Option<Partition>,
@@ -507,7 +504,6 @@ impl From<&RuntimeConfig> for FatClientConfig {
 			full_nodes_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
-			dht_parallelization_limit: val.dht_parallelization_limit,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: Delay(val.block_processing_delay),
 			block_matrix_partition: val.block_matrix_partition,
@@ -521,7 +517,6 @@ impl From<&RuntimeConfig> for FatClientConfig {
 pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
 	pub is_last_step: bool,
 }
 
@@ -530,7 +525,6 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 		SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
-			dht_parallelization_limit: val.dht_parallelization_limit,
 			is_last_step: val.app_id.is_none(),
 		}
 	}
@@ -538,7 +532,6 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 
 /// App client configuration (see [RuntimeConfig] for details)
 pub struct AppClientConfig {
-	pub dht_parallelization_limit: usize,
 	pub disable_rpc: bool,
 	pub threshold: usize,
 }
@@ -546,7 +539,6 @@ pub struct AppClientConfig {
 impl From<&RuntimeConfig> for AppClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		AppClientConfig {
-			dht_parallelization_limit: val.dht_parallelization_limit,
 			disable_rpc: val.disable_rpc,
 			threshold: val.threshold,
 		}
@@ -598,7 +590,6 @@ impl Default for RuntimeConfig {
 			total_memory_gb_threshold: 16.0,
 			num_cpus_threshold: 4,
 			disable_rpc: false,
-			dht_parallelization_limit: 20,
 			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: Some(Duration::from_secs(20)),
 			block_matrix_partition: None,
