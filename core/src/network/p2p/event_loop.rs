@@ -31,7 +31,7 @@ use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{KademliaMode, TimeToLive},
+	types::TimeToLive,
 };
 
 use super::{
@@ -177,9 +177,7 @@ impl EventLoop {
 		genesis_hash: &str,
 		id_keys: &Keypair,
 		is_fat_client: bool,
-		is_ws_transport: bool,
 		shutdown: Controller<String>,
-		kad_mode: KademliaMode,
 		#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_period;
@@ -191,7 +189,7 @@ impl EventLoop {
 			db,
 		);
 
-		let swarm = build_swarm(&cfg, version, genesis_hash, id_keys, store, is_ws_transport)
+		let swarm = build_swarm(&cfg, version, genesis_hash, id_keys, store)
 			.await
 			.expect("Unable to build swarm.");
 
@@ -216,7 +214,7 @@ impl EventLoop {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 			},
-			kad_mode: kad_mode.into(),
+			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
 	}
 

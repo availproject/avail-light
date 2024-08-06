@@ -250,7 +250,6 @@ async fn build_swarm(
 	genesis_hash: &str,
 	id_keys: &libp2p::identity::Keypair,
 	kad_store: Store,
-	is_ws_transport: bool,
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config
 	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), id_keys.public())
@@ -289,7 +288,7 @@ async fn build_swarm(
 		})
 	};
 
-	if is_ws_transport {
+	if cfg.ws_transport_enable {
 		swarm = tokio_swarm
 			.with_websocket(noise::Config::new, yamux::Config::default)
 			.await?
