@@ -1,9 +1,11 @@
 #[cfg(not(feature = "kademlia-rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
-use libp2p::kad;
+use libp2p::{kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
 use std::{
+	borrow::Cow,
+	net::Ipv4Addr,
 	num::{NonZeroU8, NonZeroUsize},
 	time::Duration,
 };
@@ -124,6 +126,7 @@ pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
 	/// P2P service port (default: 37000).
 	pub port: u16,
+	pub ws_transport_enable: bool,
 	/// AutoNAT configuration
 	#[serde(flatten)]
 	pub autonat: AutoNATConfig,
@@ -143,6 +146,8 @@ pub struct LibP2PConfig {
 	pub task_command_buffer_size: NonZeroUsize,
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
+	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+	pub bootstraps: Vec<MultiaddrConfig>,
 }
 
 impl Default for LibP2PConfig {
@@ -150,6 +155,7 @@ impl Default for LibP2PConfig {
 		Self {
 			secret_key: None,
 			port: 37000,
+			ws_transport_enable: false,
 			autonat: Default::default(),
 			kademlia: Default::default(),
 			relays: Default::default(),
@@ -159,6 +165,21 @@ impl Default for LibP2PConfig {
 			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
 			per_connection_event_buffer_size: 7,
 			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
+			bootstraps: vec![],
+		}
+	}
+}
+
+impl LibP2PConfig {
+	pub fn multiaddress(&self) -> Multiaddr {
+		let tcp_multiaddress = Multiaddr::empty()
+			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+			.with(Protocol::Tcp(self.port));
+
+		if self.ws_transport_enable {
+			tcp_multiaddress.with(Protocol::Ws(Cow::Borrowed("avail-light")))
+		} else {
+			tcp_multiaddress
 		}
 	}
 }

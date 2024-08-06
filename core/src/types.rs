@@ -399,9 +399,6 @@ pub struct RuntimeConfig {
 	pub http_server_host: String,
 	/// Light client HTTP server port (default: 7007).
 	pub http_server_port: u16,
-	pub ws_transport_enable: bool,
-	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<MultiaddrConfig>,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
 	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
@@ -588,8 +585,6 @@ impl Default for RuntimeConfig {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7007,
-			ws_transport_enable: false,
-			bootstraps: vec![],
 			libp2p: Default::default(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			genesis_hash: "DEV".to_owned(),

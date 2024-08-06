@@ -1,3 +1,5 @@
+use crate::types::MultiaddrConfig;
+
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, CommandSender,
 	EventLoopEntries, MultiAddressInfo, PeerInfo, QueryChannel, SendableCommand,
@@ -640,8 +642,8 @@ impl Client {
 		.await
 	}
 
-	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		for (peer, addr) in nodes {
+	pub async fn bootstrap_on_startup(&self, bootstraps: &[MultiaddrConfig]) -> Result<()> {
+		for (peer, addr) in bootstraps.iter().map(Into::into) {
 			self.dial_peer(peer, vec![addr.clone()])
 				.await
 				.wrap_err("Dialing Bootstrap peer failed.")?;

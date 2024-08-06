@@ -23,10 +23,9 @@ use color_eyre::{
 use kate_recovery::matrix::Partition;
 use libp2p::{
 	identity::{self, ed25519},
-	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
-use std::{fs, net::Ipv4Addr, path::Path, str::FromStr, sync::Arc};
+use std::{fs, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, metadata::ParseLevelError, span, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
@@ -118,7 +117,7 @@ async fn run(
 		&identity_cfg.avail_address, &identity_cfg.avail_public_key
 	);
 
-	if cfg.bootstraps.is_empty() {
+	if cfg.libp2p.bootstraps.is_empty() {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
@@ -154,12 +153,10 @@ async fn run(
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg.libp2p.clone(),
 		version,
-		cfg.genesis_hash.as_str(),
+		&cfg.genesis_hash,
 		&id_keys,
 		cfg.is_fat_client(),
-		cfg.ws_transport_enable,
 		shutdown.clone(),
-		cfg.libp2p.kademlia.operation_mode,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
@@ -180,10 +177,7 @@ async fn run(
 
 	// Start listening on provided port
 	p2p_client
-		.start_listening(construct_multiaddress(
-			cfg.ws_transport_enable,
-			cfg.libp2p.port,
-		))
+		.start_listening(cfg.libp2p.multiaddress())
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
 	info!("TCP listener started on port {}", cfg.libp2p.port);
@@ -193,7 +187,7 @@ async fn run(
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let bs_result = p2p_clone
-			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
+			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
 			.await;
 		match bs_result {
 			Ok(_) => {
@@ -415,7 +409,7 @@ async fn run_crawl(
 		&identity_cfg.avail_address, &identity_cfg.avail_public_key
 	);
 
-	if cfg.bootstraps.is_empty() {
+	if cfg.libp2p.bootstraps.is_empty() {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
@@ -433,7 +427,7 @@ async fn run_crawl(
 			.crawl_block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.libp2p.genesis_hash),
+		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
 		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
@@ -452,11 +446,10 @@ async fn run_crawl(
 	let p2p_event_loop = p2p::EventLoop::new(
 		cfg.libp2p.clone(),
 		version,
+		&cfg.genesis_hash,
 		&id_keys,
 		cfg.is_fat_client(),
-		cfg.ws_transport_enable,
 		shutdown.clone(),
-		KademliaMode::Client,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
@@ -477,10 +470,7 @@ async fn run_crawl(
 
 	// Start listening on provided port
 	p2p_client
-		.start_listening(construct_multiaddress(
-			cfg.ws_transport_enable,
-			cfg.libp2p.port,
-		))
+		.start_listening(cfg.libp2p.multiaddress())
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
 	info!("TCP listener started on port {}", cfg.libp2p.port);
@@ -490,7 +480,7 @@ async fn run_crawl(
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let bs_result = p2p_clone
-			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
+			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
 			.await;
 		match bs_result {
 			Ok(_) => {
@@ -505,7 +495,7 @@ async fn run_crawl(
 	let (_, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.full_node_ws,
-		&cfg.libp2p.genesis_hash,
+		&cfg.genesis_hash,
 		cfg.retry_config.clone(),
 		shutdown.clone(),
 	)
@@ -596,7 +586,7 @@ async fn run_fat(
 	info!("Running Avail Light Fat Client version: {version}.");
 	info!("Using config: {cfg:?}");
 
-	if cfg.bootstraps.is_empty() {
+	if cfg.libp2p.bootstraps.is_empty() {
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
@@ -635,9 +625,7 @@ async fn run_fat(
 		&cfg.genesis_hash,
 		&id_keys,
 		cfg.is_fat_client(),
-		cfg.ws_transport_enable,
 		shutdown.clone(),
-		KademliaMode::Client,
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
 	);
@@ -658,10 +646,7 @@ async fn run_fat(
 
 	// Start listening on provided port
 	p2p_client
-		.start_listening(construct_multiaddress(
-			cfg.ws_transport_enable,
-			cfg.libp2p.port,
-		))
+		.start_listening(cfg.libp2p.multiaddress())
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
 	info!("TCP listener started on port {}", cfg.libp2p.port);
@@ -671,7 +656,7 @@ async fn run_fat(
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let bs_result = p2p_clone
-			.bootstrap_on_startup(cfg_clone.bootstraps.iter().map(Into::into).collect())
+			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
 			.await;
 		match bs_result {
 			Ok(_) => {
@@ -781,18 +766,6 @@ async fn run_fat(
 	Ok(())
 }
 
-fn construct_multiaddress(is_websocket: bool, port: u16) -> Multiaddr {
-	let tcp_multiaddress = Multiaddr::empty()
-		.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-		.with(Protocol::Tcp(port));
-
-	if is_websocket {
-		return tcp_multiaddress.with(Protocol::Ws(std::borrow::Cow::Borrowed("avail-light")));
-	}
-
-	tcp_multiaddress
-}
-
 fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 	// initialize color-eyre hooks
 	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
@@ -885,7 +858,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 				.wrap_err("unable to parse default bootstrap multi-address")?,
 		);
 		cfg.full_node_ws = network.full_node_ws();
-		cfg.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		cfg.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		cfg.genesis_hash = network.genesis_hash().to_string();
 	}
@@ -905,7 +878,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 	cfg.sync_finality_enable |= opts.finality_sync_enable;
 	cfg.app_id = opts.app_id.or(cfg.app_id);
-	cfg.ws_transport_enable |= opts.ws_transport_enable;
+	cfg.libp2p.ws_transport_enable |= opts.ws_transport_enable;
 	if let Some(secret_key) = &opts.private_key {
 		cfg.libp2p.secret_key = Some(SecretKey::Key {
 			key: secret_key.to_string(),
