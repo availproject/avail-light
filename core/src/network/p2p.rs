@@ -234,9 +234,20 @@ fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p:
 		.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
 }
 
+const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
+
+fn protocol_name(genesis_hash: &str) -> libp2p::StreamProtocol {
+	let mut gen_hash = genesis_hash.trim_start_matches("0x").to_string();
+	gen_hash.truncate(6);
+
+	libp2p::StreamProtocol::try_from_owned(format!("{KADEMLIA_PROTOCOL_BASE}-{gen_hash}",))
+		.expect("Invalid Kademlia protocol name")
+}
+
 async fn build_swarm(
 	cfg: &LibP2PConfig,
 	version: &str,
+	genesis_hash: &str,
 	id_keys: &libp2p::identity::Keypair,
 	kad_store: Store,
 	is_ws_transport: bool,
@@ -260,6 +271,9 @@ async fn build_swarm(
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
 
 	let mut swarm;
+
+	let mut kad_cfg: kad::Config = cfg.into();
+	kad_cfg.set_protocol_names(vec![protocol_name(genesis_hash)]);
 
 	let behaviour = |key: &identity::Keypair, relay_client| {
 		Ok(Behaviour {

@@ -174,6 +174,7 @@ impl EventLoop {
 	pub async fn new(
 		cfg: LibP2PConfig,
 		version: &str,
+		genesis_hash: &str,
 		id_keys: &Keypair,
 		is_fat_client: bool,
 		is_ws_transport: bool,
@@ -190,7 +191,7 @@ impl EventLoop {
 			db,
 		);
 
-		let swarm = build_swarm(&cfg, version, id_keys, store, is_ws_transport)
+		let swarm = build_swarm(&cfg, version, genesis_hash, id_keys, store, is_ws_transport)
 			.await
 			.expect("Unable to build swarm.");
 

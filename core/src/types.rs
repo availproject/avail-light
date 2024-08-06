@@ -404,6 +404,8 @@ pub struct RuntimeConfig {
 	pub bootstraps: Vec<MultiaddrConfig>,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
+	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
+	pub genesis_hash: String,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// If set, application client is started with given app_id (default: None).
@@ -590,6 +592,7 @@ impl Default for RuntimeConfig {
 			bootstraps: vec![],
 			libp2p: Default::default(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
+			genesis_hash: "DEV".to_owned(),
 			app_id: None,
 			confidence: 99.9,
 			avail_path: "avail_path".to_owned(),
