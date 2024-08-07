@@ -2,9 +2,11 @@ use std::time::Duration;
 
 use avail_light_core::{
 	data::RocksDB,
-	network::rpc,
+	network::rpc::{
+		self,
+		configuration::{ExponentialConfig, RPCConfig, RetryConfig},
+	},
 	shutdown::Controller,
-	types::{ExponentialConfig, RetryConfig},
 };
 use clap::Parser;
 use color_eyre::{eyre::Context, Result};
@@ -26,15 +28,17 @@ async fn main() -> Result<()> {
 	let db = RocksDB::open(&command_args.avail_path)
 		.wrap_err("API Compatibility Test could not initialize database")?;
 
-	let retry_cfg = RetryConfig::Exponential(ExponentialConfig {
-		base: 10,
-		max_delay: Duration::from_millis(4000),
-		retries: 4,
-	});
+	let rpc_cfg = RPCConfig {
+		full_node_ws: vec![command_args.url],
+		retry: RetryConfig::Exponential(ExponentialConfig {
+			base: 10,
+			max_delay: Duration::from_millis(4000),
+			retries: 4,
+		}),
+	};
 
 	let shutdown = Controller::new();
-	let (rpc_client, _, subscriptions) =
-		rpc::init(db, &[command_args.url], "DEV", retry_cfg, shutdown).await?;
+	let (rpc_client, _, subscriptions) = rpc::init(db, "DEV", &rpc_cfg, shutdown).await?;
 	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;

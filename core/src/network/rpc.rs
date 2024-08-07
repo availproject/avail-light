@@ -1,6 +1,7 @@
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::{Decode, Encode};
 use color_eyre::{eyre::eyre, Result};
+use configuration::RPCConfig;
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
@@ -12,14 +13,10 @@ use tokio::{
 };
 use tracing::{debug, info};
 
-use crate::{
-	data::Database,
-	network::rpc,
-	shutdown::Controller,
-	types::{GrandpaJustification, RetryConfig},
-};
+use crate::{data::Database, network::rpc, shutdown::Controller, types::GrandpaJustification};
 
 mod client;
+pub mod configuration;
 mod subscriptions;
 
 use subscriptions::SubscriptionLoop;
@@ -187,16 +184,15 @@ impl<'a> Iterator for NodesIterator<'a> {
 
 pub async fn init<T: Database + Clone>(
 	db: T,
-	nodes: &[String],
 	genesis_hash: &str,
-	retry_config: RetryConfig,
+	rpc: &RPCConfig,
 	shutdown: Controller<String>,
 ) -> Result<(Client<T>, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
 	let rpc_client = Client::new(
 		db.clone(),
-		Nodes::new(nodes),
+		Nodes::new(&rpc.full_node_ws),
 		genesis_hash,
-		retry_config,
+		rpc.retry.clone(),
 		shutdown,
 	)
 	.await?;
