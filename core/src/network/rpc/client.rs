@@ -32,13 +32,13 @@ use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use super::{Node, Nodes, Subscription, WrappedProof};
+use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
 	data::{Database, RpcNodeKey},
 	shutdown::Controller,
-	types::{RetryConfig, DEV_FLAG_GENHASH},
+	types::DEV_FLAG_GENHASH,
 };
 
 #[derive(Clone)]

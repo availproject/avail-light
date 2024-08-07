@@ -1,0 +1,83 @@
+use crate::types::duration_millis_format;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(default)]
+pub struct RPCConfig {
+	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
+	pub full_node_ws: Vec<String>,
+	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
+	/// (default:
+	/// fibonacci:
+	///     base: 1,
+	///     max_delay: 10,
+	///     retries: 6,
+	/// )
+	#[serde(flatten)]
+	pub retry: RetryConfig,
+}
+
+impl Default for RPCConfig {
+	fn default() -> Self {
+		Self {
+			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
+			retry: RetryConfig::Fibonacci(FibonacciConfig {
+				base: 1,
+				max_delay: Duration::from_millis(10),
+				retries: 6,
+			}),
+		}
+	}
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum RetryConfig {
+	#[serde(rename = "exponential")]
+	Exponential(ExponentialConfig),
+
+	#[serde(rename = "fibonacci")]
+	Fibonacci(FibonacciConfig),
+}
+
+impl IntoIterator for RetryConfig {
+	type Item = Duration;
+	type IntoIter = std::vec::IntoIter<Self::Item>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		match self {
+			RetryConfig::Exponential(config) => ExponentialBackoff::from_millis(config.base)
+				.factor(1000)
+				.max_delay(config.max_delay)
+				.map(jitter)
+				.take(config.retries)
+				.collect::<Vec<Duration>>()
+				.into_iter(),
+			RetryConfig::Fibonacci(config) => FibonacciBackoff::from_millis(config.base)
+				.factor(1000)
+				.max_delay(config.max_delay)
+				.map(jitter)
+				.take(config.retries)
+				.collect::<Vec<Duration>>()
+				.into_iter(),
+		}
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExponentialConfig {
+	pub base: u64,
+	#[serde(with = "duration_millis_format")]
+	pub max_delay: Duration,
+	pub retries: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FibonacciConfig {
+	pub base: u64,
+	#[serde(with = "duration_millis_format")]
+	pub max_delay: Duration,
+	pub retries: usize,
+}

@@ -208,14 +208,8 @@ async fn run(
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
-		db.clone(),
-		&cfg.full_node_ws,
-		&cfg.genesis_hash,
-		cfg.retry_config.clone(),
-		shutdown.clone(),
-	)
-	.await?;
+	let (rpc_client, rpc_events, rpc_subscriptions) =
+		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_events.subscribe();
@@ -492,14 +486,8 @@ async fn run_crawl(
 		}
 	}));
 
-	let (_, rpc_events, rpc_subscriptions) = rpc::init(
-		db.clone(),
-		&cfg.full_node_ws,
-		&cfg.genesis_hash,
-		cfg.retry_config.clone(),
-		shutdown.clone(),
-	)
-	.await?;
+	let (_, rpc_events, rpc_subscriptions) =
+		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
 
 	// Subscribing to RPC events before first event is published
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
@@ -668,14 +656,8 @@ async fn run_fat(
 		}
 	}));
 
-	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
-		db.clone(),
-		&cfg.full_node_ws,
-		&cfg.genesis_hash,
-		cfg.retry_config.clone(),
-		shutdown.clone(),
-	)
-	.await?;
+	let (rpc_client, rpc_events, rpc_subscriptions) =
+		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
 
 	// Subscribing to RPC events before first event is published
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
@@ -857,7 +839,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 			Multiaddr::from_str(network.bootstrap_multiaddrr())
 				.wrap_err("unable to parse default bootstrap multi-address")?,
 		);
-		cfg.full_node_ws = network.full_node_ws();
+		cfg.rpc.full_node_ws = network.full_node_ws();
 		cfg.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		cfg.genesis_hash = network.genesis_hash().to_string();

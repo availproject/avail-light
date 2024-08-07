@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 use crate::network::p2p::configuration::LibP2PConfig;
+use crate::network::rpc::configuration::RPCConfig;
 use crate::network::rpc::Event;
 use crate::telemetry::otlp::OtelConfig;
 use crate::utils::{extract_app_lookup, extract_kate};
@@ -24,7 +25,6 @@ use subxt_signer::bip39::{Language, Mnemonic};
 use subxt_signer::sr25519::Keypair;
 use subxt_signer::{SecretString, SecretUri};
 use tokio::sync::broadcast;
-use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
 use tracing::{info, warn};
 
 const CELL_SIZE: usize = 32;
@@ -341,56 +341,6 @@ pub enum SecretKey {
 	Key { key: String },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "type")]
-pub enum RetryConfig {
-	#[serde(rename = "exponential")]
-	Exponential(ExponentialConfig),
-
-	#[serde(rename = "fibonacci")]
-	Fibonacci(FibonacciConfig),
-}
-
-impl IntoIterator for RetryConfig {
-	type Item = Duration;
-	type IntoIter = std::vec::IntoIter<Self::Item>;
-
-	fn into_iter(self) -> Self::IntoIter {
-		match self {
-			RetryConfig::Exponential(config) => ExponentialBackoff::from_millis(config.base)
-				.factor(1000)
-				.max_delay(config.max_delay)
-				.map(jitter)
-				.take(config.retries)
-				.collect::<Vec<Duration>>()
-				.into_iter(),
-			RetryConfig::Fibonacci(config) => FibonacciBackoff::from_millis(config.base)
-				.factor(1000)
-				.max_delay(config.max_delay)
-				.map(jitter)
-				.take(config.retries)
-				.collect::<Vec<Duration>>()
-				.into_iter(),
-		}
-	}
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ExponentialConfig {
-	pub base: u64,
-	#[serde(with = "duration_millis_format")]
-	pub max_delay: Duration,
-	pub retries: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FibonacciConfig {
-	pub base: u64,
-	#[serde(with = "duration_millis_format")]
-	pub max_delay: Duration,
-	pub retries: usize,
-}
-
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -401,10 +351,10 @@ pub struct RuntimeConfig {
 	pub http_server_port: u16,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
+	#[serde(flatten)]
+	pub rpc: RPCConfig,
 	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
 	pub genesis_hash: String,
-	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
-	pub full_node_ws: Vec<String>,
 	/// If set, application client is started with given app_id (default: None).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
@@ -439,15 +389,6 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-	/// Set the configuration based on which the retries will be orchestrated, max duration [in seconds] between retries and number of tries.
-	/// (default:
-	/// fibonacci:
-	///     base: 1,
-	///     max_delay: 10,
-	///     retries: 6,
-	/// )
-	#[serde(flatten)]
-	pub retry_config: RetryConfig,
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
 	pub crawl: crate::crawl_client::CrawlConfig,
@@ -501,7 +442,7 @@ pub struct FatClientConfig {
 impl From<&RuntimeConfig> for FatClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		FatClientConfig {
-			full_nodes_ws: val.full_node_ws.clone(),
+			full_nodes_ws: val.rpc.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
@@ -578,7 +519,7 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7007,
 			libp2p: Default::default(),
-			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
+			rpc: Default::default(),
 			genesis_hash: "DEV".to_owned(),
 			app_id: None,
 			confidence: 99.9,
@@ -600,11 +541,6 @@ impl Default for RuntimeConfig {
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: Origin::External,
-			retry_config: RetryConfig::Fibonacci(FibonacciConfig {
-				base: 1,
-				max_delay: Duration::from_millis(10),
-				retries: 6,
-			}),
 			client_alias: None,
 		}
 	}
