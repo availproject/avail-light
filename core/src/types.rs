@@ -430,8 +430,6 @@ impl From<&RuntimeConfig> for LightClientConfig {
 /// Fat client configuration (see [RuntimeConfig] for details)
 pub struct FatClientConfig {
 	pub full_nodes_ws: Vec<String>,
-	pub confidence: f64,
-	pub disable_rpc: bool,
 	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Delay,
 	pub block_matrix_partition: Option<Partition>,
@@ -442,8 +440,6 @@ impl From<&RuntimeConfig> for FatClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		FatClientConfig {
 			full_nodes_ws: val.rpc.full_node_ws.clone(),
-			confidence: val.confidence,
-			disable_rpc: val.disable_rpc,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: Delay(val.block_processing_delay),
 			block_matrix_partition: val.block_matrix_partition,
