@@ -1,3 +1,4 @@
+use crate::shutdown::Controller;
 use avail_core::{
 	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 };
@@ -18,7 +19,7 @@ use color_eyre::{
 	Result,
 };
 use futures::Future;
-use tracing::Instrument;
+use tracing::{error, Instrument};
 
 pub fn spawn_in_span<F>(future: F) -> tokio::task::JoinHandle<F::Output>
 where
@@ -109,4 +110,34 @@ pub fn filter_auth_set_changes(header: &DaHeader) -> Vec<Vec<(AuthorityId, u64)>
 		})
 		.collect::<Vec<_>>();
 	new_auths
+}
+
+pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
+	// initialize color-eyre hooks
+	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
+		.display_location_section(true)
+		.display_env_section(true)
+		.into_hooks();
+
+	// install hook as global handler
+	eyre_hook.install()?;
+
+	std::panic::set_hook(Box::new(move |panic_info| {
+		// trigger shutdown to stop other tasks if panic occurs
+		let _ = shutdown.trigger_shutdown("Panic occurred, shuting down".to_string());
+
+		let msg = format!("{}", panic_hook.panic_report(panic_info));
+		error!("Error: {}", strip_ansi_escapes::strip_str(msg));
+
+		#[cfg(debug_assertions)]
+		{
+			// better-panic stacktrace that is only enabled when debugging
+			better_panic::Settings::auto()
+				.most_recent_first(false)
+				.lineno_suffix(true)
+				.verbosity(better_panic::Verbosity::Medium)
+				.create_panic_handler()(panic_info);
+		}
+	}));
+	Ok(())
 }
