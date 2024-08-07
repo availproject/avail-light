@@ -853,7 +853,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.port = port;
 	}
 	if let Some(http_port) = opts.http_server_port {
-		cfg.http_server_port = http_port;
+		cfg.api.http_server_port = http_port;
 	}
 	if let Some(avail_path) = &opts.avail_path {
 		cfg.avail_path = avail_path.to_string();

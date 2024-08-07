@@ -46,14 +46,9 @@ fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> 
 impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 	/// Creates a HTTP server that needs to be spawned into a runtime
 	pub fn bind(self) -> impl Future<Output = ()> {
-		let RuntimeConfig {
-			http_server_host: host,
-			http_server_port: port,
-			app_id,
-			..
-		} = self.cfg.clone();
-
-		let v1_api = v1::routes(self.db.clone(), app_id, self.cfg.clone());
+		let host = self.cfg.api.http_server_host.clone();
+		let port = self.cfg.api.http_server_port;
+		let v1_api = v1::routes(self.db.clone(), self.cfg.app_id, self.cfg.clone());
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
