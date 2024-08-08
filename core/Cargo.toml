@@ -60,9 +60,11 @@ void = { workspace = true }
 warp = { workspace = true }
 
 # OpenTelemetry
+clap.workspace = true
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+strum = { version = "0.26.3", features = ["derive"] }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
