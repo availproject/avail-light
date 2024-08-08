@@ -801,6 +801,8 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		RuntimeConfig::default()
 	};
 
+	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
+
 	// Flags override the config parameters
 	if let Some(network) = &opts.network {
 		let bootstrap: (PeerId, Multiaddr) = (
@@ -867,8 +869,7 @@ pub async fn main() -> Result<()> {
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
-	let logs_json = opts.logs_json || cfg.log_format_json;
-	if logs_json {
+	if cfg.log_format_json {
 		tracing::subscriber::set_global_default(json_subscriber(log_level))
 			.expect("global json subscriber is set");
 	} else {
@@ -905,7 +906,11 @@ pub async fn main() -> Result<()> {
 		client_alias = cfg.client_alias.clone().unwrap_or("".to_string())
 	);
 	// Do not enter span if logs format is not JSON
-	let _enter = if logs_json { Some(span.enter()) } else { None };
+	let _enter = if cfg.log_format_json {
+		Some(span.enter())
+	} else {
+		None
+	};
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
