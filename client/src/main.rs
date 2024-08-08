@@ -13,7 +13,7 @@ use avail_light_core::{
 		load_or_init_suri, IdentityConfig, KademliaMode, MaintenanceConfig, MultiaddrConfig,
 		RuntimeConfig, SecretKey, Uuid,
 	},
-	utils::{install_panic_hooks, spawn_in_span},
+	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
 use color_eyre::{
@@ -27,8 +27,7 @@ use libp2p::{
 };
 use std::{fs, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, span, warn, Level, Subscriber};
-use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
+use tracing::{error, info, span, warn, Level};
 
 #[cfg(not(feature = "crawl"))]
 use avail_core::AppId;
@@ -61,21 +60,6 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 /// Light Client for Avail Blockchain
-
-fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
-		.json()
-		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
-		.with_span_events(format::FmtSpan::CLOSE)
-		.finish()
-}
-
-fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
-		.with_span_events(format::FmtSpan::CLOSE)
-		.finish()
-}
 
 fn get_or_init_p2p_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
 	if let Some(secret_key) = cfg.secret_key.as_ref() {
