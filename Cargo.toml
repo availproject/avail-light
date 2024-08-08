@@ -4,6 +4,7 @@ members = [
 	"client",
 	"compatibility-tests",
 	"core",
+	"crawler",
 	"relay",
 ]
 default-members = ["client"]
@@ -55,8 +56,6 @@ sp-std = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polk
 [profile.debug-fast]
 inherits = "release"
 debug = true
-
-[profile.dev]
 
 [profile.release]
 incremental = false

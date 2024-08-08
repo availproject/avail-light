@@ -4,7 +4,7 @@ use crate::{
 		rpc::{self, Event},
 	},
 	telemetry::{metric, otlp::Record, MetricName, Metrics},
-	types::{self, block_matrix_partition_format, BlockVerified, Delay, Origin},
+	types::{self, BlockVerified, Delay, Origin},
 };
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
@@ -14,44 +14,6 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tracing::{error, info};
-
-pub const ENTIRE_BLOCK: Partition = Partition {
-	number: 1,
-	fraction: 1,
-};
-
-#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub enum CrawlMode {
-	Rows,
-	Cells,
-	Both,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(default)]
-pub struct CrawlConfig {
-	/// Crawl block periodically to ensure availability. (default: false)
-	pub crawl_block: bool,
-	/// Crawl block delay. Increment to ensure large block crawling (default: 20)
-	pub crawl_block_delay: u64,
-	/// Crawl block mode. Available modes are "cells", "rows" and "both" (default: "cells")
-	pub crawl_block_mode: CrawlMode,
-	/// Fraction and number of the block matrix part to crawl (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
-	#[serde(with = "block_matrix_partition_format")]
-	pub crawl_block_matrix_partition: Option<Partition>,
-}
-
-impl Default for CrawlConfig {
-	fn default() -> Self {
-		Self {
-			crawl_block: false,
-			crawl_block_delay: 20,
-			crawl_block_mode: CrawlMode::Cells,
-			crawl_block_matrix_partition: None,
-		}
-	}
-}
 
 #[derive(Clone)]
 enum CrawlMetricValue {
@@ -83,6 +45,14 @@ impl From<CrawlMetricValue> for Record {
 			BlockDelay(number) => AvgF64(name, number),
 		}
 	}
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum CrawlMode {
+	Rows,
+	Cells,
+	Both,
 }
 
 impl metric::Value for CrawlMetricValue {

@@ -1064,6 +1064,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "avail-light-crawler"
+version = "0.1.0"
+dependencies = [
+ "avail-light-core",
+ "clap 4.5.8",
+ "color-eyre",
+ "confy 0.5.1",
+ "kate-recovery",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "avail-light-relay"
 version = "0.0.3"
 dependencies = [
