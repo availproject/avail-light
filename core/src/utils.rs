@@ -19,7 +19,8 @@ use color_eyre::{
 	Result,
 };
 use futures::Future;
-use tracing::{error, Instrument};
+use tracing::{error, Instrument, Level, Subscriber};
+use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
 pub fn spawn_in_span<F>(future: F) -> tokio::task::JoinHandle<F::Output>
 where
@@ -140,4 +141,19 @@ pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 		}
 	}));
 	Ok(())
+}
+
+pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
+	FmtSubscriber::builder()
+		.json()
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
+		.with_span_events(format::FmtSpan::CLOSE)
+		.finish()
+}
+
+pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
+	FmtSubscriber::builder()
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
+		.with_span_events(format::FmtSpan::CLOSE)
+		.finish()
 }

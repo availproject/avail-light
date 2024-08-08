@@ -1055,6 +1055,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "tracing-subscriber 0.3.18",
  "uuid",
  "void",
  "warp",
