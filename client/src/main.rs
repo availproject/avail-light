@@ -2,9 +2,9 @@
 
 use crate::cli::CliOpts;
 use avail_light_core::{
-	data::{ClientIdKey, Database, LatestHeaderKey, P2PKeypairKey, RocksDB},
+	data::{ClientIdKey, Database, LatestHeaderKey, RocksDB},
 	network::{
-		p2p::{self, configuration::LibP2PConfig},
+		p2p::{self},
 		rpc, Network,
 	},
 	shutdown::Controller,
@@ -22,7 +22,6 @@ use color_eyre::{
 };
 use kate_recovery::matrix::Partition;
 use libp2p::{
-	identity::{self, ed25519},
 	Multiaddr, PeerId,
 };
 use std::{fs, path::Path, str::FromStr, sync::Arc};
@@ -61,21 +60,6 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 /// Light Client for Avail Blockchain
 
-fn get_or_init_p2p_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
-	if let Some(secret_key) = cfg.secret_key.as_ref() {
-		return p2p::keypair(secret_key);
-	};
-
-	if let Some(mut bytes) = db.get(P2PKeypairKey) {
-		return Ok(ed25519::Keypair::try_from_bytes(&mut bytes[..]).map(From::from)?);
-	};
-
-	let id_keys = identity::Keypair::generate_ed25519();
-	let keypair = id_keys.clone().try_into_ed25519()?;
-	db.put(P2PKeypairKey, keypair.to_bytes().to_vec());
-	Ok(id_keys)
-}
-
 #[cfg(not(feature = "crawl"))]
 async fn run(
 	cfg: RuntimeConfig,
@@ -97,7 +81,7 @@ async fn run(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let id_keys = get_or_init_p2p_keypair(&cfg.libp2p, db.clone())?;
+	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
@@ -383,7 +367,7 @@ async fn run_crawl(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let id_keys = get_or_init_p2p_keypair(&cfg.libp2p, db.clone())?;
+	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
@@ -554,7 +538,7 @@ async fn run_fat(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let id_keys = get_or_init_p2p_keypair(&cfg.libp2p, db.clone())?;
+	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
 	let metric_attributes = MetricAttributes {
