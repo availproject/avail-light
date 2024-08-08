@@ -60,7 +60,7 @@ void = { workspace = true }
 warp = { workspace = true }
 
 # OpenTelemetry
-clap.workspace = true
+clap = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }

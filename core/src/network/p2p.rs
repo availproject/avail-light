@@ -2,7 +2,8 @@ use allow_block_list::BlockedPeers;
 use color_eyre::{eyre::WrapErr, Report, Result};
 use configuration::LibP2PConfig;
 use libp2p::{
-	autonat, dcutr, identify, identity,
+	autonat, dcutr, identify,
+	identity::{self, ed25519},
 	kad::{self, Mode, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
@@ -27,7 +28,10 @@ mod kad_mem_providers;
 mod kad_mem_store;
 mod kad_rocksdb_store;
 use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
-use crate::types::SecretKey;
+use crate::{
+	data::{Database, P2PKeypairKey, RocksDB},
+	types::SecretKey,
+};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
@@ -327,7 +331,7 @@ async fn build_swarm(
 
 // Keypair function creates identity Keypair for a local node.
 // From such generated keypair it derives multihash identifier of the local peer.
-pub fn keypair(secret_key: &SecretKey) -> Result<identity::Keypair> {
+fn keypair(secret_key: &SecretKey) -> Result<identity::Keypair> {
 	let keypair = match secret_key {
 		// If seed is provided, generate secret key from seed
 		SecretKey::Seed { seed } => {
@@ -369,6 +373,21 @@ pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
 	address
 		.iter()
 		.any(|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)))
+}
+
+pub fn get_or_init_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
+	if let Some(secret_key) = cfg.secret_key.as_ref() {
+		return keypair(secret_key);
+	};
+
+	if let Some(mut bytes) = db.get(P2PKeypairKey) {
+		return Ok(ed25519::Keypair::try_from_bytes(&mut bytes[..]).map(From::from)?);
+	};
+
+	let id_keys = identity::Keypair::generate_ed25519();
+	let keypair = id_keys.clone().try_into_ed25519()?;
+	db.put(P2PKeypairKey, keypair.to_bytes().to_vec());
+	Ok(id_keys)
 }
 
 #[cfg(test)]
