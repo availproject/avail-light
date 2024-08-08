@@ -26,7 +26,7 @@ use subxt_signer::bip39::{Language, Mnemonic};
 use subxt_signer::sr25519::Keypair;
 use subxt_signer::{SecretString, SecretUri};
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::{info, warn, Level};
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -187,6 +187,27 @@ impl Display for Origin {
 			Origin::External => "external",
 			Origin::Other(val) => val,
 		})
+	}
+}
+
+pub mod tracing_level_format {
+	use serde::{self, Deserialize, Deserializer, Serializer};
+	use std::str::FromStr;
+	use tracing::Level;
+
+	pub fn serialize<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		serializer.serialize_str(&level.to_string())
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Level, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let value = String::deserialize(deserializer)?;
+		Level::from_str(&value).map_err(serde::de::Error::custom)
 	}
 }
 
@@ -361,7 +382,8 @@ pub struct RuntimeConfig {
 	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
-	pub log_level: String,
+	#[serde(with = "tracing_level_format")]
+	pub log_level: Level,
 	pub origin: Origin,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
@@ -518,7 +540,7 @@ impl Default for RuntimeConfig {
 			app_id: None,
 			confidence: 99.9,
 			avail_path: "avail_path".to_owned(),
-			log_level: "INFO".to_owned(),
+			log_level: Level::INFO,
 			log_format_json: false,
 			otel: Default::default(),
 			ot_flush_block_interval: 15,
