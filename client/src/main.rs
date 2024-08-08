@@ -1,11 +1,11 @@
 #![doc = include_str!("../README.md")]
 
-use crate::cli::{CliOpts, Network};
+use crate::cli::CliOpts;
 use avail_light_core::{
 	data::{ClientIdKey, Database, LatestHeaderKey, P2PKeypairKey, RocksDB},
 	network::{
 		p2p::{self, configuration::LibP2PConfig},
-		rpc,
+		rpc, Network,
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
