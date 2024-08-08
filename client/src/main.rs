@@ -27,7 +27,7 @@ use libp2p::{
 };
 use std::{fs, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, metadata::ParseLevelError, span, warn, Level, Subscriber};
+use tracing::{error, info, span, warn, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
 #[cfg(not(feature = "crawl"))]
@@ -75,14 +75,6 @@ fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
-}
-
-fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevelError>) {
-	log_level
-		.to_uppercase()
-		.parse::<Level>()
-		.map(|log_level| (log_level, None))
-		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
 fn get_or_init_p2p_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
@@ -802,6 +794,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	};
 
 	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
+	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
 
 	// Flags override the config parameters
 	if let Some(network) = &opts.network {
@@ -815,10 +808,6 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		cfg.genesis_hash = network.genesis_hash().to_string();
-	}
-
-	if let Some(loglvl) = &opts.verbosity {
-		cfg.log_level = loglvl.to_string();
 	}
 
 	if let Some(port) = opts.port {
@@ -867,13 +856,11 @@ pub async fn main() -> Result<()> {
 
 	let cfg = load_runtime_config(&opts).expect("runtime configuration is loaded");
 
-	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
-
 	if cfg.log_format_json {
-		tracing::subscriber::set_global_default(json_subscriber(log_level))
+		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))
 			.expect("global json subscriber is set");
 	} else {
-		tracing::subscriber::set_global_default(default_subscriber(log_level))
+		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))
 			.expect("global default subscriber is set");
 	};
 
@@ -911,10 +898,6 @@ pub async fn main() -> Result<()> {
 	} else {
 		None
 	};
-
-	if let Some(error) = parse_error {
-		warn!("Using default log level: {}", error);
-	}
 
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.with_trigger("user signaled shutdown".to_string(), user_signal()));

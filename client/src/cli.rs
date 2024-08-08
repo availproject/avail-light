@@ -1,8 +1,8 @@
-use std::fmt::{self, Display, Formatter};
-
 use avail_light_core::types::block_matrix_partition_format;
 use clap::{command, Parser, ValueEnum};
 use kate_recovery::matrix::Partition;
+use std::fmt;
+use tracing::Level;
 
 #[derive(ValueEnum, Clone)]
 pub enum Network {
@@ -93,27 +93,6 @@ impl fmt::Display for Network {
 	}
 }
 
-#[derive(ValueEnum, Clone)]
-pub enum LogLevel {
-	Info,
-	Debug,
-	Trace,
-	Warn,
-	Error,
-}
-
-impl Display for LogLevel {
-	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		f.write_str(match self {
-			LogLevel::Info => "INFO",
-			LogLevel::Debug => "DEBUG",
-			LogLevel::Trace => "TRACE",
-			LogLevel::Warn => "WARN",
-			LogLevel::Error => "ERROR",
-		})
-	}
-}
-
 #[derive(Parser)]
 #[command(version)]
 pub struct CliOpts {
@@ -149,7 +128,7 @@ pub struct CliOpts {
 	pub ws_transport_enable: bool,
 	/// Log level
 	#[arg(long)]
-	pub verbosity: Option<LogLevel>,
+	pub verbosity: Option<Level>,
 	/// Avail secret seed phrase password
 	#[arg(long)]
 	pub avail_passphrase: Option<String>,
