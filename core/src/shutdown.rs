@@ -1,3 +1,7 @@
+use self::{
+	completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay,
+	with_trigger::WithTrigger,
+};
 use std::{
 	fmt::Debug,
 	future::Future,
@@ -5,14 +9,11 @@ use std::{
 	sync::{Arc, Mutex},
 	task::Waker,
 };
-
-use self::{
-	completed::Completed, signal::Signal, with_cancel::WithCancel, with_delay::WithDelay,
-	with_trigger::WithTrigger,
-};
+use utils::user_signal;
 
 mod completed;
 mod signal;
+mod utils;
 mod with_cancel;
 mod with_delay;
 mod with_trigger;
@@ -159,6 +160,14 @@ impl<T: Clone> Controller<T> {
 			reason: Arc::new(Mutex::new(Some(reason))),
 			inner: self.inner.clone(),
 		}
+	}
+
+	/// Triggers a shutdown when each of the default termination signals is received.
+	///
+	/// On Unix-based systems, these signals are Ctrl-C (SIGINT) or SIGTERM,
+	/// and on Windows, they are Ctrl-C, Ctrl-Close, Ctrl-Shutdown.
+	pub fn on_user_signal(&self, reason: T) -> WithTrigger<T, impl futures::Future<Output = ()>> {
+		self.with_trigger(reason, user_signal())
 	}
 }
 
