@@ -847,21 +847,20 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
-	let shutdown = Controller::new();
+	// set default subscriber in case of configuration loading failure
+	tracing::subscriber::set_global_default(default_subscriber(Level::INFO))?;
 
+	let shutdown = Controller::new();
 	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
 
 	let opts = CliOpts::parse();
-
-	let cfg = load_runtime_config(&opts).expect("runtime configuration is loaded");
+	let cfg = load_runtime_config(&opts)?;
 
 	if cfg.log_format_json {
-		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))
-			.expect("global json subscriber is set");
+		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))?;
 	} else {
-		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))
-			.expect("global default subscriber is set");
+		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
 	};
 
 	let suri = match opts.avail_suri {
