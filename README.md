@@ -19,4 +19,5 @@ The main components of this repository are structured as follows:
 - `client/`: Implements all necessary components for the functioning of the Light Client.
 - `core/`: This library forms the core of Avail Light Client, providing essential clients and logic for the system.
 - `compatibility-test/`: This folder contains compatibility tests.
+- `crawler/` : Diagnostic tool that crawls Light Client's P2P network.
 - `relay/`: Implements all necessary components to utilize the Circuit Relay transport protocol.

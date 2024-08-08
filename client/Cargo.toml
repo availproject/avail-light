@@ -34,5 +34,4 @@ test-case = "3.2.1"
 [features]
 network-analysis = ["avail-light-core/network-analysis"]
 kademlia-rocksdb = ["avail-light-core/kademlia-rocksdb"]
-crawl = ["avail-light-core/crawl"]
 default = ["kademlia-rocksdb"]

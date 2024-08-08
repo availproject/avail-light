@@ -409,9 +409,6 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-	#[cfg(feature = "crawl")]
-	#[serde(flatten)]
-	pub crawl: crate::crawl_client::CrawlConfig,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
 }
@@ -552,8 +549,6 @@ impl Default for RuntimeConfig {
 			sync_finality_enable: false,
 			max_cells_per_rpc: Some(30),
 			threshold: 5000,
-			#[cfg(feature = "crawl")]
-			crawl: crate::crawl_client::CrawlConfig::default(),
 			origin: Origin::External,
 			client_alias: None,
 		}
