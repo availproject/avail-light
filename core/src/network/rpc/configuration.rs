@@ -15,7 +15,6 @@ pub struct RPCConfig {
 	///     max_delay: 10,
 	///     retries: 6,
 	/// )
-	#[serde(flatten)]
 	pub retry: RetryConfig,
 }
 
