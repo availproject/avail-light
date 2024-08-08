@@ -2,6 +2,7 @@
 
 ## [1.12.0]
 
+- Update expected system version to 2.2
 - Add swarm event counter as a new metric - `avail.light.event_loop_event`
 - Add digest to v2 header API
 - Bump `otel` version to `0.24.0`
