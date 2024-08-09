@@ -21,9 +21,7 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::matrix::Partition;
-use libp2p::{
-	Multiaddr, PeerId,
-};
+use libp2p::{Multiaddr, PeerId};
 use std::{fs, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, span, warn, Level};
@@ -103,7 +101,7 @@ async fn run(
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(metric_attributes, cfg.origin.clone(), cfg.otel.clone())
+		telemetry::otlp::initialize(metric_attributes, &cfg.origin, cfg.otel.clone())
 			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
@@ -390,7 +388,7 @@ async fn run_crawl(
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(metric_attributes, cfg.origin.clone(), cfg.otel.clone())
+		telemetry::otlp::initialize(metric_attributes, &cfg.origin, cfg.otel.clone())
 			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
@@ -560,7 +558,7 @@ async fn run_fat(
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(metric_attributes, cfg.origin.clone(), cfg.otel.clone())
+		telemetry::otlp::initialize(metric_attributes, &cfg.origin, cfg.otel.clone())
 			.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 

@@ -234,7 +234,7 @@ impl super::Metrics for Metrics {
 	}
 }
 
-fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<u64>> {
+fn init_counters(meter: Meter, origin: &Origin) -> HashMap<&'static str, Counter<u64>> {
 	[
 		MetricCounter::Starts,
 		MetricCounter::Up,
@@ -248,7 +248,7 @@ fn init_counters(meter: Meter, origin: Origin) -> HashMap<&'static str, Counter<
 		MetricCounter::EventLoopEvent,
 	]
 	.iter()
-	.filter(|counter| MetricCounter::is_allowed(counter, &origin))
+	.filter(|counter| MetricCounter::is_allowed(counter, origin))
 	.map(|counter| (counter.name(), meter.u64_counter(counter.name()).init()))
 	.collect()
 }
@@ -274,7 +274,7 @@ impl Default for OtelConfig {
 
 pub fn initialize(
 	attributes: MetricAttributes,
-	origin: Origin,
+	origin: &Origin,
 	ot_config: OtelConfig,
 ) -> Result<Metrics> {
 	let export_config = ExportConfig {
