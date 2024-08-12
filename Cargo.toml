@@ -6,8 +6,10 @@ members = [
 	"core",
 	"crawler",
 	"relay",
+	"browser-client/launcher",
 ]
-default-members = ["client"]
+exclude = ["browser-client/wasm-client"]
+default-members = ["client", "browser-client/launcher"]
 resolver = "2"
 
 [workspace.package]

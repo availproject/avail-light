@@ -40,10 +40,10 @@ use tracing::{error, info, span, warn, Level};
 #[cfg(feature = "network-analysis")]
 use avail_light_core::network::p2p::analyzer;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(all(not(target_env = "msvc"), not(target_arch = "wasm32")))]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(all(not(target_env = "msvc"), not(target_arch = "wasm32")))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -131,6 +131,16 @@ async fn run(
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
 	info!("TCP listener started on port {}", cfg.libp2p.port);
+
+	let address_webrtc = Multiaddr::from(Ipv4Addr::UNSPECIFIED)
+		.with(Protocol::Udp(cfg.port + 1))
+		.with(Protocol::WebRTCDirect);
+
+	p2p_client
+		.start_listening(address_webrtc)
+		.await
+		.wrap_err("Listening on WebRTC failure.")?;
+	info!("WebRTC listener started on port {}", cfg.port + 1);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();

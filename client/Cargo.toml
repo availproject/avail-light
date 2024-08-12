@@ -22,8 +22,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
+libp2p-webrtc = { version = "=0.7.1-alpha", features = ["tokio"] }
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
+[target.'cfg(all(not(target_env = "msvc"), not(target_env = "wasm32")))'.dependencies]
 tikv-jemallocator = "0.5"
 
 [dev-dependencies]

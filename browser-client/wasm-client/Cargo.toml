@@ -1,0 +1,27 @@
+[package]
+name = "avail-wasm-light-client"
+version = "0.0.1"
+edition = "2021"
+description = "Avail WASM based light client"
+
+[package.metadata.release]
+release = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0.86"
+rand = "0.8"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+futures = "0.3.30"
+tracing = "0.1.35"
+js-sys = "0.3.69"
+libp2p = { version = "0.53.2", features = [ "ed25519", "macros", "ping", "wasm-bindgen"] }
+libp2p-webrtc-websys = "0.3.0-alpha"
+tracing-wasm = "0.2.1"
+wasm-bindgen = "0.2.90"
+wasm-bindgen-futures = "0.4.42"
+web-sys = { version = "0.3", features = ['Document', 'Element', 'HtmlElement', 'Node', 'Response', 'Window'] }

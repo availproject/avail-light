@@ -1,4 +1,6 @@
 /target
+**/target
+**/static
 **/*.rs.bk
 .env
 .DS_Store
