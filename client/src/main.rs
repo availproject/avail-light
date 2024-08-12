@@ -8,7 +8,7 @@ use avail_light_core::{
 		rpc, Network,
 	},
 	shutdown::Controller,
-	telemetry::{self, otlp::MetricAttributes, MetricCounter, Metrics},
+	telemetry::{self, MetricCounter, Metrics},
 	types::{
 		load_or_init_suri, IdentityConfig, KademliaMode, MaintenanceConfig, MultiaddrConfig,
 		RuntimeConfig, SecretKey, Uuid,
@@ -82,24 +82,29 @@ async fn run(
 	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
-	let metric_attributes = MetricAttributes {
-		role: "lightnode".into(),
-		peer_id,
-		avail_address: identity_cfg.avail_public_key.clone(),
-		partition_size: cfg
-			.block_matrix_partition
-			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
-			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.genesis_hash),
-		version: version.to_string(),
-		client_id: client_id.to_string(),
-		execution_id: execution_id.to_string(),
-		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
-	};
+	let metric_attributes = vec![
+		("version", version.to_string()),
+		("role", "lightnode".to_string()),
+		("peerID", peer_id),
+		("avail_address", identity_cfg.avail_public_key.clone()),
+		(
+			"partition_size",
+			cfg.block_matrix_partition
+				.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
+				.unwrap_or("n/a".to_string()),
+		),
+		("network", Network::name(&cfg.genesis_hash)),
+		("client_id", client_id.to_string()),
+		("execution_id", execution_id.to_string()),
+		(
+			"client_alias",
+			cfg.client_alias.clone().unwrap_or("".to_string()),
+		),
+	];
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
-			metric_attributes.into(),
+			metric_attributes,
 			&cfg.origin,
 			&cfg.libp2p.kademlia.operation_mode.into(),
 			cfg.otel.clone(),
@@ -370,25 +375,29 @@ async fn run_crawl(
 	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
-	let metric_attributes = MetricAttributes {
-		role: "crawler".into(),
-		peer_id,
-		avail_address: identity_cfg.avail_public_key.clone(),
-		partition_size: cfg
-			.crawl
-			.crawl_block_matrix_partition
-			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
-			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.genesis_hash),
-		version: version.to_string(),
-		client_id: client_id.to_string(),
-		execution_id: execution_id.to_string(),
-		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
-	};
+	let metric_attributes = vec![
+		("version", version.to_string()),
+		("role", "crawler".to_string()),
+		("peerID", peer_id),
+		("avail_address", identity_cfg.avail_public_key.clone()),
+		(
+			"partition_size",
+			cfg.block_matrix_partition
+				.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
+				.unwrap_or("n/a".to_string()),
+		),
+		("network", Network::name(&cfg.genesis_hash)),
+		("client_id", client_id.to_string()),
+		("execution_id", execution_id.to_string()),
+		(
+			"client_alias",
+			cfg.client_alias.clone().unwrap_or("".to_string()),
+		),
+	];
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
-			metric_attributes.into(),
+			metric_attributes,
 			&cfg.origin,
 			&KademliaMode::Client.into(),
 			cfg.otel.clone(),
@@ -543,24 +552,29 @@ async fn run_fat(
 	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
 	let peer_id = PeerId::from(id_keys.public()).to_string();
 
-	let metric_attributes = MetricAttributes {
-		role: "fatnode".into(),
-		peer_id,
-		avail_address: identity_cfg.avail_public_key.clone(),
-		partition_size: cfg
-			.block_matrix_partition
-			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
-			.unwrap_or("n/a".to_string()),
-		network: Network::name(&cfg.genesis_hash),
-		version: version.to_string(),
-		client_id: client_id.to_string(),
-		execution_id: execution_id.to_string(),
-		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
-	};
+	let metric_attributes = vec![
+		("version", version.to_string()),
+		("role", "fatnode".to_string()),
+		("peerID", peer_id),
+		("avail_address", identity_cfg.avail_public_key.clone()),
+		(
+			"partition_size",
+			cfg.block_matrix_partition
+				.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
+				.unwrap_or("n/a".to_string()),
+		),
+		("network", Network::name(&cfg.genesis_hash)),
+		("client_id", client_id.to_string()),
+		("execution_id", execution_id.to_string()),
+		(
+			"client_alias",
+			cfg.client_alias.clone().unwrap_or("".to_string()),
+		),
+	];
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
-			metric_attributes.into(),
+			metric_attributes,
 			&cfg.origin,
 			&KademliaMode::Client.into(),
 			cfg.otel.clone(),
