@@ -13,8 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, RwLock};
 
-const ATTRIBUTE_NUMBER: usize = 12;
-
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
 #[derive(Debug)]
@@ -24,7 +22,7 @@ pub struct Metrics {
 	mode: RwLock<Mode>,
 	multiaddress: RwLock<Multiaddr>,
 	counters: HashMap<&'static str, Counter<u64>>,
-	attributes: MetricAttributes,
+	attributes: Vec<KeyValue>,
 	metric_buffer: Arc<Mutex<Vec<Record>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
 }
@@ -42,24 +40,31 @@ pub struct MetricAttributes {
 	pub client_alias: String,
 }
 
-impl Metrics {
-	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
-		let mode = self.mode.read().await;
-		let multiaddress = self.multiaddress.read().await;
-		[
-			KeyValue::new("version", self.attributes.version.clone()),
-			KeyValue::new("role", self.attributes.role.clone()),
-			KeyValue::new("origin", self.origin.to_string()),
-			KeyValue::new("peerID", self.attributes.peer_id.clone()),
-			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
-			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
-			KeyValue::new("operating_mode", mode.to_string()),
-			KeyValue::new("network", self.attributes.network.clone()),
-			KeyValue::new("multiaddress", multiaddress.to_string()),
-			KeyValue::new("client_id", self.attributes.client_id.clone()),
-			KeyValue::new("execution_id", self.attributes.execution_id.clone()),
-			KeyValue::new("client_alias", self.attributes.client_alias.clone()),
+impl From<MetricAttributes> for Vec<(&str, String)> {
+	fn from(value: MetricAttributes) -> Self {
+		vec![
+			("version", value.version.clone()),
+			("role", value.role.clone()),
+			("peerID", value.peer_id.clone()),
+			("avail_address", value.avail_address.clone()),
+			("partition_size", value.partition_size.clone()),
+			("network", value.network.clone()),
+			("client_id", value.client_id.clone()),
+			("execution_id", value.execution_id.clone()),
+			("client_alias", value.client_alias.clone()),
 		]
+	}
+}
+
+impl Metrics {
+	async fn attributes(&self) -> Vec<KeyValue> {
+		let mut attributes = vec![
+			KeyValue::new("origin", self.origin.to_string()),
+			KeyValue::new("operating_mode", self.mode.read().await.to_string()),
+			KeyValue::new("multiaddress", self.multiaddress.read().await.to_string()),
+		];
+		attributes.extend(self.attributes.clone());
+		attributes
 	}
 
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
@@ -272,7 +277,7 @@ impl Default for OtelConfig {
 }
 
 pub fn initialize(
-	attributes: MetricAttributes,
+	attributes: Vec<(&str, String)>,
 	origin: &Origin,
 	mode: &Mode,
 	ot_config: OtelConfig,
@@ -295,6 +300,11 @@ pub fn initialize(
 
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
+
+	let attributes = attributes
+		.into_iter()
+		.map(|(k, v)| KeyValue::new(k.to_string(), v))
+		.collect();
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
 	let counters = init_counters(meter.clone(), origin);
