@@ -20,6 +20,7 @@ const ATTRIBUTE_NUMBER: usize = 12;
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
+	origin: Origin,
 	counters: HashMap<&'static str, Counter<u64>>,
 	attributes: RwLock<MetricAttributes>,
 	metric_buffer: Arc<Mutex<Vec<Record>>>,
@@ -30,7 +31,6 @@ pub struct Metrics {
 pub struct MetricAttributes {
 	pub role: String,
 	pub peer_id: String,
-	pub origin: Origin,
 	pub avail_address: String,
 	pub operating_mode: String,
 	pub partition_size: String,
@@ -48,7 +48,7 @@ impl Metrics {
 		[
 			KeyValue::new("version", attributes.version.clone()),
 			KeyValue::new("role", attributes.role.clone()),
-			KeyValue::new("origin", attributes.origin.to_string()),
+			KeyValue::new("origin", self.origin.to_string()),
 			KeyValue::new("peerID", attributes.peer_id.clone()),
 			KeyValue::new("avail_address", attributes.avail_address.clone()),
 			KeyValue::new("partition_size", attributes.partition_size.clone()),
@@ -170,8 +170,7 @@ impl super::Metrics for Metrics {
 	/// Puts counter to the counter buffer if it is allowed.
 	/// If counter is not buffered, counter is incremented.
 	async fn count(&self, counter: super::MetricCounter) {
-		let attributes = self.attributes.read().await;
-		if !counter.is_allowed(&attributes.origin) {
+		if !counter.is_allowed(&self.origin) {
 			return;
 		}
 		if !counter.is_buffered() {
@@ -187,8 +186,7 @@ impl super::Metrics for Metrics {
 	where
 		T: metric::Value + Into<Record> + Send,
 	{
-		let attributes = self.attributes.read().await;
-		if !value.is_allowed(&attributes.origin) {
+		if !value.is_allowed(&self.origin) {
 			return;
 		}
 
@@ -300,6 +298,7 @@ pub fn initialize(
 	let counters = init_counters(meter.clone(), origin);
 	Ok(Metrics {
 		meter,
+		origin: origin.clone(),
 		attributes: RwLock::new(attributes),
 		counters,
 		metric_buffer: Arc::new(Mutex::new(vec![])),

@@ -85,7 +85,6 @@ async fn run(
 	let metric_attributes = MetricAttributes {
 		role: "lightnode".into(),
 		peer_id,
-		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
 		operating_mode: cfg.libp2p.kademlia.operation_mode.to_string(),
 		partition_size: cfg
@@ -371,7 +370,6 @@ async fn run_crawl(
 	let metric_attributes = MetricAttributes {
 		role: "crawler".into(),
 		peer_id,
-		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
 		operating_mode: KademliaMode::Client.to_string(),
 		partition_size: cfg
@@ -542,7 +540,6 @@ async fn run_fat(
 	let metric_attributes = MetricAttributes {
 		role: "fatnode".into(),
 		peer_id,
-		origin: cfg.origin.clone(),
 		avail_address: identity_cfg.avail_public_key.clone(),
 		operating_mode: KademliaMode::Client.to_string(),
 		partition_size: cfg
