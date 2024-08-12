@@ -99,7 +99,7 @@ async fn run(
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
-			metric_attributes,
+			metric_attributes.into(),
 			&cfg.origin,
 			&cfg.libp2p.kademlia.operation_mode.into(),
 			cfg.otel.clone(),
@@ -388,7 +388,7 @@ async fn run_crawl(
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
-			metric_attributes,
+			metric_attributes.into(),
 			&cfg.origin,
 			&KademliaMode::Client.into(),
 			cfg.otel.clone(),
@@ -560,7 +560,7 @@ async fn run_fat(
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
-			metric_attributes,
+			metric_attributes.into(),
 			&cfg.origin,
 			&KademliaMode::Client.into(),
 			cfg.otel.clone(),
