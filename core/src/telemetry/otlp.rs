@@ -27,35 +27,6 @@ pub struct Metrics {
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
 }
 
-#[derive(Debug)]
-pub struct MetricAttributes {
-	pub role: String,
-	pub peer_id: String,
-	pub avail_address: String,
-	pub partition_size: String,
-	pub network: String,
-	pub version: String,
-	pub client_id: String,
-	pub execution_id: String,
-	pub client_alias: String,
-}
-
-impl From<MetricAttributes> for Vec<(&str, String)> {
-	fn from(value: MetricAttributes) -> Self {
-		vec![
-			("version", value.version.clone()),
-			("role", value.role.clone()),
-			("peerID", value.peer_id.clone()),
-			("avail_address", value.avail_address.clone()),
-			("partition_size", value.partition_size.clone()),
-			("network", value.network.clone()),
-			("client_id", value.client_id.clone()),
-			("execution_id", value.execution_id.clone()),
-			("client_alias", value.client_alias.clone()),
-		]
-	}
-}
-
 impl Metrics {
 	async fn attributes(&self) -> Vec<KeyValue> {
 		let mut attributes = vec![
