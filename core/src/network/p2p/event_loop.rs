@@ -469,22 +469,7 @@ impl EventLoop {
 							});
 					},
 					mdns::Event::Expired(addrs_list) => {
-						addrs_list.into_iter().for_each(|(peer_id, multiaddr)| {
-							trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-
-							if self
-								.swarm
-								.behaviour_mut()
-								.mdns
-								.discovered_nodes()
-								.any(|&p| p == peer_id)
-							{
-								self.swarm
-									.behaviour_mut()
-									.kademlia
-									.remove_address(&peer_id, &multiaddr);
-							}
-						});
+						trace!("MDNS got expired peers: {:?}", addrs_list);
 					},
 				}
 			},
