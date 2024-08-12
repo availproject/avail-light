@@ -136,5 +136,5 @@ pub trait Metrics {
 		T: metric::Value + Into<Record> + Send;
 	async fn flush(&self) -> Result<()>;
 	async fn update_operating_mode(&self, mode: Mode);
-	async fn update_multiaddress(&self, mode: Multiaddr);
+	async fn update_multiaddress(&self, multiaddr: Multiaddr);
 }
