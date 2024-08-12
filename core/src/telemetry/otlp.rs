@@ -21,8 +21,10 @@ const ATTRIBUTE_NUMBER: usize = 12;
 pub struct Metrics {
 	meter: Meter,
 	origin: Origin,
+	mode: RwLock<Mode>,
+	multiaddress: RwLock<Multiaddr>,
 	counters: HashMap<&'static str, Counter<u64>>,
-	attributes: RwLock<MetricAttributes>,
+	attributes: MetricAttributes,
 	metric_buffer: Arc<Mutex<Vec<Record>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
 }
@@ -32,11 +34,9 @@ pub struct MetricAttributes {
 	pub role: String,
 	pub peer_id: String,
 	pub avail_address: String,
-	pub operating_mode: String,
 	pub partition_size: String,
 	pub network: String,
 	pub version: String,
-	pub multiaddress: String,
 	pub client_id: String,
 	pub execution_id: String,
 	pub client_alias: String,
@@ -44,20 +44,21 @@ pub struct MetricAttributes {
 
 impl Metrics {
 	async fn attributes(&self) -> [KeyValue; ATTRIBUTE_NUMBER] {
-		let attributes = self.attributes.read().await;
+		let mode = self.mode.read().await;
+		let multiaddress = self.multiaddress.read().await;
 		[
-			KeyValue::new("version", attributes.version.clone()),
-			KeyValue::new("role", attributes.role.clone()),
+			KeyValue::new("version", self.attributes.version.clone()),
+			KeyValue::new("role", self.attributes.role.clone()),
 			KeyValue::new("origin", self.origin.to_string()),
-			KeyValue::new("peerID", attributes.peer_id.clone()),
-			KeyValue::new("avail_address", attributes.avail_address.clone()),
-			KeyValue::new("partition_size", attributes.partition_size.clone()),
-			KeyValue::new("operating_mode", attributes.operating_mode.clone()),
-			KeyValue::new("network", attributes.network.clone()),
-			KeyValue::new("multiaddress", attributes.multiaddress.clone()),
-			KeyValue::new("client_id", attributes.client_id.clone()),
-			KeyValue::new("execution_id", attributes.execution_id.clone()),
-			KeyValue::new("client_alias", attributes.client_alias.clone()),
+			KeyValue::new("peerID", self.attributes.peer_id.clone()),
+			KeyValue::new("avail_address", self.attributes.avail_address.clone()),
+			KeyValue::new("partition_size", self.attributes.partition_size.clone()),
+			KeyValue::new("operating_mode", mode.to_string()),
+			KeyValue::new("network", self.attributes.network.clone()),
+			KeyValue::new("multiaddress", multiaddress.to_string()),
+			KeyValue::new("client_id", self.attributes.client_id.clone()),
+			KeyValue::new("execution_id", self.attributes.execution_id.clone()),
+			KeyValue::new("client_alias", self.attributes.client_alias.clone()),
 		]
 	}
 
@@ -221,14 +222,14 @@ impl super::Metrics for Metrics {
 		Ok(())
 	}
 
-	async fn update_operating_mode(&self, mode: Mode) {
-		let mut attributes = self.attributes.write().await;
-		attributes.operating_mode = mode.to_string()
+	async fn update_operating_mode(&self, value: Mode) {
+		let mut mode = self.mode.write().await;
+		*mode = value;
 	}
 
-	async fn update_multiaddress(&self, multiaddress: Multiaddr) {
-		let mut attributes = self.attributes.write().await;
-		attributes.multiaddress = multiaddress.to_string()
+	async fn update_multiaddress(&self, value: Multiaddr) {
+		let mut multiaddress = self.multiaddress.write().await;
+		*multiaddress = value;
 	}
 }
 
@@ -273,6 +274,7 @@ impl Default for OtelConfig {
 pub fn initialize(
 	attributes: MetricAttributes,
 	origin: &Origin,
+	mode: &Mode,
 	ot_config: OtelConfig,
 ) -> Result<Metrics> {
 	let export_config = ExportConfig {
@@ -299,7 +301,9 @@ pub fn initialize(
 	Ok(Metrics {
 		meter,
 		origin: origin.clone(),
-		attributes: RwLock::new(attributes),
+		mode: RwLock::new(*mode),
+		multiaddress: RwLock::new(Multiaddr::empty()),
+		attributes,
 		counters,
 		metric_buffer: Arc::new(Mutex::new(vec![])),
 		counter_buffer: Arc::new(Mutex::new(vec![])),
