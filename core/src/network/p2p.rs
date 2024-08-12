@@ -375,7 +375,7 @@ pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
 		.any(|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)))
 }
 
-pub fn get_or_init_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
+fn get_or_init_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
 	if let Some(secret_key) = cfg.secret_key.as_ref() {
 		return keypair(secret_key);
 	};
@@ -388,6 +388,12 @@ pub fn get_or_init_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::
 	let keypair = id_keys.clone().try_into_ed25519()?;
 	db.put(P2PKeypairKey, keypair.to_bytes().to_vec());
 	Ok(id_keys)
+}
+
+pub fn identity(cfg: &LibP2PConfig, db: RocksDB) -> Result<(identity::Keypair, PeerId)> {
+	let keypair = get_or_init_keypair(cfg, db)?;
+	let peer_id = PeerId::from(keypair.public());
+	Ok((keypair, peer_id))
 }
 
 #[cfg(test)]
