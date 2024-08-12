@@ -86,22 +86,25 @@ async fn run(
 		role: "lightnode".into(),
 		peer_id,
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: cfg.libp2p.kademlia.operation_mode.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
-		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
 		execution_id: execution_id.to_string(),
 		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(metric_attributes, &cfg.origin, cfg.otel.clone())
-			.wrap_err("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			metric_attributes,
+			&cfg.origin,
+			&cfg.libp2p.kademlia.operation_mode.into(),
+			cfg.otel.clone(),
+		)
+		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
 	// Create sender channel for P2P event loop commands
@@ -371,7 +374,6 @@ async fn run_crawl(
 		role: "crawler".into(),
 		peer_id,
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: KademliaMode::Client.to_string(),
 		partition_size: cfg
 			.crawl
 			.crawl_block_matrix_partition
@@ -379,15 +381,19 @@ async fn run_crawl(
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
-		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
 		execution_id: execution_id.to_string(),
 		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(metric_attributes, &cfg.origin, cfg.otel.clone())
-			.wrap_err("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			metric_attributes,
+			&cfg.origin,
+			&KademliaMode::Client.into(),
+			cfg.otel.clone(),
+		)
+		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
 	// Create sender channel for P2P event loop commands
@@ -541,22 +547,25 @@ async fn run_fat(
 		role: "fatnode".into(),
 		peer_id,
 		avail_address: identity_cfg.avail_public_key.clone(),
-		operating_mode: KademliaMode::Client.to_string(),
 		partition_size: cfg
 			.block_matrix_partition
 			.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
 			.unwrap_or("n/a".to_string()),
 		network: Network::name(&cfg.genesis_hash),
 		version: version.to_string(),
-		multiaddress: "".to_string(),
 		client_id: client_id.to_string(),
 		execution_id: execution_id.to_string(),
 		client_alias: cfg.client_alias.clone().unwrap_or("".to_string()),
 	};
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(metric_attributes, &cfg.origin, cfg.otel.clone())
-			.wrap_err("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			metric_attributes,
+			&cfg.origin,
+			&KademliaMode::Client.into(),
+			cfg.otel.clone(),
+		)
+		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
 	// Create sender channel for P2P event loop commands
