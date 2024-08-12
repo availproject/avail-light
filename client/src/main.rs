@@ -79,13 +79,12 @@ async fn run(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
-	let peer_id = PeerId::from(id_keys.public()).to_string();
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	let metric_attributes = vec![
 		("version", version.to_string()),
 		("role", "lightnode".to_string()),
-		("peerID", peer_id),
+		("peerID", peer_id.to_string()),
 		("avail_address", identity_cfg.avail_public_key.clone()),
 		(
 			"partition_size",
@@ -372,13 +371,12 @@ async fn run_crawl(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
-	let peer_id = PeerId::from(id_keys.public()).to_string();
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	let metric_attributes = vec![
 		("version", version.to_string()),
 		("role", "crawler".to_string()),
-		("peerID", peer_id),
+		("peerID", peer_id.to_string()),
 		("avail_address", identity_cfg.avail_public_key.clone()),
 		(
 			"partition_size",
@@ -549,13 +547,12 @@ async fn run_fat(
 		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let id_keys = p2p::get_or_init_keypair(&cfg.libp2p, db.clone())?;
-	let peer_id = PeerId::from(id_keys.public()).to_string();
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	let metric_attributes = vec![
 		("version", version.to_string()),
 		("role", "fatnode".to_string()),
-		("peerID", peer_id),
+		("peerID", peer_id.to_string()),
 		("avail_address", identity_cfg.avail_public_key.clone()),
 		(
 			"partition_size",
