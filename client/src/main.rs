@@ -21,8 +21,7 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::matrix::Partition;
-use libp2p::{Multiaddr, PeerId};
-use std::{fs, path::Path, str::FromStr, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, span, warn, Level};
 
@@ -739,12 +738,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	// Flags override the config parameters
 	if let Some(network) = &opts.network {
-		let bootstrap: (PeerId, Multiaddr) = (
-			PeerId::from_str(network.bootstrap_peer_id())
-				.wrap_err("unable to parse default bootstrap peerID")?,
-			Multiaddr::from_str(network.bootstrap_multiaddrr())
-				.wrap_err("unable to parse default bootstrap multi-address")?,
-		);
+		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
 		cfg.rpc.full_node_ws = network.full_node_ws();
 		cfg.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();

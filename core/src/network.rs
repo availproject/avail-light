@@ -7,9 +7,10 @@ use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
+use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 use sp_core::H256;
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use strum::Display;
 use tokio::time::Instant;
 use tracing::{debug, info};
@@ -230,22 +231,24 @@ pub enum Network {
 }
 
 impl Network {
-	pub fn bootstrap_peer_id(&self) -> &str {
-		match self {
+	pub fn bootstrap_peer_id(&self) -> PeerId {
+		let peer_id = match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
 			Network::Hex => "12D3KooWBMwfo5qyoLQDRat86kFcGAiJ2yxKM63rXHMw2rDuNZMA",
 			Network::Turing => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 			Network::Mainnet => "12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
-		}
+		};
+		PeerId::from_str(peer_id).expect("unable to parse default bootstrap peerID")
 	}
 
-	pub fn bootstrap_multiaddrr(&self) -> &str {
-		match self {
+	pub fn bootstrap_multiaddr(&self) -> Multiaddr {
+		let multiaddr = match self {
 			Network::Local => "/ip4/127.0.0.1/tcp/39000",
 			Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
 			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
 			Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
-		}
+		};
+		Multiaddr::from_str(multiaddr).expect("unable to parse default bootstrap multi-address")
 	}
 
 	pub fn full_node_ws(&self) -> Vec<String> {
