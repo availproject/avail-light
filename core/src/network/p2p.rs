@@ -7,7 +7,7 @@ use libp2p::{
 	kad::{self, PeerRecord},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, upnp, yamux, Multiaddr, Swarm, SwarmBuilder,
+	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
 use semver::Version;
