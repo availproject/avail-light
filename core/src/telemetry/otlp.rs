@@ -235,6 +235,7 @@ pub struct OtelConfig {
 	pub ot_collector_endpoint: String,
 	pub ot_export_period: u64,
 	pub ot_export_timeout: u64,
+	pub ot_flush_block_interval: u32,
 }
 
 impl Default for OtelConfig {
@@ -243,6 +244,7 @@ impl Default for OtelConfig {
 			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			ot_export_period: 300,
 			ot_export_timeout: 10,
+			ot_flush_block_interval: 15,
 		}
 	}
 }

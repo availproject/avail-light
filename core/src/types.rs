@@ -389,7 +389,6 @@ pub struct RuntimeConfig {
 	pub log_format_json: bool,
 	#[serde(flatten)]
 	pub otel: OtelConfig,
-	pub ot_flush_block_interval: u32,
 	pub total_memory_gb_threshold: f64,
 	pub num_cpus_threshold: usize,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
@@ -522,7 +521,7 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 			replication_factor: val.libp2p.kademlia.record_replication_factor.get() as u16,
 			query_timeout: val.libp2p.kademlia.query_timeout,
 			pruning_interval: val.libp2p.kademlia.store_pruning_interval,
-			telemetry_flush_interval: val.ot_flush_block_interval,
+			telemetry_flush_interval: val.otel.ot_flush_block_interval,
 			automatic_server_mode: val.libp2p.kademlia.automatic_server_mode,
 			total_memory_gb_threshold: val.total_memory_gb_threshold,
 			num_cpus_threshold: val.num_cpus_threshold,
@@ -543,7 +542,6 @@ impl Default for RuntimeConfig {
 			log_level: Level::INFO,
 			log_format_json: false,
 			otel: Default::default(),
-			ot_flush_block_interval: 15,
 			total_memory_gb_threshold: 16.0,
 			num_cpus_threshold: 4,
 			disable_rpc: false,
