@@ -125,22 +125,20 @@ async fn run(
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
-	// Start listening on provided port
+	let addrs = vec![
+		cfg.libp2p.tcp_multiaddress(),
+		cfg.libp2p.webrtc_multiaddress(),
+	];
+
+	// Start the TCP and WebRTC listeners
 	p2p_client
-		.start_listening(cfg.libp2p.multiaddress())
+		.start_listening(addrs)
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", cfg.libp2p.port);
-
-	let address_webrtc = Multiaddr::from(Ipv4Addr::UNSPECIFIED)
-		.with(Protocol::Udp(cfg.port + 1))
-		.with(Protocol::WebRTCDirect);
-
-	p2p_client
-		.start_listening(address_webrtc)
-		.await
-		.wrap_err("Listening on WebRTC failure.")?;
-	info!("WebRTC listener started on port {}", cfg.port + 1);
+	info!(
+		"TCP listener started on port {}. WebRTC listening on port {}.",
+		cfg.libp2p.port, cfg.libp2p.webrtc_port
+	);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -420,12 +418,20 @@ async fn run_fat(
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
-	// Start listening on provided port
+	let addrs = vec![
+		cfg.libp2p.tcp_multiaddress(),
+		cfg.libp2p.webrtc_multiaddress(),
+	];
+
+	// Start the TCP and WebRTC listeners
 	p2p_client
-		.start_listening(cfg.libp2p.multiaddress())
+		.start_listening(addrs)
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", cfg.libp2p.port);
+	info!(
+		"TCP listener started on port {}. WebRTC listening on port {}.",
+		cfg.libp2p.port, cfg.libp2p.webrtc_port
+	);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -561,6 +567,9 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(port) = opts.port {
 		cfg.libp2p.port = port;
+	}
+	if let Some(webrtc_port) = opts.webrtc_port {
+		cfg.libp2p.webrtc_port = webrtc_port;
 	}
 	if let Some(http_port) = opts.http_server_port {
 		cfg.api.http_server_port = http_port;

@@ -16,13 +16,13 @@ color-eyre = { workspace = true }
 confy = "0.4.0"
 hex = { workspace = true }
 libp2p = { workspace = true }
+libp2p-webrtc = { version = "=0.7.1-alpha", features = ["tokio"] }
 sp-core = { version = "28.0.0", features = ["serde"] }
 strip-ansi-escapes = "0.2.0"
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
-libp2p-webrtc = { version = "=0.7.1-alpha", features = ["tokio"] }
 
 [target.'cfg(all(not(target_env = "msvc"), not(target_env = "wasm32")))'.dependencies]
 tikv-jemallocator = "0.5"

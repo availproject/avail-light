@@ -27,9 +27,12 @@ pub struct CliOpts {
 	/// Enable finality sync
 	#[arg(short, long, value_name = "finality_sync_enable")]
 	pub finality_sync_enable: bool,
-	/// P2P port
+	/// P2P TCP port
 	#[arg(short, long)]
 	pub port: Option<u16>,
+	/// P2P WebRTC port
+	#[arg(short, long)]
+	pub webrtc_port: Option<u16>,
 	/// HTTP port
 	#[arg(long)]
 	pub http_server_port: Option<u16>,

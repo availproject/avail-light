@@ -19,7 +19,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 futures = "0.3.30"
 tracing = "0.1.35"
 js-sys = "0.3.69"
-libp2p = { version = "0.53.2", features = [ "ed25519", "macros", "ping", "wasm-bindgen"] }
+libp2p = { version = "0.53.2", features = ["ed25519", "macros", "ping", "wasm-bindgen"] }
 libp2p-webrtc-websys = "0.3.0-alpha"
 tracing-wasm = "0.2.1"
 wasm-bindgen = "0.2.90"

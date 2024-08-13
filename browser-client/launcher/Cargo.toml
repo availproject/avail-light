@@ -4,7 +4,6 @@ version = "0.0.1"
 edition = "2021"
 description = "Avail WASM based light client"
 
-
 [dependencies]
 # Internal deps
 anyhow = "1.0.86"
@@ -13,14 +12,13 @@ rand = "0.8"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
-actix-web = "4.0"
 actix-files = "0.6"
-libp2p = { workspace = true, features = [ "ed25519", "macros", "ping", "tokio"] }
+actix-web = "4.0"
+libp2p = { workspace = true, features = ["ed25519", "macros", "ping", "tokio"] }
 libp2p-webrtc = { version = "=0.7.1-alpha", features = ["tokio"] }
+mime_guess = "2.0.4"
 rust-embed = { version = "8.4.0", features = ["include-exclude", "interpolate-folder-path"] }
 tokio = { workspace = true, features = ["macros", "net", "rt", "signal"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tower = "0.4"
 tower-http = { version = "0.5.2", features = ["cors"] }
-mime_guess = "2.0.4"
-
