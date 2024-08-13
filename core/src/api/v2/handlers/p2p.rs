@@ -76,7 +76,7 @@ pub struct ExternalPeerMultiaddress {
 
 pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, Error> {
 	let local_info = p2p_client
-		.get_local_info()
+		.get_local_peer_info()
 		.await
 		.map_err(Error::internal_server_error)?;
 
