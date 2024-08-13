@@ -13,10 +13,7 @@ use multihash::{self, Hasher};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{fmt, net::Ipv4Addr, str::FromStr};
-use tokio::sync::{
-	mpsc::{self},
-	oneshot,
-};
+use tokio::sync::oneshot;
 use tracing::info;
 #[cfg(feature = "network-analysis")]
 pub mod analyzer;
@@ -116,14 +113,7 @@ pub enum QueryChannel {
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
-pub trait Command: Send {
-	fn run(self: Box<Self>, context: &mut EventLoop) -> Result<(), Report>;
-	fn abort(&mut self, error: Report);
-}
-
-type SendableCommand = Box<dyn Command>;
-type CommandSender = mpsc::UnboundedSender<SendableCommand>;
-type CommandReceiver = mpsc::UnboundedReceiver<SendableCommand>;
+type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
 
 #[cfg(not(feature = "kademlia-rocksdb"))]
 type Store = kad_mem_store::MemoryStore;

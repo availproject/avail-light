@@ -22,14 +22,14 @@ use libp2p::{
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
-	sync::oneshot,
+	sync::{mpsc::UnboundedReceiver, oneshot},
 	time::{self, interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
 
 use super::{
 	build_swarm, client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent,
-	CommandReceiver, QueryChannel, SendableCommand,
+	Command, QueryChannel,
 };
 use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
@@ -217,7 +217,11 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(mut self, metrics: Arc<impl Metrics>, mut command_receiver: CommandReceiver) {
+	pub async fn run(
+		mut self,
+		metrics: Arc<impl Metrics>,
+		mut command_receiver: UnboundedReceiver<Command>,
+	) {
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
@@ -234,7 +238,7 @@ impl EventLoop {
 					metrics.count(MetricCounter::EventLoopEvent).await;
 				},
 				command = command_receiver.recv() => match command {
-					Some(c) => self.handle_command(c).await,
+					Some(c) => _ = (c)(&mut self),
 					//
 					None => {
 						warn!("Command channel closed, exiting the network event loop");
@@ -613,10 +617,6 @@ impl EventLoop {
 				}
 			},
 		}
-	}
-
-	async fn handle_command(&mut self, command: SendableCommand) {
-		let _ = command.run(self);
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {

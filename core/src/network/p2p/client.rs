@@ -1,6 +1,6 @@
 use color_eyre::{
 	eyre::{eyre, WrapErr},
-	Report, Result,
+	Result,
 };
 use futures::future::join_all;
 use kate_recovery::{
@@ -16,18 +16,18 @@ use libp2p::{
 };
 use std::time::{Duration, Instant};
 use sysinfo::System;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::{debug, info, trace};
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, CommandSender,
-	EventLoop, MultiAddressInfo, PeerInfo, QueryChannel, SendableCommand,
+	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
+	MultiAddressInfo, PeerInfo, QueryChannel,
 };
 use crate::types::MultiaddrConfig;
 
 #[derive(Clone)]
 pub struct Client {
-	command_sender: CommandSender,
+	command_sender: UnboundedSender<Command>,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
@@ -83,53 +83,12 @@ impl BlockStat {
 	}
 }
 
-type RunFn = dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send;
-type AbortFn = dyn FnMut(Report) + Send + Sync;
-struct ClosureCommand {
-	run_fn: Box<RunFn>,
-	abort_fn: Box<AbortFn>,
-}
-
-impl Command for ClosureCommand {
-	fn run(self: Box<Self>, context: &mut EventLoop) -> Result<(), Report> {
-		(self.run_fn)(context)
-	}
-
-	fn abort(&mut self, error: Report) {
-		(self.abort_fn)(error)
-	}
-}
-
-fn noop_abort(_error: Report) {
-	// deliberately do nothing
-}
-
-// helper function which creates commands without specific abort behavior
-fn create_command<F>(run: F) -> SendableCommand
-where
-	F: FnOnce(&mut EventLoop) -> Result<(), Report> + Send + 'static,
-{
-	Box::new(ClosureCommand {
-		run_fn: Box::new(run),
-		abort_fn: Box::new(noop_abort),
-	})
-}
-// helper function which creates commands with specific abort behavior
-// left currently as an example and a reminder of what can be done
-#[allow(dead_code)]
-fn create_command_with_abort<R, A>(run: R, abort: A) -> SendableCommand
-where
-	R: FnOnce(&mut EventLoop) -> Result<(), Report> + Send + 'static,
-	A: FnMut(Report) + Send + Sync + 'static,
-{
-	Box::new(ClosureCommand {
-		run_fn: Box::new(run),
-		abort_fn: Box::new(abort),
-	})
-}
-
 impl Client {
-	pub fn new(sender: CommandSender, dht_parallelization_limit: usize, ttl: Duration) -> Self {
+	pub fn new(
+		sender: UnboundedSender<Command>,
+		dht_parallelization_limit: usize,
+		ttl: Duration,
+	) -> Self {
 		Self {
 			command_sender: sender,
 			dht_parallelization_limit,
@@ -139,7 +98,7 @@ impl Client {
 
 	async fn execute_sync<F, T>(&self, command_creator: F) -> Result<T>
 	where
-		F: FnOnce(oneshot::Sender<Result<T>>) -> SendableCommand,
+		F: FnOnce(oneshot::Sender<Result<T>>) -> Command,
 	{
 		let (response_sender, response_receiver) = oneshot::channel();
 		let command = command_creator(response_sender);
@@ -153,7 +112,7 @@ impl Client {
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<ListenerId> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let result = context.swarm.listen_on(addr.clone());
 				response_sender
 					.send(result.map_err(Into::into))
@@ -168,7 +127,7 @@ impl Client {
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
 		self.command_sender
-			.send(create_command(move |context: &mut EventLoop| {
+			.send(Box::new(move |context: &mut EventLoop| {
 				context
 					.swarm
 					.behaviour_mut()
@@ -185,7 +144,7 @@ impl Client {
 		peer_address: Vec<Multiaddr>,
 	) -> Result<ConnectionEstablishedInfo> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let opts = DialOpts::peer_id(peer_id).addresses(peer_address).build();
 				context.swarm.dial(opts)?;
 
@@ -200,7 +159,7 @@ impl Client {
 
 	pub async fn bootstrap(&self) -> Result<()> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let query_id = context.swarm.behaviour_mut().kademlia.bootstrap()?;
 				context
 					.pending_kad_queries
@@ -213,7 +172,7 @@ impl Client {
 
 	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
 		self.command_sender
-			.send(create_command(move |context: &mut EventLoop| {
+			.send(Box::new(move |context: &mut EventLoop| {
 				context
 					.swarm
 					.behaviour_mut()
@@ -238,7 +197,7 @@ impl Client {
 
 	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let query_id = context.swarm.behaviour_mut().kademlia.get_record(key);
 				context
 					.pending_kad_queries
@@ -256,7 +215,7 @@ impl Client {
 		block_num: u32,
 	) -> Result<()> {
 		self.command_sender
-			.send(create_command(move |context: &mut EventLoop| {
+			.send(Box::new(move |context: &mut EventLoop| {
 				context
 					.active_blocks
 					.entry(block_num)
@@ -285,7 +244,7 @@ impl Client {
 
 	pub async fn count_dht_entries(&self) -> Result<(usize, usize)> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let mut total_peers: usize = 0;
 				let mut peers_with_non_pvt_addr: usize = 0;
 				for bucket in context.swarm.behaviour_mut().kademlia.kbuckets() {
@@ -314,7 +273,7 @@ impl Client {
 
 	pub async fn list_connected_peers(&self) -> Result<Vec<String>> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let connected_peer_list = context
 					.swarm
 					.connected_peers()
@@ -336,7 +295,7 @@ impl Client {
 		cpus_threshold: usize,
 	) -> Result<Mode> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let external_addresses: Vec<String> = context
 					.swarm
 					.external_addresses()
@@ -383,7 +342,7 @@ impl Client {
 
 	pub async fn get_local_peer_info(&self) -> Result<PeerInfo> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let public_listeners: Vec<String> = context
 					.swarm
 					.external_addresses()
@@ -422,7 +381,7 @@ impl Client {
 
 	pub async fn get_external_peer_info(&self, peer_id: PeerId) -> Result<MultiAddressInfo> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let mut multiaddresses: Vec<String> = Vec::new();
 
 				for bucket in context.swarm.behaviour_mut().kademlia.kbuckets() {
@@ -452,7 +411,7 @@ impl Client {
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.command_sender
-			.send(create_command(|context: &mut EventLoop| {
+			.send(Box::new(|context: &mut EventLoop| {
 				context
 					.swarm
 					.behaviour_mut()
@@ -467,7 +426,7 @@ impl Client {
 
 	pub async fn get_kademlia_map_size(&self) -> Result<usize> {
 		self.execute_sync(|response_sender| {
-			create_command(move |context: &mut EventLoop| {
+			Box::new(move |context: &mut EventLoop| {
 				let size = context
 					.swarm
 					.behaviour_mut()
@@ -488,7 +447,7 @@ impl Client {
 	pub async fn prune_expired_records(&self, now: Instant) -> Result<usize> {
 		self.execute_sync(|response_sender| {
 			if cfg!(feature = "kademlia-rocksdb") {
-				create_command(move |_| {
+				Box::new(move |_| {
 					response_sender.send(Ok(0)).map_err(|e| {
 						eyre!(
 							"Encountered error while sending Prune Expired Records response: {e:?}"
@@ -497,7 +456,7 @@ impl Client {
 					Ok(())
 				})
 			} else {
-				create_command(move |context: &mut EventLoop| {
+				Box::new(move |context: &mut EventLoop| {
 					let store = context.swarm.behaviour_mut().kademlia.store_mut();
 
 					let before = store.records().count();
