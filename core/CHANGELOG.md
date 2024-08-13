@@ -2,6 +2,7 @@
 
 ## [1.12.0]
 
+- Dial peer at mdns step to trigger identify
 - Update expected system version to 2.2
 - Add swarm event counter as a new metric - `avail.light.event_loop_event`
 - Add digest to v2 header API
