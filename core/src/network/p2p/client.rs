@@ -83,9 +83,11 @@ impl BlockStat {
 	}
 }
 
+type RunFn = dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send;
+type AbortFn = dyn FnMut(Report) + Send + Sync;
 struct ClosureCommand {
-	run_fn: Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>,
-	abort_fn: Box<dyn FnMut(Report) + Send + Sync>,
+	run_fn: Box<RunFn>,
+	abort_fn: Box<AbortFn>,
 }
 
 impl Command for ClosureCommand {
