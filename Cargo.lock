@@ -1402,6 +1402,7 @@ dependencies = [
  "actix-files",
  "actix-web",
  "anyhow",
+ "clap 4.5.13",
  "futures",
  "libp2p",
  "libp2p-webrtc",

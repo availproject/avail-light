@@ -11,6 +11,7 @@ futures = "0.3.30"
 rand = "0.8"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+clap = { version = "4.3", features = ["derive"] }
 
 actix-files = "0.6"
 actix-web = "4.0"

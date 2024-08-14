@@ -10,6 +10,6 @@
 wasm-pack build --target web --out-dir static
 ```
 
-3. Build and start the client launcher (debug purposes)
+3. Build and start the client launcher
 
 4. Open the URL printed in the logs
