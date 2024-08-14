@@ -134,7 +134,7 @@ async fn run(
 	p2p_client
 		.start_listening(addrs)
 		.await
-		.wrap_err("Listening on TCP not to fail.")?;
+		.wrap_err("Failed to start listeners.")?;
 	info!(
 		"TCP listener started on port {}. WebRTC listening on port {}.",
 		cfg.libp2p.port, cfg.libp2p.webrtc_port

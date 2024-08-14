@@ -1336,7 +1336,7 @@ name = "avail-light-crawler"
 version = "0.1.0"
 dependencies = [
  "avail-light-core",
- "clap 4.5.8",
+ "clap 4.5.13",
  "color-eyre",
  "confy 0.5.1",
  "kate-recovery",
@@ -8415,7 +8415,7 @@ checksum = "48d09fa0a5f7299fb81ee25ae3853d26200f7a348148aed6de76be905c007dbe"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.68",
+ "syn 2.0.72",
 ]
 
 [[package]]
@@ -8645,7 +8645,7 @@ dependencies = [
  "proc-macro-crate 3.1.0",
  "proc-macro2",
  "quote",
- "syn 2.0.68",
+ "syn 2.0.72",
 ]
 
 [[package]]

@@ -110,12 +110,15 @@ impl Client {
 			.wrap_err("sender should not be dropped")?
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<ListenerId> {
+	pub async fn start_listening(&self, addrs: Vec<Multiaddr>) -> Result<Vec<ListenerId>> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
-				let result = context.swarm.listen_on(addr.clone());
+				let results: Result<Vec<ListenerId>, _> = addrs
+					.into_iter()
+					.map(|addr| context.swarm.listen_on(addr))
+					.collect();
 				response_sender
-					.send(result.map_err(Into::into))
+					.send(results.map_err(Into::into))
 					.map_err(|e| {
 						eyre!("Encountered error while sending Start Listening response: {e:?}")
 					})?;
