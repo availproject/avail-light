@@ -1,0 +1,16 @@
+{
+	"name": "avail-wasm-light-client",
+	"type": "module",
+	"description": "Avail WASM based light client",
+	"version": "0.0.1",
+	"files": [
+		"avail_wasm_light_client_bg.wasm",
+		"avail_wasm_light_client.js",
+		"avail_wasm_light_client.d.ts"
+	],
+	"main": "avail_wasm_light_client.js",
+	"types": "avail_wasm_light_client.d.ts",
+	"sideEffects": [
+		"./snippets/*"
+	]
+}

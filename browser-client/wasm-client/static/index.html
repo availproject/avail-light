@@ -1,0 +1,20 @@
+<html>
+
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+</head>
+
+<body>
+    <div id="wrapper">
+        <h1>Avail browser light client</h1>
+    </div>
+
+    <script type="module" defer>
+        import init, { run } from "./avail_wasm_light_client.js"
+
+        await init();
+        run("/ip4/127.0.0.1/udp/37001/webrtc-direct/certhash/uEiANSqb7yHCUv9cRt-0fCH7FNll4ybFLpAZ2IvH-Ef4URA");
+    </script>
+</body>
+
+</html>
