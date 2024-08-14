@@ -4,7 +4,7 @@ use configuration::LibP2PConfig;
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519},
-	kad::{self, Mode, PeerRecord, QueryId},
+	kad::{self, PeerRecord},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -12,7 +12,7 @@ use libp2p::{
 use multihash::{self, Hasher};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt, net::Ipv4Addr, str::FromStr};
+use std::{fmt, net::Ipv4Addr, str::FromStr};
 use tokio::sync::{
 	mpsc::{self},
 	oneshot,
@@ -27,7 +27,6 @@ mod kad_mem_providers;
 #[cfg(not(feature = "kademlia-rocksdb"))]
 mod kad_mem_store;
 mod kad_rocksdb_store;
-use self::{client::BlockStat, event_loop::ConnectionEstablishedInfo};
 use crate::{
 	data::{Database, P2PKeypairKey, RocksDB},
 	types::SecretKey,
@@ -114,82 +113,15 @@ impl AgentVersion {
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecord,
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
-pub struct EventLoopEntries<'a> {
-	swarm: &'a mut Swarm<Behaviour>,
-	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
-	pending_swarm_events:
-		&'a mut HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
-	/// <block_num, (total_cells, result_cell_counter, time_stat)>
-	active_blocks: &'a mut HashMap<u32, BlockStat>,
-	kad_mode: &'a mut Mode,
-}
-
-impl<'a> EventLoopEntries<'a> {
-	pub fn new(
-		swarm: &'a mut Swarm<Behaviour>,
-		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
-		pending_swarm_events: &'a mut HashMap<
-			PeerId,
-			oneshot::Sender<Result<ConnectionEstablishedInfo>>,
-		>,
-		active_blocks: &'a mut HashMap<u32, BlockStat>,
-		kad_mode: &'a mut Mode,
-	) -> Self {
-		Self {
-			swarm,
-			pending_kad_queries,
-			pending_swarm_events,
-			active_blocks,
-			kad_mode,
-		}
-	}
-
-	pub fn peer_id(&self) -> &PeerId {
-		self.swarm.local_peer_id()
-	}
-
-	pub fn listeners(&self) -> Vec<String> {
-		self.swarm.listeners().map(ToString::to_string).collect()
-	}
-
-	pub fn external_address(&self) -> Vec<String> {
-		self.swarm
-			.external_addresses()
-			.map(ToString::to_string)
-			.collect()
-	}
-
-	pub fn insert_query(&mut self, query_id: QueryId, result_sender: QueryChannel) {
-		self.pending_kad_queries.insert(query_id, result_sender);
-	}
-
-	pub fn insert_swarm_event(
-		&mut self,
-		peer_id: PeerId,
-		result_sender: oneshot::Sender<Result<ConnectionEstablishedInfo>>,
-	) {
-		self.pending_swarm_events.insert(peer_id, result_sender);
-	}
-
-	pub fn behavior_mut(&mut self) -> &mut Behaviour {
-		self.swarm.behaviour_mut()
-	}
-
-	pub fn swarm(&mut self) -> &mut Swarm<Behaviour> {
-		self.swarm
-	}
-}
-
-pub trait Command {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report>;
+pub trait Command: Send {
+	fn run(self: Box<Self>, context: &mut EventLoop) -> Result<(), Report>;
 	fn abort(&mut self, error: Report);
 }
 
-type SendableCommand = Box<dyn Command + Send + Sync>;
+type SendableCommand = Box<dyn Command>;
 type CommandSender = mpsc::UnboundedSender<SendableCommand>;
 type CommandReceiver = mpsc::UnboundedReceiver<SendableCommand>;
 

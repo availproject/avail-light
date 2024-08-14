@@ -1,9 +1,3 @@
-use crate::types::MultiaddrConfig;
-
-use super::{
-	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, CommandSender,
-	EventLoopEntries, MultiAddressInfo, PeerInfo, QueryChannel, SendableCommand,
-};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
@@ -15,6 +9,7 @@ use kate_recovery::{
 	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
+	core::transport::ListenerId,
 	kad::{store::RecordStore, Mode, PeerRecord, Quorum, Record, RecordKey},
 	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
@@ -23,6 +18,12 @@ use std::time::{Duration, Instant};
 use sysinfo::System;
 use tokio::sync::oneshot;
 use tracing::{debug, info, trace};
+
+use super::{
+	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, CommandSender,
+	EventLoop, MultiAddressInfo, PeerInfo, QueryChannel, SendableCommand,
+};
+use crate::types::MultiaddrConfig;
 
 #[derive(Clone)]
 pub struct Client {
@@ -82,490 +83,49 @@ impl BlockStat {
 	}
 }
 
-struct PruneExpiredRecords {
-	#[allow(dead_code)]
-	now: Instant,
-	response_sender: Option<oneshot::Sender<Result<usize>>>,
+type RunFn = dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send;
+type AbortFn = dyn FnMut(Report) + Send + Sync;
+struct ClosureCommand {
+	run_fn: Box<RunFn>,
+	abort_fn: Box<AbortFn>,
 }
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
-impl Command for PruneExpiredRecords {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<(), Report> {
-		let store = entries.behavior_mut().kademlia.store_mut();
-
-		let before = store.records().count();
-		store.retain(|_, record| !record.is_expired(self.now));
-		let after = store.records().count();
-
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(before - after))
-			.expect("PruneExpiredRecords receiver dropped");
-
-		Ok(())
-	}
-
-	fn abort(&mut self, _: Report) {}
-}
-
-#[cfg(feature = "kademlia-rocksdb")]
-impl Command for PruneExpiredRecords {
-	fn run(&mut self, _: EventLoopEntries) -> Result<(), Report> {
-		// Skip iterating all records from RocksDB, since TTL will be handled during compaction phase
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(0))
-			.expect("PruneExpiredRecords receiver dropped");
-
-		Ok(())
-	}
-
-	fn abort(&mut self, _: Report) {}
-}
-
-struct StartListening {
-	addr: Multiaddr,
-	response_sender: Option<oneshot::Sender<Result<()>>>,
-}
-
-impl Command for StartListening {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		_ = entries.swarm().listen_on(self.addr.clone())?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(()))
-			.expect("StartListening receiver dropped");
-		Ok(())
+impl Command for ClosureCommand {
+	fn run(self: Box<Self>, context: &mut EventLoop) -> Result<(), Report> {
+		(self.run_fn)(context)
 	}
 
 	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("StartListening receiver dropped");
+		(self.abort_fn)(error)
 	}
 }
 
-struct AddAddress {
-	peer_id: PeerId,
-	peer_addr: Multiaddr,
+fn noop_abort(_error: Report) {
+	// deliberately do nothing
 }
 
-impl Command for AddAddress {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		_ = entries
-			.behavior_mut()
-			.kademlia
-			.add_address(&self.peer_id, self.peer_addr.clone());
-
-		Ok(())
-	}
-
-	fn abort(&mut self, _error: Report) {}
+// helper function which creates commands without specific abort behavior
+fn create_command<F>(run: F) -> SendableCommand
+where
+	F: FnOnce(&mut EventLoop) -> Result<(), Report> + Send + 'static,
+{
+	Box::new(ClosureCommand {
+		run_fn: Box::new(run),
+		abort_fn: Box::new(noop_abort),
+	})
 }
-
-struct Bootstrap {
-	response_sender: Option<oneshot::Sender<Result<()>>>,
-}
-
-impl Command for Bootstrap {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		let query_id = entries.behavior_mut().kademlia.bootstrap()?;
-
-		// insert response channel into KAD Queries pending map
-		let response_sender = self.response_sender.take().unwrap();
-		entries.insert_query(query_id, super::QueryChannel::Bootstrap(response_sender));
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("Bootstrap receiver dropped");
-	}
-}
-
-struct GetKadRecord {
-	key: RecordKey,
-	response_sender: Option<oneshot::Sender<Result<PeerRecord>>>,
-}
-
-impl Command for GetKadRecord {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		let query_id = entries.behavior_mut().kademlia.get_record(self.key.clone());
-
-		// insert response channel into KAD Queries pending map
-		let response_sender = self.response_sender.take().unwrap();
-		entries.insert_query(query_id, super::QueryChannel::GetRecord(response_sender));
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("GetKadRecord receiver dropped");
-	}
-}
-
-struct PutKadRecord {
-	records: Vec<Record>,
-	quorum: Quorum,
-	block_num: u32,
-}
-
-// `active_blocks` is a list of cell counts for each block we monitor for PUT op. results
-impl Command for PutKadRecord {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		entries
-			.active_blocks
-			.entry(self.block_num)
-			// Increase the total cell count we monitor if the block entry already exists
-			.and_modify(|block| block.increase_block_stat_counters(self.records.len()))
-			// Initiate counting for the new block if the block doesn't exist
-			.or_insert(BlockStat {
-				total_count: self.records.len(),
-				remaining_counter: self.records.len(),
-				success_counter: 0,
-				error_counter: 0,
-				time_stat: 0,
-			});
-
-		for record in self.records.clone() {
-			let query_id = entries
-				.behavior_mut()
-				.kademlia
-				.put_record(record, self.quorum)
-				.expect("Unable to perform Kademlia PUT operation.");
-			entries.insert_query(query_id, QueryChannel::PutRecord);
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, _: Report) {}
-}
-
-struct CountKademliaPeers {
-	response_sender: Option<oneshot::Sender<Result<(usize, usize)>>>,
-}
-
-impl Command for CountKademliaPeers {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
-		let mut total_peers: usize = 0;
-		let mut peers_with_non_pvt_addr: usize = 0;
-		for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
-			for item in bucket.iter() {
-				for address in item.node.value.iter() {
-					if is_multiaddr_global(address) {
-						peers_with_non_pvt_addr += 1;
-						// We just need to hit the first external address
-						break;
-					}
-				}
-				total_peers += 1;
-			}
-		}
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok((total_peers, peers_with_non_pvt_addr)))
-			.expect("CountKademliaPeers receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
-	}
-}
-
-struct GetLocalInfo {
-	response_sender: Option<oneshot::Sender<Result<PeerInfo>>>,
-}
-
-impl Command for GetLocalInfo {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
-		let public_listeners: Vec<String> = entries
-			.swarm
-			.external_addresses()
-			.filter(|multiaddr| {
-				multiaddr.iter().any(
-					|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
-				)
-			})
-			.map(ToString::to_string)
-			.collect();
-
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(PeerInfo {
-				peer_id: entries.peer_id().to_string(),
-				operation_mode: entries.kad_mode.to_string(),
-				peer_multiaddr: None,
-				local_listeners: entries.listeners(),
-				external_listeners: entries.external_address(),
-				public_listeners,
-			}))
-			.expect("GetLocalInfo receiver dropped");
-
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("GetLocalInfo receiver dropped");
-	}
-}
-
-struct GetExternalPeerInfo {
-	peer_id: PeerId,
-	response_sender: Option<oneshot::Sender<Result<MultiAddressInfo>>>,
-}
-
-impl Command for GetExternalPeerInfo {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<(), Report> {
-		let mut multiaddresses: Vec<String> = Vec::new();
-
-		for bucket in entries.swarm.behaviour_mut().kademlia.kbuckets() {
-			for item in bucket.iter() {
-				if *item.node.key.preimage() == self.peer_id {
-					for addr in item.node.value.iter() {
-						multiaddresses.push(addr.to_string());
-					}
-				}
-			}
-		}
-
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(MultiAddressInfo {
-				multiaddresses,
-				peer_id: self.peer_id.to_string(),
-			}))
-			.expect("GetExternalPeerInfo receiver dropped");
-
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("GetExternalPeerInfo receiver dropped");
-	}
-}
-
-struct ListConnectedPeers {
-	response_sender: Option<oneshot::Sender<Result<Vec<String>>>>,
-}
-
-impl Command for ListConnectedPeers {
-	fn run(&mut self, entries: EventLoopEntries) -> Result<()> {
-		let connected_peer_list = entries
-			.swarm
-			.connected_peers()
-			.map(|peer_id| peer_id.to_string())
-			.collect::<Vec<_>>();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(connected_peer_list))
-			.expect("CountDHTPeers receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
-	}
-}
-
-struct ReconfigureKademliaMode {
-	response_sender: Option<oneshot::Sender<Result<Mode>>>,
-	memory_gb_threshold: f64,
-	cpus_threshold: usize,
-}
-
-impl Command for ReconfigureKademliaMode {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		if matches!(entries.kad_mode, Mode::Client) && !entries.external_address().is_empty() {
-			const BYTES_IN_GB: usize = 1024 * 1024 * 1024;
-
-			let system = System::new_all();
-			let memory_gb = system.total_memory() as f64 / BYTES_IN_GB as f64;
-			let cpus = system.cpus().len();
-			trace!("Total memory: {memory_gb} GB, CPU core count: {cpus}");
-
-			if memory_gb > self.memory_gb_threshold && cpus > self.cpus_threshold {
-				info!("Switching Kademlia mode to server!");
-				entries.behavior_mut().kademlia.set_mode(Some(Mode::Server));
-				*entries.kad_mode = Mode::Server;
-			}
-		} else if matches!(entries.kad_mode, Mode::Server) && entries.external_address().is_empty()
-		{
-			info!("Peer is not externally reachable, switching to client mode.");
-			entries.behavior_mut().kademlia.set_mode(Some(Mode::Client));
-			*entries.kad_mode = Mode::Client;
-		}
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(*entries.kad_mode))
-			.expect("ReconfigureKademliaMode receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("ReconfigureKademliaMode receiver dropped");
-	}
-}
-
-struct ReduceKademliaMapSize {
-	response_sender: Option<oneshot::Sender<Result<()>>>,
-}
-
-impl Command for ReduceKademliaMapSize {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		entries.behavior_mut().kademlia.store_mut().shrink_hashmap();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(()))
-			.expect("ReduceKademliaMapSize receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, _: Report) {
-		// theres should be no errors from running this Command
-		debug!("No possible errors for ReduceKademliaMapSize");
-	}
-}
-
-struct GetKademliaMapSize {
-	response_sender: Option<oneshot::Sender<Result<usize>>>,
-}
-
-impl Command for GetKademliaMapSize {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<(), Report> {
-		let size = entries
-			.behavior_mut()
-			.kademlia
-			.store_mut()
-			.records()
-			.count();
-
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(size))
-			.expect("GetKademliaMapSize receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, _: Report) {
-		// theres should be no errors from running this Command
-		debug!("No possible errors for GetKademliaMapSize");
-	}
-}
-
-struct DialPeer {
-	peer_id: PeerId,
-	peer_address: Vec<Multiaddr>,
-	response_sender: Option<oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
-}
-
-impl Command for DialPeer {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		let opts = DialOpts::peer_id(self.peer_id)
-			.addresses(self.peer_address.clone())
-			.build();
-
-		entries.swarm().dial(opts)?;
-
-		// insert response channel into Swarm Events pending map
-		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
-		Ok(())
-	}
-
-	fn abort(&mut self, error: Report) {
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Err(error))
-			.expect("DialPeer receiver dropped");
-	}
-}
-
-struct AddAutonatServer {
-	peer_id: PeerId,
-	address: Multiaddr,
-	response_sender: Option<oneshot::Sender<Result<()>>>,
-}
-
-impl Command for AddAutonatServer {
-	fn run(&mut self, mut entries: EventLoopEntries) -> Result<()> {
-		entries
-			.behavior_mut()
-			.auto_nat
-			.add_server(self.peer_id, Some(self.address.clone()));
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		self.response_sender
-			.take()
-			.unwrap()
-			.send(Ok(()))
-			.expect("AddAutonatServer receiver dropped");
-		Ok(())
-	}
-
-	fn abort(&mut self, _: Report) {
-		// theres should be no errors from running this Command
-		debug!("No possible errors for AddAutonatServer command");
-	}
+// helper function which creates commands with specific abort behavior
+// left currently as an example and a reminder of what can be done
+#[allow(dead_code)]
+fn create_command_with_abort<R, A>(run: R, abort: A) -> SendableCommand
+where
+	R: FnOnce(&mut EventLoop) -> Result<(), Report> + Send + 'static,
+	A: FnMut(Report) + Send + Sync + 'static,
+{
+	Box::new(ClosureCommand {
+		run_fn: Box::new(run),
+		abort_fn: Box::new(abort),
+	})
 }
 
 impl Client {
@@ -577,25 +137,30 @@ impl Client {
 		}
 	}
 
-	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
+	async fn execute_sync<F, T>(&self, command_creator: F) -> Result<T>
 	where
 		F: FnOnce(oneshot::Sender<Result<T>>) -> SendableCommand,
 	{
 		let (response_sender, response_receiver) = oneshot::channel();
-		let command = command_with_sender(response_sender);
+		let command = command_creator(response_sender);
 		self.command_sender
 			.send(command)
-			.wrap_err("receiver should not be dropped")?;
+			.map_err(|_| eyre!("receiver should not be dropped"))?;
 		response_receiver
 			.await
 			.wrap_err("sender should not be dropped")?
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+	pub async fn start_listening(&self, addr: Multiaddr) -> Result<ListenerId> {
 		self.execute_sync(|response_sender| {
-			Box::new(StartListening {
-				addr,
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let result = context.swarm.listen_on(addr.clone());
+				response_sender
+					.send(result.map_err(Into::into))
+					.map_err(|e| {
+						eyre!("Encountered error while sending Start Listening response: {e:?}")
+					})?;
+				Ok(())
 			})
 		})
 		.await
@@ -603,8 +168,15 @@ impl Client {
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
 		self.command_sender
-			.send(Box::new(AddAddress { peer_id, peer_addr }))
-			.context("failed to add address to the routing table")
+			.send(create_command(move |context: &mut EventLoop| {
+				context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.add_address(&peer_id, peer_addr);
+				Ok(())
+			}))
+			.map_err(|_| eyre!("Failed to send the Add Address Command to the EventLoop"))
 	}
 
 	pub async fn dial_peer(
@@ -613,10 +185,14 @@ impl Client {
 		peer_address: Vec<Multiaddr>,
 	) -> Result<ConnectionEstablishedInfo> {
 		self.execute_sync(|response_sender| {
-			Box::new(DialPeer {
-				peer_id,
-				peer_address,
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let opts = DialOpts::peer_id(peer_id).addresses(peer_address).build();
+				context.swarm.dial(opts)?;
+
+				context
+					.pending_swarm_events
+					.insert(peer_id, response_sender);
+				Ok(())
 			})
 		})
 		.await
@@ -624,22 +200,28 @@ impl Client {
 
 	pub async fn bootstrap(&self) -> Result<()> {
 		self.execute_sync(|response_sender| {
-			Box::new(Bootstrap {
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let query_id = context.swarm.behaviour_mut().kademlia.bootstrap()?;
+				context
+					.pending_kad_queries
+					.insert(query_id, QueryChannel::Bootstrap(response_sender));
+				Ok(())
 			})
 		})
 		.await
 	}
 
 	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
-		self.execute_sync(|response_sender| {
-			Box::new(AddAutonatServer {
-				peer_id,
-				address,
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		self.command_sender
+			.send(create_command(move |context: &mut EventLoop| {
+				context
+					.swarm
+					.behaviour_mut()
+					.auto_nat
+					.add_server(peer_id, Some(address));
+				Ok(())
+			}))
+			.map_err(|_| eyre!("Failed to send the Add AutoNat Server Command to the EventLoop"))
 	}
 
 	pub async fn bootstrap_on_startup(&self, bootstraps: &[MultiaddrConfig]) -> Result<()> {
@@ -656,9 +238,12 @@ impl Client {
 
 	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		self.execute_sync(|response_sender| {
-			Box::new(GetKadRecord {
-				key,
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let query_id = context.swarm.behaviour_mut().kademlia.get_record(key);
+				context
+					.pending_kad_queries
+					.insert(query_id, QueryChannel::GetRecord(response_sender));
+				Ok(())
 			})
 		})
 		.await
@@ -671,18 +256,57 @@ impl Client {
 		block_num: u32,
 	) -> Result<()> {
 		self.command_sender
-			.send(Box::new(PutKadRecord {
-				records,
-				quorum,
-				block_num,
+			.send(create_command(move |context: &mut EventLoop| {
+				context
+					.active_blocks
+					.entry(block_num)
+					// increase the total cell count we monitor if the block entry already exists
+					.and_modify(|block| block.increase_block_stat_counters(records.len()))
+					// initiate counting for the new block if the block doesn't exist
+					.or_insert(BlockStat {
+						total_count: records.len(),
+						remaining_counter: records.len(),
+						success_counter: 0,
+						error_counter: 0,
+						time_stat: 0,
+					});
+
+				for record in records {
+					let _ = context
+						.swarm
+						.behaviour_mut()
+						.kademlia
+						.put_record(record, quorum);
+				}
+				Ok(())
 			}))
-			.context("receiver should not be dropped")
+			.map_err(|_| eyre!("Failed to send the Put Kad Record Command to the EventLoop"))
 	}
 
 	pub async fn count_dht_entries(&self) -> Result<(usize, usize)> {
 		self.execute_sync(|response_sender| {
-			Box::new(CountKademliaPeers {
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let mut total_peers: usize = 0;
+				let mut peers_with_non_pvt_addr: usize = 0;
+				for bucket in context.swarm.behaviour_mut().kademlia.kbuckets() {
+					for item in bucket.iter() {
+						for address in item.node.value.iter() {
+							if is_multiaddr_global(address) {
+								peers_with_non_pvt_addr += 1;
+								// We just need to hit the first external address
+								break;
+							}
+						}
+						total_peers += 1;
+					}
+				}
+
+				response_sender
+					.send(Ok((total_peers, peers_with_non_pvt_addr)))
+					.map_err(|e| {
+						eyre!("Encountered error while sending Count DHT Entries response: {e:?}")
+					})?;
+				Ok(())
 			})
 		})
 		.await
@@ -690,8 +314,17 @@ impl Client {
 
 	pub async fn list_connected_peers(&self) -> Result<Vec<String>> {
 		self.execute_sync(|response_sender| {
-			Box::new(ListConnectedPeers {
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let connected_peer_list = context
+					.swarm
+					.connected_peers()
+					.map(|peer_id| peer_id.to_string())
+					.collect::<Vec<_>>();
+
+				response_sender.send(Ok(connected_peer_list)).map_err(|e| {
+					eyre!("Encountered error while sending List Connected Peers response: {e:?}")
+				})?;
+				Ok(())
 			})
 		})
 		.await
@@ -703,19 +336,85 @@ impl Client {
 		cpus_threshold: usize,
 	) -> Result<Mode> {
 		self.execute_sync(|response_sender| {
-			Box::new(ReconfigureKademliaMode {
-				response_sender: Some(response_sender),
-				memory_gb_threshold,
-				cpus_threshold,
+			create_command(move |context: &mut EventLoop| {
+				let external_addresses: Vec<String> = context
+					.swarm
+					.external_addresses()
+					.map(ToString::to_string)
+					.collect();
+				if matches!(context.kad_mode, Mode::Client) && !external_addresses.is_empty() {
+					const BYTES_IN_GB: usize = 1024 * 1024 * 1024;
+
+					let system = System::new_all();
+					let memory_gb = system.total_memory() as f64 / BYTES_IN_GB as f64;
+					let cpus = system.cpus().len();
+					trace!("Total memory: {memory_gb} GB, CPU core count: {cpus}");
+
+					if memory_gb > memory_gb_threshold && cpus > cpus_threshold {
+						info!("Switching Kademlia mode to server!");
+						context
+							.swarm
+							.behaviour_mut()
+							.kademlia
+							.set_mode(Some(Mode::Server));
+						context.kad_mode = Mode::Server;
+					}
+				} else if matches!(context.kad_mode, Mode::Server) && external_addresses.is_empty()
+				{
+					info!("Peer is not externally reachable, switching to client mode.");
+					context
+						.swarm
+						.behaviour_mut()
+						.kademlia
+						.set_mode(Some(Mode::Client));
+					context.kad_mode = Mode::Client;
+				}
+
+				response_sender.send(Ok(context.kad_mode)).map_err(|e| {
+					eyre!(
+						"Encountered error while sending Reconfigure Kademlia Mode response: {e:?}"
+					)
+				})?;
+				Ok(())
 			})
 		})
 		.await
 	}
 
-	pub async fn get_local_info(&self) -> Result<PeerInfo> {
+	pub async fn get_local_peer_info(&self) -> Result<PeerInfo> {
 		self.execute_sync(|response_sender| {
-			Box::new(GetLocalInfo {
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let public_listeners: Vec<String> = context
+					.swarm
+					.external_addresses()
+					.filter(|multiaddr| {
+						multiaddr.iter().any(
+							|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
+						)
+					})
+					.map(ToString::to_string)
+					.collect();
+				let local_listeners: Vec<String> =
+					context.swarm.listeners().map(ToString::to_string).collect();
+				let external_addresses: Vec<String> = context
+					.swarm
+					.external_addresses()
+					.map(ToString::to_string)
+					.collect();
+
+				response_sender
+					.send(Ok(PeerInfo {
+						peer_id: context.swarm.local_peer_id().to_string(),
+						operation_mode: context.kad_mode.to_string(),
+						peer_multiaddr: None,
+						local_listeners,
+						external_listeners: external_addresses,
+						public_listeners,
+					}))
+					.map_err(|e| {
+						eyre!("Encountered error while sending Local Peer Info response: {e:?}")
+					})?;
+				Ok(())
 			})
 		})
 		.await
@@ -723,9 +422,28 @@ impl Client {
 
 	pub async fn get_external_peer_info(&self, peer_id: PeerId) -> Result<MultiAddressInfo> {
 		self.execute_sync(|response_sender| {
-			Box::new(GetExternalPeerInfo {
-				peer_id,
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let mut multiaddresses: Vec<String> = Vec::new();
+
+				for bucket in context.swarm.behaviour_mut().kademlia.kbuckets() {
+					for item in bucket.iter() {
+						if *item.node.key.preimage() == peer_id {
+							for addr in item.node.value.iter() {
+								multiaddresses.push(addr.to_string());
+							}
+						}
+					}
+				}
+
+				response_sender
+					.send(Ok(MultiAddressInfo {
+						multiaddresses,
+						peer_id: peer_id.to_string(),
+					}))
+					.map_err(|e| {
+						eyre!("Encountered error while sending External Peer Info response: {e:?}")
+					})?;
+				Ok(())
 			})
 		})
 		.await
@@ -733,29 +451,67 @@ impl Client {
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.execute_sync(|response_sender| {
-			Box::new(ReduceKademliaMapSize {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+		self.command_sender
+			.send(create_command(|context: &mut EventLoop| {
+				context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.store_mut()
+					.shrink_hashmap();
+
+				Ok(())
+			}))
+			.map_err(|_| eyre!("Failed to send the Shrink Kademlia Map Command to the EventLoop"))
 	}
 
 	pub async fn get_kademlia_map_size(&self) -> Result<usize> {
 		self.execute_sync(|response_sender| {
-			Box::new(GetKademliaMapSize {
-				response_sender: Some(response_sender),
+			create_command(move |context: &mut EventLoop| {
+				let size = context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.store_mut()
+					.records()
+					.count();
+
+				response_sender.send(Ok(size)).map_err(|e| {
+					eyre!("Encountered error while sending Get Kademlia Map Size response: {e:?}")
+				})?;
+				Ok(())
 			})
 		})
 		.await
 	}
 
-	pub async fn prune_expired_records(&self) -> Result<usize> {
+	pub async fn prune_expired_records(&self, now: Instant) -> Result<usize> {
 		self.execute_sync(|response_sender| {
-			Box::new(PruneExpiredRecords {
-				now: Instant::now(),
-				response_sender: Some(response_sender),
-			})
+			if cfg!(feature = "kademlia-rocksdb") {
+				create_command(move |_| {
+					response_sender.send(Ok(0)).map_err(|e| {
+						eyre!(
+							"Encountered error while sending Prune Expired Records response: {e:?}"
+						)
+					})?;
+					Ok(())
+				})
+			} else {
+				create_command(move |context: &mut EventLoop| {
+					let store = context.swarm.behaviour_mut().kademlia.store_mut();
+
+					let before = store.records().count();
+					store.retain(|_, record| !record.is_expired(now));
+					let after = store.records().count();
+
+					response_sender.send(Ok(before - after)).map_err(|e| {
+						eyre!(
+							"Encountered error while sending Prune Expired Records response: {e:?}"
+						)
+					})?;
+					Ok(())
+				})
+			}
 		})
 		.await
 	}

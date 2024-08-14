@@ -27,16 +27,15 @@ use tokio::{
 };
 use tracing::{debug, error, info, trace, warn};
 
+use super::{
+	build_swarm, client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent,
+	CommandReceiver, QueryChannel, SendableCommand,
+};
 use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::TimeToLive,
-};
-
-use super::{
-	build_swarm, client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent,
-	CommandReceiver, EventLoopEntries, QueryChannel, SendableCommand,
 };
 
 // RelayState keeps track of all things relay related
@@ -127,18 +126,18 @@ impl EventCounter {
 }
 
 pub struct EventLoop {
-	swarm: Swarm<Behaviour>,
+	pub swarm: Swarm<Behaviour>,
 	// Tracking Kademlia events
-	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
-	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
+	pub pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	/// Blocks we monitor for PUT success rate
-	active_blocks: HashMap<u32, BlockStat>,
+	pub active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
-	kad_mode: Mode,
+	pub kad_mode: Mode,
 }
 
 #[derive(PartialEq, Debug)]
@@ -616,16 +615,8 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_command(&mut self, mut command: SendableCommand) {
-		if let Err(err) = command.run(EventLoopEntries::new(
-			&mut self.swarm,
-			&mut self.pending_kad_queries,
-			&mut self.pending_swarm_events,
-			&mut self.active_blocks,
-			&mut self.kad_mode,
-		)) {
-			command.abort(eyre!(err));
-		}
+	async fn handle_command(&mut self, command: SendableCommand) {
+		let _ = command.run(self);
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {
