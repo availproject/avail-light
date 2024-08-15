@@ -2,12 +2,16 @@ use std::fs;
 
 use avail_light_core::{
 	crawl_client::CrawlMode,
-	network::{p2p::configuration::LibP2PConfig, rpc::configuration::RPCConfig, Network},
+	network::{
+		p2p::{configuration::LibP2PConfig, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		rpc::configuration::RPCConfig,
+		Network,
+	},
 	telemetry::otlp::OtelConfig,
 	types::{block_matrix_partition_format, tracing_level_format, MultiaddrConfig, Origin},
 };
 use clap::{command, Parser};
-use color_eyre::Result;
+use color_eyre::{eyre::eyre, Result};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use tracing::Level;
@@ -108,6 +112,10 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 		config.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		config.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		config.genesis_hash = network.genesis_hash().to_string();
+	}
+
+	if config.libp2p.bootstraps.is_empty() {
+		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
 	}
 
 	Ok(config)
