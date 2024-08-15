@@ -163,9 +163,9 @@ impl TryFrom<RecordKey> for DHTKey {
 	}
 }
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
+#[cfg(not(feature = "rocksdb"))]
 type Store = super::kad_mem_store::MemoryStore;
-#[cfg(feature = "kademlia-rocksdb")]
+#[cfg(feature = "rocksdb")]
 type Store = super::kad_rocksdb_store::RocksDBStore;
 
 impl EventLoop {
@@ -177,14 +177,14 @@ impl EventLoop {
 		id_keys: &Keypair,
 		is_fat_client: bool,
 		shutdown: Controller<String>,
-		#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
+		#[cfg(feature = "rocksdb")] db: Arc<rocksdb::DB>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_period;
 		let peer_id = id_keys.public().to_peer_id();
 		let store = Store::with_config(
 			peer_id,
 			(&cfg).into(),
-			#[cfg(feature = "kademlia-rocksdb")]
+			#[cfg(feature = "rocksdb")]
 			db,
 		);
 

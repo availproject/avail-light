@@ -1,3 +1,4 @@
+#[cfg(feature = "rocksdb")]
 use self::rocks_db::RocksDBKey;
 use crate::{
 	network::rpc::Node as RpcNode,
@@ -5,18 +6,23 @@ use crate::{
 };
 use avail_subxt::primitives::Header;
 use codec::{Decode, Encode};
-#[cfg(test)]
+#[cfg(feature = "memdb")]
 use mem_db::HashMapKey;
 use serde::{Deserialize, Serialize};
 use sp_core::ed25519;
 
 mod keys;
-#[cfg(test)]
+
+#[cfg(feature = "memdb")]
 mod mem_db;
+
+#[cfg(feature = "rocksdb")]
 mod rocks_db;
 
-#[cfg(test)]
+#[cfg(feature = "memdb")]
 pub use mem_db::MemoryDB;
+
+#[cfg(feature = "rocksdb")]
 pub use rocks_db::RocksDB;
 
 /// Column family for application state
@@ -25,15 +31,15 @@ pub const APP_STATE_CF: &str = "app_state_cf";
 /// Column family for Kademlia store
 pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
 
-#[cfg(not(test))]
+#[cfg(feature = "rocksdb")]
 /// Type of the database key which we can get from the custom key.
 pub trait RecordKey: Into<RocksDBKey> {
 	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
 }
 
-#[cfg(test)]
+#[cfg(feature = "memdb")]
 /// Type of the database key which we can get from the custom key.
-pub trait RecordKey: Into<RocksDBKey> + Into<HashMapKey> {
+pub trait RecordKey: Into<HashMapKey> {
 	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
 }
 

@@ -27,7 +27,7 @@ use std::collections::{hash_map, HashMap};
 use std::iter;
 use tracing::{instrument, Level};
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
+#[cfg(not(feature = "rocksdb"))]
 use tracing::trace;
 
 /// In-memory implementation of a `RecordStore`.
@@ -63,7 +63,7 @@ impl Default for MemoryStoreConfig {
 	}
 }
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
+#[cfg(not(feature = "rocksdb"))]
 impl MemoryStore {
 	/// Creates a new `MemoryRecordStore` with a default configuration.
 	pub fn new(local_id: PeerId) -> Self {
@@ -162,7 +162,7 @@ impl RecordStore for MemoryStore {
 	}
 }
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
+#[cfg(not(feature = "rocksdb"))]
 #[cfg(test)]
 mod tests {
 	use std::time::{Duration, Instant};

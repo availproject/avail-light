@@ -446,7 +446,7 @@ impl Client {
 
 	pub async fn prune_expired_records(&self, now: Instant) -> Result<usize> {
 		self.execute_sync(|response_sender| {
-			if cfg!(feature = "kademlia-rocksdb") {
+			if cfg!(feature = "rocksdb") {
 				Box::new(move |_| {
 					response_sender.send(Ok(0)).map_err(|e| {
 						eyre!(

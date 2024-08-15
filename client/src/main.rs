@@ -2,21 +2,22 @@
 
 use crate::cli::CliOpts;
 use avail_core::AppId;
+#[cfg(feature = "memdb")]
+use avail_light_core::data::MemoryDB;
+#[cfg(feature = "rocksdb")]
+use avail_light_core::data::RocksDB;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{IsFinalitySyncedKey, IsSyncedKey},
-	network,
-	sync_client::SyncClient,
-	sync_finality::SyncFinality,
-};
-use avail_light_core::{
-	data::{ClientIdKey, Database, LatestHeaderKey, RocksDB},
+	data::{ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey},
 	network::{
+		self,
 		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
 		rpc, Network,
 	},
 	shutdown::Controller,
+	sync_client::SyncClient,
+	sync_finality::SyncFinality,
 	telemetry::{self, MetricCounter, Metrics},
 	types::{
 		load_or_init_suri, IdentityConfig, KademliaMode, MaintenanceConfig, MultiaddrConfig,
@@ -51,7 +52,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
-	db: RocksDB,
+	db: impl Database + Clone + Send + Sync + 'static,
 	shutdown: Controller<String>,
 	client_id: Uuid,
 	execution_id: Uuid,
@@ -106,7 +107,7 @@ async fn run(
 		&id_keys,
 		cfg.is_fat_client(),
 		shutdown.clone(),
-		#[cfg(feature = "kademlia-rocksdb")]
+		#[cfg(feature = "rocksdb")]
 		db.inner(),
 	);
 
@@ -338,7 +339,7 @@ async fn run(
 async fn run_fat(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
-	db: RocksDB,
+	db: impl Database + Clone + Send + Sync + 'static,
 	shutdown: Controller<String>,
 	client_id: Uuid,
 	execution_id: Uuid,
@@ -391,7 +392,7 @@ async fn run_fat(
 		&id_keys,
 		cfg.is_fat_client(),
 		shutdown.clone(),
-		#[cfg(feature = "kademlia-rocksdb")]
+		#[cfg(feature = "rocksdb")]
 		db.inner(),
 	);
 
@@ -613,7 +614,11 @@ pub async fn main() -> Result<()> {
 		fs::remove_dir_all(&cfg.avail_path).wrap_err("Failed to remove local state directory")?;
 	}
 
+	#[cfg(feature = "rocksdb")]
 	let db = RocksDB::open(&cfg.avail_path).expect("Avail Light could not initialize database");
+
+	#[cfg(feature = "memdb")]
+	let db = MemoryDB::default();
 
 	let client_id = db.get(ClientIdKey).unwrap_or_else(|| {
 		let client_id = Uuid::new_v4();
