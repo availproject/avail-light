@@ -44,6 +44,11 @@ const IDENTITY_AGENT_BASE: &str = "avail-light-client";
 const IDENTITY_AGENT_ROLE: &str = "light-client";
 const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
+pub const BOOTSTRAP_LIST_EMPTY_MESSAGE: &str = r#"
+Bootstrap node list must not be empty.
+Either use a '--network' flag or add a list of bootstrap nodes in the configuration file.
+"#;
+
 #[derive(Clone)]
 struct AgentVersion {
 	pub base_version: String,

@@ -13,7 +13,7 @@ use avail_light_core::{
 use avail_light_core::{
 	data::{ClientIdKey, Database, LatestHeaderKey, RocksDB},
 	network::{
-		p2p::{self},
+		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
 		rpc, Network,
 	},
 	shutdown::Controller,
@@ -63,10 +63,6 @@ async fn run(
 		"Avail ss58 address: {}, public key: {}",
 		&identity_cfg.avail_address, &identity_cfg.avail_public_key
 	);
-
-	if cfg.libp2p.bootstraps.is_empty() {
-		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
-	}
 
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
@@ -353,10 +349,6 @@ async fn run_fat(
 	info!("Running Avail Light Fat Client version: {version}.");
 	info!("Using config: {cfg:?}");
 
-	if cfg.libp2p.bootstraps.is_empty() {
-		Err(eyre!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
-	}
-
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	let metric_attributes = vec![
@@ -586,6 +578,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(client_alias) = &opts.client_alias {
 		cfg.client_alias = Some(client_alias.clone())
+	}
+
+	if cfg.libp2p.bootstraps.is_empty() {
+		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
 	}
 
 	Ok(cfg)
