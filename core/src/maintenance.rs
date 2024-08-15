@@ -1,6 +1,6 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
-#[cfg(not(feature = "kademlia-rocksdb"))]
+#[cfg(not(feature = "rocksdb"))]
 use std::time::Instant;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
@@ -18,7 +18,7 @@ pub async fn process_block(
 	maintenance_config: MaintenanceConfig,
 	metrics: &Arc<impl Metrics>,
 ) -> Result<()> {
-	#[cfg(not(feature = "kademlia-rocksdb"))]
+	#[cfg(not(feature = "rocksdb"))]
 	if block_number % maintenance_config.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
 		match p2p_client.prune_expired_records(Instant::now()).await {

@@ -1,4 +1,7 @@
-#[cfg(not(feature = "kademlia-rocksdb"))]
+use super::ProvidersConfig;
+#[cfg(feature = "rocksdb")]
+use super::RocksDBStoreConfig;
+#[cfg(not(feature = "rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
@@ -9,8 +12,6 @@ use std::{
 	num::{NonZeroU8, NonZeroUsize},
 	time::Duration,
 };
-
-use super::{ProvidersConfig, RocksDBStoreConfig};
 
 /// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -216,7 +217,7 @@ impl From<&LibP2PConfig> for kad::Config {
 	}
 }
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
+#[cfg(not(feature = "rocksdb"))]
 impl From<&LibP2PConfig> for MemoryStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
 		MemoryStoreConfig {
@@ -230,6 +231,7 @@ impl From<&LibP2PConfig> for MemoryStoreConfig {
 	}
 }
 
+#[cfg(feature = "rocksdb")]
 impl From<&LibP2PConfig> for RocksDBStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
 		RocksDBStoreConfig {

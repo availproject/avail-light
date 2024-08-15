@@ -1,7 +1,8 @@
-use std::time::Duration;
-
+#[cfg(not(feature = "rocksdb"))]
+use avail_light_core::data::MemoryDB as DB;
+#[cfg(feature = "rocksdb")]
+use avail_light_core::data::RocksDB as DB;
 use avail_light_core::{
-	data::RocksDB,
 	network::rpc::{
 		self,
 		configuration::{ExponentialConfig, RPCConfig, RetryConfig},
@@ -9,8 +10,9 @@ use avail_light_core::{
 	shutdown::Controller,
 };
 use clap::Parser;
-use color_eyre::{eyre::Context, Result};
+use color_eyre::Result;
 use kate_recovery::matrix::Position;
+use std::time::Duration;
 
 #[derive(Parser)]
 struct CommandArgs {
@@ -25,8 +27,11 @@ async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
 	println!("Using URL: {}", command_args.url);
 	println!("Using Path: {}", command_args.avail_path);
-	let db = RocksDB::open(&command_args.avail_path)
-		.wrap_err("API Compatibility Test could not initialize database")?;
+
+	#[cfg(not(feature = "rocksdb"))]
+	let db = DB::default();
+	#[cfg(feature = "rocksdb")]
+	let db = DB::open(&command_args.avail_path)?;
 
 	let rpc_cfg = RPCConfig {
 		full_node_ws: vec![command_args.url],

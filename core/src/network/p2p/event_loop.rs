@@ -175,6 +175,7 @@ impl EventLoop {
 		shutdown: Controller<String>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_period;
+
 		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
 
 		Self {

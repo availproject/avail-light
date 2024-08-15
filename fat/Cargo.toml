@@ -6,7 +6,7 @@ edition = "2021"
 repository.workspace = true
 
 [dependencies]
-avail-light-core = { workspace = true, features = ["kademlia-rocksdb"] }
+avail-light-core = { workspace = true }
 clap.workspace = true
 color-eyre.workspace = true
 confy.workspace = true
@@ -15,3 +15,7 @@ serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[features]
+rocksdb = ["avail-light-core/rocksdb"]
+default = ["rocksdb"]

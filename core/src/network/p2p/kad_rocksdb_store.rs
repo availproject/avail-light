@@ -12,7 +12,6 @@ use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, instrument, Level};
-#[cfg(feature = "kademlia-rocksdb")]
 use {rocksdb::WriteBatch, tracing::info};
 
 #[derive(Serialize, Deserialize, Encode, Decode, Clone)]
@@ -92,7 +91,6 @@ impl Default for RocksDBStoreConfig {
 	}
 }
 
-#[cfg(feature = "kademlia-rocksdb")]
 impl RocksDBStore {
 	/// Creates a new `RocksDBRecordStore` with the given configuration.
 	pub fn with_config(local_id: PeerId, config: RocksDBStoreConfig, db: Arc<rocksdb::DB>) -> Self {

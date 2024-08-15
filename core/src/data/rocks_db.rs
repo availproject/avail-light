@@ -16,6 +16,11 @@ pub struct RocksDB {
 #[derive(Eq, Hash, PartialEq)]
 pub struct RocksDBKey(Option<&'static str>, Vec<u8>);
 
+/// Type of the database key which we can get from the custom key.
+pub trait RecordKey: Into<RocksDBKey> {
+	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
+}
+
 impl RocksDBKey {
 	fn app_state(key: &str) -> Self {
 		Self(Some(APP_STATE_CF), key.as_bytes().to_vec())

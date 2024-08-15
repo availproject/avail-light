@@ -13,6 +13,11 @@ pub struct MemoryDB {
 #[derive(Eq, Hash, PartialEq)]
 pub struct HashMapKey(pub String);
 
+/// Type of the database key which we can get from the custom key.
+pub trait RecordKey: Into<HashMapKey> {
+	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
+}
+
 impl Default for MemoryDB {
 	fn default() -> Self {
 		MemoryDB {
