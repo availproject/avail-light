@@ -19,8 +19,8 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{self, MetricCounter, Metrics},
 	types::{
-		load_or_init_suri, IdentityConfig, KademliaMode, MaintenanceConfig, MultiaddrConfig,
-		RuntimeConfig, SecretKey, Uuid,
+		load_or_init_suri, IdentityConfig, MaintenanceConfig, MultiaddrConfig, RuntimeConfig,
+		SecretKey, Uuid,
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -30,7 +30,6 @@ use color_eyre::{
 	Result,
 };
 use kate_recovery::com::AppData;
-use kate_recovery::matrix::Partition;
 use std::{fs, path::Path, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::trace;
@@ -71,12 +70,6 @@ async fn run(
 		("role", "lightnode".to_string()),
 		("peerID", peer_id.to_string()),
 		("avail_address", identity_cfg.avail_public_key.clone()),
-		(
-			"partition_size",
-			cfg.block_matrix_partition
-				.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
-				.unwrap_or("n/a".to_string()),
-		),
 		("network", Network::name(&cfg.genesis_hash)),
 		("client_id", client_id.to_string()),
 		("execution_id", execution_id.to_string()),
@@ -104,7 +97,7 @@ async fn run(
 		version,
 		&cfg.genesis_hash,
 		&id_keys,
-		cfg.is_fat_client(),
+		false,
 		shutdown.clone(),
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
@@ -313,220 +306,16 @@ async fn run(
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
-	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
+	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
 
-		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
-			fat_client,
-			db.clone(),
-			(&cfg).into(),
-			ot_metrics.clone(),
-			channels,
-			partition,
-			shutdown.clone(),
-		)));
-	} else {
-		let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
-
-		spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
-			db.clone(),
-			light_network_client,
-			(&cfg).into(),
-			ot_metrics.clone(),
-			channels,
-			shutdown.clone(),
-		)));
-	}
-
-	ot_metrics.count(MetricCounter::Starts).await;
-
-	Ok(())
-}
-
-async fn run_fat(
-	cfg: RuntimeConfig,
-	identity_cfg: IdentityConfig,
-	db: RocksDB,
-	shutdown: Controller<String>,
-	client_id: Uuid,
-	execution_id: Uuid,
-) -> Result<()> {
-	info!("Fat client mode");
-
-	let version = clap::crate_version!();
-	info!("Running Avail Light Fat Client version: {version}.");
-	info!("Using config: {cfg:?}");
-
-	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
-
-	let metric_attributes = vec![
-		("version", version.to_string()),
-		("role", "fatnode".to_string()),
-		("peerID", peer_id.to_string()),
-		("avail_address", identity_cfg.avail_public_key.clone()),
-		(
-			"partition_size",
-			cfg.block_matrix_partition
-				.map(|Partition { number, fraction }| format!("{number}/{fraction}"))
-				.unwrap_or("n/a".to_string()),
-		),
-		("network", Network::name(&cfg.genesis_hash)),
-		("client_id", client_id.to_string()),
-		("execution_id", execution_id.to_string()),
-		(
-			"client_alias",
-			cfg.client_alias.clone().unwrap_or("".to_string()),
-		),
-	];
-
-	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(
-			metric_attributes,
-			&cfg.origin,
-			&KademliaMode::Client.into(),
-			cfg.otel.clone(),
-		)
-		.wrap_err("Unable to initialize OpenTelemetry service")?,
-	);
-
-	// Create sender channel for P2P event loop commands
-	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
-
-	let p2p_event_loop = p2p::EventLoop::new(
-		cfg.libp2p.clone(),
-		version,
-		&cfg.genesis_hash,
-		&id_keys,
-		cfg.is_fat_client(),
-		shutdown.clone(),
-		#[cfg(feature = "kademlia-rocksdb")]
-		db.inner(),
-	);
-
-	spawn_in_span(
-		shutdown.with_cancel(
-			p2p_event_loop
-				.await
-				.run(ot_metrics.clone(), p2p_event_loop_receiver),
-		),
-	);
-
-	let p2p_client = p2p::Client::new(
-		p2p_event_loop_sender,
-		cfg.libp2p.dht_parallelization_limit,
-		cfg.libp2p.kademlia.kad_record_ttl,
-	);
-
-	// Start listening on P2P port
-	p2p_client
-		.start_listening(vec![cfg.libp2p.tcp_multiaddress()])
-		.await
-		.wrap_err("Error starting listeners.")?;
-	info!("TCP listener started on port {}", cfg.libp2p.port);
-
-	let p2p_clone = p2p_client.to_owned();
-	let cfg_clone = cfg.to_owned();
-	spawn_in_span(shutdown.with_cancel(async move {
-		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bs_result = p2p_clone
-			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-			.await;
-		match bs_result {
-			Ok(_) => {
-				info!("Bootstrap done.");
-			},
-			Err(e) => {
-				warn!("Bootstrap process: {e:?}.");
-			},
-		}
-	}));
-
-	let (rpc_client, rpc_events, rpc_subscriptions) =
-		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
-
-	// Subscribing to RPC events before first event is published
-	let first_header_rpc_event_receiver = rpc_events.subscribe();
-	let client_rpc_event_receiver = rpc_events.subscribe();
-
-	// spawn the RPC Network task for Event Loop to run in the background
-	// and shut it down, without delays
-	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
-		"Subscription loop failure triggered shutdown".to_string(),
-		async {
-			let result = rpc_subscriptions.run().await;
-			if let Err(ref err) = result {
-				error!(%err, "Subscription loop ended with error");
-			};
-			result
-		},
-	)));
-
-	info!("Waiting for first finalized header...");
-	let block_header = match shutdown
-		.with_cancel(rpc::wait_for_finalized_header(
-			first_header_rpc_event_receiver,
-			360,
-		))
-		.await
-		.map_err(|shutdown_reason| eyre!(shutdown_reason))
-		.and_then(|inner| inner)
-	{
-		Err(report) => {
-			if !rpc_subscriptions_handle.is_finished() {
-				return Err(report);
-			}
-			let Ok(Ok(Err(subscriptions_error))) = rpc_subscriptions_handle.await else {
-				return Err(report);
-			};
-			return Err(eyre!(subscriptions_error));
-		},
-		Ok(num) => num,
-	};
-
-	db.put(LatestHeaderKey, block_header.number);
-
-	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
-
-	if cfg.sync_finality_enable {
-		let sync_finality = SyncFinality::new(db.clone(), rpc_client.clone());
-		spawn_in_span(shutdown.with_cancel(avail_light_core::sync_finality::run(
-			sync_finality,
-			shutdown.clone(),
-			block_header.clone(),
-		)));
-	} else {
-		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
-		// set the flag in the db, signaling across that we don't need to sync
-		db.put(IsFinalitySyncedKey, true);
-	}
-
-	let static_config_params: MaintenanceConfig = (&cfg).into();
-	spawn_in_span(shutdown.with_cancel(avail_light_core::maintenance::run(
-		p2p_client.clone(),
+	spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
+		db.clone(),
+		light_network_client,
+		(&cfg).into(),
 		ot_metrics.clone(),
-		block_rx,
-		static_config_params,
+		channels,
 		shutdown.clone(),
 	)));
-
-	let channels = avail_light_core::types::ClientChannels {
-		block_sender: block_tx,
-		rpc_event_receiver: client_rpc_event_receiver,
-	};
-
-	if let Some(partition) = cfg.block_matrix_partition {
-		let fat_client = avail_light_core::fat_client::new(p2p_client.clone(), rpc_client.clone());
-
-		spawn_in_span(shutdown.with_cancel(avail_light_core::fat_client::run(
-			fat_client,
-			db.clone(),
-			(&cfg).into(),
-			ot_metrics.clone(),
-			channels,
-			partition,
-			shutdown.clone(),
-		)));
-	}
 
 	ot_metrics.count(MetricCounter::Starts).await;
 
@@ -581,10 +370,6 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.secret_key = Some(SecretKey::Seed {
 			seed: seed.to_string(),
 		})
-	}
-
-	if let Some(partition) = &opts.block_matrix_partition {
-		cfg.block_matrix_partition = Some(*partition)
 	}
 
 	if let Some(client_alias) = &opts.client_alias {
@@ -651,27 +436,16 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.on_user_signal("User signaled shutdown".to_string()));
 
-	if let Err(error) = if cfg.is_fat_client() {
-		run_fat(
-			cfg,
-			identity_cfg,
-			db,
-			shutdown.clone(),
-			client_id,
-			execution_id,
-		)
-		.await
-	} else {
-		run(
-			cfg,
-			identity_cfg,
-			db,
-			shutdown.clone(),
-			client_id,
-			execution_id,
-		)
-		.await
-	} {
+	if let Err(error) = run(
+		cfg,
+		identity_cfg,
+		db,
+		shutdown.clone(),
+		client_id,
+		execution_id,
+	)
+	.await
+	{
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};

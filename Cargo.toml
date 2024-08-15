@@ -5,6 +5,7 @@ members = [
 	"compatibility-tests",
 	"core",
 	"crawler",
+	"fat",
 	"relay",
 ]
 default-members = ["client"]

@@ -1,6 +1,5 @@
-use avail_light_core::{network::Network, types::block_matrix_partition_format};
+use avail_light_core::network::Network;
 use clap::{command, Parser};
-use kate_recovery::matrix::Partition;
 use tracing::Level;
 
 #[derive(Parser)]
@@ -54,9 +53,6 @@ pub struct CliOpts {
 	/// ed25519 private key for libp2p keypair generation
 	#[arg(long)]
 	pub private_key: Option<String>,
-	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
-	#[arg(long, value_parser = block_matrix_partition_format::parse)]
-	pub block_matrix_partition: Option<Partition>,
 	/// Set logs format to JSON
 	#[arg(long)]
 	pub logs_json: bool,
