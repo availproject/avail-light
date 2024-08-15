@@ -1,9 +1,10 @@
 use avail_light_core::{
+	crawl_client,
 	data::{Database, LatestHeaderKey, RocksDB},
 	network::{p2p, rpc, Network},
 	shutdown::Controller,
 	telemetry::{otlp, MetricCounter, Metrics},
-	types::KademliaMode,
+	types::{BlockVerified, KademliaMode},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -159,7 +160,7 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 
 	db.put(LatestHeaderKey, block_header.number);
 
-	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
+	let (block_tx, block_rx) = broadcast::channel::<BlockVerified>(1 << 7);
 
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
 		config.otel.ot_flush_block_interval,
@@ -168,7 +169,7 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		ot_metrics.clone(),
 	)));
 
-	let crawler = spawn_in_span(shutdown.with_cancel(avail_light_core::crawl_client::run(
+	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
 		rpc_events.subscribe(),
 		p2p_client.clone(),
 		config.crawl_block_delay,
