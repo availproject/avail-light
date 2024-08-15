@@ -62,8 +62,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          # TODO: Replace with "--benches --tests --all-features" when CI is fixed for other features
-          args: --workspace --benches --tests --features "default,crawl,kademlia-rocksdb"
+          args: --workspace --benches --tests --no-default-features
         env:
           RUSTFLAGS: "-C instrument-coverage"
           LLVM_PROFILE_FILE: "profile-%p-%m.profraw"

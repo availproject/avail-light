@@ -2,21 +2,22 @@
 
 use crate::cli::CliOpts;
 use avail_core::AppId;
+#[cfg(not(feature = "rocksdb"))]
+use avail_light_core::data::MemoryDB as DB;
+#[cfg(feature = "rocksdb")]
+use avail_light_core::data::RocksDB as DB;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{IsFinalitySyncedKey, IsSyncedKey},
-	network,
-	sync_client::SyncClient,
-	sync_finality::SyncFinality,
-};
-use avail_light_core::{
-	data::{ClientIdKey, Database, LatestHeaderKey, RocksDB},
+	data::{ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey},
 	network::{
+		self,
 		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
 		rpc, Network,
 	},
 	shutdown::Controller,
+	sync_client::SyncClient,
+	sync_finality::SyncFinality,
 	telemetry::{self, MetricCounter, Metrics},
 	types::{
 		load_or_init_suri, IdentityConfig, MaintenanceConfig, MultiaddrConfig, RuntimeConfig,
@@ -50,7 +51,8 @@ static GLOBAL: Jemalloc = Jemalloc;
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
-	db: RocksDB,
+
+	db: DB,
 	shutdown: Controller<String>,
 	client_id: Uuid,
 	execution_id: Uuid,
@@ -96,7 +98,7 @@ async fn run(
 		&cfg.genesis_hash,
 		false,
 		shutdown.clone(),
-		#[cfg(feature = "kademlia-rocksdb")]
+		#[cfg(feature = "rocksdb")]
 		db.inner(),
 	)
 	.await?;
@@ -395,7 +397,11 @@ pub async fn main() -> Result<()> {
 		fs::remove_dir_all(&cfg.avail_path).wrap_err("Failed to remove local state directory")?;
 	}
 
-	let db = RocksDB::open(&cfg.avail_path).expect("Avail Light could not initialize database");
+	#[cfg(feature = "rocksdb")]
+	let db = DB::open(&cfg.avail_path).expect("Avail Light could not initialize database");
+
+	#[cfg(not(feature = "rocksdb"))]
+	let db = DB::default();
 
 	let client_id = db.get(ClientIdKey).unwrap_or_else(|| {
 		let client_id = Uuid::new_v4();

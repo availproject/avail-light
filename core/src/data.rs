@@ -1,41 +1,29 @@
-use self::rocks_db::RocksDBKey;
 use crate::{
 	network::rpc::Node as RpcNode,
 	types::{BlockRange, Uuid},
 };
 use avail_subxt::primitives::Header;
 use codec::{Decode, Encode};
-#[cfg(test)]
-use mem_db::HashMapKey;
 use serde::{Deserialize, Serialize};
 use sp_core::ed25519;
 
 mod keys;
-#[cfg(test)]
-mod mem_db;
-mod rocks_db;
 
-#[cfg(test)]
-pub use mem_db::MemoryDB;
-pub use rocks_db::RocksDB;
+#[cfg(not(feature = "rocksdb"))]
+mod mem_db;
+#[cfg(not(feature = "rocksdb"))]
+pub use mem_db::*;
+
+#[cfg(feature = "rocksdb")]
+mod rocks_db;
+#[cfg(feature = "rocksdb")]
+pub use rocks_db::*;
 
 /// Column family for application state
 pub const APP_STATE_CF: &str = "app_state_cf";
 
 /// Column family for Kademlia store
 pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
-
-#[cfg(not(test))]
-/// Type of the database key which we can get from the custom key.
-pub trait RecordKey: Into<RocksDBKey> {
-	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
-}
-
-#[cfg(test)]
-/// Type of the database key which we can get from the custom key.
-pub trait RecordKey: Into<RocksDBKey> + Into<HashMapKey> {
-	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
-}
 
 pub trait Database {
 	/// Puts value for given key into database.

@@ -14,7 +14,9 @@ use multihash::{self, Hasher};
 use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::Ipv4Addr, str::FromStr, sync::Arc, time::Duration};
+#[cfg(feature = "rocksdb")]
+use std::sync::Arc;
+use std::{fmt, net::Ipv4Addr, str::FromStr, time::Duration};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
 #[cfg(feature = "network-analysis")]
@@ -23,21 +25,32 @@ mod client;
 pub mod configuration;
 mod event_loop;
 mod kad_mem_providers;
-#[cfg(not(feature = "kademlia-rocksdb"))]
+
+#[cfg(not(feature = "rocksdb"))]
 mod kad_mem_store;
+#[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
+
+#[cfg(not(feature = "rocksdb"))]
+pub use kad_mem_store::MemoryStoreConfig;
+#[cfg(feature = "rocksdb")]
+pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
+#[cfg(feature = "rocksdb")]
+pub use kad_rocksdb_store::RocksDBStoreConfig;
+
+#[cfg(feature = "rocksdb")]
+pub type Store = kad_rocksdb_store::RocksDBStore;
+#[cfg(not(feature = "rocksdb"))]
+pub type Store = kad_mem_store::MemoryStore;
+
 use crate::{
-	data::{Database, P2PKeypairKey, RocksDB},
+	data::{Database, P2PKeypairKey},
 	shutdown::Controller,
 	types::SecretKey,
 };
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
-#[cfg(not(feature = "kademlia-rocksdb"))]
-pub use kad_mem_store::MemoryStoreConfig;
-pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
-pub use kad_rocksdb_store::RocksDBStoreConfig;
 use libp2p_allow_block_list as allow_block_list;
 
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
@@ -150,11 +163,6 @@ pub enum QueryChannel {
 
 type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
-type Store = kad_mem_store::MemoryStore;
-#[cfg(feature = "kademlia-rocksdb")]
-type Store = kad_rocksdb_store::RocksDBStore;
-
 // Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
@@ -212,7 +220,7 @@ pub async fn init(
 	genesis_hash: &str,
 	is_fat: bool,
 	shutdown: Controller<String>,
-	#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
+	#[cfg(feature = "rocksdb")] db: Arc<rocksdb::DB>,
 ) -> Result<(Client, EventLoop, broadcast::Receiver<OutputEvent>)> {
 	// create sender channel for P2P event loop commands
 	let (command_sender, command_receiver) = mpsc::unbounded_channel();
@@ -226,7 +234,7 @@ pub async fn init(
 	let store = Store::with_config(
 		id_keys.public().to_peer_id(),
 		(&cfg).into(),
-		#[cfg(feature = "kademlia-rocksdb")]
+		#[cfg(feature = "rocksdb")]
 		db,
 	);
 	// create Swarm
@@ -373,7 +381,7 @@ pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
 		.any(|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)))
 }
 
-fn get_or_init_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keypair> {
+fn get_or_init_keypair(cfg: &LibP2PConfig, db: impl Database) -> Result<identity::Keypair> {
 	if let Some(secret_key) = cfg.secret_key.as_ref() {
 		return keypair(secret_key);
 	};
@@ -388,7 +396,7 @@ fn get_or_init_keypair(cfg: &LibP2PConfig, db: RocksDB) -> Result<identity::Keyp
 	Ok(id_keys)
 }
 
-pub fn identity(cfg: &LibP2PConfig, db: RocksDB) -> Result<(identity::Keypair, PeerId)> {
+pub fn identity(cfg: &LibP2PConfig, db: impl Database) -> Result<(identity::Keypair, PeerId)> {
 	let keypair = get_or_init_keypair(cfg, db)?;
 	let peer_id = PeerId::from(keypair.public());
 	Ok((keypair, peer_id))

@@ -1,7 +1,11 @@
 use std::{fs, path::Path, sync::Arc};
 
+#[cfg(not(feature = "rocksdb"))]
+use avail_light_core::data::MemoryDB as DB;
+#[cfg(feature = "rocksdb")]
+use avail_light_core::data::RocksDB as DB;
 use avail_light_core::{
-	data::{Database, LatestHeaderKey, RocksDB},
+	data::{Database, LatestHeaderKey},
 	fat_client,
 	network::{p2p, rpc, Network},
 	shutdown::Controller,
@@ -51,13 +55,16 @@ async fn main() -> Result<()> {
 		clean_db_state(&config.avail_path)?;
 	};
 
-	let db = RocksDB::open(&config.avail_path)?;
+	#[cfg(not(feature = "rocksdb"))]
+	let db = DB::default();
+	#[cfg(feature = "rocksdb")]
+	let db = DB::open(&config.avail_path)?;
 
 	let _ = spawn_in_span(run(config, db, shutdown)).await?;
 	Ok(())
 }
 
-async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Result<()> {
+async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
 	info!("Running Avail Light Fat Client v{version}");
 	info!("Using configuration: {config:?}");
@@ -92,6 +99,7 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		&config.genesis_hash,
 		true,
 		shutdown.clone(),
+		#[cfg(feature = "rocksdb")]
 		db.inner(),
 	)
 	.await?;
