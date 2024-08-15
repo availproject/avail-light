@@ -9,10 +9,7 @@ use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
-use kate_recovery::{
-	commitments,
-	matrix::{Dimensions, Partition},
-};
+use kate_recovery::{commitments, matrix::Dimensions};
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
@@ -294,30 +291,21 @@ pub mod block_matrix_partition_format {
 		}
 	}
 
-	pub fn serialize<S>(partition: &Option<Partition>, serializer: S) -> Result<S::Ok, S::Error>
+	pub fn serialize<S>(partition: &Partition, serializer: S) -> Result<S::Ok, S::Error>
 	where
 		S: Serializer,
 	{
-		match partition {
-			Some(partition) => {
-				let Partition { fraction, number } = partition;
-				let s = format!("{number}/{fraction}");
-				serializer.serialize_str(&s)
-			},
-			None => serializer.serialize_none(),
-		}
+		let Partition { fraction, number } = partition;
+		let s = format!("{number}/{fraction}");
+		serializer.serialize_str(&s)
 	}
 
-	pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Partition>, D::Error>
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Partition, D::Error>
 	where
 		D: Deserializer<'de>,
 	{
 		let value = &String::deserialize(deserializer)?;
-		if value.is_empty() || value.to_ascii_lowercase().contains("none") {
-			return Ok(None);
-		}
-
-		parse(value).map(Some).map_err(serde::de::Error::custom)
+		parse(value).map_err(serde::de::Error::custom)
 	}
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -393,30 +381,17 @@ pub struct RuntimeConfig {
 	pub num_cpus_threshold: usize,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
-	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
-	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
 	#[serde(with = "option_duration_seconds_format")]
 	pub block_processing_delay: Option<Duration>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
-	#[serde(with = "block_matrix_partition_format")]
-	pub block_matrix_partition: Option<Partition>,
-	/// Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 	pub sync_start_block: Option<u32>,
 	/// Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the starting block at the point the LC is started and is only checked for new blocks. (default: true)
 	pub sync_finality_enable: bool,
-	/// Maximum number of cells per request for proof queries (default: 30).
-	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
-}
-
-impl RuntimeConfig {
-	pub fn is_fat_client(&self) -> bool {
-		self.block_matrix_partition.is_some()
-	}
 }
 
 pub struct Delay(pub Option<Duration>);
@@ -441,27 +416,6 @@ impl From<&RuntimeConfig> for LightClientConfig {
 		LightClientConfig {
 			confidence: val.confidence,
 			block_processing_delay: Delay(block_processing_delay),
-		}
-	}
-}
-
-/// Fat client configuration (see [RuntimeConfig] for details)
-pub struct FatClientConfig {
-	pub full_nodes_ws: Vec<String>,
-	pub query_proof_rpc_parallel_tasks: usize,
-	pub block_processing_delay: Delay,
-	pub block_matrix_partition: Option<Partition>,
-	pub max_cells_per_rpc: usize,
-}
-
-impl From<&RuntimeConfig> for FatClientConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		FatClientConfig {
-			full_nodes_ws: val.rpc.full_node_ws.clone(),
-			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
-			block_processing_delay: Delay(val.block_processing_delay),
-			block_matrix_partition: val.block_matrix_partition,
-			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
 		}
 	}
 }
@@ -542,12 +496,9 @@ impl Default for RuntimeConfig {
 			total_memory_gb_threshold: 16.0,
 			num_cpus_threshold: 4,
 			disable_rpc: false,
-			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: Some(Duration::from_secs(20)),
-			block_matrix_partition: None,
 			sync_start_block: None,
 			sync_finality_enable: false,
-			max_cells_per_rpc: Some(30),
 			threshold: 5000,
 			origin: Origin::External,
 			client_alias: None,

@@ -13,7 +13,7 @@ use color_eyre::{
 };
 use derive_more::From;
 use hyper::{http, StatusCode};
-use kate_recovery::{com::AppData, commitments, config, matrix::Partition};
+use kate_recovery::{com::AppData, commitments, config};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use sp_core::{blake2_256, H256};
 use std::{
@@ -34,7 +34,7 @@ use crate::{
 		VerifiedSyncHeaderKey,
 	},
 	network::rpc::Event as RpcEvent,
-	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig},
+	types::{self, BlockVerified, RuntimeConfig},
 	utils::{decode_app_data, OptionalExtension},
 };
 
@@ -98,11 +98,6 @@ pub struct Status {
 	pub genesis_hash: String,
 	pub network: String,
 	pub blocks: Blocks,
-	#[serde(
-		skip_serializing_if = "Option::is_none",
-		with = "block_matrix_partition_format"
-	)]
-	pub partition: Option<Partition>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -194,7 +189,6 @@ impl Status {
 			genesis_hash: format!("{:?}", node.genesis_hash),
 			network: node.network(),
 			blocks,
-			partition: config.block_matrix_partition,
 		}
 	}
 }
@@ -209,15 +203,10 @@ pub enum Mode {
 
 impl From<&RuntimeConfig> for Vec<Mode> {
 	fn from(value: &RuntimeConfig) -> Self {
-		let mut result: Vec<Mode> = vec![];
-		result.push(Mode::Light);
-		if value.app_id.is_some() {
-			result.push(Mode::App);
+		match value.app_id {
+			None => vec![Mode::Light],
+			Some(_) => vec![Mode::Light, Mode::App],
 		}
-		if value.block_matrix_partition.is_some() {
-			result.push(Mode::Partition)
-		}
-		result
 	}
 }
 

@@ -20,8 +20,12 @@ use kate_recovery::{
 };
 use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
+use serde::{Deserialize, Serialize};
 use sp_core::blake2_256;
-use std::{sync::Arc, time::Instant};
+use std::{
+	sync::Arc,
+	time::{Duration, Instant},
+};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -32,7 +36,7 @@ use crate::{
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{BlockVerified, ClientChannels, FatClientConfig},
+	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
 	utils::extract_kate,
 };
 
@@ -60,6 +64,32 @@ pub fn new(
 	}
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Config {
+	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: 1/1)
+	#[serde(with = "block_matrix_partition_format")]
+	pub block_matrix_partition: Partition,
+	/// Maximum number of cells per request for proof queries (default: 30).
+	pub max_cells_per_rpc: usize,
+	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
+	pub query_proof_rpc_parallel_tasks: usize,
+}
+
+pub const ENTIRE_BLOCK: Partition = Partition {
+	number: 1,
+	fraction: 1,
+};
+
+impl Default for Config {
+	fn default() -> Self {
+		Self {
+			block_matrix_partition: ENTIRE_BLOCK,
+			max_cells_per_rpc: 30,
+			query_proof_rpc_parallel_tasks: 8,
+		}
+	}
+}
+
 #[async_trait]
 impl<T: Database + Sync> Client for FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
@@ -79,10 +109,9 @@ pub async fn process_block(
 	client: &impl Client,
 	db: impl Database,
 	metrics: &Arc<impl Metrics>,
-	cfg: &FatClientConfig,
+	cfg: &Config,
 	header: &Header,
 	received_at: Instant,
-	partition: Partition,
 ) -> Result<()> {
 	metrics.count(MetricCounter::SessionBlocks).await;
 	metrics
@@ -123,9 +152,9 @@ pub async fn process_block(
 
 	// Fat client partition upload logic
 	let positions: Vec<Position> = dimensions
-		.iter_extended_partition_positions(&partition)
+		.iter_extended_partition_positions(&cfg.block_matrix_partition)
 		.collect();
-	let Partition { number, fraction } = partition;
+	let Partition { number, fraction } = cfg.block_matrix_partition;
 	info!(
 		block_number,
 		"partition_cells_requested" = positions.len(),
@@ -195,7 +224,6 @@ pub async fn process_block(
 /// # Arguments
 ///
 /// * `fat_client` - Fat client implementation
-/// * `cfg` - Fat client configuration
 /// * `metrics` -  Metrics registry
 /// * `channels` - Communication channels
 /// * `partition` - Assigned fat client partition
@@ -203,13 +231,15 @@ pub async fn process_block(
 pub async fn run(
 	client: impl Client,
 	db: impl Database + Clone,
-	cfg: FatClientConfig,
+	cfg: Config,
+	block_processing_delay: Option<Duration>,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
-	partition: Partition,
 	shutdown: Controller<String>,
 ) {
 	info!("Starting fat client...");
+
+	let delay = Delay(block_processing_delay);
 
 	loop {
 		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
@@ -225,24 +255,16 @@ pub async fn run(
 			},
 		};
 
-		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
+		if let Some(seconds) = delay.sleep_duration(received_at) {
+			info!("Sleeping for {seconds:?} seconds");
 			metrics
 				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
 				.await;
-			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
 
-		if let Err(error) = process_block(
-			&client,
-			db.clone(),
-			&metrics,
-			&cfg,
-			&header,
-			received_at,
-			partition,
-		)
-		.await
+		if let Err(error) =
+			process_block(&client, db.clone(), &metrics, &cfg, &header, received_at).await
 		{
 			error!("Cannot process block: {error}");
 			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
@@ -266,7 +288,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{data, telemetry::metric::tests, types::RuntimeConfig};
+	use crate::{data, telemetry::metric::tests};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -358,13 +380,6 @@ mod tests {
 		},
 	];
 
-	fn entire_block() -> Partition {
-		Partition {
-			number: 1,
-			fraction: 1,
-		}
-	}
-
 	#[tokio::test]
 	async fn process_block_successful() {
 		let db = data::MemoryDB::default();
@@ -383,10 +398,9 @@ mod tests {
 			&mock_client,
 			db,
 			&Arc::new(tests::MockMetrics {}),
-			&FatClientConfig::from(&RuntimeConfig::default()),
+			&Config::default(),
 			&default_header(),
 			Instant::now(),
-			entire_block(),
 		)
 		.await
 		.unwrap();

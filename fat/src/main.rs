@@ -1,10 +1,12 @@
+use std::{fs, path::Path, sync::Arc};
+
 use avail_light_core::{
-	crawl_client,
 	data::{Database, LatestHeaderKey, RocksDB},
+	fat_client,
 	network::{p2p, rpc, Network},
 	shutdown::Controller,
-	telemetry::{otlp, MetricCounter, Metrics},
-	types::{BlockVerified, KademliaMode},
+	telemetry::{self, MetricCounter, Metrics},
+	types::{BlockVerified, ClientChannels, KademliaMode, Origin},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -13,7 +15,6 @@ use color_eyre::{
 	Result,
 };
 use config::Config;
-use std::{fs, path::Path, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, span, warn, Level};
 
@@ -28,7 +29,7 @@ fn clean_db_state(path: &str) -> Result<()> {
 }
 
 #[tokio::main]
-pub async fn main() -> Result<()> {
+async fn main() -> Result<()> {
 	let shutdown = Controller::new();
 	let opts = config::CliOpts::parse();
 	let config = config::load(&opts)?;
@@ -53,32 +54,31 @@ pub async fn main() -> Result<()> {
 	let db = RocksDB::open(&config.avail_path)?;
 
 	let _ = spawn_in_span(run(config, db, shutdown)).await?;
-
 	Ok(())
 }
 
 async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
-	info!("Running Avail Light Client Crawler v{version}");
+	info!("Running Avail Light Fat Client v{version}");
 	info!("Using configuration: {config:?}");
 
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
-	let partition = config.crawl_block_matrix_partition;
+	let partition = config.fat.block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
 	let metric_attributes = vec![
-		("role", "crawler".to_string()),
+		("role", "fat".to_string()),
 		("version", version.to_string()),
 		("peerID", p2p_peer_id.to_string()),
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
-		("client_alias", config.client_alias),
+		("client_alias", config.client_alias.clone()),
 	];
 
 	let ot_metrics = Arc::new(
-		otlp::initialize(
+		telemetry::otlp::initialize(
 			metric_attributes,
-			&config.origin,
+			&Origin::FatClient,
 			&KademliaMode::Client.into(),
 			config.otel.clone(),
 		)
@@ -111,10 +111,15 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		config.libp2p.kademlia.kad_record_ttl,
 	);
 
+	let addrs = vec![
+		config.libp2p.tcp_multiaddress(),
+		config.libp2p.webrtc_multiaddress(),
+	];
+
 	p2p_client
-		.start_listening(vec![config.libp2p.tcp_multiaddress()])
+		.start_listening(addrs)
 		.await
-		.wrap_err("Error starting listeners.")?;
+		.wrap_err("Listening on TCP not to fail.")?;
 	info!("TCP listener started on port {}", config.libp2p.port);
 
 	let bootstrap_p2p_client = p2p_client.clone();
@@ -127,7 +132,7 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		}
 	}));
 
-	let (_, rpc_events, rpc_subscriptions) = rpc::init(
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&config.genesis_hash,
 		&config.rpc,
@@ -173,18 +178,25 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		ot_metrics.clone(),
 	)));
 
-	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
-		client_rpc_event_receiver,
-		p2p_client.clone(),
-		config.crawl_block_delay,
+	let channels = ClientChannels {
+		block_sender: block_tx,
+		rpc_event_receiver: client_rpc_event_receiver,
+	};
+
+	let fat_client = fat_client::new(p2p_client.clone(), rpc_client.clone());
+
+	let fat = spawn_in_span(shutdown.with_cancel(fat_client::run(
+		fat_client,
+		db.clone(),
+		config.fat.clone(),
+		config.block_processing_delay,
 		ot_metrics.clone(),
-		config.crawl_block_mode,
-		partition,
-		block_tx,
+		channels,
+		shutdown.clone(),
 	)));
 
 	ot_metrics.count(MetricCounter::Starts).await;
-	crawler.await?.map_err(|message| eyre!(message))?;
+	fat.await?.map_err(|message| eyre!(message))?;
 	Ok(())
 }
 

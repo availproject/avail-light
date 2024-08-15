@@ -1,25 +1,23 @@
-use std::fs;
+use std::{fs, time::Duration};
 
 use avail_light_core::{
-	crawl_client::CrawlMode,
+	fat_client,
 	network::{
 		p2p::{configuration::LibP2PConfig, BOOTSTRAP_LIST_EMPTY_MESSAGE},
 		rpc::configuration::RPCConfig,
 		Network,
 	},
 	telemetry::otlp::OtelConfig,
-	types::{block_matrix_partition_format, tracing_level_format, MultiaddrConfig, Origin},
+	types::{
+		block_matrix_partition_format, option_duration_seconds_format, tracing_level_format,
+		MultiaddrConfig,
+	},
 };
 use clap::{command, Parser};
 use color_eyre::{eyre::eyre, Result};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use tracing::Level;
-
-pub const ENTIRE_BLOCK: Partition = Partition {
-	number: 1,
-	fraction: 1,
-};
 
 #[derive(Parser)]
 #[command(version)]
@@ -39,6 +37,9 @@ pub struct CliOpts {
 	/// Testnet or devnet selection.
 	#[arg(short, long, value_name = "network")]
 	pub network: Option<Network>,
+	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
+	#[arg(long, value_parser = block_matrix_partition_format::parse)]
+	pub block_matrix_partition: Option<Partition>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,8 +47,6 @@ pub struct Config {
 	/// Genesis hash of the network to be connected to.
 	/// Set to "DEV" to connect to any network.
 	pub genesis_hash: String,
-	/// Origin (external, internal, etc.)
-	pub origin: Origin,
 	/// Log level.
 	#[serde(with = "tracing_level_format")]
 	pub log_level: Level,
@@ -57,39 +56,32 @@ pub struct Config {
 	pub avail_path: String,
 	/// Client alias for use in logs and metrics.
 	pub client_alias: String,
+	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
+	#[serde(with = "option_duration_seconds_format")]
+	pub block_processing_delay: Option<Duration>,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
 	#[serde(flatten)]
 	pub rpc: RPCConfig,
 	#[serde(flatten)]
 	pub otel: OtelConfig,
-	/// Crawl block periodically to ensure availability. (default: false)
-	pub crawl_block: bool,
-	/// Crawl block delay. Increment to ensure large block crawling (default: 20)
-	pub crawl_block_delay: u64,
-	/// Crawl block mode. Available modes are "cells", "rows" and "both" (default: "cells")
-	pub crawl_block_mode: CrawlMode,
-	/// Fraction and number of the block matrix part to crawl (e.g. 2/20 means second 1/20 part of a matrix) (default: 1/1)
-	#[serde(with = "block_matrix_partition_format")]
-	pub crawl_block_matrix_partition: Partition,
+	#[serde(flatten)]
+	pub fat: fat_client::Config,
 }
 
 impl Default for Config {
 	fn default() -> Self {
 		Self {
 			genesis_hash: "DEV".to_owned(),
-			origin: Origin::External,
 			log_level: Level::INFO,
 			log_format_json: false,
 			avail_path: "avail_path".to_string(),
-			client_alias: "crawler".to_string(),
+			client_alias: "fat".to_string(),
 			libp2p: Default::default(),
 			rpc: Default::default(),
 			otel: Default::default(),
-			crawl_block: false,
-			crawl_block_delay: 20,
-			crawl_block_mode: CrawlMode::Cells,
-			crawl_block_matrix_partition: ENTIRE_BLOCK,
+			fat: Default::default(),
+			block_processing_delay: Some(Duration::from_secs(20)),
 		}
 	}
 }
@@ -116,6 +108,10 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 
 	if config.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
+	}
+
+	if let Some(partition) = &opts.block_matrix_partition {
+		config.fat.block_matrix_partition = *partition
 	}
 
 	Ok(config)

@@ -1,0 +1,17 @@
+[package]
+name = "avail-light-fat"
+version = "0.1.0"
+authors.workspace = true
+edition = "2021"
+repository.workspace = true
+
+[dependencies]
+avail-light-core = { workspace = true, features = ["kademlia-rocksdb"] }
+clap.workspace = true
+color-eyre.workspace = true
+confy.workspace = true
+kate-recovery.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

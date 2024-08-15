@@ -269,7 +269,6 @@ mod tests {
 		primitives::Header as DaHeader,
 	};
 	use hyper::StatusCode;
-	use kate_recovery::matrix::Partition;
 	use std::{collections::HashSet, str::FromStr, sync::Arc};
 	use subxt::config::substrate::Digest;
 	use test_case::test_case;
@@ -322,10 +321,6 @@ mod tests {
 		let runtime_config = RuntimeConfig {
 			app_id: Some(1),
 			sync_start_block: Some(10),
-			block_matrix_partition: Some(Partition {
-				number: 1,
-				fraction: 10,
-			}),
 			..Default::default()
 		};
 		let db = MemoryDB::default();
@@ -358,7 +353,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{:#x}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}"#,
+			r#"{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:#x}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}"#,
 			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
@@ -767,10 +762,6 @@ mod tests {
 		let config = RuntimeConfig {
 			app_id: Some(1),
 			sync_start_block: Some(10),
-			block_matrix_partition: Some(Partition {
-				number: 1,
-				fraction: 10,
-			}),
 			..Default::default()
 		};
 
@@ -798,7 +789,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#,
+			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}}}"#,
 			gen_hash
 		);
 

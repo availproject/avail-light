@@ -32,8 +32,7 @@ Content-Type: application/json
 {
   "modes": [
     "light",
-    "app",
-    "partition"
+    "app"
   ],
   "app_id": {app-id}, // Optional
   "genesis_hash": "{genesis-hash}",
@@ -59,8 +58,7 @@ Content-Type: application/json
         "last": {last}
       }
     }
-  },
-  "partition": "{partition}" // Optional
+  }
 }
 ```
 
@@ -69,13 +67,11 @@ Content-Type: application/json
 - **genesis_hash** - genesis hash of the network to which the light client is connected
 - **network** - network host, version and spec version light client is currently con
 - **blocks** - state of processed blocks
-- **partition** - if configured, displays partition which light client distributes to the peer to peer network
 
 ### Modes
 
 - **light** - data availability sampling mode, the light client performs random sampling and calculates confidence
 - **app** - light client fetches, verifies, and stores application-related data
-- **partition** - light client fetches configured block partition and publishes it to the DHT
 
 ### Blocks
 
@@ -500,8 +496,7 @@ Status response.
   "message": {
     "modes": [
       "light",
-      "app",
-      "partition"
+      "app"
     ],
     "app_id": {app-id}, // Optional
     "genesis_hash": "{genesis-hash}",
@@ -527,8 +522,7 @@ Status response.
           "last": {last}
         }
       }
-    },
-    "partition": "{partition}"
+    }
   }
 }
 ```
