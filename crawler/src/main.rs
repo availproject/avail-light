@@ -135,13 +135,17 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 	)
 	.await?;
 
+	let first_header_rpc_event_receiver = rpc_events.subscribe();
+	let client_rpc_event_receiver = rpc_events.subscribe();
+
 	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
 		"Subscription loop failure triggered shutdown".to_string(),
 		rpc_subscriptions.run(),
 	)));
 
 	info!("Waiting for first finalized header...");
-	let wait_for_first_header = rpc::wait_for_finalized_header(rpc_events.subscribe(), 360);
+	let wait_for_first_header =
+		rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 360);
 	let block_header = match shutdown
 		.with_cancel(wait_for_first_header)
 		.await
@@ -170,7 +174,7 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 	)));
 
 	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
-		rpc_events.subscribe(),
+		client_rpc_event_receiver,
 		p2p_client.clone(),
 		config.crawl_block_delay,
 		ot_metrics.clone(),
