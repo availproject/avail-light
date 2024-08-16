@@ -45,13 +45,6 @@ opentelemetry = "0.24.0"
 opentelemetry-otlp = { version = "0.17.0", features = ["grpc-tonic", "metrics"] }
 opentelemetry_sdk = { version = "0.24.1", features = ["metrics", "rt-tokio"] }
 
-# Dependency `subxt` uses it's own 'version' of sp-core so we need to patch it :)
-[patch.crates-io]
-sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-sp-runtime = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-sp-std = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-2" }
-
 [profile.debug-fast]
 inherits = "release"
 debug = true
