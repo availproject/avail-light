@@ -110,7 +110,6 @@ jobs:
          overwrite: true
          file_glob: true
 
-
   compatibility_tests:
     runs-on: self-hosted
     steps:
