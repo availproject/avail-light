@@ -127,7 +127,7 @@ jobs:
       - name: Run e2e tests 
         run: |
           ls
-          which cargo && whoami
+         /root/.cargo/bin/cargo --version && whoami
           # ./run_tests_ci.sh 
 
       - name: Run compat tests
