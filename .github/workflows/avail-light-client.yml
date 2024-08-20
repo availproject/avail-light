@@ -114,6 +114,27 @@ jobs:
     needs: [binary_publish]
     runs-on: ubuntu-20.04
     steps:
+      - name: Checkout avail-test repository with submodules
+        uses: actions/checkout@v2
+        with:
+          repository: availproject/avail-test
+          path: avail-test  
+          token: ${{ secrets.PAT_TOKEN }}
+          submodules: true 
+          fetch-depth: 0  
+
+      - name: Run e2e tests 
+        run: |
+          cd avail-test  
+          ./run_tests_ci.sh 
+
+      - name: Run compat tests
+        run: |
+          cd avail-test  
+          cargo run --package compat-test-tool --bin compat-test-tool
+        env:
+          RUST_BACKTRACE: 1
+
       - name: Trigger repository_dispatch for release
         shell: bash
         run: |
