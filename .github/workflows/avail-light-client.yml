@@ -122,16 +122,17 @@ jobs:
           token: ${{ secrets.PAT_TOKEN }}
           submodules: true 
           ref: main
-          fetch-depth: 0  
+          fetch-depth: 0
 
       - name: Run e2e tests 
         run: |
-          cd avail-test  
+          cd avail-test
           ./run_tests_ci.sh 
 
       - name: Run compat tests
         run: |
-          cd avail-test  
+          cd avail-test
+          which cargo && whoami
           cargo run --package compat-test-tool --bin compat-test-tool
         env:
           RUST_BACKTRACE: 1
