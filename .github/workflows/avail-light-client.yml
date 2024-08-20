@@ -137,6 +137,7 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+
   trigger_deploy_workflow:
     needs: [binary_publish]
     runs-on: ubuntu-20.04
