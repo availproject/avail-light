@@ -128,7 +128,7 @@ jobs:
         working-directory: avail-test
         run: |
          cargo --version && whoami
-          # ./run_tests_ci.sh 
+         ./run_tests_ci.sh 
         env:
           PATH: "$HOME/.cargo/bin:$PATH"
       - name: Run compat tests
