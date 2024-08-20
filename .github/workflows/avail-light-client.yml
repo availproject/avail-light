@@ -127,7 +127,7 @@ jobs:
       - name: Run e2e tests
         working-directory: avail-test
         run: |
-          echo 'export PATH="/root/.cargo/bin:$PATH"' >> $GITHUB_ENV
+          export cargo="/root/.cargo/bin"
           ./run_tests_ci.sh 
         env:
           PATH: "$HOME/.cargo/bin:$PATH"
