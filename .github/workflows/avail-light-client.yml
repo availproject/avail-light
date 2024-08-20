@@ -183,3 +183,4 @@ jobs:
           tags: availj/avail-light:${{ github.ref_name }}
           build-args: |
             AVAIL_TAG=${{ github.ref_name }}
+            
