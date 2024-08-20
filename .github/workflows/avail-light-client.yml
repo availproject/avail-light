@@ -126,6 +126,7 @@ jobs:
 
       - name: Run e2e tests 
         run: |
+          ls
           cd avail-test
           which cargo && whoami
           # ./run_tests_ci.sh 
