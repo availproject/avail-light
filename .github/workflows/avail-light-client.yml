@@ -129,15 +129,13 @@ jobs:
         run: |
           export PATH="/root/.cargo/bin:$PATH"
           ./run_tests_ci.sh 
-        env:
-          PATH: "$HOME/.cargo/bin:$PATH"
       - name: Run compat tests
         working-directory: avail-test
         run: |
+          export PATH="/root/.cargo/bin:$PATH"
           cargo run --package compat-test-tool --bin compat-test-tool
         env:
           RUST_BACKTRACE: 1
-          PATH: "$HOME/.cargo/bin:$PATH"
 
   trigger_deploy_workflow:
     needs: [binary_publish]
