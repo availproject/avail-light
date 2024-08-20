@@ -2,6 +2,7 @@
 
 ## [1.12.0]
 
+- Add `WebRTC` listener with config parameter and CLI option for port setting
 - Remove old crate patches that were required when `subxt` was directly used
 - Dial peer at mdns step to trigger identify
 - Update expected system version to 2.2
