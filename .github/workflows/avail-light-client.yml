@@ -127,16 +127,15 @@ jobs:
       - name: Run e2e tests 
         run: |
           cd avail-test
+          which cargo && whoami
           ./run_tests_ci.sh 
 
       - name: Run compat tests
         run: |
           cd avail-test
-          which cargo && whoami
           cargo run --package compat-test-tool --bin compat-test-tool
         env:
           RUST_BACKTRACE: 1
-
 
   trigger_deploy_workflow:
     needs: [binary_publish]
