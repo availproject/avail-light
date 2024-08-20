@@ -121,6 +121,7 @@ jobs:
           path: avail-test  
           token: ${{ secrets.PAT_TOKEN }}
           submodules: true 
+          ref: main
           fetch-depth: 0  
 
       - name: Run e2e tests 
