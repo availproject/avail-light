@@ -14,7 +14,7 @@ use color_eyre::{
 };
 use config::Config;
 use std::{fs, path::Path, sync::Arc};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::{info, span, warn, Level};
 
 mod config;
@@ -57,10 +57,10 @@ pub async fn main() -> Result<()> {
 	Ok(())
 }
 
-async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Result<()> {
+async fn run(cfg: Config, db: RocksDB, shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
 	info!("Running Avail Light Client Crawler v{version}");
-	info!("Using configuration: {config:?}");
+	info!("Using configuration: {cfg:?}");
 
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 	let partition = config.crawl_block_matrix_partition;
@@ -71,45 +71,32 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		("version", version.to_string()),
 		("peerID", p2p_peer_id.to_string()),
 		("partition_size", partition_size),
-		("network", Network::name(&config.genesis_hash)),
-		("client_alias", config.client_alias),
+		("network", Network::name(&cfg.genesis_hash)),
+		("client_alias", cfg.client_alias),
 	];
 
 	let ot_metrics = Arc::new(
 		otlp::initialize(
 			metric_attributes,
-			&config.origin,
+			&cfg.origin,
 			&KademliaMode::Client.into(),
-			config.otel.clone(),
+			cfg.otel.clone(),
 		)
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
-
-	let p2p_event_loop = p2p::EventLoop::new(
-		config.libp2p.clone(),
+	let (p2p_client, p2p_event_loop, _) = p2p::init(
+		cfg.libp2p.clone(),
+		p2p_keypair,
 		version,
-		&config.genesis_hash,
-		&p2p_keypair,
+		&cfg.genesis_hash,
 		true,
 		shutdown.clone(),
 		db.inner(),
-	);
+	)
+	.await?;
 
-	spawn_in_span(
-		shutdown.with_cancel(
-			p2p_event_loop
-				.await
-				.run(ot_metrics.clone(), p2p_event_loop_receiver),
-		),
-	);
-
-	let p2p_client = p2p::Client::new(
-		p2p_event_loop_sender,
-		config.libp2p.dht_parallelization_limit,
-		config.libp2p.kademlia.kad_record_ttl,
-	);
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
 
 	p2p_client
 		.start_listening(vec![config.libp2p.tcp_multiaddress()])
@@ -120,20 +107,15 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 	let bootstrap_p2p_client = p2p_client.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bootstraps = &config.libp2p.bootstraps;
+		let bootstraps = &cfg.libp2p.bootstraps;
 		match bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
 			Ok(()) => info!("Bootstrap done."),
 			Err(e) => warn!("Bootstrap error: {e:?}."),
 		}
 	}));
 
-	let (_, rpc_events, rpc_subscriptions) = rpc::init(
-		db.clone(),
-		&config.genesis_hash,
-		&config.rpc,
-		shutdown.clone(),
-	)
-	.await?;
+	let (_, rpc_events, rpc_subscriptions) =
+		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
 
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
 	let client_rpc_event_receiver = rpc_events.subscribe();
@@ -167,7 +149,7 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 	let (block_tx, block_rx) = broadcast::channel::<BlockVerified>(1 << 7);
 
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
-		config.otel.ot_flush_block_interval,
+		cfg.otel.ot_flush_block_interval,
 		block_rx,
 		shutdown.clone(),
 		ot_metrics.clone(),
@@ -176,9 +158,9 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
 		client_rpc_event_receiver,
 		p2p_client.clone(),
-		config.crawl_block_delay,
+		cfg.crawl_block_delay,
 		ot_metrics.clone(),
-		config.crawl_block_mode,
+		cfg.crawl_block_mode,
 		partition,
 		block_tx,
 	)));

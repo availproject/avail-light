@@ -5,10 +5,9 @@ use libp2p::{
 	core::ConnectedPoint,
 	dcutr,
 	identify::{self, Info},
-	identity::Keypair,
 	kad::{
-		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, Mode, QueryId,
-		QueryResult, QueryStats, RecordKey,
+		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, Mode, PutRecordOk,
+		QueryId, QueryResult, QueryStats, RecordKey,
 	},
 	mdns,
 	multiaddr::Protocol,
@@ -22,14 +21,14 @@ use libp2p::{
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
-	sync::{mpsc::UnboundedReceiver, oneshot},
+	sync::{broadcast, mpsc::UnboundedReceiver, oneshot},
 	time::{self, interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
 
 use super::{
-	build_swarm, client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent,
-	Command, QueryChannel,
+	client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent, Command,
+	OutputEvent, QueryChannel,
 };
 use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
@@ -127,6 +126,8 @@ impl EventCounter {
 
 pub struct EventLoop {
 	pub swarm: Swarm<Behaviour>,
+	command_receiver: UnboundedReceiver<Command>,
+	event_sender: broadcast::Sender<OutputEvent>,
 	// Tracking Kademlia events
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
@@ -163,38 +164,23 @@ impl TryFrom<RecordKey> for DHTKey {
 	}
 }
 
-#[cfg(not(feature = "kademlia-rocksdb"))]
-type Store = super::kad_mem_store::MemoryStore;
-#[cfg(feature = "kademlia-rocksdb")]
-type Store = super::kad_rocksdb_store::RocksDBStore;
-
 impl EventLoop {
 	#[allow(clippy::too_many_arguments)]
-	pub async fn new(
+	pub(crate) fn new(
 		cfg: LibP2PConfig,
-		version: &str,
-		genesis_hash: &str,
-		id_keys: &Keypair,
+		swarm: Swarm<Behaviour>,
 		is_fat_client: bool,
+		command_receiver: UnboundedReceiver<Command>,
+		event_sender: broadcast::Sender<OutputEvent>,
 		shutdown: Controller<String>,
-		#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_period;
-		let peer_id = id_keys.public().to_peer_id();
-		let store = Store::with_config(
-			peer_id,
-			(&cfg).into(),
-			#[cfg(feature = "kademlia-rocksdb")]
-			db,
-		);
-
-		let swarm = build_swarm(&cfg, version, genesis_hash, id_keys, store)
-			.await
-			.expect("Unable to build swarm.");
-
 		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
+
 		Self {
 			swarm,
+			command_receiver,
+			event_sender,
 			pending_kad_queries: Default::default(),
 			pending_swarm_events: Default::default(),
 			relay: RelayState {
@@ -217,11 +203,7 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(
-		mut self,
-		metrics: Arc<impl Metrics>,
-		mut command_receiver: UnboundedReceiver<Command>,
-	) {
+	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
@@ -235,9 +217,12 @@ impl EventLoop {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
 					event_counter.add_event();
+					// TODO: remove from the loop
 					metrics.count(MetricCounter::EventLoopEvent).await;
+
+					_ = self.event_sender.send(OutputEvent::Count);
 				},
-				command = command_receiver.recv() => match command {
+				command = self.command_receiver.recv() => match command {
 					Some(c) => _ = (c)(&mut self),
 					//
 					None => {
@@ -298,10 +283,15 @@ impl EventLoop {
 					},
 					kad::Event::InboundRequest { request } => match request {
 						InboundRequest::GetRecord { .. } => {
+							_ = self.event_sender.send(OutputEvent::IncomingGetRecord);
+							// TODO: move out from the loop
 							metrics.count(MetricCounter::IncomingGetRecord).await;
 						},
 						InboundRequest::PutRecord { source, record, .. } => {
+							_ = self.event_sender.send(OutputEvent::IncomingPutRecord);
+							// TODO: move out from the loop
 							metrics.count(MetricCounter::IncomingPutRecord).await;
+
 							match record {
 								Some(mut record) => {
 									let ttl = &self.event_loop_config.kad_record_ttl;
@@ -323,7 +313,10 @@ impl EventLoop {
 						trace!("Kademlia mode changed: {new_mode:?}");
 						// This event should not be automatically triggered because the mode changes are handled explicitly through the LC logic
 						self.kad_mode = new_mode;
-						metrics.update_operating_mode(new_mode).await
+						// TODO: move out from the loop
+						metrics.update_operating_mode(new_mode).await;
+
+						_ = self.event_sender.send(OutputEvent::KadModeChange(new_mode));
 					},
 					kad::Event::OutboundQueryProgressed {
 						id, result, stats, ..
@@ -352,20 +345,45 @@ impl EventLoop {
 
 							match error {
 								kad::PutRecordError::QuorumFailed { key, .. } => {
-									self.handle_put_result(key, stats, true, metrics).await;
+									// TODO: move out from the loop
+									self.handle_put_result(
+										key.clone(),
+										stats.clone(),
+										true,
+										metrics,
+									)
+									.await;
+
+									_ = self
+										.event_sender
+										.send(OutputEvent::PutRecordQuorumFailed { key, stats });
 								},
 								kad::PutRecordError::Timeout { key, .. } => {
-									self.handle_put_result(key, stats, true, metrics).await;
+									// TODO: move out from the loop
+									self.handle_put_result(
+										key.clone(),
+										stats.clone(),
+										true,
+										metrics,
+									)
+									.await;
+
+									_ = self
+										.event_sender
+										.send(OutputEvent::PutRecordTimeout { key, stats })
 								},
 							}
 						},
 
-						QueryResult::PutRecord(Ok(record)) => {
-							if self.pending_kad_queries.remove(&id).is_none() {
-								return;
-							};
-							self.handle_put_result(record.key.clone(), stats, false, metrics)
+						QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
+							_ = self.pending_kad_queries.remove(&id);
+
+							// TODO: move out from the loop
+							self.handle_put_result(key.clone(), stats.clone(), false, metrics)
 								.await;
+							_ = self
+								.event_sender
+								.send(OutputEvent::PutRecordOk { key, stats });
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
@@ -490,10 +508,13 @@ impl EventLoop {
 					if new == NatStatus::Private || old == NatStatus::Private {
 						info!("[AutoNat] Autonat says we're still private.");
 						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
+						// TODO: remove from the loop
 						if !self.event_loop_config.is_fat_client {
 							// select a relay, try to dial it
 							self.select_and_dial_relay();
 						}
+
+						_ = self.event_sender.send(OutputEvent::NatStatusPrivate);
 					};
 				},
 			},
@@ -511,9 +532,12 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { result, .. })) => {
 				if let Ok(rtt) = result {
+					// TODO: remove from the loop
 					let _ = metrics
 						.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
 						.await;
+
+					_ = self.event_sender.send(OutputEvent::Ping(rtt));
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
@@ -545,10 +569,16 @@ impl EventLoop {
 						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 					},
 					SwarmEvent::IncomingConnection { .. } => {
+						// TODO: remove from the loop
 						metrics.count(MetricCounter::IncomingConnections).await;
+
+						_ = self.event_sender.send(OutputEvent::IncomingConnection);
 					},
 					SwarmEvent::IncomingConnectionError { .. } => {
+						// TODO: remove from the loop
 						metrics.count(MetricCounter::IncomingConnectionErrors).await;
+
+						_ = self.event_sender.send(OutputEvent::IncomingConnectionError);
 					},
 					SwarmEvent::ExternalAddrConfirmed { address } => {
 						info!(
@@ -561,7 +591,12 @@ impl EventLoop {
 								address.to_string()
 							);
 						};
-						metrics.update_multiaddress(address).await;
+						// TODO: remove from the loop
+						metrics.update_multiaddress(address.clone()).await;
+
+						_ = self
+							.event_sender
+							.send(OutputEvent::MultiaddressUpdate(address));
 					},
 					SwarmEvent::ConnectionEstablished {
 						peer_id,
@@ -570,7 +605,11 @@ impl EventLoop {
 						num_established,
 						..
 					} => {
+						// TODO: remove from the loop
 						metrics.count(MetricCounter::EstablishedConnections).await;
+
+						_ = self.event_sender.send(OutputEvent::EstablishedConnection);
+
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 							_ = ch.send(Ok(ConnectionEstablishedInfo {
@@ -583,7 +622,10 @@ impl EventLoop {
 						self.establish_relay_circuit(peer_id);
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+						// TODO: remove from the loop
 						metrics.count(MetricCounter::OutgoingConnectionErrors).await;
+
+						_ = self.event_sender.send(OutputEvent::OutgoingConnectionError);
 
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occurred

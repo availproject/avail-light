@@ -31,7 +31,7 @@ use color_eyre::{
 };
 use kate_recovery::com::AppData;
 use std::{fs, path::Path, sync::Arc};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::trace;
 use tracing::{error, info, span, warn, Level};
 
@@ -89,33 +89,19 @@ async fn run(
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	// Create sender channel for P2P event loop commands
-	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
-
-	let p2p_event_loop = p2p::EventLoop::new(
+	let (p2p_client, p2p_event_loop, _) = p2p::init(
 		cfg.libp2p.clone(),
+		id_keys,
 		version,
 		&cfg.genesis_hash,
-		&id_keys,
 		false,
 		shutdown.clone(),
 		#[cfg(feature = "kademlia-rocksdb")]
 		db.inner(),
-	);
+	)
+	.await?;
 
-	spawn_in_span(
-		shutdown.with_cancel(
-			p2p_event_loop
-				.await
-				.run(ot_metrics.clone(), p2p_event_loop_receiver),
-		),
-	);
-
-	let p2p_client = p2p::Client::new(
-		p2p_event_loop_sender,
-		cfg.libp2p.dht_parallelization_limit,
-		cfg.libp2p.kademlia.kad_record_ttl,
-	);
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
 
 	let addrs = vec![
 		cfg.libp2p.tcp_multiaddress(),

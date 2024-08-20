@@ -3,8 +3,8 @@ use color_eyre::{eyre::WrapErr, Report, Result};
 use configuration::LibP2PConfig;
 use libp2p::{
 	autonat, dcutr, identify,
-	identity::{self, ed25519},
-	kad::{self, PeerRecord},
+	identity::{self, ed25519, Keypair},
+	kad::{self, Mode, PeerRecord, QueryStats},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -14,8 +14,8 @@ use multihash::{self, Hasher};
 use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::Ipv4Addr, str::FromStr};
-use tokio::sync::oneshot;
+use std::{fmt, net::Ipv4Addr, str::FromStr, sync::Arc, time::Duration};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
 #[cfg(feature = "network-analysis")]
 pub mod analyzer;
@@ -28,6 +28,7 @@ mod kad_mem_store;
 mod kad_rocksdb_store;
 use crate::{
 	data::{Database, P2PKeypairKey, RocksDB},
+	shutdown::Controller,
 	types::SecretKey,
 };
 pub use client::Client;
@@ -50,6 +51,33 @@ pub const BOOTSTRAP_LIST_EMPTY_MESSAGE: &str = r#"
 Bootstrap node list must not be empty.
 Either use a '--network' flag or add a list of bootstrap nodes in the configuration file.
 "#;
+
+#[derive(Clone)]
+pub enum OutputEvent {
+	IncomingGetRecord,
+	IncomingPutRecord,
+	KadModeChange(Mode),
+	PutRecordOk {
+		key: kad::RecordKey,
+		stats: QueryStats,
+	},
+	PutRecordQuorumFailed {
+		key: kad::RecordKey,
+		stats: QueryStats,
+	},
+	PutRecordTimeout {
+		key: kad::RecordKey,
+		stats: QueryStats,
+	},
+	NatStatusPrivate,
+	Ping(Duration),
+	IncomingConnection,
+	IncomingConnectionError,
+	MultiaddressUpdate(Multiaddr),
+	EstablishedConnection,
+	OutgoingConnectionError,
+	Count,
+}
 
 #[derive(Clone)]
 struct AgentVersion {
@@ -177,11 +205,46 @@ fn protocol_name(genesis_hash: &str) -> libp2p::StreamProtocol {
 		.expect("Invalid Kademlia protocol name")
 }
 
+pub async fn init(
+	cfg: LibP2PConfig,
+	id_keys: Keypair,
+	version: &str,
+	genesis_hash: &str,
+	is_fat: bool,
+	shutdown: Controller<String>,
+	#[cfg(feature = "kademlia-rocksdb")] db: Arc<rocksdb::DB>,
+) -> Result<(Client, EventLoop, broadcast::Receiver<OutputEvent>)> {
+	// create sender channel for P2P event loop commands
+	let (command_sender, command_receiver) = mpsc::unbounded_channel();
+	// create P2P Client
+	let client = Client::new(
+		command_sender,
+		cfg.dht_parallelization_limit,
+		cfg.kademlia.kad_record_ttl,
+	);
+	// create Store
+	let store = Store::with_config(
+		id_keys.public().to_peer_id(),
+		(&cfg).into(),
+		#[cfg(feature = "kademlia-rocksdb")]
+		db,
+	);
+	// create Swarm
+	let swarm = build_swarm(&cfg, version, genesis_hash, &id_keys, store)
+		.await
+		.expect("Unable to build swarm.");
+	let (event_sender, event_receiver) = broadcast::channel(1000);
+	// create EventLoop
+	let event_loop = EventLoop::new(cfg, swarm, is_fat, command_receiver, event_sender, shutdown);
+
+	Ok((client, event_loop, event_receiver))
+}
+
 async fn build_swarm(
 	cfg: &LibP2PConfig,
 	version: &str,
 	genesis_hash: &str,
-	id_keys: &libp2p::identity::Keypair,
+	id_keys: &Keypair,
 	kad_store: Store,
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config
