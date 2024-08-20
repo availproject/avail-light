@@ -9,7 +9,9 @@ use libp2p::{
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
+use libp2p_webrtc as webrtc;
 use multihash::{self, Hasher};
+use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{fmt, net::Ipv4Addr, str::FromStr};
@@ -234,6 +236,12 @@ async fn build_swarm(
 				noise::Config::new,
 				yamux::Config::default,
 			)?
+			.with_other_transport(|id_keys| {
+				Ok(webrtc::tokio::Transport::new(
+					id_keys.clone(),
+					webrtc::tokio::Certificate::generate(&mut thread_rng())?,
+				))
+			})?
 			.with_dns()?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?
 			.with_behaviour(behaviour)?
