@@ -124,15 +124,15 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Run e2e tests 
+      - name: Run e2e tests
+        working-directory: avail-test
         run: |
-          ls
          /root/.cargo/bin/cargo --version && whoami
           # ./run_tests_ci.sh 
 
       - name: Run compat tests
+        working-directory: avail-test
         run: |
-          cd avail-test
           cargo run --package compat-test-tool --bin compat-test-tool
         env:
           RUST_BACKTRACE: 1
