@@ -112,7 +112,7 @@ jobs:
 
 
   compatibility_tests:
-    runs-on: self-hosted
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout avail-test repository with submodules
         uses: actions/checkout@v2
