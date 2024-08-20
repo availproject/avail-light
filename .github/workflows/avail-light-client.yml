@@ -9,6 +9,7 @@ on:
 
 jobs:
   build:
+    if: false
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -110,8 +111,7 @@ jobs:
          file_glob: true
 
 
-  trigger_deploy_workflow:
-    needs: [binary_publish]
+  compatibility_tests:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout avail-test repository with submodules
@@ -135,6 +135,10 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+  trigger_deploy_workflow:
+    needs: [binary_publish]
+    runs-on: ubuntu-20.04
+    steps:
       - name: Trigger repository_dispatch for release
         shell: bash
         run: |
