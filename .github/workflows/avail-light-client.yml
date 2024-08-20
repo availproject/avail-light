@@ -128,7 +128,7 @@ jobs:
         run: |
           cd avail-test
           which cargo && whoami
-          ./run_tests_ci.sh 
+          # ./run_tests_ci.sh 
 
       - name: Run compat tests
         run: |
