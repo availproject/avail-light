@@ -124,12 +124,20 @@ async fn run(
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
-	// Start listening on provided port
+	let addrs = vec![
+		cfg.libp2p.tcp_multiaddress(),
+		cfg.libp2p.webrtc_multiaddress(),
+	];
+
+	// Start the TCP and WebRTC listeners
 	p2p_client
-		.start_listening(cfg.libp2p.multiaddress())
+		.start_listening(addrs)
 		.await
-		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", cfg.libp2p.port);
+		.wrap_err("Error starting li.")?;
+	info!(
+		"TCP listener started on port {}. WebRTC listening on port {}.",
+		cfg.libp2p.port, cfg.libp2p.webrtc_port
+	);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
@@ -409,11 +417,11 @@ async fn run_fat(
 		cfg.libp2p.kademlia.kad_record_ttl,
 	);
 
-	// Start listening on provided port
+	// Start listening on P2P port
 	p2p_client
-		.start_listening(cfg.libp2p.multiaddress())
+		.start_listening(vec![cfg.libp2p.tcp_multiaddress()])
 		.await
-		.wrap_err("Listening on TCP not to fail.")?;
+		.wrap_err("Error starting listeners.")?;
 	info!("TCP listener started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
@@ -553,6 +561,9 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 	if let Some(http_port) = opts.http_server_port {
 		cfg.api.http_server_port = http_port;
+	}
+	if let Some(webrtc_port) = opts.webrtc_port {
+		cfg.libp2p.webrtc_port = webrtc_port;
 	}
 	if let Some(avail_path) = &opts.avail_path {
 		cfg.avail_path = avail_path.to_string();

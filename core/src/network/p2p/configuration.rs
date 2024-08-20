@@ -124,8 +124,11 @@ pub struct LibP2PConfig {
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
 	pub secret_key: Option<SecretKey>,
-	/// P2P service port (default: 37000).
+	/// P2P TCP listener port (default: 37000).
 	pub port: u16,
+	/// P2P WebRTC listener port (default: 37001).
+	pub webrtc_port: u16,
+	/// P2P WebSocket switch. Note: it's mutually exclusive with the TCP listener (default: false)
 	pub ws_transport_enable: bool,
 	/// AutoNAT configuration
 	#[serde(flatten)]
@@ -157,6 +160,7 @@ impl Default for LibP2PConfig {
 		Self {
 			secret_key: None,
 			port: 37000,
+			webrtc_port: 37001,
 			ws_transport_enable: false,
 			autonat: Default::default(),
 			kademlia: Default::default(),
@@ -174,7 +178,7 @@ impl Default for LibP2PConfig {
 }
 
 impl LibP2PConfig {
-	pub fn multiaddress(&self) -> Multiaddr {
+	pub fn tcp_multiaddress(&self) -> Multiaddr {
 		let tcp_multiaddress = Multiaddr::empty()
 			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
 			.with(Protocol::Tcp(self.port));
@@ -184,6 +188,12 @@ impl LibP2PConfig {
 		} else {
 			tcp_multiaddress
 		}
+	}
+
+	pub fn webrtc_multiaddress(&self) -> Multiaddr {
+		Multiaddr::from(Ipv4Addr::UNSPECIFIED)
+			.with(Protocol::Udp(self.webrtc_port))
+			.with(Protocol::WebRTCDirect)
 	}
 }
 

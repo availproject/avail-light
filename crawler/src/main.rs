@@ -112,9 +112,9 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 	);
 
 	p2p_client
-		.start_listening(config.libp2p.multiaddress())
+		.start_listening(vec![config.libp2p.tcp_multiaddress()])
 		.await
-		.wrap_err("Listening on TCP not to fail.")?;
+		.wrap_err("Error starting listeners.")?;
 	info!("TCP listener started on port {}", config.libp2p.port);
 
 	let bootstrap_p2p_client = p2p_client.clone();

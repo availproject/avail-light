@@ -33,6 +33,7 @@ jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 libc = "0.2.150"
 libp2p = { workspace = true }
 libp2p-allow-block-list = { workspace = true }
+libp2p-webrtc = { version = "=0.7.1-alpha", features = ["tokio"] }
 mockall = "0.11.3"
 multihash = { workspace = true }
 num = "0.4.0"
