@@ -1,11 +1,7 @@
 use std::{fs, path::Path, sync::Arc};
 
-#[cfg(not(feature = "rocksdb"))]
-use avail_light_core::data::MemoryDB as DB;
-#[cfg(feature = "rocksdb")]
-use avail_light_core::data::RocksDB as DB;
 use avail_light_core::{
-	data::{Database, LatestHeaderKey},
+	data::{Database, LatestHeaderKey, DB},
 	fat_client,
 	network::{p2p, rpc, Network},
 	shutdown::Controller,
@@ -100,7 +96,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		true,
 		shutdown.clone(),
 		#[cfg(feature = "rocksdb")]
-		db.inner(),
+		db.clone(),
 	)
 	.await?;
 
