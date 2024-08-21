@@ -1,8 +1,5 @@
-#[cfg(not(feature = "rocksdb"))]
-use avail_light_core::data::MemoryDB as DB;
-#[cfg(feature = "rocksdb")]
-use avail_light_core::data::RocksDB as DB;
 use avail_light_core::{
+	data::DB,
 	network::rpc::{
 		self,
 		configuration::{ExponentialConfig, RPCConfig, RetryConfig},

@@ -1,7 +1,4 @@
 use super::ProvidersConfig;
-#[cfg(feature = "rocksdb")]
-use super::RocksDBStoreConfig;
-#[cfg(not(feature = "rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
@@ -217,7 +214,6 @@ impl From<&LibP2PConfig> for kad::Config {
 	}
 }
 
-#[cfg(not(feature = "rocksdb"))]
 impl From<&LibP2PConfig> for MemoryStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
 		MemoryStoreConfig {
@@ -232,9 +228,9 @@ impl From<&LibP2PConfig> for MemoryStoreConfig {
 }
 
 #[cfg(feature = "rocksdb")]
-impl From<&LibP2PConfig> for RocksDBStoreConfig {
+impl From<&LibP2PConfig> for super::RocksDBStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
-		RocksDBStoreConfig {
+		super::RocksDBStoreConfig {
 			max_value_bytes: cfg.kademlia.max_kad_record_size + 1,
 			providers: ProvidersConfig {
 				max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs

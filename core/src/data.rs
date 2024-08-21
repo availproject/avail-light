@@ -10,15 +10,16 @@ use sp_core::ed25519;
 mod keys;
 use keys::*;
 
-#[cfg(not(feature = "rocksdb"))]
 mod mem_db;
-#[cfg(not(feature = "rocksdb"))]
 pub use mem_db::*;
 
 #[cfg(feature = "rocksdb")]
 mod rocks_db;
+
+#[cfg(not(feature = "rocksdb"))]
+pub type DB = mem_db::MemoryDB;
 #[cfg(feature = "rocksdb")]
-pub use rocks_db::*;
+pub type DB = rocks_db::RocksDB;
 
 /// Column family for application state
 pub const APP_STATE_CF: &str = "app_state_cf";

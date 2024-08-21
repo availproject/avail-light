@@ -14,34 +14,30 @@ use multihash::{self, Hasher};
 use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "rocksdb")]
-use std::sync::Arc;
 use std::{fmt, net::Ipv4Addr, str::FromStr, time::Duration};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
+
 #[cfg(feature = "network-analysis")]
 pub mod analyzer;
 mod client;
 pub mod configuration;
 mod event_loop;
 mod kad_mem_providers;
-
-#[cfg(not(feature = "rocksdb"))]
 mod kad_mem_store;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
 
-#[cfg(not(feature = "rocksdb"))]
 pub use kad_mem_store::MemoryStoreConfig;
 #[cfg(feature = "rocksdb")]
 pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
 #[cfg(feature = "rocksdb")]
 pub use kad_rocksdb_store::RocksDBStoreConfig;
 
-#[cfg(feature = "rocksdb")]
-pub type Store = kad_rocksdb_store::RocksDBStore;
 #[cfg(not(feature = "rocksdb"))]
 pub type Store = kad_mem_store::MemoryStore;
+#[cfg(feature = "rocksdb")]
+pub type Store = kad_rocksdb_store::RocksDBStore;
 
 use crate::{
 	data::{Database, P2PKeypairKey},
@@ -220,7 +216,7 @@ pub async fn init(
 	genesis_hash: &str,
 	is_fat: bool,
 	shutdown: Controller<String>,
-	#[cfg(feature = "rocksdb")] db: Arc<rocksdb::DB>,
+	#[cfg(feature = "rocksdb")] db: crate::data::DB,
 ) -> Result<(Client, EventLoop, broadcast::Receiver<OutputEvent>)> {
 	// create sender channel for P2P event loop commands
 	let (command_sender, command_receiver) = mpsc::unbounded_channel();
@@ -235,7 +231,7 @@ pub async fn init(
 		id_keys.public().to_peer_id(),
 		(&cfg).into(),
 		#[cfg(feature = "rocksdb")]
-		db,
+		db.inner(),
 	);
 	// create Swarm
 	let swarm = build_swarm(&cfg, version, genesis_hash, &id_keys, store)
