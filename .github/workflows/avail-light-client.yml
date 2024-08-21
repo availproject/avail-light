@@ -7,6 +7,7 @@ on:
       - 'avail-light-client-v*.*.*'
       - 'avail-light-client-v*.*.*-*'
 
+
 jobs:
   build:
     if: false
