@@ -1,9 +1,10 @@
-use super::{keys::*, *};
 use crate::data::Database;
 use std::{
 	collections::HashMap,
 	sync::{Arc, RwLock},
 };
+
+use super::RecordKey;
 
 #[derive(Clone)]
 pub struct MemoryDB {
@@ -13,16 +14,21 @@ pub struct MemoryDB {
 #[derive(Eq, Hash, PartialEq)]
 pub struct HashMapKey(pub String);
 
-/// Type of the database key which we can get from the custom key.
-pub trait RecordKey: Into<HashMapKey> {
-	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
-}
-
 impl Default for MemoryDB {
 	fn default() -> Self {
 		MemoryDB {
 			map: Arc::new(RwLock::new(HashMap::new())),
 		}
+	}
+}
+
+impl<T: RecordKey> From<T> for HashMapKey {
+	fn from(value: T) -> Self {
+		let key = value.key();
+		HashMapKey(match value.space() {
+			Some(space) => format!("{space}::{key}"),
+			None => key,
+		})
 	}
 }
 
@@ -45,116 +51,5 @@ impl Database for MemoryDB {
 	fn delete<T: RecordKey>(&self, key: T) {
 		let mut map = self.map.write().expect("Lock acquired");
 		map.remove(&key.into());
-	}
-}
-
-impl From<AppDataKey> for HashMapKey {
-	fn from(value: AppDataKey) -> Self {
-		let AppDataKey(app_id, block_num) = value;
-		HashMapKey(format!(
-			"{APP_STATE_CF}:{APP_ID_PREFIX}:{app_id}:{block_num}"
-		))
-	}
-}
-
-impl From<BlockHeaderKey> for HashMapKey {
-	fn from(value: BlockHeaderKey) -> Self {
-		let BlockHeaderKey(block_num) = value;
-		HashMapKey(format!(
-			"{APP_STATE_CF}:{BLOCK_HEADER_KEY_PREFIX}:{block_num}"
-		))
-	}
-}
-
-impl From<VerifiedCellCountKey> for HashMapKey {
-	fn from(value: VerifiedCellCountKey) -> Self {
-		let VerifiedCellCountKey(block_num) = value;
-		HashMapKey(format!(
-			"{APP_STATE_CF}:{VERIFIED_CELL_COUNT_PREFIX}:{block_num}"
-		))
-	}
-}
-
-impl From<FinalitySyncCheckpointKey> for HashMapKey {
-	fn from(_: FinalitySyncCheckpointKey) -> Self {
-		HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string())
-	}
-}
-
-impl From<RpcNodeKey> for HashMapKey {
-	fn from(_: RpcNodeKey) -> Self {
-		HashMapKey(CONNECTED_RPC_NODE_KEY.to_string())
-	}
-}
-
-impl From<IsFinalitySyncedKey> for HashMapKey {
-	fn from(_: IsFinalitySyncedKey) -> Self {
-		HashMapKey(IS_FINALITY_SYNCED_KEY.to_string())
-	}
-}
-
-impl From<VerifiedSyncDataKey> for HashMapKey {
-	fn from(_: VerifiedSyncDataKey) -> Self {
-		HashMapKey(VERIFIED_SYNC_DATA.to_string())
-	}
-}
-
-impl From<AchievedSyncConfidenceKey> for HashMapKey {
-	fn from(_: AchievedSyncConfidenceKey) -> Self {
-		HashMapKey(ACHIEVED_SYNC_CONFIDENCE_KEY.to_string())
-	}
-}
-
-impl From<VerifiedSyncHeaderKey> for HashMapKey {
-	fn from(_: VerifiedSyncHeaderKey) -> Self {
-		HashMapKey(VERIFIED_SYNC_HEADER_KEY.to_string())
-	}
-}
-
-impl From<LatestSyncKey> for HashMapKey {
-	fn from(_: LatestSyncKey) -> Self {
-		HashMapKey(LATEST_SYNC_KEY.to_string())
-	}
-}
-
-impl From<VerifiedDataKey> for HashMapKey {
-	fn from(_: VerifiedDataKey) -> Self {
-		HashMapKey(VERIFIED_DATA_KEY.to_string())
-	}
-}
-
-impl From<AchievedConfidenceKey> for HashMapKey {
-	fn from(_: AchievedConfidenceKey) -> Self {
-		HashMapKey(ACHIEVED_CONFIDENCE_KEY.to_string())
-	}
-}
-
-impl From<VerifiedHeaderKey> for HashMapKey {
-	fn from(_: VerifiedHeaderKey) -> Self {
-		HashMapKey(VERIFIED_HEADER_KEY.to_string())
-	}
-}
-
-impl From<LatestHeaderKey> for HashMapKey {
-	fn from(_: LatestHeaderKey) -> Self {
-		HashMapKey(LATEST_HEADER_KEY.to_string())
-	}
-}
-
-impl From<IsSyncedKey> for HashMapKey {
-	fn from(_: IsSyncedKey) -> Self {
-		HashMapKey(IS_SYNCED_KEY.to_string())
-	}
-}
-
-impl From<ClientIdKey> for HashMapKey {
-	fn from(_: ClientIdKey) -> Self {
-		HashMapKey(CLIENT_ID_KEY.to_string())
-	}
-}
-
-impl From<P2PKeypairKey> for HashMapKey {
-	fn from(_: P2PKeypairKey) -> Self {
-		HashMapKey(P2P_KEYPAIR_KEY.to_string())
 	}
 }
