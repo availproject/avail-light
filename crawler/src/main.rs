@@ -14,7 +14,7 @@ use color_eyre::{
 };
 use config::Config;
 use std::{fs, path::Path, sync::Arc};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::{info, span, warn, Level};
 
 mod config;
@@ -85,31 +85,18 @@ async fn run(config: Config, db: RocksDB, shutdown: Controller<String>) -> Resul
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (p2p_event_loop_sender, p2p_event_loop_receiver) = mpsc::unbounded_channel();
-
-	let p2p_event_loop = p2p::EventLoop::new(
+	let (p2p_client, p2p_event_loop, _) = p2p::init(
 		config.libp2p.clone(),
+		p2p_keypair,
 		version,
 		&config.genesis_hash,
-		&p2p_keypair,
 		true,
 		shutdown.clone(),
 		db.inner(),
-	);
+	)
+	.await?;
 
-	spawn_in_span(
-		shutdown.with_cancel(
-			p2p_event_loop
-				.await
-				.run(ot_metrics.clone(), p2p_event_loop_receiver),
-		),
-	);
-
-	let p2p_client = p2p::Client::new(
-		p2p_event_loop_sender,
-		config.libp2p.dht_parallelization_limit,
-		config.libp2p.kademlia.kad_record_ttl,
-	);
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
 
 	p2p_client
 		.start_listening(vec![config.libp2p.tcp_multiaddress()])
