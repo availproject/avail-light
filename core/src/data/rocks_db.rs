@@ -1,4 +1,3 @@
-use super::{keys::*, *};
 use crate::{
 	data::{self, APP_STATE_CF, KADEMLIA_STORE_CF},
 	network::p2p::ExpirationCompactionFilterFactory,
@@ -8,6 +7,8 @@ use color_eyre::eyre::Result;
 use rocksdb::{ColumnFamilyDescriptor, Options};
 use std::sync::Arc;
 
+use super::RecordKey;
+
 #[derive(Clone)]
 pub struct RocksDB {
 	db: Arc<rocksdb::DB>,
@@ -16,14 +17,9 @@ pub struct RocksDB {
 #[derive(Eq, Hash, PartialEq)]
 pub struct RocksDBKey(Option<&'static str>, Vec<u8>);
 
-/// Type of the database key which we can get from the custom key.
-pub trait RecordKey: Into<RocksDBKey> {
-	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
-}
-
-impl RocksDBKey {
-	fn app_state(key: &str) -> Self {
-		Self(Some(APP_STATE_CF), key.as_bytes().to_vec())
+impl<T: RecordKey> From<T> for RocksDBKey {
+	fn from(value: T) -> Self {
+		RocksDBKey(value.space(), value.key().into_bytes())
 	}
 }
 
@@ -115,109 +111,5 @@ impl data::Database for RocksDB {
 		self.db
 			.delete_cf(&cf_handle, key)
 			.expect("Delete operation with Column Family has failed on RocksDB")
-	}
-}
-
-impl From<AppDataKey> for RocksDBKey {
-	fn from(value: AppDataKey) -> Self {
-		let AppDataKey(app_id, block_num) = value;
-		RocksDBKey::app_state(&format!("{APP_ID_PREFIX}:{app_id}:{block_num}"))
-	}
-}
-
-impl From<BlockHeaderKey> for RocksDBKey {
-	fn from(value: BlockHeaderKey) -> Self {
-		let BlockHeaderKey(block_num) = value;
-		RocksDBKey::app_state(&format!("{BLOCK_HEADER_KEY_PREFIX}:{block_num}"))
-	}
-}
-
-impl From<VerifiedCellCountKey> for RocksDBKey {
-	fn from(value: VerifiedCellCountKey) -> Self {
-		let VerifiedCellCountKey(count) = value;
-		RocksDBKey::app_state(&format!("{VERIFIED_CELL_COUNT_PREFIX}:{count}"))
-	}
-}
-
-impl From<FinalitySyncCheckpointKey> for RocksDBKey {
-	fn from(_: FinalitySyncCheckpointKey) -> Self {
-		RocksDBKey::app_state(FINALITY_SYNC_CHECKPOINT_KEY)
-	}
-}
-
-impl From<RpcNodeKey> for RocksDBKey {
-	fn from(_: RpcNodeKey) -> Self {
-		RocksDBKey::app_state(CONNECTED_RPC_NODE_KEY)
-	}
-}
-
-impl From<IsFinalitySyncedKey> for RocksDBKey {
-	fn from(_: IsFinalitySyncedKey) -> Self {
-		RocksDBKey::app_state(IS_FINALITY_SYNCED_KEY)
-	}
-}
-
-impl From<VerifiedSyncDataKey> for RocksDBKey {
-	fn from(_: VerifiedSyncDataKey) -> Self {
-		RocksDBKey::app_state(VERIFIED_SYNC_DATA)
-	}
-}
-
-impl From<AchievedSyncConfidenceKey> for RocksDBKey {
-	fn from(_: AchievedSyncConfidenceKey) -> Self {
-		RocksDBKey::app_state(ACHIEVED_SYNC_CONFIDENCE_KEY)
-	}
-}
-
-impl From<VerifiedSyncHeaderKey> for RocksDBKey {
-	fn from(_: VerifiedSyncHeaderKey) -> Self {
-		RocksDBKey::app_state(VERIFIED_SYNC_HEADER_KEY)
-	}
-}
-
-impl From<LatestSyncKey> for RocksDBKey {
-	fn from(_: LatestSyncKey) -> Self {
-		RocksDBKey::app_state(LATEST_SYNC_KEY)
-	}
-}
-
-impl From<VerifiedDataKey> for RocksDBKey {
-	fn from(_: VerifiedDataKey) -> Self {
-		RocksDBKey::app_state(VERIFIED_DATA_KEY)
-	}
-}
-impl From<AchievedConfidenceKey> for RocksDBKey {
-	fn from(_: AchievedConfidenceKey) -> Self {
-		RocksDBKey::app_state(ACHIEVED_CONFIDENCE_KEY)
-	}
-}
-
-impl From<VerifiedHeaderKey> for RocksDBKey {
-	fn from(_: VerifiedHeaderKey) -> Self {
-		RocksDBKey::app_state(VERIFIED_HEADER_KEY)
-	}
-}
-
-impl From<LatestHeaderKey> for RocksDBKey {
-	fn from(_: LatestHeaderKey) -> Self {
-		RocksDBKey::app_state(LATEST_HEADER_KEY)
-	}
-}
-
-impl From<IsSyncedKey> for RocksDBKey {
-	fn from(_: IsSyncedKey) -> Self {
-		RocksDBKey::app_state(IS_SYNCED_KEY)
-	}
-}
-
-impl From<ClientIdKey> for RocksDBKey {
-	fn from(_: ClientIdKey) -> Self {
-		RocksDBKey::app_state(CLIENT_ID_KEY)
-	}
-}
-
-impl From<P2PKeypairKey> for RocksDBKey {
-	fn from(_: P2PKeypairKey) -> Self {
-		RocksDBKey::app_state(P2P_KEYPAIR_KEY)
 	}
 }
