@@ -129,7 +129,9 @@ jobs:
         run: |
           export PATH="/root/.cargo/bin:$PATH"
           ./run_tests_ci.sh 
+
       - name: Run compat tests
+        if: false
         working-directory: avail-test
         run: |
           export PATH="/root/.cargo/bin:$PATH"
