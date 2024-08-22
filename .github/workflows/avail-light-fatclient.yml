@@ -4,8 +4,8 @@ on:
     branches:
       - '**'
     tags:
-      - 'avail-light-fatclient-v*.*.*'
-      - 'avail-light-fatclient-v*.*.*-*'
+      - 'avail-light-fat-v*.*.*'
+      - 'avail-light-fat-v*.*.*-*'
 
 jobs:
   build:
@@ -14,14 +14,14 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-            workspace: avail-light-fatclient
+            workspace: avail-light-fat
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
             extra_setup: |
               rustup target add x86_64-unknown-linux-gnu
 
           - os: ubuntu-20.04
-            workspace: avail-light-fatclient
+            workspace: avail-light-fat
             rust_target: aarch64-unknown-linux-gnu
             output_name: avail-light-linux-arm64
             extra_setup: |
@@ -31,21 +31,21 @@ jobs:
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc
 
           - os: macos-14
-            workspace: avail-light-fatclient
+            workspace: avail-light-fat
             rust_target: aarch64-apple-darwin
             output_name: avail-light-apple-arm64
             extra_setup: |
               rustup target add aarch64-apple-darwin
 
           - os: macos-13
-            workspace: avail-light-fatclient
+            workspace: avail-light-fat
             rust_target: x86_64-apple-darwin
             output_name: avail-light-apple-x86_64
             extra_setup: |
               rustup target add x86_64-apple-darwin
 
           - os: windows-latest
-            workspace: avail-light-fatclient
+            workspace: avail-light-fat
             rust_target: x86_64-pc-windows-msvc
             output_name: avail-light-x86_64-pc-windows-msvc.exe
             extra_setup: |
