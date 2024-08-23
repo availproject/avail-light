@@ -1,4 +1,4 @@
-use avail_subxt::primitives::{grandpa::AuthorityId, Header};
+use avail_rust::{primitives::block::grandpa::AuthorityId, AvailHeader};
 use codec::Encode;
 use color_eyre::{eyre::eyre, Result};
 use sp_core::{
@@ -24,17 +24,17 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum Event {
 	HeaderUpdate {
-		header: Header,
+		header: AvailHeader,
 		received_at: Instant,
 	},
 }
 
 struct BlockData {
 	justifications: Vec<GrandpaJustification>,
-	unverified_headers: Vec<(Header, Instant, ValidatorSet)>,
+	unverified_headers: Vec<(AvailHeader, Instant, ValidatorSet)>,
 	current_valset: ValidatorSet,
 	next_valset: Option<ValidatorSet>,
-	last_finalized_block_header: Option<Header>,
+	last_finalized_block_header: Option<AvailHeader>,
 }
 
 pub struct SubscriptionLoop<T: Database> {

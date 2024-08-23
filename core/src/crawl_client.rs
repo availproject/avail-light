@@ -6,7 +6,7 @@ use crate::{
 	telemetry::{metric, otlp::Record, MetricName, Metrics},
 	types::{self, BlockVerified, Delay, Origin},
 };
-use kate_recovery::matrix::Partition;
+use avail_rust::kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::{
 	sync::Arc,

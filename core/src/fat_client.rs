@@ -10,15 +10,16 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
-use avail_subxt::{primitives::Header, utils::H256};
+use avail_rust::{
+	kate_recovery::{
+		data::{self, Cell},
+		matrix::{Dimensions, Partition, Position, RowIndex},
+	},
+	AvailHeader, H256,
+};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;
-use kate_recovery::{
-	data,
-	matrix::{Dimensions, Partition, Position},
-};
-use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 use sp_core::blake2_256;
@@ -110,7 +111,7 @@ pub async fn process_block(
 	db: impl Database,
 	metrics: &Arc<impl Metrics>,
 	cfg: &Config,
-	header: &Header,
+	header: &AvailHeader,
 	received_at: Instant,
 ) -> Result<()> {
 	metrics.count(MetricCounter::SessionBlocks).await;
@@ -289,18 +290,19 @@ pub async fn run(
 mod tests {
 	use super::*;
 	use crate::{data, telemetry::metric::tests};
-	use avail_subxt::{
-		api::runtime_types::avail_core::{
+	use avail_rust::{
+		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		config::substrate::Digest,
+		subxt::config::substrate::Digest,
+		AvailHeader,
 	};
 	use hex_literal::hex;
 
-	fn default_header() -> Header {
-		Header {
+	fn default_header() -> AvailHeader {
+		AvailHeader {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
 				.into(),
 			number: 57,

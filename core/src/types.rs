@@ -5,23 +5,26 @@ use crate::network::rpc::configuration::RPCConfig;
 use crate::network::rpc::Event;
 use crate::telemetry::otlp::OtelConfig;
 use crate::utils::{extract_app_lookup, extract_kate};
-use avail_core::DataLookup;
-use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use avail_rust::{
+	avail_core::DataLookup,
+	kate_recovery::{commitments, matrix::Dimensions},
+	subxt_signer::{
+		bip39::{Language, Mnemonic},
+		SecretString, SecretUri,
+	},
+	AvailHeader, Keypair,
+};
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
-use kate_recovery::{commitments, matrix::Dimensions};
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::crypto::Ss58Codec;
-use sp_core::{blake2_256, bytes, ed25519};
+use sp_core::{blake2_256, bytes, ed25519, H256};
 use std::fmt::{self, Display, Formatter};
 use std::ops::Range;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use subxt_signer::bip39::{Language, Mnemonic};
-use subxt_signer::sr25519::Keypair;
-use subxt_signer::{SecretString, SecretUri};
 use tokio::sync::broadcast;
 use tracing::{info, warn, Level};
 
@@ -64,9 +67,9 @@ pub struct ClientChannels {
 	pub rpc_event_receiver: broadcast::Receiver<Event>,
 }
 
-impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
+impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {
 	type Error = Report;
-	fn try_from((header, confidence): (DaHeader, Option<f64>)) -> Result<Self, Self::Error> {
+	fn try_from((header, confidence): (AvailHeader, Option<f64>)) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 		let mut block = BlockVerified {
 			header_hash: hash,
@@ -273,7 +276,7 @@ pub mod duration_millis_format {
 }
 
 pub mod block_matrix_partition_format {
-	use kate_recovery::matrix::Partition;
+	use avail_rust::kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
 
 	pub fn parse(value: &str) -> Result<Partition, String> {
@@ -629,7 +632,7 @@ pub struct Commit {
 pub struct GrandpaJustification {
 	pub round: u64,
 	pub commit: Commit,
-	pub votes_ancestries: Vec<DaHeader>,
+	pub votes_ancestries: Vec<AvailHeader>,
 }
 
 impl<'de> Deserialize<'de> for GrandpaJustification {

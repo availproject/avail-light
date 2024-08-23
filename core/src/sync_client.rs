@@ -29,15 +29,17 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use avail_rust::{
+	kate_recovery::{commitments, matrix::Dimensions},
+	AvailHeader,
+};
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
-use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
-use sp_core::blake2_256;
+use sp_core::{blake2_256, H256};
 use std::{ops::Range, time::Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
@@ -45,7 +47,7 @@ use tracing::{error, info, warn};
 #[async_trait]
 #[automock]
 pub trait Client {
-	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
+	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(AvailHeader, H256)>;
 	fn is_confidence_stored(&self, block_number: u32) -> bool;
 	fn store_verified_cell_count(&self, count: u32, block_number: u32);
 	fn store_achieved_sync_confidence(&self, block_number: u32);
@@ -68,7 +70,7 @@ impl<T: Database + Sync> SyncClient<T> {
 
 #[async_trait]
 impl<T: Database + Sync> Client for SyncClient<T> {
-	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
+	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(AvailHeader, H256)> {
 		if let Some(header) = self.db.get(BlockHeaderKey(block_number)) {
 			let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			return Ok((header, hash));
@@ -129,7 +131,7 @@ impl<T: Database + Sync> Client for SyncClient<T> {
 async fn process_block(
 	client: &impl Client,
 	network_client: &impl network::Client,
-	header: DaHeader,
+	header: AvailHeader,
 	header_hash: H256,
 	cfg: &SyncClientConfig,
 	block_verified_sender: broadcast::Sender<BlockVerified>,
@@ -256,25 +258,25 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-
 	use std::time::Duration;
 
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
-	use avail_subxt::{
-		api::runtime_types::avail_core::{
+	use avail_rust::{
+		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		config::substrate::Digest,
+		kate_recovery::{data::Cell, matrix::Position},
+		subxt::config::substrate::Digest,
+		AvailHeader,
 	};
 	use hex_literal::hex;
-	use kate_recovery::{data::Cell, matrix::Position};
 	use mockall::predicate::eq;
 
-	fn default_header() -> DaHeader {
-		DaHeader {
+	fn default_header() -> AvailHeader {
+		AvailHeader {
 			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
 				.into(),
 			number: 2,

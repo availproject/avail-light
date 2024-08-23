@@ -1,13 +1,15 @@
+use avail_rust::{
+	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
+	kate_recovery::{
+		data::Cell,
+		matrix::{Dimensions, Position, RowIndex},
+	},
+};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
 use futures::future::join_all;
-use kate_recovery::{
-	config,
-	data::Cell,
-	matrix::{Dimensions, Position, RowIndex},
-};
 use libp2p::{
 	core::transport::ListenerId,
 	kad::{store::RecordStore, Mode, PeerRecord, Quorum, Record, RecordKey},
@@ -480,7 +482,7 @@ impl Client {
 			Ok(peer_record) => {
 				trace!("Fetched cell {reference} from the DHT");
 
-				let try_content: Result<[u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE], _> =
+				let try_content: Result<[u8; COMMITMENT_SIZE + CHUNK_SIZE], _> =
 					peer_record.record.value.try_into();
 
 				let Ok(content) = try_content else {

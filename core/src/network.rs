@@ -1,12 +1,14 @@
 use async_trait::async_trait;
+use avail_rust::{
+	avail_core::kate::COMMITMENT_SIZE,
+	kate_recovery::{
+		data::Cell,
+		matrix::{Dimensions, Position},
+	},
+};
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
 use dusk_plonk::prelude::PublicParameters;
-use kate_recovery::{
-	config,
-	data::Cell,
-	matrix::{Dimensions, Position},
-};
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 use sp_core::H256;
@@ -28,7 +30,7 @@ pub trait Client {
 		block_number: u32,
 		block_hash: H256,
 		dimensions: Dimensions,
-		commitments: &[[u8; config::COMMITMENT_SIZE]],
+		commitments: &[[u8; COMMITMENT_SIZE]],
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)>;
 }
@@ -67,7 +69,7 @@ struct DHTWithRPCFallbackClient<T: Database> {
 	disable_rpc: bool,
 }
 
-type Commitments = [[u8; config::COMMITMENT_SIZE]];
+type Commitments = [[u8; COMMITMENT_SIZE]];
 
 impl<T: Database> DHTWithRPCFallbackClient<T> {
 	async fn fetch_verified_from_dht(

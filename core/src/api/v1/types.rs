@@ -1,4 +1,4 @@
-use avail_subxt::primitives::AppUncheckedExtrinsic;
+use avail_rust::AppUncheckedExtrinsic;
 use color_eyre::Report;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};

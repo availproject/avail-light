@@ -12,23 +12,27 @@
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 use async_trait::async_trait;
-use avail_core::AppId;
-use avail_subxt::utils::H256;
+use avail_rust::{
+	avail_core::{
+		kate::{CHUNK_SIZE, COMMITMENT_SIZE, EXTENSION_FACTOR},
+		AppId,
+	},
+	kate_recovery::{
+		com::{
+			app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns,
+			AppData, Percent,
+		},
+		commitments,
+		data::{Cell, DataCell},
+		matrix::{Dimensions, Position},
+	},
+	H256,
+};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use kate_recovery::{
-	com::{
-		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, AppData,
-		Percent,
-	},
-	commitments,
-	config::{self, CHUNK_SIZE},
-	data::{Cell, DataCell},
-	matrix::{Dimensions, Position},
-};
 use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
@@ -56,7 +60,7 @@ trait Client {
 		pp: Arc<PublicParameters>,
 		block_number: u32,
 		dimensions: Dimensions,
-		commitments: &[[u8; config::COMMITMENT_SIZE]],
+		commitments: &[[u8; COMMITMENT_SIZE]],
 		missing_rows: &[u32],
 	) -> Result<Vec<(u32, Vec<u8>)>>;
 
@@ -88,7 +92,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		pp: Arc<PublicParameters>,
 		block_number: u32,
 		dimensions: Dimensions,
-		commitments: &[[u8; config::COMMITMENT_SIZE]],
+		commitments: &[[u8; COMMITMENT_SIZE]],
 		missing_rows: &[u32],
 	) -> Result<Vec<(u32, Vec<u8>)>> {
 		let missing_cells = dimensions.extended_rows_positions(missing_rows);
@@ -169,7 +173,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 					.flat_map(|cell| cell.data)
 					.collect::<Vec<_>>();
 
-				if data.len() != dimensions.width() * config::CHUNK_SIZE {
+				if data.len() != dimensions.width() * CHUNK_SIZE {
 					return Err(eyre!("Row size is not valid after reconstruction"));
 				}
 
@@ -239,13 +243,13 @@ fn data_cells_from_rows(rows: Vec<Option<Vec<u8>>>) -> Result<Vec<DataCell>> {
 
 fn data_cell(
 	position: Position,
-	reconstructed: &HashMap<u16, Vec<[u8; config::CHUNK_SIZE]>>,
+	reconstructed: &HashMap<u16, Vec<[u8; CHUNK_SIZE]>>,
 ) -> Result<DataCell> {
 	let row: usize = position.row.try_into()?;
 	reconstructed
 		.get(&position.col)
 		// Dividing with extension factor since reconstructed column is not extended
-		.and_then(|column| column.get(row / config::EXTENSION_FACTOR))
+		.and_then(|column| column.get(row / EXTENSION_FACTOR as usize))
 		.map(|&data| DataCell { position, data })
 		.ok_or_else(|| eyre!("Data cell not found"))
 }
@@ -255,7 +259,7 @@ async fn fetch_verified(
 	p2p_client: &P2pClient,
 	block_number: u32,
 	dimensions: Dimensions,
-	commitments: &[[u8; config::COMMITMENT_SIZE]],
+	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	let (mut fetched, mut unfetched) = p2p_client
@@ -515,9 +519,8 @@ mod tests {
 		data,
 		types::{AppClientConfig, Extension, RuntimeConfig},
 	};
-	use avail_core::DataLookup;
+	use avail_rust::{avail_core::DataLookup, kate_recovery::testnet};
 	use hex_literal::hex;
-	use kate_recovery::{matrix::Dimensions, testnet};
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {

@@ -6,9 +6,9 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 };
+use avail_rust::kate_recovery::matrix::Position;
 use clap::Parser;
 use color_eyre::Result;
-use kate_recovery::matrix::Position;
 use std::time::Duration;
 
 #[derive(Parser)]

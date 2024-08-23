@@ -1,18 +1,16 @@
 use async_trait::async_trait;
-use avail_subxt::primitives::Header;
+use avail_rust::{
+	subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32},
+	AvailHeader,
+};
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, Context},
 	Result,
 };
 use futures::future::join_all;
-use sp_core::{
-	blake2_256,
-	ed25519::{self},
-	twox_128, H256,
-};
+use sp_core::{blake2_256, ed25519, twox_128, H256};
 use std::iter::zip;
-use subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32};
 use tracing::{error, info, trace};
 
 use crate::{
@@ -28,7 +26,7 @@ use crate::{
 
 #[async_trait]
 pub trait Client {
-	fn store_block_header(&self, block_number: u32, header: Header);
+	fn store_block_header(&self, block_number: u32, header: AvailHeader);
 	fn get_checkpoint(&self) -> Option<FinalitySyncCheckpoint>;
 	fn store_checkpoint(&self, checkpoint: FinalitySyncCheckpoint);
 	fn set_is_finality_synced(&self, value: bool);
@@ -47,7 +45,7 @@ pub trait Client {
 		public_key: ed25519::Public,
 	) -> Result<Option<AccountId32>>;
 	async fn get_block_hash(&self, block_number: u32) -> Result<H256>;
-	async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header>;
+	async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader>;
 	async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof>;
 }
 
@@ -117,7 +115,7 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 			.wrap_err("Finality Sync Client failed to get Block Hash")
 	}
 
-	async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
+	async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.rpc_client
 			.get_header_by_hash(block_hash)
 			.await
@@ -131,7 +129,7 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 			.wrap_err("Finality Sync Client failed to request Finality Proof")
 	}
 
-	fn store_block_header(&self, block_number: u32, header: Header) {
+	fn store_block_header(&self, block_number: u32, header: AvailHeader) {
 		self.db.put(BlockHeaderKey(block_number), header)
 	}
 
@@ -208,14 +206,14 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn run(client: impl Client, shutdown: Controller<String>, from_header: Header) {
+pub async fn run(client: impl Client, shutdown: Controller<String>, from_header: AvailHeader) {
 	if let Err(error) = sync(client, from_header).await {
 		error!("Cannot sync finality {error}");
 		let _ = shutdown.trigger_shutdown(format!("Cannot sync finality {error:#}"));
 	};
 }
 
-pub async fn sync(client: impl Client, mut from_header: Header) -> Result<()> {
+pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<()> {
 	let gen_hash = client.get_genesis_hash().await?;
 
 	let checkpoint = client.get_checkpoint();

@@ -1,13 +1,13 @@
 //! Parallelized proof verification
 
-use color_eyre::eyre;
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use itertools::{Either, Itertools};
-use kate_recovery::{
+use avail_rust::kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 	proof,
 };
+use color_eyre::eyre;
+use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
+use itertools::{Either, Itertools};
 use std::sync::Arc;
 use tokio::{task::JoinSet, time::Instant};
 use tracing::{debug, Instrument};

@@ -2,7 +2,7 @@ use crate::{
 	network::rpc::Node as RpcNode,
 	types::{BlockRange, Uuid},
 };
-use avail_subxt::primitives::Header;
+use avail_rust::AvailHeader;
 use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sp_core::ed25519;
@@ -58,7 +58,6 @@ pub struct FinalitySyncCheckpoint {
 }
 
 pub struct AppDataKey(pub u32, pub u32);
-
 impl RecordKey for AppDataKey {
 	type Type = Vec<Vec<u8>>;
 
@@ -75,7 +74,7 @@ impl RecordKey for AppDataKey {
 pub struct BlockHeaderKey(pub u32);
 
 impl RecordKey for BlockHeaderKey {
-	type Type = Header;
+	type Type = AvailHeader;
 
 	fn space(&self) -> Option<&'static str> {
 		Some(APP_STATE_CF)

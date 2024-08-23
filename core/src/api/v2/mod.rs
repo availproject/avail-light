@@ -259,18 +259,18 @@ mod tests {
 		types::{BlockRange, RuntimeConfig},
 	};
 	use async_trait::async_trait;
-	use avail_subxt::{api::runtime_types::avail_core::AppId, utils::H256};
-	use avail_subxt::{
-		api::runtime_types::avail_core::{
+	use avail_rust::{
+		avail::runtime_types::avail_core::{
 			data_lookup::compact::{CompactDataLookup, DataLookupItem},
 			header::extension::{v3, HeaderExtension},
 			kate_commitment::v3::KateCommitment,
+			AppId,
 		},
-		primitives::Header as DaHeader,
+		subxt::config::substrate::Digest,
+		AvailHeader, H256,
 	};
 	use hyper::StatusCode;
 	use std::{collections::HashSet, str::FromStr, sync::Arc};
-	use subxt::config::substrate::Digest;
 	use test_case::test_case;
 	use uuid::Uuid;
 
@@ -460,8 +460,8 @@ mod tests {
 		assert_eq!(response.status(), StatusCode::NOT_FOUND);
 	}
 
-	fn header() -> DaHeader {
-		DaHeader {
+	fn header() -> AvailHeader {
+		AvailHeader {
 			parent_hash: H256::default(),
 			number: 1,
 			state_root: H256::default(),
@@ -477,8 +477,8 @@ mod tests {
 		}
 	}
 
-	fn incomplete_header() -> DaHeader {
-		DaHeader {
+	fn incomplete_header() -> AvailHeader {
+		AvailHeader {
 			parent_hash: H256::default(),
 			number: 1,
 			state_root: H256::default(),

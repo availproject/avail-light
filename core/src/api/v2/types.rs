@@ -1,9 +1,12 @@
-use avail_subxt::{
-	api::runtime_types::{
+use avail_rust::{
+	avail::runtime_types::{
 		avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
 		bounded_collections::bounded_vec::BoundedVec,
 	},
-	config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
+	avail_core::kate::COMMITMENT_SIZE,
+	kate_recovery::{com::AppData, commitments},
+	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
+	AvailHeader,
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::Encode;
@@ -13,7 +16,6 @@ use color_eyre::{
 };
 use derive_more::From;
 use hyper::{http, StatusCode};
-use kate_recovery::{com::AppData, commitments, config};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use sp_core::{blake2_256, H256};
 use std::{
@@ -360,10 +362,10 @@ impl Reply for Block {
 	}
 }
 
-impl TryFrom<avail_subxt::primitives::Header> for HeaderMessage {
+impl TryFrom<AvailHeader> for HeaderMessage {
 	type Error = Report;
 
-	fn try_from(header: avail_subxt::primitives::Header) -> Result<Self, Self::Error> {
+	fn try_from(header: AvailHeader) -> Result<Self, Self::Error> {
 		let header: Header = header.try_into()?;
 		Ok(Self {
 			block_number: header.number,
@@ -390,7 +392,7 @@ impl Reply for Header {
 }
 
 #[derive(Debug, Clone)]
-struct Commitment([u8; config::COMMITMENT_SIZE]);
+struct Commitment([u8; COMMITMENT_SIZE]);
 
 impl Serialize for Commitment {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -409,7 +411,7 @@ impl<'de> Deserialize<'de> for Commitment {
 	{
 		const PREFIX_0X_LEN: usize = 2;
 		const HEX_ENCODED_BYTE_LEN: usize = 2;
-		const LEN: usize = (config::COMMITMENT_SIZE * HEX_ENCODED_BYTE_LEN) + PREFIX_0X_LEN;
+		const LEN: usize = (COMMITMENT_SIZE * HEX_ENCODED_BYTE_LEN) + PREFIX_0X_LEN;
 
 		let s = String::deserialize(deserializer)?;
 
@@ -420,7 +422,7 @@ impl<'de> Deserialize<'de> for Commitment {
 
 		let decoded = hex::decode(&s[2..]).map_err(de::Error::custom)?;
 		let decoded_len = decoded.len();
-		let bytes: [u8; config::COMMITMENT_SIZE] = decoded
+		let bytes: [u8; COMMITMENT_SIZE] = decoded
 			.try_into()
 			.map_err(|_| de::Error::invalid_length(decoded_len, &"Expected vector of 48 bytes"))?;
 
@@ -437,10 +439,10 @@ struct Extension {
 	app_lookup: CompactDataLookup,
 }
 
-impl TryFrom<avail_subxt::primitives::Header> for Header {
+impl TryFrom<AvailHeader> for Header {
 	type Error = Report;
 
-	fn try_from(header: avail_subxt::primitives::Header) -> Result<Self> {
+	fn try_from(header: AvailHeader) -> Result<Self> {
 		Ok(Header {
 			hash: Encode::using_encoded(&header, blake2_256).into(),
 			parent_hash: header.parent_hash,
@@ -881,7 +883,7 @@ pub enum WsError {
 mod tests {
 	use std::time::Duration;
 
-	use avail_subxt::api::runtime_types::avail_core::data_lookup::compact::CompactDataLookup;
+	use avail_rust::avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup;
 	use sp_core::H256;
 	use tokio::sync::mpsc;
 

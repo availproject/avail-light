@@ -1,8 +1,10 @@
-use avail_subxt::{primitives::Header, utils::H256};
+use avail_rust::{
+	kate_recovery::matrix::{Dimensions, Position},
+	AvailHeader, H256,
+};
 use codec::{Decode, Encode};
 use color_eyre::{eyre::eyre, Result};
 use configuration::RPCConfig;
-use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
 use sp_core::bytes::from_hex;
@@ -28,7 +30,7 @@ pub use subscriptions::Event;
 pub use client::Client;
 
 pub enum Subscription {
-	Header(Header),
+	Header(AvailHeader),
 	Justification(GrandpaJustification),
 }
 
@@ -50,7 +52,7 @@ pub struct FinalityProof {
 	/// Justification of the block F.
 	pub justification: WrappedJustification,
 	/// The set of headers in the range (B; F] that we believe are unknown to the caller. Ordered.
-	pub unknown_headers: Vec<Header>,
+	pub unknown_headers: Vec<AvailHeader>,
 }
 
 #[derive(Debug, Decode, Clone)]
@@ -260,7 +262,7 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 pub async fn wait_for_finalized_header(
 	mut rpc_events_receiver: broadcast::Receiver<Event>,
 	timeout_seconds: u64,
-) -> Result<Header> {
+) -> Result<AvailHeader> {
 	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
 	match timeout(timeout_seconds, rpc_events_receiver.recv()).await {
 		Ok(Ok(rpc::Event::HeaderUpdate { header, .. })) => Ok(header),

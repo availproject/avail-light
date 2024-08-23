@@ -17,10 +17,12 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-use avail_subxt::{primitives::Header, utils::H256};
+use avail_rust::{
+	kate_recovery::{commitments, matrix::Dimensions},
+	AvailHeader, H256,
+};
 use codec::Encode;
 use color_eyre::Result;
-use kate_recovery::{commitments, matrix::Dimensions};
 use sp_core::blake2_256;
 use std::{sync::Arc, time::Instant};
 use tracing::{error, info};
@@ -42,7 +44,7 @@ pub async fn process_block(
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
-	header: Header,
+	header: AvailHeader,
 	received_at: Instant,
 ) -> Result<Option<f64>> {
 	metrics.count(MetricCounter::SessionBlocks).await;
@@ -261,16 +263,17 @@ mod tests {
 		telemetry::metric::tests,
 		types::RuntimeConfig,
 	};
-	use avail_subxt::{
-		api::runtime_types::avail_core::{
+	use avail_rust::{
+		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		config::substrate::Digest,
+		kate_recovery::{data::Cell, matrix::Position},
+		subxt::config::substrate::Digest,
+		AvailHeader,
 	};
 	use hex_literal::hex;
-	use kate_recovery::{data::Cell, matrix::Position};
 	use test_case::test_case;
 
 	#[test_case(99.9 => 10)]
@@ -298,7 +301,7 @@ mod tests {
 			Position { row: 0, col: 1 },
 		]
 		.to_vec();
-		let header = Header {
+		let header = AvailHeader {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
 				.into(),
 			number: 57,

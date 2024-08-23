@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use avail_core::AppId;
+use avail_rust::{avail_core::AppId, Keypair};
 use color_eyre::Result;
-use subxt_signer::sr25519::Keypair;
 
 use super::types::{SubmitResponse, Transaction};
 use crate::{data::Database, network::rpc};
@@ -21,7 +20,7 @@ pub struct Submitter<T: Database> {
 #[async_trait]
 impl<T: Database + Sync> Submit for Submitter<T> {
 	async fn submit(&self, transaction: Transaction) -> Result<SubmitResponse> {
-		let ex_event = match transaction {
+		let response = match transaction {
 			Transaction::Data(data) => {
 				self.rpc_client
 					.submit_signed_and_wait_for_finalized(data, &self.signer, AppId(self.app_id))
@@ -36,15 +35,15 @@ impl<T: Database + Sync> Submit for Submitter<T> {
 
 		let block_number = self
 			.rpc_client
-			.get_header_by_hash(ex_event.block_hash())
+			.get_header_by_hash(response.block_hash)
 			.await?
 			.number;
 
 		Ok(SubmitResponse {
 			block_number,
-			block_hash: ex_event.block_hash(),
-			hash: ex_event.extrinsic_hash(),
-			index: ex_event.extrinsic_index(),
+			block_hash: response.block_hash,
+			hash: response.hash,
+			index: response.index,
 		})
 	}
 }
