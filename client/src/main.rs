@@ -1,7 +1,6 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
-use avail_core::AppId;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
@@ -21,12 +20,15 @@ use avail_light_core::{
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
+use avail_rust::{
+	avail_core::AppId,
+	kate_recovery::{com::AppData, couscous},
+};
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
-use kate_recovery::com::AppData;
 use std::{fs, path::Path, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::trace;
@@ -135,7 +137,7 @@ async fn run(
 	#[cfg(feature = "network-analysis")]
 	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.libp2p.port, 10)));
 
-	let pp = Arc::new(kate_recovery::couscous::public_params());
+	let pp = Arc::new(couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();

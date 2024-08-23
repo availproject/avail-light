@@ -1,17 +1,16 @@
 use crate::shutdown::Controller;
-use avail_core::{
-	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
-};
-use avail_subxt::{
-	api::runtime_types::{
-		avail_core::{header::extension::v3, header::extension::HeaderExtension},
+use avail_rust::{
+	avail::runtime_types::{
+		avail_core::header::extension::{v3, HeaderExtension},
 		da_control::pallet::Call,
 		da_runtime::RuntimeCall,
 	},
-	primitives::{
-		grandpa::AuthorityId, grandpa::ConsensusLog, AppUncheckedExtrinsic, Header as DaHeader,
+	avail_core::{
+		compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 	},
-	utils::H256,
+	primitives::block::grandpa::{AuthorityId, ConsensusLog},
+	subxt::config::substrate,
+	AppUncheckedExtrinsic, AvailHeader, H256,
 };
 use codec::Decode;
 use color_eyre::{
@@ -92,20 +91,19 @@ pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> eyre::Result<Op
 		.map_err(|e| eyre!("Invalid DataLookup: {}", e))
 }
 
-pub fn filter_auth_set_changes(header: &DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
+pub fn filter_auth_set_changes(header: &AvailHeader) -> Vec<Vec<(AuthorityId, u64)>> {
 	let new_auths = header
 		.digest
 		.logs
 		.iter()
 		.filter_map(|e| match &e {
 			// UGHHH, why won't the b"FRNK" just work
-			avail_subxt::config::substrate::DigestItem::Consensus(
-				[b'F', b'R', b'N', b'K'],
-				data,
-			) => match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
-				Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
-				Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
-				_ => None,
+			substrate::DigestItem::Consensus([b'F', b'R', b'N', b'K'], data) => {
+				match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
+					Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
+					Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
+					_ => None,
+				}
 			},
 			_ => None,
 		})

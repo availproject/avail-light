@@ -17,10 +17,8 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-core = { version = "0.6", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
-avail-subxt = { version = "0.5", git = "https://github.com/availproject/avail.git", tag = "v2.1.0.0-rc1" }
+avail-rust = { git = "https://github.com/availproject/avail.git", branch = "main" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v2100-rc1" }
 avail-light-core = { path = "./core" }
 
 anyhow = "1.0.71"
@@ -34,7 +32,7 @@ libp2p = { version = "0.53.2", features = ["kad", "identify", "ping", "mdns", "a
 libp2p-allow-block-list = "0.3.0"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
-serde = { version = "1.0.163", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.35", features = ["full"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }

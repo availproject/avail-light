@@ -6,9 +6,9 @@ use crate::{
 	types::{BlockRange, Mode, RuntimeConfig},
 	utils::calculate_confidence,
 };
-use avail_subxt::{
-	api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
-	primitives::AppUncheckedExtrinsic,
+use avail_rust::{
+	avail::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
+	AppUncheckedExtrinsic,
 };
 use base64::{engine::general_purpose, Engine};
 use codec::Decode;

@@ -13,7 +13,7 @@ use crate::{
 	types::RuntimeConfig,
 	utils::calculate_confidence,
 };
-use avail_subxt::primitives;
+use avail_rust::AvailHeader;
 use color_eyre::{eyre::eyre, Result};
 use hyper::StatusCode;
 use std::{convert::Infallible, sync::Arc};
@@ -94,7 +94,7 @@ pub async fn block(
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
-		.map(|primitives::Header { extension, .. }| extension)
+		.map(|AvailHeader { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
@@ -114,7 +114,7 @@ pub async fn block_header(
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
-		.map(|primitives::Header { extension, .. }| extension)
+		.map(|AvailHeader { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
@@ -142,7 +142,7 @@ pub async fn block_data(
 
 	let block_status = db
 		.get(BlockHeaderKey(block_number))
-		.map(|primitives::Header { extension, .. }| extension)
+		.map(|AvailHeader { extension, .. }| extension)
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 

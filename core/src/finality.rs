@@ -126,7 +126,7 @@ fn confirm_ancestry(
 mod tests {
 	use super::{check_finality, ValidatorSet};
 	use crate::types::{Commit, GrandpaJustification, Precommit, SignerMessage};
-	use avail_subxt::primitives::Header as DaHeader;
+	use avail_rust::AvailHeader;
 	use codec::Encode;
 	use hex::FromHex;
 	use serde::{Deserialize, Serialize};
@@ -139,7 +139,7 @@ mod tests {
 	pub struct JsonGrandpaJustification {
 		pub round: u64,
 		pub commit: Commit,
-		pub votes_ancestries: Vec<DaHeader>,
+		pub votes_ancestries: Vec<AvailHeader>,
 	}
 
 	impl From<GrandpaJustification> for JsonGrandpaJustification {
