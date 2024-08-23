@@ -15,6 +15,7 @@ use color_eyre::{
 use config::Config;
 use std::{fs, path::Path, sync::Arc};
 use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
 use tracing::{info, span, warn, Level};
 
 mod config;
@@ -88,7 +89,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (p2p_client, p2p_event_loop, _) = p2p::init(
+	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
 		config.libp2p.clone(),
 		p2p_keypair,
 		version,
@@ -100,7 +101,13 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	)
 	.await?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+
+	let metrics_clone = ot_metrics.clone();
+	tokio::spawn(async move {
+		let stream = BroadcastStream::new(event_receiver.resubscribe());
+		metrics_clone.handle_event_stream(stream).await
+	});
 
 	p2p_client
 		.start_listening(vec![config.libp2p.tcp_multiaddress()])

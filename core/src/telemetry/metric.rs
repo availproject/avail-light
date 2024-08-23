@@ -6,10 +6,13 @@ pub trait Value: Send + Clone {
 
 #[cfg(test)]
 pub mod tests {
-	use crate::telemetry::{metric, MetricCounter, Metrics, Record};
+	use crate::{
+		network::p2p::OutputEvent,
+		telemetry::{metric, MetricCounter, Metrics, Record},
+	};
 	use async_trait::async_trait;
-	use color_eyre::eyre;
-	use libp2p::{kad::Mode, Multiaddr};
+	use color_eyre::{eyre, Result};
+	use tokio_stream::wrappers::BroadcastStream;
 
 	pub struct MockMetrics {}
 
@@ -24,7 +27,8 @@ pub mod tests {
 		async fn flush(&self) -> eyre::Result<()> {
 			Ok(())
 		}
-		async fn update_operating_mode(&self, _: Mode) {}
-		async fn update_multiaddress(&self, _: Multiaddr) {}
+		async fn handle_event_stream(&self, _: BroadcastStream<OutputEvent>) -> Result<()> {
+			Ok(())
+		}
 	}
 }

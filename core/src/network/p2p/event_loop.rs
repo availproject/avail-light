@@ -19,7 +19,7 @@ use libp2p::{
 	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 use tokio::{
 	sync::{broadcast, mpsc::UnboundedReceiver, oneshot},
 	time::{self, interval_at, Instant, Interval},
@@ -27,15 +27,29 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use super::{
-	client::BlockStat, configuration::LibP2PConfig, Behaviour, BehaviourEvent, Command,
-	OutputEvent, QueryChannel,
+	configuration::LibP2PConfig, Behaviour, BehaviourEvent, Command, OutputEvent, QueryChannel,
 };
 use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::TimeToLive,
 };
+
+#[derive(Debug)]
+pub struct BlockStat {
+	pub total_count: usize,
+	pub remaining_counter: usize,
+	pub success_counter: usize,
+	pub error_counter: usize,
+	pub time_stat: u64,
+}
+
+impl BlockStat {
+	pub fn increase_block_stat_counters(&mut self, cell_number: usize) {
+		self.total_count += cell_number;
+		self.remaining_counter += cell_number;
+	}
+}
 
 // RelayState keeps track of all things relay related
 struct RelayState {
@@ -127,7 +141,7 @@ impl EventCounter {
 pub struct EventLoop {
 	pub swarm: Swarm<Behaviour>,
 	command_receiver: UnboundedReceiver<Command>,
-	event_sender: broadcast::Sender<OutputEvent>,
+	pub event_sender: broadcast::Sender<OutputEvent>,
 	// Tracking Kademlia events
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
@@ -204,7 +218,7 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(mut self, metrics: Arc<impl Metrics>) {
+	pub async fn run(mut self) {
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
@@ -216,10 +230,8 @@ impl EventLoop {
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => {
-					self.handle_event(event.expect("Swarm stream should be infinite"), metrics.clone()).await;
+					self.handle_event(event.expect("Swarm stream should be infinite")).await;
 					event_counter.add_event();
-					// TODO: remove from the loop
-					metrics.count(MetricCounter::EventLoopEvent).await;
 
 					_ = self.event_sender.send(OutputEvent::Count);
 				},
@@ -255,12 +267,8 @@ impl EventLoop {
 		}
 	}
 
-	#[tracing::instrument(level = "trace", skip(self, metrics))]
-	async fn handle_event(
-		&mut self,
-		event: SwarmEvent<BehaviourEvent>,
-		metrics: Arc<impl Metrics>,
-	) {
+	#[tracing::instrument(level = "trace", skip(self))]
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
@@ -285,13 +293,9 @@ impl EventLoop {
 					kad::Event::InboundRequest { request } => match request {
 						InboundRequest::GetRecord { .. } => {
 							_ = self.event_sender.send(OutputEvent::IncomingGetRecord);
-							// TODO: move out from the loop
-							metrics.count(MetricCounter::IncomingGetRecord).await;
 						},
 						InboundRequest::PutRecord { source, record, .. } => {
 							_ = self.event_sender.send(OutputEvent::IncomingPutRecord);
-							// TODO: move out from the loop
-							metrics.count(MetricCounter::IncomingPutRecord).await;
 
 							match record {
 								Some(mut record) => {
@@ -314,9 +318,6 @@ impl EventLoop {
 						trace!("Kademlia mode changed: {new_mode:?}");
 						// This event should not be automatically triggered because the mode changes are handled explicitly through the LC logic
 						self.kad_mode = new_mode;
-						// TODO: move out from the loop
-						metrics.update_operating_mode(new_mode).await;
-
 						_ = self.event_sender.send(OutputEvent::KadModeChange(new_mode));
 					},
 					kad::Event::OutboundQueryProgressed {
@@ -346,32 +347,12 @@ impl EventLoop {
 
 							match error {
 								kad::PutRecordError::QuorumFailed { key, .. } => {
-									// TODO: move out from the loop
-									self.handle_put_result(
-										key.clone(),
-										stats.clone(),
-										true,
-										metrics,
-									)
-									.await;
-
-									_ = self
-										.event_sender
-										.send(OutputEvent::PutRecordQuorumFailed { key, stats });
+									self.handle_put_result(key.clone(), stats.clone(), true)
+										.await;
 								},
 								kad::PutRecordError::Timeout { key, .. } => {
-									// TODO: move out from the loop
-									self.handle_put_result(
-										key.clone(),
-										stats.clone(),
-										true,
-										metrics,
-									)
-									.await;
-
-									_ = self
-										.event_sender
-										.send(OutputEvent::PutRecordTimeout { key, stats })
+									self.handle_put_result(key.clone(), stats.clone(), true)
+										.await;
 								},
 							}
 						},
@@ -379,12 +360,8 @@ impl EventLoop {
 						QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
 							_ = self.pending_kad_queries.remove(&id);
 
-							// TODO: move out from the loop
-							self.handle_put_result(key.clone(), stats.clone(), false, metrics)
+							self.handle_put_result(key.clone(), stats.clone(), false)
 								.await;
-							_ = self
-								.event_sender
-								.send(OutputEvent::PutRecordOk { key, stats });
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
@@ -509,13 +486,10 @@ impl EventLoop {
 					if new == NatStatus::Private || old == NatStatus::Private {
 						info!("[AutoNat] Autonat says we're still private.");
 						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
-						// TODO: remove from the loop
 						if !self.event_loop_config.is_fat_client {
 							// select a relay, try to dial it
 							self.select_and_dial_relay();
 						}
-
-						_ = self.event_sender.send(OutputEvent::NatStatusPrivate);
 					};
 				},
 			},
@@ -533,11 +507,6 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { result, .. })) => {
 				if let Ok(rtt) = result {
-					// TODO: remove from the loop
-					let _ = metrics
-						.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
-						.await;
-
 					_ = self.event_sender.send(OutputEvent::Ping(rtt));
 				}
 			},
@@ -570,15 +539,9 @@ impl EventLoop {
 						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 					},
 					SwarmEvent::IncomingConnection { .. } => {
-						// TODO: remove from the loop
-						metrics.count(MetricCounter::IncomingConnections).await;
-
 						_ = self.event_sender.send(OutputEvent::IncomingConnection);
 					},
 					SwarmEvent::IncomingConnectionError { .. } => {
-						// TODO: remove from the loop
-						metrics.count(MetricCounter::IncomingConnectionErrors).await;
-
 						_ = self.event_sender.send(OutputEvent::IncomingConnectionError);
 					},
 					SwarmEvent::ExternalAddrConfirmed { address } => {
@@ -592,8 +555,6 @@ impl EventLoop {
 								address.to_string()
 							);
 						};
-						// TODO: remove from the loop
-						metrics.update_multiaddress(address.clone()).await;
 
 						_ = self
 							.event_sender
@@ -606,9 +567,6 @@ impl EventLoop {
 						num_established,
 						..
 					} => {
-						// TODO: remove from the loop
-						metrics.count(MetricCounter::EstablishedConnections).await;
-
 						_ = self.event_sender.send(OutputEvent::EstablishedConnection);
 
 						// Notify the connections we're waiting on that we've connected successfully
@@ -623,9 +581,6 @@ impl EventLoop {
 						self.establish_relay_circuit(peer_id);
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-						// TODO: remove from the loop
-						metrics.count(MetricCounter::OutgoingConnectionErrors).await;
-
 						_ = self.event_sender.send(OutputEvent::OutgoingConnectionError);
 
 						if let Some(peer_id) = peer_id {
@@ -719,13 +674,7 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_put_result(
-		&mut self,
-		key: RecordKey,
-		stats: QueryStats,
-		is_error: bool,
-		metrics: Arc<impl Metrics>,
-	) {
+	async fn handle_put_result(&mut self, key: RecordKey, stats: QueryStats, is_error: bool) {
 		let block_num = match key.clone().try_into() {
 			Ok(DHTKey::Cell(block_num, _, _)) => block_num,
 			Ok(DHTKey::Row(block_num, _)) => block_num,
@@ -755,13 +704,11 @@ impl EventLoop {
 					"Cell upload success rate for block {block_num}: {}/{}. Duration: {}",
 					block.success_counter, block.total_count, block.time_stat
 				);
-				_ = metrics
-					.record(MetricValue::DHTPutSuccess(success_rate))
-					.await;
 
-				_ = metrics
-					.record(MetricValue::DHTPutDuration(block.time_stat as f64))
-					.await;
+				_ = self.event_sender.send(OutputEvent::PutRecord {
+					success_rate,
+					duration: block.time_stat as f64,
+				});
 			}
 
 			if self.event_loop_config.is_fat_client {
