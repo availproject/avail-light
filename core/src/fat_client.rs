@@ -201,19 +201,15 @@ pub async fn process_block(
 		))
 		.await;
 
-	if rpc_fetched.len() >= dimensions.cols().get().into() {
-		let data_cells = rpc_fetched
+        let data_cells = rpc_fetched
 			.iter()
 			.filter(|cell| !cell.position.is_extended())
 			.collect::<Vec<_>>();
 
-		let data_rows = data::rows(dimensions, &data_cells);
+	let data_rows = data::rows(dimensions, &data_cells);
 
-		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
-			debug!("Error inserting rows into DHT: {e}");
-		}
-	} else {
-		warn!("No rows has been inserted into DHT since partition size is less than one row.")
+	if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
+		debug!("Error inserting rows into DHT: {e}");
 	}
 
 	Ok(())
