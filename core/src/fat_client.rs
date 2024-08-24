@@ -201,10 +201,10 @@ pub async fn process_block(
 		))
 		.await;
 
-        let data_cells = rpc_fetched
-			.iter()
-			.filter(|cell| !cell.position.is_extended())
-			.collect::<Vec<_>>();
+	let data_cells = rpc_fetched
+		.iter()
+		.filter(|cell| !cell.position.is_extended())
+		.collect::<Vec<_>>();
 
 	let data_rows = data::rows(dimensions, &data_cells);
 
