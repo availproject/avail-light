@@ -26,7 +26,7 @@ use std::{
 	sync::Arc,
 	time::{Duration, Instant},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
 	data::{BlockHeaderKey, Database},
