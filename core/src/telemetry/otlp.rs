@@ -12,7 +12,7 @@ use opentelemetry::{
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
@@ -210,7 +210,11 @@ impl super::Metrics for Metrics {
 		Ok(())
 	}
 
-	async fn handle_event_stream(&self, events: BroadcastStream<OutputEvent>) -> Result<()> {
+	async fn handle_event_stream(
+		&self,
+		event_receiver: broadcast::Receiver<OutputEvent>,
+	) -> Result<()> {
+		let events = BroadcastStream::new(event_receiver.resubscribe());
 		events
 			.try_for_each(|event| async move {
 				match event {

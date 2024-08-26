@@ -12,7 +12,7 @@ pub mod tests {
 	};
 	use async_trait::async_trait;
 	use color_eyre::{eyre, Result};
-	use tokio_stream::wrappers::BroadcastStream;
+	use tokio::sync::broadcast;
 
 	pub struct MockMetrics {}
 
@@ -27,7 +27,7 @@ pub mod tests {
 		async fn flush(&self) -> eyre::Result<()> {
 			Ok(())
 		}
-		async fn handle_event_stream(&self, _: BroadcastStream<OutputEvent>) -> Result<()> {
+		async fn handle_event_stream(&self, _: broadcast::Receiver<OutputEvent>) -> Result<()> {
 			Ok(())
 		}
 	}

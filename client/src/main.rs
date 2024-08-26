@@ -29,7 +29,6 @@ use color_eyre::{
 use kate_recovery::com::AppData;
 use std::{fs, path::Path, sync::Arc};
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
 use tracing::{error, info, span, trace, warn, Level};
 
 #[cfg(feature = "network-analysis")]
@@ -98,13 +97,15 @@ async fn run(
 	)
 	.await?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
-
 	let metrics_clone = ot_metrics.clone();
+	let shutdown_clone = shutdown.clone();
 	tokio::spawn(async move {
-		let stream = BroadcastStream::new(event_receiver.resubscribe());
-		metrics_clone.handle_event_stream(stream).await
+		shutdown_clone
+			.with_cancel(metrics_clone.handle_event_stream(event_receiver))
+			.await
 	});
+
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	let addrs = vec![
 		cfg.libp2p.tcp_multiaddress(),

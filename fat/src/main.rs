@@ -16,7 +16,6 @@ use color_eyre::{
 };
 use config::Config;
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
 use tracing::{info, span, warn, Level};
 
 mod config;
@@ -101,13 +100,15 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	)
 	.await?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
-
 	let metrics_clone = ot_metrics.clone();
+	let shutdown_clone = shutdown.clone();
 	tokio::spawn(async move {
-		let stream = BroadcastStream::new(event_receiver.resubscribe());
-		metrics_clone.handle_event_stream(stream).await
+		shutdown_clone
+			.with_cancel(metrics_clone.handle_event_stream(event_receiver))
+			.await
 	});
+
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	let addrs = vec![
 		config.libp2p.tcp_multiaddress(),

@@ -2,7 +2,7 @@ use crate::{network::p2p::OutputEvent, types::Origin};
 use async_trait::async_trait;
 use color_eyre::Result;
 use otlp::Record;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::sync::broadcast;
 
 pub mod metric;
 pub mod otlp;
@@ -135,5 +135,8 @@ pub trait Metrics {
 	where
 		T: metric::Value + Into<Record> + Send;
 	async fn flush(&self) -> Result<()>;
-	async fn handle_event_stream(&self, events: BroadcastStream<OutputEvent>) -> Result<()>;
+	async fn handle_event_stream(
+		&self,
+		event_receiver: broadcast::Receiver<OutputEvent>,
+	) -> Result<()>;
 }
