@@ -79,6 +79,7 @@ async fn run(
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
 			metric_attributes,
+			&cfg.project_name,
 			&cfg.origin,
 			&cfg.libp2p.kademlia.operation_mode.into(),
 			cfg.otel.clone(),

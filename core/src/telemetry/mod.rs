@@ -22,23 +22,29 @@ pub enum MetricCounter {
 }
 
 pub trait MetricName {
-	fn name(&self) -> &'static str;
+	fn name(&self, project_name: String) -> String;
 }
 
 impl MetricName for MetricCounter {
-	fn name(&self) -> &'static str {
+	fn name(&self, project_name: String) -> String {
 		use MetricCounter::*;
 		match self {
-			Starts => "avail.light.starts",
-			Up => "avail.light.up",
-			SessionBlocks => "avail.light.session_blocks",
-			OutgoingConnectionErrors => "avail.light.outgoing_connection_errors",
-			IncomingConnectionErrors => "avail.light.incoming_connection_errors",
-			IncomingConnections => "avail.light.incoming_connections",
-			EstablishedConnections => "avail.light.established_connections",
-			IncomingPutRecord => "avail.light.incoming_put_record",
-			IncomingGetRecord => "avail.light.incoming_get_record",
-			EventLoopEvent => "avail.light.event_loop_event",
+			Starts => format!("{}.{}", project_name, "light.starts"),
+			Up => format!("{}.{}", project_name, "light.up"),
+			SessionBlocks => format!("{}.{}", project_name, "light.session_blocks"),
+			OutgoingConnectionErrors => {
+				format!("{}.{}", project_name, "light.outgoing_connection_errors")
+			},
+			IncomingConnectionErrors => {
+				format!("{}.{}", project_name, "light.incoming_connection_errors")
+			},
+			IncomingConnections => format!("{}.{}", project_name, "light.incoming_connections"),
+			EstablishedConnections => {
+				format!("{}.{}", project_name, "light.established_connections")
+			},
+			IncomingPutRecord => format!("{}.{}", project_name, "light.incoming_put_record"),
+			IncomingGetRecord => format!("{}.{}", project_name, "light.incoming_get_record"),
+			EventLoopEvent => format!("{}.{}", project_name, "light.event_loop_event"),
 		}
 	}
 }
@@ -87,29 +93,37 @@ pub enum MetricValue {
 }
 
 impl MetricName for MetricValue {
-	fn name(&self) -> &'static str {
+	fn name(&self, project_name: String) -> String {
 		use MetricValue::*;
 
 		match self {
-			BlockHeight(_) => "avail.light.block.height",
-			BlockConfidence(_) => "avail.light.block.confidence",
-			BlockConfidenceThreshold(_) => "avail.light.block.confidence_threshold",
-			BlockProcessingDelay(_) => "avail.light.block.processing_delay",
+			BlockHeight(_) => format!("{}.{}", project_name, "light.block.height"),
+			BlockConfidence(_) => format!("{}.{}", project_name, "light.block.confidence"),
+			BlockConfidenceThreshold(_) => {
+				format!("{}.{}", project_name, "light.block.confidence_threshold")
+			},
+			BlockProcessingDelay(_) => {
+				format!("{}.{}", project_name, "light.block.processing_delay")
+			},
 
-			DHTReplicationFactor(_) => "avail.light.dht.replication_factor",
-			DHTFetched(_) => "avail.light.dht.fetched",
-			DHTFetchedPercentage(_) => "avail.light.dht.fetched_percentage",
-			DHTFetchDuration(_) => "avail.light.dht.fetch_duration",
-			DHTPutDuration(_) => "avail.light.dht.put_duration",
-			DHTPutSuccess(_) => "avail.light.dht.put_success",
+			DHTReplicationFactor(_) => {
+				format!("{}.{}", project_name, "light.dht.replication_factor")
+			},
+			DHTFetched(_) => format!("{}.{}", project_name, "light.dht.fetched"),
+			DHTFetchedPercentage(_) => {
+				format!("{}.{}", project_name, "light.dht.fetched_percentage")
+			},
+			DHTFetchDuration(_) => format!("{}.{}", project_name, "light.dht.fetch_duration"),
+			DHTPutDuration(_) => format!("{}.{}", project_name, "light.dht.put_duration"),
+			DHTPutSuccess(_) => format!("{}.{}", project_name, "light.dht.put_success"),
 
-			DHTConnectedPeers(_) => "avail.light.dht.connected_peers",
-			DHTQueryTimeout(_) => "avail.light.dht.query_timeout",
-			DHTPingLatency(_) => "avail.light.dht.ping_latency",
+			DHTConnectedPeers(_) => format!("{}.{}", project_name, "light.dht.connected_peers"),
+			DHTQueryTimeout(_) => format!("{}.{}", project_name, "light.dht.query_timeout"),
+			DHTPingLatency(_) => format!("{}.{}", project_name, "light.dht.ping_latency"),
 
-			RPCFetched(_) => "avail.light.rpc.fetched",
-			RPCFetchDuration(_) => "avail.light.rpc.fetch_duration",
-			RPCCallDuration(_) => "avail.light.rpc.call_duration",
+			RPCFetched(_) => format!("{}.{}", project_name, "light.rpc.fetched"),
+			RPCFetchDuration(_) => format!("{}.{}", project_name, "light.rpc.fetch_duration"),
+			RPCCallDuration(_) => format!("{}.{}", project_name, "light.rpc.call_duration"),
 		}
 	}
 }

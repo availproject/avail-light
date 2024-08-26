@@ -18,10 +18,11 @@ use tokio::sync::{Mutex, RwLock};
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
+	project_name: String,
 	origin: Origin,
 	mode: RwLock<Mode>,
 	multiaddress: RwLock<Multiaddr>,
-	counters: HashMap<&'static str, Counter<u64>>,
+	counters: HashMap<String, Counter<u64>>,
 	attributes: Vec<KeyValue>,
 	metric_buffer: Arc<Mutex<Vec<Record>>>,
 	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
@@ -38,7 +39,7 @@ impl Metrics {
 		attributes
 	}
 
-	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
+	async fn record_u64(&self, name: String, value: u64) -> Result<()> {
 		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
@@ -48,7 +49,7 @@ impl Metrics {
 		Ok(())
 	}
 
-	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
+	async fn record_f64(&self, name: String, value: f64) -> Result<()> {
 		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
@@ -57,12 +58,91 @@ impl Metrics {
 			})?;
 		Ok(())
 	}
+
+	/// Counts occurrences of counters in the provided buffer.
+	/// Returned value is a `HashMap` where the keys are the counter name,
+	/// and values are the counts of those counters.
+	fn flatten_counters(&self, buffer: &[MetricCounter]) -> HashMap<String, u64> {
+		let mut result = HashMap::new();
+		for counter in buffer {
+			result
+				.entry(counter.name(self.project_name.clone()))
+				.and_modify(|count| {
+					if !counter.as_last() {
+						*count += 1
+					}
+				})
+				.or_insert(1);
+		}
+		result
+	}
+
+	/// Aggregates buffered metrics into `u64` or `f64` values, depending on the metric.
+	/// Returned values are a `HashMap`s where the keys are the metric name,
+	/// and values are the aggregations (avg, max, etc.) of those metrics.
+	fn flatten_metrics(&self, buffer: &[Record]) -> (HashMap<String, u64>, HashMap<String, f64>) {
+		let mut u64_maximums: HashMap<String, Vec<u64>> = HashMap::new();
+		let mut f64_averages: HashMap<String, Vec<f64>> = HashMap::new();
+
+		for value in buffer {
+			match value {
+				Record::MaxU64(number) => u64_maximums
+					.entry(self.project_name.clone())
+					.or_default()
+					.push(*number),
+				Record::AvgF64(number) => f64_averages
+					.entry(self.project_name.clone())
+					.or_default()
+					.push(*number),
+			}
+		}
+
+		let u64_metrics = u64_maximums
+			.into_iter()
+			.map(|(name, v)| (name, v.into_iter().max().unwrap_or(0)))
+			.collect();
+
+		let f64_metrics = f64_averages
+			.into_iter()
+			.map(|(name, v)| (name, v.iter().sum::<f64>() / v.len() as f64))
+			.collect();
+
+		(u64_metrics, f64_metrics)
+	}
+}
+
+fn init_counters(
+	project_name: String,
+	meter: Meter,
+	origin: &Origin,
+) -> HashMap<String, Counter<u64>> {
+	[
+		MetricCounter::Starts,
+		MetricCounter::Up,
+		MetricCounter::SessionBlocks,
+		MetricCounter::OutgoingConnectionErrors,
+		MetricCounter::IncomingConnectionErrors,
+		MetricCounter::IncomingConnections,
+		MetricCounter::EstablishedConnections,
+		MetricCounter::IncomingPutRecord,
+		MetricCounter::IncomingGetRecord,
+		MetricCounter::EventLoopEvent,
+	]
+	.iter()
+	.filter(|counter| MetricCounter::is_allowed(counter, origin))
+	.map(|counter| {
+		(
+			counter.name(project_name.clone()),
+			meter.u64_counter(counter.name(project_name.clone())).init(),
+		)
+	})
+	.collect()
 }
 
 #[derive(Debug)]
 pub enum Record {
-	MaxU64(&'static str, u64),
-	AvgF64(&'static str, f64),
+	MaxU64(u64),
+	AvgF64(f64),
 }
 
 impl From<MetricValue> for Record {
@@ -70,76 +150,29 @@ impl From<MetricValue> for Record {
 		use MetricValue::*;
 		use Record::*;
 
-		let name = value.name();
-
 		match value {
-			BlockHeight(number) => MaxU64(name, number as u64),
-			BlockConfidence(number) => AvgF64(name, number),
-			BlockConfidenceThreshold(number) => AvgF64(name, number),
-			BlockProcessingDelay(number) => AvgF64(name, number),
+			BlockHeight(number) => MaxU64(number as u64),
+			BlockConfidence(number) => AvgF64(number),
+			BlockConfidenceThreshold(number) => AvgF64(number),
+			BlockProcessingDelay(number) => AvgF64(number),
 
-			DHTReplicationFactor(number) => AvgF64(name, number as f64),
+			DHTReplicationFactor(number) => AvgF64(number as f64),
 
-			DHTFetched(number) => AvgF64(name, number),
-			DHTFetchedPercentage(number) => AvgF64(name, number),
-			DHTFetchDuration(number) => AvgF64(name, number),
-			DHTPutDuration(number) => AvgF64(name, number),
-			DHTPutSuccess(number) => AvgF64(name, number),
+			DHTFetched(number) => AvgF64(number),
+			DHTFetchedPercentage(number) => AvgF64(number),
+			DHTFetchDuration(number) => AvgF64(number),
+			DHTPutDuration(number) => AvgF64(number),
+			DHTPutSuccess(number) => AvgF64(number),
 
-			DHTConnectedPeers(number) => AvgF64(name, number as f64),
-			DHTQueryTimeout(number) => AvgF64(name, number as f64),
-			DHTPingLatency(number) => AvgF64(name, number),
+			DHTConnectedPeers(number) => AvgF64(number as f64),
+			DHTQueryTimeout(number) => AvgF64(number as f64),
+			DHTPingLatency(number) => AvgF64(number),
 
-			RPCFetched(number) => AvgF64(name, number),
-			RPCFetchDuration(number) => AvgF64(name, number),
-			RPCCallDuration(number) => AvgF64(name, number),
+			RPCFetched(number) => AvgF64(number),
+			RPCFetchDuration(number) => AvgF64(number),
+			RPCCallDuration(number) => AvgF64(number),
 		}
 	}
-}
-
-/// Counts occurrences of counters in the provided buffer.
-/// Returned value is a `HashMap` where the keys are the counter name,
-/// and values are the counts of those counters.
-fn flatten_counters(buffer: &[MetricCounter]) -> HashMap<&'static str, u64> {
-	let mut result = HashMap::new();
-	for counter in buffer {
-		result
-			.entry(counter.name())
-			.and_modify(|count| {
-				if !counter.as_last() {
-					*count += 1
-				}
-			})
-			.or_insert(1);
-	}
-	result
-}
-
-/// Aggregates buffered metrics into `u64` or `f64` values, depending on the metric.
-/// Returned values are a `HashMap`s where the keys are the metric name,
-/// and values are the aggregations (avg, max, etc.) of those metrics.
-fn flatten_metrics(buffer: &[Record]) -> (HashMap<&'static str, u64>, HashMap<&'static str, f64>) {
-	let mut u64_maximums: HashMap<&'static str, Vec<u64>> = HashMap::new();
-	let mut f64_averages: HashMap<&'static str, Vec<f64>> = HashMap::new();
-
-	for value in buffer {
-		match value {
-			Record::MaxU64(name, number) => u64_maximums.entry(name).or_default().push(*number),
-			Record::AvgF64(name, number) => f64_averages.entry(name).or_default().push(*number),
-		}
-	}
-
-	let u64_metrics = u64_maximums
-		.into_iter()
-		.map(|(name, v)| (name, v.into_iter().max().unwrap_or(0)))
-		.collect();
-
-	let f64_metrics = f64_averages
-		.into_iter()
-		.map(|(name, v)| (name, v.iter().sum::<f64>() / v.len() as f64))
-		.collect();
-
-	(u64_metrics, f64_metrics)
 }
 
 #[async_trait]
@@ -151,7 +184,8 @@ impl super::Metrics for Metrics {
 			return;
 		}
 		if !counter.is_buffered() {
-			self.counters[&counter.name()].add(1, &self.attributes().await);
+			self.counters[&counter.name(self.project_name.clone())]
+				.add(1, &self.attributes().await);
 			return;
 		}
 		let mut counter_buffer = self.counter_buffer.lock().await;
@@ -174,11 +208,11 @@ impl super::Metrics for Metrics {
 	/// Calculates counters and average metrics, and flushes buffers to the collector.
 	async fn flush(&self) -> Result<()> {
 		let mut counter_buffer = self.counter_buffer.lock().await;
-		let counters = flatten_counters(&counter_buffer);
+		let counters = self.flatten_counters(&counter_buffer);
 		counter_buffer.clear();
 
 		let mut metric_buffer = self.metric_buffer.lock().await;
-		let (metrics_u64, metrics_f64) = flatten_metrics(&metric_buffer);
+		let (metrics_u64, metrics_f64) = self.flatten_metrics(&metric_buffer);
 		metric_buffer.clear();
 
 		let attributes = self.attributes().await;
@@ -209,25 +243,6 @@ impl super::Metrics for Metrics {
 	}
 }
 
-fn init_counters(meter: Meter, origin: &Origin) -> HashMap<&'static str, Counter<u64>> {
-	[
-		MetricCounter::Starts,
-		MetricCounter::Up,
-		MetricCounter::SessionBlocks,
-		MetricCounter::OutgoingConnectionErrors,
-		MetricCounter::IncomingConnectionErrors,
-		MetricCounter::IncomingConnections,
-		MetricCounter::EstablishedConnections,
-		MetricCounter::IncomingPutRecord,
-		MetricCounter::IncomingGetRecord,
-		MetricCounter::EventLoopEvent,
-	]
-	.iter()
-	.filter(|counter| MetricCounter::is_allowed(counter, origin))
-	.map(|counter| (counter.name(), meter.u64_counter(counter.name()).init()))
-	.collect()
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OtelConfig {
@@ -251,6 +266,7 @@ impl Default for OtelConfig {
 
 pub fn initialize(
 	attributes: Vec<(&str, String)>,
+	project_name: String,
 	origin: &Origin,
 	mode: &Mode,
 	ot_config: OtelConfig,
@@ -280,9 +296,10 @@ pub fn initialize(
 		.collect();
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = init_counters(meter.clone(), origin);
+	let counters = init_counters(project_name.clone(), meter.clone(), origin);
 	Ok(Metrics {
 		meter,
+		project_name,
 		origin: origin.clone(),
 		mode: RwLock::new(*mode),
 		multiaddress: RwLock::new(Multiaddr::empty()),
@@ -295,13 +312,16 @@ pub fn initialize(
 
 #[cfg(test)]
 mod tests {
+	use metric::tests::MockMetrics;
+
 	use super::*;
 
 	#[test]
 	fn test_flatten_counters() {
 		use MetricCounter::*;
+		let metrics = MockMetrics {};
 		// Empty buffer
-		assert!(flatten_counters(&[] as &[MetricCounter]).is_empty());
+		assert!(metrics.flatten_counters(&[] as &[MetricCounter]).is_empty());
 
 		let one = flatten_counters(&[Starts]);
 		let mut expected = HashMap::new();
@@ -339,9 +359,7 @@ mod tests {
 		assert_eq!(result, expected);
 	}
 
-	fn flatten_metrics(
-		values: Vec<MetricValue>,
-	) -> (HashMap<&'static str, u64>, HashMap<&'static str, f64>) {
+	fn flatten_metrics(values: Vec<MetricValue>) -> (HashMap<String, u64>, HashMap<String, f64>) {
 		super::flatten_metrics(&values.into_iter().map(Into::into).collect::<Vec<Record>>())
 	}
 
