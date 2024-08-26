@@ -355,6 +355,8 @@ pub enum SecretKey {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct RuntimeConfig {
+	/// Name of the project running the client. (default: "avail")
+	pub project_name: String,
 	#[serde(flatten)]
 	pub api: APIConfig,
 	#[serde(flatten)]
@@ -483,6 +485,7 @@ impl From<&RuntimeConfig> for MaintenanceConfig {
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
+			project_name: "avail".to_owned(),
 			api: Default::default(),
 			libp2p: Default::default(),
 			rpc: Default::default(),

@@ -52,7 +52,7 @@ use libp2p_allow_block_list as allow_block_list;
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
 const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
-const IDENTITY_AGENT_BASE: &str = "avail-light-client";
+const IDENTITY_AGENT_BASE: &str = "light-client";
 const IDENTITY_AGENT_ROLE: &str = "light-client";
 const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
@@ -127,9 +127,9 @@ impl FromStr for AgentVersion {
 }
 
 impl AgentVersion {
-	fn new(version: &str) -> Self {
+	fn new(project_name: String, version: &str) -> Self {
 		Self {
-			base_version: IDENTITY_AGENT_BASE.to_string(),
+			base_version: format!("{}-{}", project_name, IDENTITY_AGENT_BASE.to_string()),
 			role: IDENTITY_AGENT_ROLE.to_string(),
 			release_version: version.to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
@@ -210,8 +210,9 @@ fn protocol_name(genesis_hash: &str) -> libp2p::StreamProtocol {
 }
 
 pub async fn init(
-	cfg: LibP2PConfig,
+	cfg: &LibP2PConfig,
 	id_keys: Keypair,
+	project_name: &String,
 	version: &str,
 	genesis_hash: &str,
 	is_fat: bool,
@@ -229,23 +230,38 @@ pub async fn init(
 	// create Store
 	let store = Store::with_config(
 		id_keys.public().to_peer_id(),
-		(&cfg).into(),
+		cfg.into(),
 		#[cfg(feature = "rocksdb")]
 		db.inner(),
 	);
 	// create Swarm
-	let swarm = build_swarm(&cfg, version, genesis_hash, &id_keys, store)
-		.await
-		.expect("Unable to build swarm.");
+	let swarm = build_swarm(
+		&cfg,
+		project_name.to_owned(),
+		version,
+		genesis_hash,
+		&id_keys,
+		store,
+	)
+	.await
+	.expect("Unable to build swarm.");
 	let (event_sender, event_receiver) = broadcast::channel(1000);
 	// create EventLoop
-	let event_loop = EventLoop::new(cfg, swarm, is_fat, command_receiver, event_sender, shutdown);
+	let event_loop = EventLoop::new(
+		&cfg,
+		swarm,
+		is_fat,
+		command_receiver,
+		event_sender,
+		shutdown,
+	);
 
 	Ok((client, event_loop, event_receiver))
 }
 
 async fn build_swarm(
 	cfg: &LibP2PConfig,
+	project_name: String,
 	version: &str,
 	genesis_hash: &str,
 	id_keys: &Keypair,
@@ -253,7 +269,7 @@ async fn build_swarm(
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config
 	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), id_keys.public())
-		.with_agent_version(AgentVersion::new(version).to_string());
+		.with_agent_version(AgentVersion::new(project_name, version).to_string());
 
 	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {

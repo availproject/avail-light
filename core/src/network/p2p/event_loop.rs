@@ -167,7 +167,7 @@ impl TryFrom<RecordKey> for DHTKey {
 impl EventLoop {
 	#[allow(clippy::too_many_arguments)]
 	pub(crate) fn new(
-		cfg: LibP2PConfig,
+		cfg: &LibP2PConfig,
 		swarm: Swarm<Behaviour>,
 		is_fat_client: bool,
 		command_receiver: UnboundedReceiver<Command>,

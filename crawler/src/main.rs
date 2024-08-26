@@ -89,8 +89,9 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	);
 
 	let (p2p_client, p2p_event_loop, _) = p2p::init(
-		config.libp2p.clone(),
+		&config.libp2p,
 		p2p_keypair,
+		&"avail".to_string(),
 		version,
 		&config.genesis_hash,
 		true,

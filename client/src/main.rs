@@ -8,20 +8,18 @@ use avail_light_core::{
 	data::{self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, DB},
 	network::{
 		self,
-		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		p2p::{self},
 		rpc, Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, MetricCounter, Metrics},
-	types::{
-		load_or_init_suri, IdentityConfig, MaintenanceConfig, MultiaddrConfig, RuntimeConfig,
-		SecretKey, Uuid,
-	},
+	types::{load_or_init_suri, IdentityConfig, MaintenanceConfig, RuntimeConfig, Uuid},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
+use cli::load_runtime_config;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
@@ -41,6 +39,8 @@ use tikv_jemallocator::Jemalloc;
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+mod cli;
 
 /// Light Client for Avail Blockchain
 
@@ -87,8 +87,9 @@ async fn run(
 	);
 
 	let (p2p_client, p2p_event_loop, _) = p2p::init(
-		cfg.libp2p.clone(),
+		&cfg.libp2p,
 		id_keys,
+		&cfg.project_name,
 		version,
 		&cfg.genesis_hash,
 		false,
@@ -303,67 +304,6 @@ async fn run(
 	ot_metrics.count(MetricCounter::Starts).await;
 
 	Ok(())
-}
-
-mod cli;
-
-pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
-	let mut cfg = if let Some(config_path) = &opts.config {
-		fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
-		confy::load_path(config_path)
-			.wrap_err(format!("Failed to load configuration from {}", config_path))?
-	} else {
-		RuntimeConfig::default()
-	};
-
-	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
-	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
-
-	// Flags override the config parameters
-	if let Some(network) = &opts.network {
-		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
-		cfg.rpc.full_node_ws = network.full_node_ws();
-		cfg.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
-		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
-		cfg.genesis_hash = network.genesis_hash().to_string();
-	}
-
-	if let Some(port) = opts.port {
-		cfg.libp2p.port = port;
-	}
-	if let Some(http_port) = opts.http_server_port {
-		cfg.api.http_server_port = http_port;
-	}
-	if let Some(webrtc_port) = opts.webrtc_port {
-		cfg.libp2p.webrtc_port = webrtc_port;
-	}
-	if let Some(avail_path) = &opts.avail_path {
-		cfg.avail_path = avail_path.to_string();
-	}
-	cfg.sync_finality_enable |= opts.finality_sync_enable;
-	cfg.app_id = opts.app_id.or(cfg.app_id);
-	cfg.libp2p.ws_transport_enable |= opts.ws_transport_enable;
-	if let Some(secret_key) = &opts.private_key {
-		cfg.libp2p.secret_key = Some(SecretKey::Key {
-			key: secret_key.to_string(),
-		});
-	}
-
-	if let Some(seed) = &opts.seed {
-		cfg.libp2p.secret_key = Some(SecretKey::Seed {
-			seed: seed.to_string(),
-		})
-	}
-
-	if let Some(client_alias) = &opts.client_alias {
-		cfg.client_alias = Some(client_alias.clone())
-	}
-
-	if cfg.libp2p.bootstraps.is_empty() {
-		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
-	}
-
-	Ok(cfg)
 }
 
 #[tokio::main]
