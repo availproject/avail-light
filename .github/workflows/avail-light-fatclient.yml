@@ -1,0 +1,136 @@
+name: Fatclient Release
+on:
+  push:
+    branches-ignore:
+      - '**'
+    tags:
+      - 'avail-light-fat-v*.*.*'
+      - 'avail-light-fat-v*.*.*-*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            workspace: avail-light-fat
+            rust_target: x86_64-unknown-linux-gnu
+            output_name: avail-light-linux-amd64
+            extra_setup: |
+              rustup target add x86_64-unknown-linux-gnu
+
+          - os: ubuntu-20.04
+            workspace: avail-light-fat
+            rust_target: aarch64-unknown-linux-gnu
+            output_name: avail-light-linux-arm64
+            extra_setup: |
+              sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+              rustup target add aarch64-unknown-linux-gnu
+              export BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu'
+              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc
+
+          - os: macos-14
+            workspace: avail-light-fat
+            rust_target: aarch64-apple-darwin
+            output_name: avail-light-apple-arm64
+            extra_setup: |
+              rustup target add aarch64-apple-darwin
+
+          - os: macos-13
+            workspace: avail-light-fat
+            rust_target: x86_64-apple-darwin
+            output_name: avail-light-apple-x86_64
+            extra_setup: |
+              rustup target add x86_64-apple-darwin
+
+          - os: windows-latest
+            workspace: avail-light-fat
+            rust_target: x86_64-pc-windows-msvc
+            output_name: avail-light-x86_64-pc-windows-msvc.exe
+            extra_setup: |
+              Invoke-WebRequest -Uri https://win.rustup.rs -OutFile rustup-init.exe
+              .\rustup-init.exe -y --default-toolchain stable
+              $env:Path += ";$env:USERPROFILE\.cargo\bin"
+              rustup target add x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo and setup
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source "$HOME/.cargo/env"
+
+      - name: Build on linux/mac ${{ matrix.output_name }}
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ${{ matrix.extra_setup }}
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
+          mv target/${{ matrix.rust_target }}/maxperf/${{ matrix.workspace }} target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
+          pushd target/${{ matrix.rust_target }}/maxperf/
+          tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
+      
+      - name: Build on windows ${{ matrix.output_name }}
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ${{ matrix.extra_setup }}
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
+          Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}.exe" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
+          Push-Location -Path "target\${{ matrix.rust_target }}\maxperf\"
+          Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
+          
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output_name }}
+          path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
+
+  binary_publish:
+    needs: [build]
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          pattern: avail-light*
+          merge-multiple: true
+
+      - name: publish binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+         repo_token: ${{ secrets.PAT_TOKEN }}
+         file: /home/runner/work/avail-light/avail-light/binaries/avail-light*
+         release_name: ${{ github.ref_name }}
+         tag: ${{ github.ref_name }}
+         overwrite: true
+         file_glob: true
+
+  trigger_deploy_workflow:
+    needs: [binary_publish]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Trigger repository_dispatch for release
+        shell: bash
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            https://api.github.com/repos/availproject/avail-light-infra/dispatches \
+            -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}" }}'
+                      
+      - name: Trigger repository dispatch for crawler
+        if: false
+        shell: bash
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            ${{ secrets.CRAWLER_BUILD_URL}} \
+            -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ github.ref_name }}\"}}" \
+            | grep -q "204"
