@@ -19,6 +19,7 @@ libp2p = { workspace = true }
 sp-core = { version = "28.0.0", features = ["serde"] }
 strip-ansi-escapes = "0.2.0"
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }

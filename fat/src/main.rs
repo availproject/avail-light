@@ -88,7 +88,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (p2p_client, p2p_event_loop, _) = p2p::init(
+	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
 		config.libp2p.clone(),
 		p2p_keypair,
 		version,
@@ -100,7 +100,15 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	)
 	.await?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
+	let metrics_clone = ot_metrics.clone();
+	let shutdown_clone = shutdown.clone();
+	tokio::spawn(async move {
+		shutdown_clone
+			.with_cancel(metrics_clone.handle_event_stream(event_receiver))
+			.await
+	});
+
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	let addrs = vec![
 		config.libp2p.tcp_multiaddress(),

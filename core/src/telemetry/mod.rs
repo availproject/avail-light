@@ -1,8 +1,8 @@
-use crate::types::Origin;
+use crate::{network::p2p::OutputEvent, types::Origin};
 use async_trait::async_trait;
 use color_eyre::Result;
-use libp2p::{kad::Mode, Multiaddr};
 use otlp::Record;
+use tokio::sync::broadcast;
 
 pub mod metric;
 pub mod otlp;
@@ -135,6 +135,8 @@ pub trait Metrics {
 	where
 		T: metric::Value + Into<Record> + Send;
 	async fn flush(&self) -> Result<()>;
-	async fn update_operating_mode(&self, mode: Mode);
-	async fn update_multiaddress(&self, multiaddr: Multiaddr);
+	async fn handle_event_stream(
+		&self,
+		event_receiver: broadcast::Receiver<OutputEvent>,
+	) -> Result<()>;
 }

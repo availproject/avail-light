@@ -1,7 +1,8 @@
 use super::{metric, MetricCounter, MetricValue};
-use crate::{telemetry::MetricName, types::Origin};
+use crate::{network::p2p::OutputEvent, telemetry::MetricName, types::Origin};
 use async_trait::async_trait;
-use color_eyre::Result;
+use color_eyre::{eyre::eyre, Result};
+use futures::stream::TryStreamExt;
 use libp2p::{kad::Mode, Multiaddr};
 use opentelemetry::{
 	global,
@@ -11,7 +12,8 @@ use opentelemetry::{
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio_stream::wrappers::BroadcastStream;
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
@@ -56,6 +58,16 @@ impl Metrics {
 				observer.observe_f64(&instrument, value, &attributes)
 			})?;
 		Ok(())
+	}
+
+	async fn update_operating_mode(&self, value: Mode) {
+		let mut mode = self.mode.write().await;
+		*mode = value;
+	}
+
+	async fn update_multiaddress(&self, value: Multiaddr) {
+		let mut multiaddress = self.multiaddress.write().await;
+		*multiaddress = value;
 	}
 }
 
@@ -198,14 +210,58 @@ impl super::Metrics for Metrics {
 		Ok(())
 	}
 
-	async fn update_operating_mode(&self, value: Mode) {
-		let mut mode = self.mode.write().await;
-		*mode = value;
-	}
+	async fn handle_event_stream(
+		&self,
+		event_receiver: broadcast::Receiver<OutputEvent>,
+	) -> Result<()> {
+		let events = BroadcastStream::new(event_receiver.resubscribe());
+		events
+			.try_for_each(|event| async move {
+				match event {
+					OutputEvent::Count => {
+						self.count(MetricCounter::EventLoopEvent).await;
+					},
+					OutputEvent::IncomingGetRecord => {
+						self.count(MetricCounter::IncomingGetRecord).await;
+					},
+					OutputEvent::IncomingPutRecord => {
+						self.count(MetricCounter::IncomingPutRecord).await;
+					},
+					OutputEvent::KadModeChange(mode) => {
+						self.update_operating_mode(mode).await;
+					},
+					OutputEvent::Ping(rtt) => {
+						self.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
+							.await;
+					},
+					OutputEvent::IncomingConnection => {
+						self.count(MetricCounter::IncomingConnections).await;
+					},
+					OutputEvent::IncomingConnectionError => {
+						self.count(MetricCounter::IncomingConnectionErrors).await;
+					},
+					OutputEvent::MultiaddressUpdate(address) => {
+						self.update_multiaddress(address).await;
+					},
+					OutputEvent::EstablishedConnection => {
+						self.count(MetricCounter::EstablishedConnections).await;
+					},
+					OutputEvent::OutgoingConnectionError => {
+						self.count(MetricCounter::OutgoingConnectionErrors).await;
+					},
+					OutputEvent::PutRecord {
+						success_rate,
+						duration,
+					} => {
+						self.record(MetricValue::DHTPutSuccess(success_rate)).await;
+						self.record(MetricValue::DHTPutDuration(duration)).await;
+					},
+				}
 
-	async fn update_multiaddress(&self, value: Multiaddr) {
-		let mut multiaddress = self.multiaddress.write().await;
-		*multiaddress = value;
+				Ok(())
+			})
+			.await
+			.map_err(|err| eyre!("Error receiving the P2P Output Event: {err}"))
 	}
 }
 

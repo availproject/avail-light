@@ -4,7 +4,7 @@ use configuration::LibP2PConfig;
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
-	kad::{self, Mode, PeerRecord, QueryStats},
+	kad::{self, Mode, PeerRecord},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -66,19 +66,7 @@ pub enum OutputEvent {
 	IncomingGetRecord,
 	IncomingPutRecord,
 	KadModeChange(Mode),
-	PutRecordOk {
-		key: kad::RecordKey,
-		stats: QueryStats,
-	},
-	PutRecordQuorumFailed {
-		key: kad::RecordKey,
-		stats: QueryStats,
-	},
-	PutRecordTimeout {
-		key: kad::RecordKey,
-		stats: QueryStats,
-	},
-	NatStatusPrivate,
+	PutRecord { success_rate: f64, duration: f64 },
 	Ping(Duration),
 	IncomingConnection,
 	IncomingConnectionError,

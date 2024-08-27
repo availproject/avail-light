@@ -29,8 +29,7 @@ use color_eyre::{
 use kate_recovery::com::AppData;
 use std::{fs, path::Path, sync::Arc};
 use tokio::sync::broadcast;
-use tracing::trace;
-use tracing::{error, info, span, warn, Level};
+use tracing::{error, info, span, trace, warn, Level};
 
 #[cfg(feature = "network-analysis")]
 use avail_light_core::network::p2p::analyzer;
@@ -86,7 +85,7 @@ async fn run(
 		.wrap_err("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (p2p_client, p2p_event_loop, _) = p2p::init(
+	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
 		cfg.libp2p.clone(),
 		id_keys,
 		version,
@@ -98,7 +97,15 @@ async fn run(
 	)
 	.await?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run(ot_metrics.clone())));
+	let metrics_clone = ot_metrics.clone();
+	let shutdown_clone = shutdown.clone();
+	tokio::spawn(async move {
+		shutdown_clone
+			.with_cancel(metrics_clone.handle_event_stream(event_receiver))
+			.await
+	});
+
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	let addrs = vec![
 		cfg.libp2p.tcp_multiaddress(),
@@ -109,7 +116,7 @@ async fn run(
 	p2p_client
 		.start_listening(addrs)
 		.await
-		.wrap_err("Error starting li.")?;
+		.wrap_err("Error starting listener.")?;
 	info!(
 		"TCP listener started on port {}. WebRTC listening on port {}.",
 		cfg.libp2p.port, cfg.libp2p.webrtc_port

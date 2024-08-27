@@ -1029,6 +1029,7 @@ dependencies = [
  "test-case",
  "tikv-jemallocator",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber 0.3.18",
  "uuid",
@@ -1120,6 +1121,7 @@ dependencies = [
  "kate-recovery",
  "serde",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
@@ -1134,6 +1136,7 @@ dependencies = [
  "kate-recovery",
  "serde",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber 0.3.18",
 ]

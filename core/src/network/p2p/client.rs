@@ -20,8 +20,8 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::{debug, info, trace};
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
-	MultiAddressInfo, PeerInfo, QueryChannel,
+	event_loop::{BlockStat, ConnectionEstablishedInfo},
+	is_global, is_multiaddr_global, Command, EventLoop, MultiAddressInfo, PeerInfo, QueryChannel,
 };
 use crate::types::MultiaddrConfig;
 
@@ -64,22 +64,6 @@ impl DHTRow {
 			publisher: None,
 			expires: Instant::now().checked_add(ttl),
 		}
-	}
-}
-
-#[derive(Debug)]
-pub struct BlockStat {
-	pub total_count: usize,
-	pub remaining_counter: usize,
-	pub success_counter: usize,
-	pub error_counter: usize,
-	pub time_stat: u64,
-}
-
-impl BlockStat {
-	pub fn increase_block_stat_counters(&mut self, cell_number: usize) {
-		self.total_count += cell_number;
-		self.remaining_counter += cell_number;
 	}
 }
 
@@ -337,6 +321,12 @@ impl Client {
 						"Encountered error while sending Reconfigure Kademlia Mode response: {e:?}"
 					)
 				})?;
+
+				context
+					.event_sender
+					.send(super::OutputEvent::KadModeChange(context.kad_mode))
+					.map_err(|e| eyre!("Error while sending Kad Mode Output Event: {e}"))?;
+
 				Ok(())
 			})
 		})
