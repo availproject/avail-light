@@ -117,7 +117,7 @@ impl FromStr for AgentVersion {
 impl AgentVersion {
 	fn new(project_name: String, version: &str) -> Self {
 		Self {
-			base_version: format!("{}-{}", project_name, IDENTITY_AGENT_BASE.to_string()),
+			base_version: format!("{}-{}", project_name, IDENTITY_AGENT_BASE),
 			role: IDENTITY_AGENT_ROLE.to_string(),
 			release_version: version.to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
@@ -197,6 +197,7 @@ fn protocol_name(genesis_hash: &str) -> libp2p::StreamProtocol {
 		.expect("Invalid Kademlia protocol name")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn init(
 	cfg: LibP2PConfig,
 	project_name: String,
