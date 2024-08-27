@@ -1,7 +1,7 @@
 name: Fatclient Release
 on:
   push:
-    branches:
+    branches-ignore:
       - '**'
     tags:
       - 'avail-light-fat-v*.*.*'
