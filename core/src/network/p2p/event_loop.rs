@@ -7,7 +7,7 @@ use libp2p::{
 	identify::{self, Info},
 	kad::{
 		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, Mode, PutRecordOk,
-		QueryId, QueryResult, QueryStats, RecordKey,
+		QueryId, QueryResult, RecordKey,
 	},
 	mdns,
 	multiaddr::Protocol,
@@ -34,22 +34,6 @@ use crate::{
 	shutdown::Controller,
 	types::TimeToLive,
 };
-
-#[derive(Debug)]
-pub struct BlockStat {
-	pub total_count: usize,
-	pub remaining_counter: usize,
-	pub success_counter: usize,
-	pub error_counter: usize,
-	pub time_stat: u64,
-}
-
-impl BlockStat {
-	pub fn increase_block_stat_counters(&mut self, cell_number: usize) {
-		self.total_count += cell_number;
-		self.remaining_counter += cell_number;
-	}
-}
 
 // RelayState keeps track of all things relay related
 struct RelayState {
@@ -141,15 +125,13 @@ impl EventCounter {
 pub struct EventLoop {
 	pub swarm: Swarm<Behaviour>,
 	command_receiver: UnboundedReceiver<Command>,
-	pub event_sender: broadcast::Sender<OutputEvent>,
+	pub(crate) event_sender: broadcast::Sender<OutputEvent>,
 	// Tracking Kademlia events
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
 	pub pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
-	/// Blocks we monitor for PUT success rate
-	pub active_blocks: HashMap<u32, BlockStat>,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
 	pub kad_mode: Mode,
@@ -208,7 +190,6 @@ impl EventLoop {
 				is_startup_done: false,
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
-			active_blocks: Default::default(),
 			shutdown,
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
@@ -346,13 +327,18 @@ impl EventLoop {
 							};
 
 							match error {
-								kad::PutRecordError::QuorumFailed { key, .. } => {
-									self.handle_put_result(key.clone(), stats.clone(), true)
-										.await;
-								},
-								kad::PutRecordError::Timeout { key, .. } => {
-									self.handle_put_result(key.clone(), stats.clone(), true)
-										.await;
+								kad::PutRecordError::QuorumFailed { key, .. }
+								| kad::PutRecordError::Timeout { key, .. } => {
+									// Remove local records for fat clients (memory optimization)
+									if self.event_loop_config.is_fat_client {
+										debug!("Pruning local records on fat client");
+										self.swarm.behaviour_mut().kademlia.remove_record(&key);
+									}
+
+									_ = self.event_sender.send(OutputEvent::PutRecordFailed {
+										record_key: key,
+										query_stats: stats,
+									});
 								},
 							}
 						},
@@ -360,8 +346,16 @@ impl EventLoop {
 						QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
 							_ = self.pending_kad_queries.remove(&id);
 
-							self.handle_put_result(key.clone(), stats.clone(), false)
-								.await;
+							// Remove local records for fat clients (memory optimization)
+							if self.event_loop_config.is_fat_client {
+								debug!("Pruning local records on fat client");
+								self.swarm.behaviour_mut().kademlia.remove_record(&key);
+							}
+
+							_ = self.event_sender.send(OutputEvent::PutRecordSuccess {
+								record_key: key,
+								query_stats: stats,
+							});
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
@@ -671,53 +665,6 @@ impl EventLoop {
 					id = self.relay.id
 				);
 			},
-		}
-	}
-
-	async fn handle_put_result(&mut self, key: RecordKey, stats: QueryStats, is_error: bool) {
-		let block_num = match key.clone().try_into() {
-			Ok(DHTKey::Cell(block_num, _, _)) => block_num,
-			Ok(DHTKey::Row(block_num, _)) => block_num,
-			Err(error) => {
-				warn!("Unable to cast Kademlia key to DHT key: {error}");
-				return;
-			},
-		};
-		if let Some(block) = self.active_blocks.get_mut(&block_num) {
-			// Decrement record counter for this block
-			block.remaining_counter -= 1;
-			if is_error {
-				block.error_counter += 1;
-			} else {
-				block.success_counter += 1;
-			}
-
-			block.time_stat = stats
-				.duration()
-				.as_ref()
-				.map(Duration::as_secs)
-				.unwrap_or_default();
-
-			if block.remaining_counter == 0 {
-				let success_rate = block.success_counter as f64 / block.total_count as f64;
-				info!(
-					"Cell upload success rate for block {block_num}: {}/{}. Duration: {}",
-					block.success_counter, block.total_count, block.time_stat
-				);
-
-				_ = self.event_sender.send(OutputEvent::PutRecord {
-					success_rate,
-					duration: block.time_stat as f64,
-				});
-			}
-
-			if self.event_loop_config.is_fat_client {
-				// Remove local records for fat clients (memory optimization)
-				debug!("Pruning local records on fat client");
-				self.swarm.behaviour_mut().kademlia.remove_record(&key);
-			}
-		} else {
-			debug!("Can't find block in the active blocks list")
 		}
 	}
 }

@@ -2,8 +2,10 @@ use super::{metric, MetricCounter, MetricValue};
 use crate::{network::p2p::OutputEvent, telemetry::MetricName, types::Origin};
 use async_trait::async_trait;
 use color_eyre::{eyre::eyre, Result};
-use futures::stream::TryStreamExt;
-use libp2p::{kad::Mode, Multiaddr};
+use libp2p::{
+	kad::{Mode, QueryStats, RecordKey},
+	Multiaddr,
+};
 use opentelemetry::{
 	global,
 	metrics::{Counter, Meter},
@@ -13,7 +15,74 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, Mutex, RwLock};
-use tokio_stream::wrappers::BroadcastStream;
+use tracing::{debug, info, warn};
+
+#[derive(Debug)]
+pub struct BlockStat {
+	pub total_count: usize,
+	pub remaining_counter: usize,
+	pub success_counter: usize,
+	pub error_counter: usize,
+	pub time_stat: u64,
+}
+
+impl BlockStat {
+	pub fn increase_block_stat_counters(&mut self, cell_number: usize) {
+		self.total_count += cell_number;
+		self.remaining_counter += cell_number;
+	}
+
+	fn increment_success_counter(&mut self) {
+		self.success_counter += 1;
+	}
+
+	fn increment_error_counter(&mut self) {
+		self.error_counter += 1;
+	}
+
+	fn decrement_remaining_counter(&mut self) {
+		self.remaining_counter -= 1;
+	}
+
+	fn is_completed(&self) -> bool {
+		self.remaining_counter == 0
+	}
+
+	fn update_time_stat(&mut self, stats: &QueryStats) {
+		self.time_stat = stats
+			.duration()
+			.as_ref()
+			.map(Duration::as_secs)
+			.unwrap_or_default();
+	}
+
+	fn success_rate(&self) -> f64 {
+		self.success_counter as f64 / self.total_count as f64
+	}
+}
+
+#[derive(PartialEq, Debug)]
+enum DHTKey {
+	Cell(u32, u32, u32),
+	Row(u32, u32),
+}
+
+impl TryFrom<RecordKey> for DHTKey {
+	type Error = color_eyre::Report;
+
+	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
+		match *String::from_utf8(key.to_vec())?
+			.split(':')
+			.map(str::parse::<u32>)
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.as_slice()
+		{
+			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
+			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
+			_ => Err(eyre!("Invalid DHT key")),
+		}
+	}
+}
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
@@ -68,6 +137,36 @@ impl Metrics {
 	async fn update_multiaddress(&self, value: Multiaddr) {
 		let mut multiaddress = self.multiaddress.write().await;
 		*multiaddress = value;
+	}
+
+	fn extract_block_num(&self, key: &RecordKey) -> Result<u32> {
+		match key.clone().try_into() {
+			Ok(DHTKey::Cell(block_num, _, _)) | Ok(DHTKey::Row(block_num, _)) => Ok(block_num),
+			Err(error) => {
+				warn!("Unable to cast KAD key to DHT key: {error}");
+				Err(eyre!("Invalid key: {error}"))
+			},
+		}
+	}
+
+	async fn log_and_record_block_completion(
+		&self,
+		block_num: u32,
+		block: &BlockStat,
+	) -> Result<()> {
+		if block.is_completed() {
+			// log Block stats
+			let success_rate = block.success_rate();
+			info!(
+				"Cell upload success rate for block {}: {}. Duration: {}",
+				block_num, success_rate, block.time_stat
+			);
+			// record metric values
+			super::Metrics::record(self, MetricValue::DHTPutSuccess(success_rate)).await;
+			super::Metrics::record(self, MetricValue::DHTPutDuration(block.time_stat as f64)).await;
+		}
+
+		Ok(())
 	}
 }
 
@@ -212,12 +311,15 @@ impl super::Metrics for Metrics {
 
 	async fn handle_event_stream(
 		&self,
-		event_receiver: broadcast::Receiver<OutputEvent>,
+		mut event_receiver: broadcast::Receiver<OutputEvent>,
 	) -> Result<()> {
-		let events = BroadcastStream::new(event_receiver.resubscribe());
-		events
-			.try_for_each(|event| async move {
-				match event {
+		// blocks we monitor for PUT success rate
+		// TODO: will live here until Metrics is free of Arc
+		let mut active_blocks: HashMap<u32, BlockStat> = Default::default();
+
+		loop {
+			match event_receiver.recv().await {
+				Ok(event) => match event {
 					OutputEvent::Count => {
 						self.count(MetricCounter::EventLoopEvent).await;
 					},
@@ -249,19 +351,63 @@ impl super::Metrics for Metrics {
 					OutputEvent::OutgoingConnectionError => {
 						self.count(MetricCounter::OutgoingConnectionErrors).await;
 					},
-					OutputEvent::PutRecord {
-						success_rate,
-						duration,
-					} => {
-						self.record(MetricValue::DHTPutSuccess(success_rate)).await;
-						self.record(MetricValue::DHTPutDuration(duration)).await;
+					OutputEvent::PutRecord { block_num, records } => {
+						active_blocks
+							.entry(block_num)
+							.and_modify(|block| block.increase_block_stat_counters(records.len()))
+							.or_insert(BlockStat {
+								total_count: records.len(),
+								remaining_counter: records.len(),
+								success_counter: 0,
+								error_counter: 0,
+								time_stat: 0,
+							});
 					},
-				}
+					OutputEvent::PutRecordSuccess {
+						record_key,
+						query_stats,
+					} => {
+						let block_num = self.extract_block_num(&record_key)?;
+						if let Some(block) = active_blocks.get_mut(&block_num) {
+							block.increment_success_counter();
+							block.decrement_remaining_counter();
+							block.update_time_stat(&query_stats);
 
-				Ok(())
-			})
-			.await
-			.map_err(|err| eyre!("Error receiving the P2P Output Event: {err}"))
+							self.log_and_record_block_completion(block_num, block)
+								.await?;
+						} else {
+							debug!("Cant't find block: {} in active block list", block_num);
+						};
+					},
+					OutputEvent::PutRecordFailed {
+						record_key,
+						query_stats,
+					} => {
+						let block_num = self.extract_block_num(&record_key)?;
+						if let Some(block) = active_blocks.get_mut(&block_num) {
+							block.increment_error_counter();
+							block.decrement_remaining_counter();
+							block.update_time_stat(&query_stats);
+
+							self.log_and_record_block_completion(block_num, block)
+								.await?;
+						} else {
+							debug!("Cant't find block: {} in active block list", block_num);
+						};
+					},
+				},
+				Err(broadcast::error::RecvError::Closed) => {
+					// channel closed, exit the loop
+					break;
+				},
+				Err(broadcast::error::RecvError::Lagged(missed_events)) => {
+					warn!("Missed {} events due to channel lag", missed_events);
+					continue;
+				},
+			}
+		}
+
+		Ok(())
 	}
 }
 
