@@ -29,16 +29,16 @@ impl MetricName for MetricCounter {
 	fn name(&self) -> &'static str {
 		use MetricCounter::*;
 		match self {
-			Starts => "avail.light.starts",
-			Up => "avail.light.up",
-			SessionBlocks => "avail.light.session_blocks",
-			OutgoingConnectionErrors => "avail.light.outgoing_connection_errors",
-			IncomingConnectionErrors => "avail.light.incoming_connection_errors",
-			IncomingConnections => "avail.light.incoming_connections",
-			EstablishedConnections => "avail.light.established_connections",
-			IncomingPutRecord => "avail.light.incoming_put_record",
-			IncomingGetRecord => "avail.light.incoming_get_record",
-			EventLoopEvent => "avail.light.event_loop_event",
+			Starts => "light.starts",
+			Up => "light.up",
+			SessionBlocks => "light.session_blocks",
+			OutgoingConnectionErrors => "light.outgoing_connection_errors",
+			IncomingConnectionErrors => "light.incoming_connection_errors",
+			IncomingConnections => "light.incoming_connections",
+			EstablishedConnections => "light.established_connections",
+			IncomingPutRecord => "light.incoming_put_record",
+			IncomingGetRecord => "light.incoming_get_record",
+			EventLoopEvent => "light.event_loop_event",
 		}
 	}
 }
@@ -91,25 +91,25 @@ impl MetricName for MetricValue {
 		use MetricValue::*;
 
 		match self {
-			BlockHeight(_) => "avail.light.block.height",
-			BlockConfidence(_) => "avail.light.block.confidence",
-			BlockConfidenceThreshold(_) => "avail.light.block.confidence_threshold",
-			BlockProcessingDelay(_) => "avail.light.block.processing_delay",
+			BlockHeight(_) => "light.block.height",
+			BlockConfidence(_) => "light.block.confidence",
+			BlockConfidenceThreshold(_) => "light.block.confidence_threshold",
+			BlockProcessingDelay(_) => "light.block.processing_delay",
 
-			DHTReplicationFactor(_) => "avail.light.dht.replication_factor",
-			DHTFetched(_) => "avail.light.dht.fetched",
-			DHTFetchedPercentage(_) => "avail.light.dht.fetched_percentage",
-			DHTFetchDuration(_) => "avail.light.dht.fetch_duration",
-			DHTPutDuration(_) => "avail.light.dht.put_duration",
-			DHTPutSuccess(_) => "avail.light.dht.put_success",
+			DHTReplicationFactor(_) => "light.dht.replication_factor",
+			DHTFetched(_) => "light.dht.fetched",
+			DHTFetchedPercentage(_) => "light.dht.fetched_percentage",
+			DHTFetchDuration(_) => "light.dht.fetch_duration",
+			DHTPutDuration(_) => "light.dht.put_duration",
+			DHTPutSuccess(_) => "light.dht.put_success",
 
-			DHTConnectedPeers(_) => "avail.light.dht.connected_peers",
-			DHTQueryTimeout(_) => "avail.light.dht.query_timeout",
-			DHTPingLatency(_) => "avail.light.dht.ping_latency",
+			DHTConnectedPeers(_) => "light.dht.connected_peers",
+			DHTQueryTimeout(_) => "light.dht.query_timeout",
+			DHTPingLatency(_) => "light.dht.ping_latency",
 
-			RPCFetched(_) => "avail.light.rpc.fetched",
-			RPCFetchDuration(_) => "avail.light.rpc.fetch_duration",
-			RPCCallDuration(_) => "avail.light.rpc.call_duration",
+			RPCFetched(_) => "light.rpc.fetched",
+			RPCFetchDuration(_) => "light.rpc.fetch_duration",
+			RPCCallDuration(_) => "light.rpc.call_duration",
 		}
 	}
 }

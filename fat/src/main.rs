@@ -81,6 +81,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
 			metric_attributes,
+			"avail".to_string(),
 			&Origin::FatClient,
 			&KademliaMode::Client.into(),
 			config.otel.clone(),
@@ -90,6 +91,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
 		config.libp2p.clone(),
+		"avail".to_string(),
 		p2p_keypair,
 		version,
 		&config.genesis_hash,

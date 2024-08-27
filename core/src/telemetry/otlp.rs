@@ -20,6 +20,7 @@ use tokio_stream::wrappers::BroadcastStream;
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
+	project_name: String,
 	origin: Origin,
 	mode: RwLock<Mode>,
 	multiaddress: RwLock<Multiaddr>,
@@ -41,7 +42,8 @@ impl Metrics {
 	}
 
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
-		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
+		let gauge_name = format!("{}.{}", name, self.project_name);
+		let instrument = self.meter.u64_observable_gauge(gauge_name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
@@ -51,7 +53,8 @@ impl Metrics {
 	}
 
 	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
-		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
+		let gauge_name = format!("{}.{}", name, self.project_name);
+		let instrument = self.meter.f64_observable_gauge(gauge_name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
@@ -163,6 +166,7 @@ impl super::Metrics for Metrics {
 			return;
 		}
 		if !counter.is_buffered() {
+			// let counter_name = format!("{}.{}", &counter.name, self.project_name);
 			self.counters[&counter.name()].add(1, &self.attributes().await);
 			return;
 		}
@@ -265,7 +269,11 @@ impl super::Metrics for Metrics {
 	}
 }
 
-fn init_counters(meter: Meter, origin: &Origin) -> HashMap<&'static str, Counter<u64>> {
+fn init_counters(
+	meter: Meter,
+	origin: &Origin,
+	project_name: String,
+) -> HashMap<&'static str, Counter<u64>> {
 	[
 		MetricCounter::Starts,
 		MetricCounter::Up,
@@ -280,7 +288,11 @@ fn init_counters(meter: Meter, origin: &Origin) -> HashMap<&'static str, Counter
 	]
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
-	.map(|counter| (counter.name(), meter.u64_counter(counter.name()).init()))
+	.map(|counter| {
+		let counter_name = format!("{}.{}", project_name, counter.name());
+		// Keep the `static str as the local bufer map key, but change the OTel counter name`
+		(counter.name(), meter.u64_counter(counter_name).init())
+	})
 	.collect()
 }
 
@@ -307,6 +319,7 @@ impl Default for OtelConfig {
 
 pub fn initialize(
 	attributes: Vec<(&str, String)>,
+	project_name: String,
 	origin: &Origin,
 	mode: &Mode,
 	ot_config: OtelConfig,
@@ -336,9 +349,10 @@ pub fn initialize(
 		.collect();
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = init_counters(meter.clone(), origin);
+	let counters = init_counters(meter.clone(), origin, project_name.clone());
 	Ok(Metrics {
 		meter,
+		project_name,
 		origin: origin.clone(),
 		mode: RwLock::new(*mode),
 		multiaddress: RwLock::new(Multiaddr::empty()),
