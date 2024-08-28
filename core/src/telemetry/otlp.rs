@@ -425,7 +425,8 @@ mod tests {
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert!(m_u64.is_empty());
 		assert_eq!(m_f64.len(), 1);
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&90.0));
+		println!("{:?}", m_f64);
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&90.0));
 
 		let buffer = vec![
 			MetricValue::BlockConfidence(90.0),
@@ -434,9 +435,9 @@ mod tests {
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
-		assert_eq!(m_u64.get("avail.light.block.height"), Some(&1));
+		assert_eq!(m_u64.get("light.block.height"), Some(&1));
 		assert_eq!(m_f64.len(), 1);
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&91.5));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&91.5));
 
 		let buffer = vec![
 			MetricValue::BlockConfidence(90.0),
@@ -449,9 +450,9 @@ mod tests {
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
-		assert_eq!(m_u64.get("avail.light.block.height"), Some(&10));
+		assert_eq!(m_u64.get("light.block.height"), Some(&10));
 		assert_eq!(m_f64.len(), 1);
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&93.75));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&93.75));
 
 		let buffer = vec![
 			MetricValue::DHTConnectedPeers(90),
@@ -466,11 +467,11 @@ mod tests {
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
-		assert_eq!(m_u64.get("avail.light.block.height"), Some(&999));
+		assert_eq!(m_u64.get("light.block.height"), Some(&999));
 		assert_eq!(m_f64.len(), 4);
-		assert_eq!(m_f64.get("avail.light.dht.put_success"), Some(&10.0));
-		assert_eq!(m_f64.get("avail.light.dht.fetch_duration"), Some(&1.7));
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&98.5));
-		assert_eq!(m_f64.get("avail.light.dht.connected_peers"), Some(&85.0));
+		assert_eq!(m_f64.get("light.dht.put_success"), Some(&10.0));
+		assert_eq!(m_f64.get("light.dht.fetch_duration"), Some(&1.7));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&98.5));
+		assert_eq!(m_f64.get("light.dht.connected_peers"), Some(&85.0));
 	}
 }
