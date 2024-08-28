@@ -20,6 +20,7 @@ use tokio_stream::wrappers::BroadcastStream;
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
+	project_name: String,
 	origin: Origin,
 	mode: RwLock<Mode>,
 	multiaddress: RwLock<Multiaddr>,
@@ -41,7 +42,8 @@ impl Metrics {
 	}
 
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
-		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
+		let gauge_name = format!("{}.{}", name, self.project_name);
+		let instrument = self.meter.u64_observable_gauge(gauge_name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
@@ -51,7 +53,8 @@ impl Metrics {
 	}
 
 	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
-		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
+		let gauge_name = format!("{}.{}", name, self.project_name);
+		let instrument = self.meter.f64_observable_gauge(gauge_name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
@@ -265,7 +268,11 @@ impl super::Metrics for Metrics {
 	}
 }
 
-fn init_counters(meter: Meter, origin: &Origin) -> HashMap<&'static str, Counter<u64>> {
+fn init_counters(
+	meter: Meter,
+	origin: &Origin,
+	project_name: String,
+) -> HashMap<&'static str, Counter<u64>> {
 	[
 		MetricCounter::Starts,
 		MetricCounter::Up,
@@ -280,7 +287,11 @@ fn init_counters(meter: Meter, origin: &Origin) -> HashMap<&'static str, Counter
 	]
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
-	.map(|counter| (counter.name(), meter.u64_counter(counter.name()).init()))
+	.map(|counter| {
+		let otel_counter_name = format!("{}.{}", project_name, counter.name());
+		// Keep the `static str as the local bufer map key, but change the OTel counter name`
+		(counter.name(), meter.u64_counter(otel_counter_name).init())
+	})
 	.collect()
 }
 
@@ -307,6 +318,7 @@ impl Default for OtelConfig {
 
 pub fn initialize(
 	attributes: Vec<(&str, String)>,
+	project_name: String,
 	origin: &Origin,
 	mode: &Mode,
 	ot_config: OtelConfig,
@@ -336,9 +348,10 @@ pub fn initialize(
 		.collect();
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = init_counters(meter.clone(), origin);
+	let counters = init_counters(meter.clone(), origin, project_name.clone());
 	Ok(Metrics {
 		meter,
+		project_name,
 		origin: origin.clone(),
 		mode: RwLock::new(*mode),
 		multiaddress: RwLock::new(Multiaddr::empty()),
@@ -411,7 +424,7 @@ mod tests {
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert!(m_u64.is_empty());
 		assert_eq!(m_f64.len(), 1);
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&90.0));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&90.0));
 
 		let buffer = vec![
 			MetricValue::BlockConfidence(90.0),
@@ -420,9 +433,9 @@ mod tests {
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
-		assert_eq!(m_u64.get("avail.light.block.height"), Some(&1));
+		assert_eq!(m_u64.get("light.block.height"), Some(&1));
 		assert_eq!(m_f64.len(), 1);
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&91.5));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&91.5));
 
 		let buffer = vec![
 			MetricValue::BlockConfidence(90.0),
@@ -435,9 +448,9 @@ mod tests {
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
-		assert_eq!(m_u64.get("avail.light.block.height"), Some(&10));
+		assert_eq!(m_u64.get("light.block.height"), Some(&10));
 		assert_eq!(m_f64.len(), 1);
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&93.75));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&93.75));
 
 		let buffer = vec![
 			MetricValue::DHTConnectedPeers(90),
@@ -452,11 +465,11 @@ mod tests {
 		];
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert_eq!(m_u64.len(), 1);
-		assert_eq!(m_u64.get("avail.light.block.height"), Some(&999));
+		assert_eq!(m_u64.get("light.block.height"), Some(&999));
 		assert_eq!(m_f64.len(), 4);
-		assert_eq!(m_f64.get("avail.light.dht.put_success"), Some(&10.0));
-		assert_eq!(m_f64.get("avail.light.dht.fetch_duration"), Some(&1.7));
-		assert_eq!(m_f64.get("avail.light.block.confidence"), Some(&98.5));
-		assert_eq!(m_f64.get("avail.light.dht.connected_peers"), Some(&85.0));
+		assert_eq!(m_f64.get("light.dht.put_success"), Some(&10.0));
+		assert_eq!(m_f64.get("light.dht.fetch_duration"), Some(&1.7));
+		assert_eq!(m_f64.get("light.block.confidence"), Some(&98.5));
+		assert_eq!(m_f64.get("light.dht.connected_peers"), Some(&85.0));
 	}
 }

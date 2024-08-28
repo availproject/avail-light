@@ -80,6 +80,7 @@ async fn run(
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
 			metric_attributes,
+			cfg.project_name.clone(),
 			&cfg.origin,
 			&cfg.libp2p.kademlia.operation_mode.into(),
 			cfg.otel.clone(),
@@ -89,6 +90,7 @@ async fn run(
 
 	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
 		cfg.libp2p.clone(),
+		cfg.project_name.clone(),
 		id_keys,
 		version,
 		&cfg.genesis_hash,
