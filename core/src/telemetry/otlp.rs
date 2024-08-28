@@ -166,7 +166,6 @@ impl super::Metrics for Metrics {
 			return;
 		}
 		if !counter.is_buffered() {
-			// let counter_name = format!("{}.{}", &counter.name, self.project_name);
 			self.counters[&counter.name()].add(1, &self.attributes().await);
 			return;
 		}
@@ -289,9 +288,9 @@ fn init_counters(
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
 	.map(|counter| {
-		let counter_name = format!("{}.{}", project_name, counter.name());
+		let otel_counter_name = format!("{}.{}", project_name, counter.name());
 		// Keep the `static str as the local bufer map key, but change the OTel counter name`
-		(counter.name(), meter.u64_counter(counter_name).init())
+		(counter.name(), meter.u64_counter(otel_counter_name).init())
 	})
 	.collect()
 }
@@ -425,7 +424,6 @@ mod tests {
 		let (m_u64, m_f64) = flatten_metrics(buffer);
 		assert!(m_u64.is_empty());
 		assert_eq!(m_f64.len(), 1);
-		println!("{:?}", m_f64);
 		assert_eq!(m_f64.get("light.block.confidence"), Some(&90.0));
 
 		let buffer = vec![

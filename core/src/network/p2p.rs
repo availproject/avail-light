@@ -117,7 +117,7 @@ impl FromStr for AgentVersion {
 impl AgentVersion {
 	fn new(project_name: String, version: &str) -> Self {
 		Self {
-			base_version: format!("{}-{}", project_name, IDENTITY_AGENT_BASE),
+			base_version: format!("{project_name}-{IDENTITY_AGENT_BASE}"),
 			role: IDENTITY_AGENT_ROLE.to_string(),
 			release_version: version.to_string(),
 			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
