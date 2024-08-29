@@ -4,7 +4,7 @@ use configuration::LibP2PConfig;
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
-	kad::{self, Mode, PeerRecord},
+	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -61,12 +61,12 @@ Bootstrap node list must not be empty.
 Either use a '--network' flag or add a list of bootstrap nodes in the configuration file.
 "#;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum OutputEvent {
 	IncomingGetRecord,
 	IncomingPutRecord,
 	KadModeChange(Mode),
-	PutRecord { success_rate: f64, duration: f64 },
+
 	Ping(Duration),
 	IncomingConnection,
 	IncomingConnectionError,
@@ -74,6 +74,18 @@ pub enum OutputEvent {
 	EstablishedConnection,
 	OutgoingConnectionError,
 	Count,
+	PutRecord {
+		block_num: u32,
+		records: Vec<Record>,
+	},
+	PutRecordSuccess {
+		record_key: RecordKey,
+		query_stats: QueryStats,
+	},
+	PutRecordFailed {
+		record_key: RecordKey,
+		query_stats: QueryStats,
+	},
 }
 
 #[derive(Clone)]

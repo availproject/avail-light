@@ -22,8 +22,8 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use tracing::{debug, info, trace};
 
 use super::{
-	event_loop::{BlockStat, ConnectionEstablishedInfo},
-	is_global, is_multiaddr_global, Command, EventLoop, MultiAddressInfo, PeerInfo, QueryChannel,
+	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
+	MultiAddressInfo, OutputEvent, PeerInfo, QueryChannel,
 };
 use crate::types::MultiaddrConfig;
 
@@ -205,27 +205,18 @@ impl Client {
 	) -> Result<()> {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
-				context
-					.active_blocks
-					.entry(block_num)
-					// increase the total cell count we monitor if the block entry already exists
-					.and_modify(|block| block.increase_block_stat_counters(records.len()))
-					// initiate counting for the new block if the block doesn't exist
-					.or_insert(BlockStat {
-						total_count: records.len(),
-						remaining_counter: records.len(),
-						success_counter: 0,
-						error_counter: 0,
-						time_stat: 0,
-					});
-
-				for record in records {
+				for record in records.clone() {
 					let _ = context
 						.swarm
 						.behaviour_mut()
 						.kademlia
 						.put_record(record, quorum);
 				}
+
+				context
+					.event_sender
+					.send(OutputEvent::PutRecord { block_num, records })?;
+
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Put Kad Record Command to the EventLoop"))
