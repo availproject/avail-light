@@ -95,7 +95,9 @@ impl<D: Database> Client<D> {
 		expected_node: ExpectedNodeVariant,
 		expected_genesis_hash: &str,
 	) -> Result<(SDK, Node)> {
-		let client = SDK::new(host).await.map_err(|error| eyre!("{error}"))?;
+		let client = SDK::new_insecure(host)
+			.await
+			.map_err(|error| eyre!("{error}"))?;
 
 		// check genesis hash
 		let genesis_hash = client.api.genesis_hash();
