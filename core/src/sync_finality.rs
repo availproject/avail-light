@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use avail_rust::{
+	sp_core::{blake2_256, ed25519, twox_128, H256},
 	subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32},
 	AvailHeader,
 };
@@ -9,7 +10,6 @@ use color_eyre::{
 	Result,
 };
 use futures::future::join_all;
-use sp_core::{blake2_256, ed25519, twox_128, H256};
 use std::iter::zip;
 use tracing::{error, info, trace};
 

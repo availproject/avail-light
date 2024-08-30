@@ -8,6 +8,10 @@ use crate::utils::{extract_app_lookup, extract_kate};
 use avail_rust::{
 	avail_core::DataLookup,
 	kate_recovery::{commitments, matrix::Dimensions},
+	sp_core::{
+		crypto::{self, Ss58Codec},
+		{blake2_256, bytes, ed25519, H256},
+	},
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
 		SecretString, SecretUri,
@@ -19,8 +23,6 @@ use color_eyre::{eyre::eyre, Report, Result};
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
-use sp_core::crypto::Ss58Codec;
-use sp_core::{blake2_256, bytes, ed25519, H256};
 use std::fmt::{self, Display, Formatter};
 use std::ops::Range;
 use std::str::FromStr;
@@ -573,7 +575,7 @@ impl IdentityConfig {
 
 		let avail_key_pair = Keypair::from_uri(&suri)?;
 		let avail_address = avail_key_pair.public_key().to_account_id();
-		let avail_address = sp_core::crypto::AccountId32::from(avail_address.0).to_ss58check();
+		let avail_address = crypto::AccountId32::from(avail_address.0).to_ss58check();
 		let avail_public_key = hex::encode(avail_key_pair.public_key());
 
 		Ok(IdentityConfig {

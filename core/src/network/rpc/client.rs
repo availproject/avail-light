@@ -3,6 +3,7 @@ use avail_rust::{
 	avail_core::AppId,
 	kate_recovery::{data::Cell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
+	sp_core::{bytes::from_hex, crypto, ed25519::Public, H256, U256},
 	subxt::{
 		self, backend::legacy::rpc_methods::StorageKey, client::RuntimeVersion, rpc_params,
 		tx::SubmittableExtrinsic, utils::AccountId32,
@@ -14,7 +15,6 @@ use color_eyre::{
 	Report, Result,
 };
 use futures::{Stream, TryFutureExt, TryStreamExt};
-use sp_core::{bytes::from_hex, ed25519::Public, H256, U256};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_retry::Retry;
@@ -620,10 +620,9 @@ impl<D: Database> Client<D> {
 	) -> Result<Option<AccountId32>> {
 		let res = self
 			.with_retries(|client| {
-				let session_key_key_owner = avail::storage().session().key_owner(
-					KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
-					public_key.0,
-				);
+				let session_key_key_owner = avail::storage()
+					.session()
+					.key_owner(KeyTypeId(crypto::key_types::GRANDPA.0), public_key.0);
 				async move {
 					client
 						.api

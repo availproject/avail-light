@@ -1,10 +1,13 @@
-use avail_rust::{primitives::block::grandpa::AuthorityId, AvailHeader};
+use avail_rust::{
+	primitives::block::grandpa::AuthorityId,
+	sp_core::{
+		blake2_256,
+		ed25519::{self, Public},
+	},
+	AvailHeader,
+};
 use codec::Encode;
 use color_eyre::{eyre::eyre, Result};
-use sp_core::{
-	blake2_256,
-	ed25519::{self, Public},
-};
 use std::time::Instant;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;

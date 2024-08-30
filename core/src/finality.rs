@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use codec::Encode;
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use sp_core::{
+use avail_rust::sp_core::{
 	blake2_256,
 	ed25519::{self, Public},
 	Pair, H256,
 };
+use codec::Encode;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::types::{GrandpaJustification, SignerMessage};
@@ -126,12 +126,16 @@ fn confirm_ancestry(
 mod tests {
 	use super::{check_finality, ValidatorSet};
 	use crate::types::{Commit, GrandpaJustification, Precommit, SignerMessage};
-	use avail_rust::AvailHeader;
+	use avail_rust::{
+		sp_core::{
+			ed25519::{self, Public, Signature},
+			Pair as PairT,
+		},
+		AvailHeader,
+	};
 	use codec::Encode;
 	use hex::FromHex;
 	use serde::{Deserialize, Serialize};
-	use sp_core::ed25519::{self, Public, Signature};
-	use sp_core::Pair as PairT;
 	use std::fs::File;
 	use test_case::test_case;
 
