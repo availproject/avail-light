@@ -31,6 +31,7 @@ use crate::{
 use async_trait::async_trait;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
+	sp_core::{blake2_256, H256},
 	AvailHeader,
 };
 use codec::Encode;
@@ -39,7 +40,6 @@ use color_eyre::{
 	Result,
 };
 use mockall::automock;
-use sp_core::{blake2_256, H256};
 use std::{ops::Range, time::Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};

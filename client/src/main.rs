@@ -23,6 +23,7 @@ use avail_light_core::{
 use avail_rust::{
 	avail_core::AppId,
 	kate_recovery::{com::AppData, couscous},
+	sp_core::blake2_128,
 };
 use clap::Parser;
 use color_eyre::{
@@ -148,7 +149,7 @@ async fn run(
 
 	let pp = Arc::new(couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
-	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
+	let public_params_hash = hex::encode(blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 

@@ -5,13 +5,13 @@ use avail_rust::{
 		data::Cell,
 		matrix::{Dimensions, Position},
 	},
+	sp_core::H256,
 };
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
 use dusk_plonk::prelude::PublicParameters;
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
-use sp_core::H256;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use strum::Display;
 use tokio::time::Instant;

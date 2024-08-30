@@ -15,6 +15,7 @@ use avail_rust::{
 		data::{self, Cell},
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
+	sp_core::blake2_256,
 	AvailHeader, H256,
 };
 use codec::Encode;
@@ -22,7 +23,6 @@ use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;
 use mockall::automock;
 use serde::{Deserialize, Serialize};
-use sp_core::blake2_256;
 use std::{
 	sync::Arc,
 	time::{Duration, Instant},

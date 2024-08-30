@@ -19,11 +19,11 @@
 
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
+	sp_core::blake2_256,
 	AvailHeader, H256,
 };
 use codec::Encode;
 use color_eyre::Result;
-use sp_core::blake2_256;
 use std::{sync::Arc, time::Instant};
 use tracing::{error, info};
 
