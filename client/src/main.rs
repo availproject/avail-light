@@ -5,6 +5,7 @@ use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data::{self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, DB},
+	maintenance,
 	network::{
 		self,
 		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
@@ -31,7 +32,7 @@ use color_eyre::{
 	Result,
 };
 use std::{fs, path::Path, sync::Arc};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, span, trace, warn, Level};
 
 #[cfg(feature = "network-analysis")]
@@ -288,12 +289,14 @@ async fn run(
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
-	spawn_in_span(shutdown.with_cancel(avail_light_core::maintenance::run(
+	let (maintenance_sender, _) = mpsc::channel::<maintenance::OutputEvent>(1000);
+	spawn_in_span(shutdown.with_cancel(maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
 		static_config_params,
 		shutdown.clone(),
+		maintenance_sender,
 	)));
 
 	let channels = avail_light_core::types::ClientChannels {

@@ -1,7 +1,7 @@
 use color_eyre::{eyre::WrapErr, Result};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -11,11 +11,23 @@ use crate::{
 	types::{BlockVerified, MaintenanceConfig},
 };
 
+pub enum OutputEvent {
+	FlushMetrics,
+	RecordStats {
+		connected_peers: usize,
+		block_confidence_treshold: f64,
+		replication_factor: u16,
+		query_timeout: u32,
+	},
+	CountUps,
+}
+
 pub async fn process_block(
 	block_number: u32,
 	p2p_client: &P2pClient,
 	maintenance_config: MaintenanceConfig,
 	metrics: &Arc<impl Metrics>,
+	event_sender: mpsc::Sender<OutputEvent>,
 ) -> Result<()> {
 	if cfg!(not(feature = "rocksdb")) && block_number % maintenance_config.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
@@ -31,6 +43,7 @@ pub async fn process_block(
 			Ok(()) => info!(block_number, "Flushing metrics finished"),
 			Err(error) => error!(block_number, "Flushing metrics failed: {error:#}"),
 		}
+		event_sender.send(OutputEvent::FlushMetrics).await?;
 	}
 
 	p2p_client
@@ -78,7 +91,17 @@ pub async fn process_block(
 			maintenance_config.query_timeout.as_secs() as u32,
 		))
 		.await;
+	event_sender
+		.send(OutputEvent::RecordStats {
+			connected_peers: peers_num,
+			block_confidence_treshold: maintenance_config.block_confidence_treshold,
+			replication_factor: maintenance_config.replication_factor,
+			query_timeout: maintenance_config.query_timeout.as_secs() as u32,
+		})
+		.await?;
+
 	metrics.count(MetricCounter::Up).await;
+	event_sender.send(OutputEvent::CountUps).await?;
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())
@@ -90,13 +113,20 @@ pub async fn run(
 	mut block_receiver: broadcast::Receiver<BlockVerified>,
 	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
+	event_sender: mpsc::Sender<OutputEvent>,
 ) {
 	info!("Starting maintenance...");
-
 	loop {
 		let result = match block_receiver.recv().await {
 			Ok(block) => {
-				process_block(block.block_num, &p2p_client, static_config_params, &metrics).await
+				process_block(
+					block.block_num,
+					&p2p_client,
+					static_config_params,
+					&metrics,
+					event_sender.clone(),
+				)
+				.await
 			},
 			Err(error) => Err(error.into()),
 		};
