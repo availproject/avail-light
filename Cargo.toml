@@ -7,6 +7,7 @@ members = [
 	"crawler",
 	"fat",
 	"relay",
+	"web",
 ]
 default-members = ["client"]
 resolver = "2"
@@ -25,7 +26,7 @@ anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.73"
 clap = { version = "4.4.4", features = ["derive", "cargo"] }
-color-eyre = "0.6.2"
+color-eyre = { version = "0.6.2", default-features = false }
 confy = "0.5.1"
 hex = "0.4.3"
 rand = "0.8.4"

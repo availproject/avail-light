@@ -20,7 +20,6 @@ better-panic = "0.3.0"
 blake2b_simd = "1.0.2"
 clap = { workspace = true }
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
-color-eyre = { workspace = true }
 confy = { workspace = true }
 derive_more = { version = "1", features = ["from"] }
 dusk-bytes = { version = "0.1.6", default-features = false }
@@ -49,6 +48,7 @@ uuid = { workspace = true }
 async-std = { workspace = true }
 chrono = "0.4.19"
 libp2p = { workspace = true }
+color-eyre = { workspace = true, default-features = true }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 libc = "0.2.150"
@@ -76,6 +76,7 @@ thiserror-no-std = "2.0.2"
 rand = { version = "0.8.4", default-features = false }
 libp2p = { workspace = true, features = ["wasm-bindgen"] }
 libp2p-webrtc-websys = { workspace = true }
+color-eyre = { workspace = true }
 wasm-bindgen = "0.2.90"
 wasm-timer = "0.2.5"
 web-time = "1.1.0"

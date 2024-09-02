@@ -43,6 +43,7 @@ use crate::{
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
+#[derive(Debug)]
 pub enum OutputEvent {
 	RecordBlockProcessingDelay(f64),
 	CountSessionBlocks,
