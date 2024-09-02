@@ -289,12 +289,14 @@ async fn run(
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
+	let (maintenance_sender, _) = mpsc::channel::<maintenance::OutputEvent>(1000);
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
 		p2p_client.clone(),
 		ot_metrics.clone(),
 		block_rx,
 		static_config_params,
 		shutdown.clone(),
+		maintenance_sender,
 	)));
 
 	let channels = avail_light_core::types::ClientChannels {
