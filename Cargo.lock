@@ -1096,7 +1096,7 @@ dependencies = [
 [[package]]
 name = "avail-rust"
 version = "0.1.0"
-source = "git+https://github.com/availproject/avail.git?branch=main#5b8cd6a7320546d7c40b05a1ff059cc3032030c0"
+source = "git+https://github.com/availproject/avail.git?branch=main#383fb7214d38b782c29a1514ed52d8479285c5ec"
 dependencies = [
  "avail-core",
  "base58",
@@ -6874,9 +6874,9 @@ checksum = "976295e77ce332211c0d24d92c0e83e50f5c5f046d11082cea19f3df13a3562d"
 
 [[package]]
 name = "rustls-platform-verifier"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93bda3f493b9abe5b93b3e7e3ecde0df292f2bd28c0296b90586ee0055ff5123"
+checksum = "afbb878bdfdf63a336a5e63561b1835e7a8c91524f51621db870169eac84b490"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",
