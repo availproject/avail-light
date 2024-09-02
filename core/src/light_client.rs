@@ -384,7 +384,7 @@ mod tests {
 			}),
 		};
 		let recv = Instant::now();
-		let (sender, _) = mpsc::channel::<OutputEvent>(1);
+		let (sender, _receiver) = mpsc::channel::<OutputEvent>(100);
 		mock_network_client
 			.expect_fetch_verified()
 			.returning(move |_, _, _, _, positions| {
