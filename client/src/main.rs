@@ -5,7 +5,7 @@ use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data::{self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, DB},
-	maintenance,
+	light_client, maintenance,
 	network::{
 		self,
 		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
@@ -305,14 +305,15 @@ async fn run(
 	};
 
 	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
-
-	spawn_in_span(shutdown.with_cancel(avail_light_core::light_client::run(
+	let (lc_sender, _) = mpsc::channel::<light_client::OutputEvent>(1000);
+	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
 		light_network_client,
 		(&cfg).into(),
 		ot_metrics.clone(),
 		channels,
 		shutdown.clone(),
+		lc_sender,
 	)));
 
 	ot_metrics.count(MetricCounter::Starts).await;

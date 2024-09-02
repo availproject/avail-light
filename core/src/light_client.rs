@@ -25,6 +25,7 @@ use avail_rust::{
 use codec::Encode;
 use color_eyre::Result;
 use std::{sync::Arc, time::Instant};
+use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::{
@@ -39,6 +40,20 @@ use crate::{
 	utils::{calculate_confidence, extract_kate},
 };
 
+pub enum OutputEvent {
+	RecordBlockProcessingDelay(f64),
+	CountSessionBlocks,
+	RecordBlockHeight(u32),
+	RecordDHTStats {
+		fetched: f64,
+		fetched_percentage: f64,
+		fetch_duration: f64,
+	},
+	RecordRPCFetched(f64),
+	RecordRPCFetchDuration(f64),
+	RecordBlockConfidence(f64),
+}
+
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
@@ -46,14 +61,17 @@ pub async fn process_block(
 	cfg: &LightClientConfig,
 	header: AvailHeader,
 	received_at: Instant,
+	event_sender: mpsc::Sender<OutputEvent>,
 ) -> Result<Option<f64>> {
-	metrics.count(MetricCounter::SessionBlocks).await;
-	metrics
-		.record(MetricValue::BlockHeight(header.number))
-		.await;
-
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
+
+	metrics.count(MetricCounter::SessionBlocks).await;
+	event_sender.send(OutputEvent::CountSessionBlocks).await?;
+	metrics.record(MetricValue::BlockHeight(block_number)).await;
+	event_sender
+		.send(OutputEvent::RecordBlockHeight(block_number))
+		.await?;
 
 	info!(
 		{ block_number, block_delay = received_at.elapsed().as_secs()},
@@ -124,14 +142,28 @@ pub async fn process_block(
 				))
 				.await;
 
+			event_sender
+				.send(OutputEvent::RecordDHTStats {
+					fetched: fetch_stats.dht_fetched,
+					fetched_percentage: fetch_stats.dht_fetched_percentage,
+					fetch_duration: fetch_stats.dht_fetch_duration,
+				})
+				.await?;
+
 			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
 				metrics.record(MetricValue::RPCFetched(rpc_fetched)).await;
+				_ = event_sender
+					.send(OutputEvent::RecordRPCFetched(rpc_fetched))
+					.await;
 			}
 
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
 				metrics
 					.record(MetricValue::RPCFetchDuration(rpc_fetch_duration))
 					.await;
+				event_sender
+					.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))
+					.await?;
 			}
 			(positions.len(), fetched.len(), unfetched.len())
 		},
@@ -164,6 +196,9 @@ pub async fn process_block(
 	metrics
 		.record(MetricValue::BlockConfidence(confidence))
 		.await;
+	event_sender
+		.send(OutputEvent::RecordBlockConfidence(confidence))
+		.await?;
 
 	// push latest mined block's header into column family specified
 	// for keeping block headers, to be used
@@ -195,10 +230,12 @@ pub async fn run(
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
+	event_sender: mpsc::Sender<OutputEvent>,
 ) {
 	info!("Starting light client...");
 
 	loop {
+		let event_sender = event_sender.clone();
 		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
 			Ok(event) => match event {
 				Event::HeaderUpdate {
@@ -216,6 +253,14 @@ pub async fn run(
 			metrics
 				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
 				.await;
+			if let Err(error) = event_sender
+				.send(OutputEvent::RecordBlockProcessingDelay(
+					seconds.as_secs_f64(),
+				))
+				.await
+			{
+				error!("Cannot send OutputEvent message: {error}");
+			}
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
@@ -227,6 +272,7 @@ pub async fn run(
 			&cfg,
 			header.clone(),
 			received_at,
+			event_sender,
 		)
 		.await;
 		let confidence = match process_block_result {
@@ -275,6 +321,7 @@ mod tests {
 	};
 	use hex_literal::hex;
 	use test_case::test_case;
+	use tokio::sync::mpsc;
 
 	#[test_case(99.9 => 10)]
 	#[test_case(99.99 => CELL_COUNT_99_99)]
@@ -337,6 +384,7 @@ mod tests {
 			}),
 		};
 		let recv = Instant::now();
+		let (sender, _receiver) = mpsc::channel::<OutputEvent>(100);
 		mock_network_client
 			.expect_fetch_verified()
 			.returning(move |_, _, _, _, positions| {
@@ -358,6 +406,7 @@ mod tests {
 			&cfg,
 			header,
 			recv,
+			sender,
 		)
 		.await
 		.unwrap();
