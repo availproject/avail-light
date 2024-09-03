@@ -1,8 +1,11 @@
-use crate::{network::p2p::OutputEvent, types::Origin};
+use crate::types::Origin;
 use async_trait::async_trait;
 use color_eyre::Result;
+use libp2p::{
+	kad::{Mode, QueryStats, RecordKey},
+	Multiaddr,
+};
 use otlp::Record;
-use tokio::sync::broadcast;
 
 pub mod metric;
 pub mod otlp;
@@ -130,13 +133,22 @@ impl metric::Value for MetricValue {
 
 #[async_trait]
 pub trait Metrics {
-	async fn count(&self, counter: MetricCounter);
-	async fn record<T>(&self, value: T)
+	fn count(&mut self, counter: MetricCounter);
+	fn record<T>(&mut self, value: T)
 	where
 		T: metric::Value + Into<Record> + Send;
-	async fn flush(&self) -> Result<()>;
-	async fn handle_event_stream(
-		&self,
-		event_receiver: broadcast::Receiver<OutputEvent>,
+	fn flush(&mut self) -> Result<()>;
+	fn update_multiaddress(&mut self, address: Multiaddr);
+	fn update_operating_mode(&mut self, mode: Mode);
+	fn handle_new_put_record(&mut self, block_num: u32, records: Vec<libp2p::kad::Record>);
+	fn handle_successful_put_record(
+		&mut self,
+		record_key: RecordKey,
+		query_stats: QueryStats,
+	) -> Result<()>;
+	fn handle_failed_put_record(
+		&mut self,
+		record_key: RecordKey,
+		query_stats: QueryStats,
 	) -> Result<()>;
 }

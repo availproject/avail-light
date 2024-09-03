@@ -21,7 +21,10 @@ use libp2p::{
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, str::FromStr, time::Duration};
 use tokio::{
-	sync::{broadcast, mpsc::UnboundedReceiver, oneshot},
+	sync::{
+		mpsc::{UnboundedReceiver, UnboundedSender},
+		oneshot,
+	},
 	time::{self, interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace, warn};
@@ -125,7 +128,7 @@ impl EventCounter {
 pub struct EventLoop {
 	pub swarm: Swarm<Behaviour>,
 	command_receiver: UnboundedReceiver<Command>,
-	pub(crate) event_sender: broadcast::Sender<OutputEvent>,
+	pub(crate) event_sender: UnboundedSender<OutputEvent>,
 	// Tracking Kademlia events
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
@@ -167,7 +170,7 @@ impl EventLoop {
 		swarm: Swarm<Behaviour>,
 		is_fat_client: bool,
 		command_receiver: UnboundedReceiver<Command>,
-		event_sender: broadcast::Sender<OutputEvent>,
+		event_sender: UnboundedSender<OutputEvent>,
 		shutdown: Controller<String>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_period;

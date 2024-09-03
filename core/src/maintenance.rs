@@ -1,18 +1,16 @@
 use color_eyre::{eyre::WrapErr, Result};
-use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc::UnboundedSender};
 use tracing::{debug, error, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{BlockVerified, MaintenanceConfig},
 };
 
 pub enum OutputEvent {
-	FlushMetrics,
+	FlushMetrics(u32),
 	RecordStats {
 		connected_peers: usize,
 		block_confidence_treshold: f64,
@@ -26,8 +24,7 @@ pub async fn process_block(
 	block_number: u32,
 	p2p_client: &P2pClient,
 	maintenance_config: MaintenanceConfig,
-	metrics: &Arc<impl Metrics>,
-	event_sender: mpsc::Sender<OutputEvent>,
+	event_sender: UnboundedSender<OutputEvent>,
 ) -> Result<()> {
 	if cfg!(not(feature = "rocksdb")) && block_number % maintenance_config.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
@@ -39,11 +36,7 @@ pub async fn process_block(
 
 	if block_number % maintenance_config.telemetry_flush_interval == 0 {
 		info!(block_number, "Flushing metrics...");
-		match metrics.flush().await {
-			Ok(()) => info!(block_number, "Flushing metrics finished"),
-			Err(error) => error!(block_number, "Flushing metrics failed: {error:#}"),
-		}
-		event_sender.send(OutputEvent::FlushMetrics).await?;
+		event_sender.send(OutputEvent::FlushMetrics(block_number))?;
 	}
 
 	p2p_client
@@ -73,35 +66,14 @@ pub async fn process_block(
 			.wrap_err("Unable to reconfigure kademlia mode")?;
 	}
 
-	let peers_num_metric = MetricValue::DHTConnectedPeers(peers_num);
-	metrics.record(peers_num_metric).await;
+	event_sender.send(OutputEvent::RecordStats {
+		connected_peers: peers_num,
+		block_confidence_treshold: maintenance_config.block_confidence_treshold,
+		replication_factor: maintenance_config.replication_factor,
+		query_timeout: maintenance_config.query_timeout.as_secs() as u32,
+	})?;
 
-	metrics
-		.record(MetricValue::BlockConfidenceThreshold(
-			maintenance_config.block_confidence_treshold,
-		))
-		.await;
-	metrics
-		.record(MetricValue::DHTReplicationFactor(
-			maintenance_config.replication_factor,
-		))
-		.await;
-	metrics
-		.record(MetricValue::DHTQueryTimeout(
-			maintenance_config.query_timeout.as_secs() as u32,
-		))
-		.await;
-	event_sender
-		.send(OutputEvent::RecordStats {
-			connected_peers: peers_num,
-			block_confidence_treshold: maintenance_config.block_confidence_treshold,
-			replication_factor: maintenance_config.replication_factor,
-			query_timeout: maintenance_config.query_timeout.as_secs() as u32,
-		})
-		.await?;
-
-	metrics.count(MetricCounter::Up).await;
-	event_sender.send(OutputEvent::CountUps).await?;
+	event_sender.send(OutputEvent::CountUps)?;
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())
@@ -109,11 +81,10 @@ pub async fn process_block(
 
 pub async fn run(
 	p2p_client: P2pClient,
-	metrics: Arc<impl Metrics>,
 	mut block_receiver: broadcast::Receiver<BlockVerified>,
 	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
-	event_sender: mpsc::Sender<OutputEvent>,
+	event_sender: UnboundedSender<OutputEvent>,
 ) {
 	info!("Starting maintenance...");
 	loop {
@@ -123,7 +94,6 @@ pub async fn run(
 					block.block_num,
 					&p2p_client,
 					static_config_params,
-					&metrics,
 					event_sender.clone(),
 				)
 				.await

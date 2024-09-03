@@ -15,7 +15,10 @@ use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{fmt, net::Ipv4Addr, str::FromStr, time::Duration};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{
+	mpsc::{self, UnboundedReceiver},
+	oneshot,
+};
 use tracing::info;
 
 #[cfg(feature = "network-analysis")]
@@ -219,7 +222,7 @@ pub async fn init(
 	is_fat: bool,
 	shutdown: Controller<String>,
 	#[cfg(feature = "rocksdb")] db: crate::data::DB,
-) -> Result<(Client, EventLoop, broadcast::Receiver<OutputEvent>)> {
+) -> Result<(Client, EventLoop, UnboundedReceiver<OutputEvent>)> {
 	// create sender channel for P2P event loop commands
 	let (command_sender, command_receiver) = mpsc::unbounded_channel();
 	// create P2P Client
@@ -239,7 +242,7 @@ pub async fn init(
 	let swarm = build_swarm(&cfg, project_name, version, genesis_hash, &id_keys, store)
 		.await
 		.expect("Unable to build swarm.");
-	let (event_sender, event_receiver) = broadcast::channel(1000);
+	let (event_sender, event_receiver) = mpsc::unbounded_channel();
 	// create EventLoop
 	let event_loop = EventLoop::new(cfg, swarm, is_fat, command_receiver, event_sender, shutdown);
 

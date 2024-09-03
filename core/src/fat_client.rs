@@ -23,10 +23,8 @@ use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;
 use mockall::automock;
 use serde::{Deserialize, Serialize};
-use std::{
-	sync::Arc,
-	time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -36,7 +34,6 @@ use crate::{
 		rpc::{Client as RpcClient, Event},
 	},
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
 	utils::extract_kate,
 };
@@ -106,18 +103,23 @@ impl<T: Database + Sync> Client for FatClient<T> {
 	}
 }
 
+pub enum OutputEvent {
+	CountSessionBlocks,
+	RecordBlockHeight(u32),
+	RecordRpcCallDuration(f64),
+	RecordBlockProcessingDelay(f64),
+}
+
 pub async fn process_block(
 	client: &impl Client,
 	db: impl Database,
-	metrics: &Arc<impl Metrics>,
 	cfg: &Config,
 	header: &AvailHeader,
 	received_at: Instant,
+	event_sender: UnboundedSender<OutputEvent>,
 ) -> Result<()> {
-	metrics.count(MetricCounter::SessionBlocks).await;
-	metrics
-		.record(MetricValue::BlockHeight(header.number))
-		.await;
+	event_sender.send(OutputEvent::CountSessionBlocks)?;
+	event_sender.send(OutputEvent::RecordBlockHeight(header.number))?;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -196,11 +198,10 @@ pub async fn process_block(
 		partition_rpc_cells_fetched,
 		"Partition cells received from RPC",
 	);
-	metrics
-		.record(MetricValue::RPCCallDuration(
-			partition_rpc_retrieve_time_elapsed.as_secs_f64(),
-		))
-		.await;
+
+	event_sender.send(OutputEvent::RecordRpcCallDuration(
+		partition_rpc_retrieve_time_elapsed.as_secs_f64(),
+	))?;
 
 	if rpc_fetched.len() >= dimensions.cols().get().into() {
 		let data_cells = rpc_fetched
@@ -234,15 +235,15 @@ pub async fn run(
 	db: impl Database + Clone,
 	cfg: Config,
 	block_processing_delay: Option<Duration>,
-	metrics: Arc<impl Metrics>,
+	event_sender: UnboundedSender<OutputEvent>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 ) {
 	info!("Starting fat client...");
-
 	let delay = Delay(block_processing_delay);
 
 	loop {
+		let event_sender = event_sender.clone();
 		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
 			Ok(event) => match event {
 				Event::HeaderUpdate {
@@ -258,14 +259,23 @@ pub async fn run(
 
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
-			metrics
-				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
-				.await;
+			if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
+				seconds.as_secs_f64(),
+			)) {
+				error!("Failed to send RecordBlockProcessingDelay event: {error}");
+			}
 			tokio::time::sleep(seconds).await;
 		}
 
-		if let Err(error) =
-			process_block(&client, db.clone(), &metrics, &cfg, &header, received_at).await
+		if let Err(error) = process_block(
+			&client,
+			db.clone(),
+			&cfg,
+			&header,
+			received_at,
+			event_sender,
+		)
+		.await
 		{
 			error!("Cannot process block: {error}");
 			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
@@ -289,7 +299,7 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{data, telemetry::metric::tests};
+	use crate::data;
 	use avail_rust::{
 		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -300,6 +310,7 @@ mod tests {
 		AvailHeader,
 	};
 	use hex_literal::hex;
+	use tokio::sync::mpsc;
 
 	fn default_header() -> AvailHeader {
 		AvailHeader {
@@ -395,14 +406,15 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { Ok(()) }));
+		let (sender, _receiver) = mpsc::unbounded_channel::<OutputEvent>();
 
 		process_block(
 			&mock_client,
 			db,
-			&Arc::new(tests::MockMetrics {}),
 			&Config::default(),
 			&default_header(),
 			Instant::now(),
+			sender,
 		)
 		.await
 		.unwrap();
