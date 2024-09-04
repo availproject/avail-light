@@ -17,3 +17,20 @@ impl Default for APIConfig {
 		}
 	}
 }
+
+#[derive(Clone)]
+pub struct SharedConfig {
+	pub app_id: Option<u32>,
+	pub confidence: f64,
+	pub sync_start_block: Option<u32>,
+}
+
+impl Default for SharedConfig {
+	fn default() -> Self {
+		Self {
+			app_id: Default::default(),
+			confidence: 99.9,
+			sync_start_block: Default::default(),
+		}
+	}
+}

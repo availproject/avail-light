@@ -1,9 +1,12 @@
 use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
-	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
+	api::{
+		configuration::SharedConfig,
+		v1::types::{Extrinsics, ExtrinsicsDataResponse},
+	},
 	data::{AchievedConfidenceKey, AppDataKey, Database, VerifiedCellCountKey},
 	network::rpc::cell_count_for_confidence,
-	types::{BlockRange, Mode, RuntimeConfig},
+	types::{BlockRange, Mode},
 	utils::calculate_confidence,
 };
 use avail_rust::{
@@ -34,7 +37,7 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 pub fn confidence(
 	block_num: u32,
 	db: impl Database,
-	cfg: RuntimeConfig,
+	cfg: SharedConfig,
 ) -> ClientResponse<ConfidenceResponse> {
 	fn is_synced(block_num: u32, db: impl Database) -> bool {
 		get_achived_confidence(&db).map_or(false, |range| block_num <= range.last)

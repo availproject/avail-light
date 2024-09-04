@@ -8,9 +8,11 @@ use super::{
 	ws,
 };
 use crate::{
-	api::v2::types::{ErrorCode, InternalServerError},
+	api::{
+		configuration::SharedConfig,
+		v2::types::{ErrorCode, InternalServerError},
+	},
 	data::{AppDataKey, BlockHeaderKey, Database, VerifiedCellCountKey},
-	types::RuntimeConfig,
 	utils::calculate_confidence,
 };
 use avail_rust::AvailHeader;
@@ -47,7 +49,7 @@ pub async fn ws(
 	ws: Ws,
 	clients: WsClients,
 	version: Version,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	db: impl Database + Clone + Send + 'static,
 ) -> Result<impl Reply, Rejection> {
@@ -68,7 +70,7 @@ pub async fn ws(
 	}))
 }
 
-pub fn status(config: RuntimeConfig, db: impl Database) -> impl Reply {
+pub fn status(config: SharedConfig, db: impl Database) -> impl Reply {
 	Status::new(&config, db)
 }
 
@@ -87,7 +89,7 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 
 pub async fn block(
 	block_number: u32,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone,
 ) -> Result<impl Reply, Error> {
 	let sync_start_block = &config.sync_start_block;
@@ -107,7 +109,7 @@ pub async fn block(
 
 pub async fn block_header(
 	block_number: u32,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone,
 ) -> Result<Header, Error> {
 	let sync_start_block = &config.sync_start_block;
@@ -134,7 +136,7 @@ pub async fn block_header(
 pub async fn block_data(
 	block_number: u32,
 	query: DataQuery,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone,
 ) -> Result<DataResponse, Error> {
 	let app_id = config.app_id.ok_or(Error::not_found())?;

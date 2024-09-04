@@ -30,13 +30,14 @@ use warp::{
 };
 
 use crate::{
+	api::configuration::SharedConfig,
 	data::{
 		AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, IsSyncedKey, LatestHeaderKey,
 		LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		VerifiedSyncHeaderKey,
 	},
 	network::rpc::Event as RpcEvent,
-	types::{self, BlockVerified, RuntimeConfig},
+	types::{self, BlockVerified},
 	utils::{decode_app_data, OptionalExtension},
 };
 
@@ -169,7 +170,7 @@ impl Reply for SubmitResponse {
 }
 
 impl Status {
-	pub fn new(config: &RuntimeConfig, db: impl Database) -> Self {
+	pub fn new(config: &SharedConfig, db: impl Database) -> Self {
 		let historical_sync = db.get(IsSyncedKey).map(|synced| HistoricalSync {
 			synced,
 			available: db.get(AchievedSyncConfidenceKey).map(From::from),
@@ -203,8 +204,8 @@ pub enum Mode {
 	Partition,
 }
 
-impl From<&RuntimeConfig> for Vec<Mode> {
-	fn from(value: &RuntimeConfig) -> Self {
+impl From<&SharedConfig> for Vec<Mode> {
+	fn from(value: &SharedConfig) -> Self {
 		match value.app_id {
 			None => vec![Mode::Light],
 			Some(_) => vec![Mode::Light, Mode::App],
