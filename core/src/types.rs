@@ -353,21 +353,6 @@ pub enum SecretKey {
 
 pub struct Delay(pub Option<Duration>);
 
-/// Light client configuration (see [RuntimeConfig] for details)
-pub struct LightClientConfig {
-	pub confidence: f64,
-	pub block_processing_delay: Delay,
-}
-
-impl Default for LightClientConfig {
-	fn default() -> Self {
-		Self {
-			confidence: 99.9,
-			block_processing_delay: Delay(Some(Duration::from_secs(20))),
-		}
-	}
-}
-
 impl Delay {
 	pub fn sleep_duration(&self, from: Instant) -> Option<Duration> {
 		(self.0?)

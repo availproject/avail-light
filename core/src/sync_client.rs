@@ -315,8 +315,10 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let mut cfg = SyncClientConfig::default();
-		cfg.disable_rpc = true;
+		let cfg = SyncClientConfig {
+			disable_rpc: true,
+			..Default::default()
+		};
 		let mut mock_network_client = network::MockClient::new();
 		let mut mock_client = MockClient::new();
 		let header = default_header();

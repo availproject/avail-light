@@ -16,7 +16,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, MetricCounter, Metrics},
 	types::{
-		load_or_init_suri, IdentityConfig, MaintenanceConfig, MultiaddrConfig, SecretKey, Uuid,
+		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, MultiaddrConfig, SecretKey,
+		Uuid,
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -309,7 +310,8 @@ async fn run(
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
 		light_network_client,
-		(&cfg).into(),
+		cfg.confidence,
+		Delay(cfg.block_processing_delay),
 		ot_metrics.clone(),
 		channels,
 		shutdown.clone(),

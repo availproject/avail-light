@@ -36,7 +36,7 @@ use crate::{
 	},
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, BlockRange, ClientChannels, LightClientConfig},
+	types::{self, BlockRange, ClientChannels, Delay},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -58,7 +58,7 @@ pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
 	metrics: &Arc<impl Metrics>,
-	cfg: &LightClientConfig,
+	confidence: f64,
 	header: AvailHeader,
 	received_at: Instant,
 	event_sender: mpsc::Sender<OutputEvent>,
@@ -107,7 +107,7 @@ pub async fn process_block(
 			}
 
 			let commitments = commitments::from_slice(&commitment)?;
-			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
+			let cell_count = rpc::cell_count_for_confidence(confidence);
 			let positions = rpc::generate_random_cells(dimensions, cell_count);
 			info!(
 				block_number,
@@ -218,15 +218,16 @@ pub async fn process_block(
 /// # Arguments
 ///
 /// * `light_client` - Light client implementation
-/// * `cfg` - Light client configuration
 /// * `metrics` - Metrics registry
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
 	db: impl Database + Clone,
 	network_client: impl network::Client,
-	cfg: LightClientConfig,
+	confidence: f64,
+	block_processing_delay: Delay,
 	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
@@ -249,7 +250,7 @@ pub async fn run(
 			},
 		};
 
-		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
+		if let Some(seconds) = block_processing_delay.sleep_duration(received_at) {
 			metrics
 				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
 				.await;
@@ -269,7 +270,7 @@ pub async fn run(
 			db.clone(),
 			&network_client,
 			&metrics,
-			&cfg,
+			confidence,
 			header.clone(),
 			received_at,
 			event_sender,
@@ -338,7 +339,6 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
 		let db = data::MemoryDB::default();
-		let cfg = LightClientConfig::default();
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -402,7 +402,7 @@ mod tests {
 			db,
 			&mock_network_client,
 			&Arc::new(tests::MockMetrics {}),
-			&cfg,
+			99.9,
 			header,
 			recv,
 			sender,
