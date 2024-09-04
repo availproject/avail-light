@@ -307,7 +307,6 @@ mod tests {
 		data,
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
 		telemetry::metric::tests,
-		types::RuntimeConfig,
 	};
 	use avail_rust::{
 		avail::runtime_types::avail_core::{
@@ -339,7 +338,7 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
 		let db = data::MemoryDB::default();
-		let cfg = LightClientConfig::from(&RuntimeConfig::default());
+		let cfg = LightClientConfig::default();
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },

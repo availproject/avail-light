@@ -12,8 +12,10 @@ use crate::{
 	api::v2::types::Topic,
 	data::Database,
 	network::{p2p, rpc::Client},
-	types::{IdentityConfig, RuntimeConfig},
+	types::IdentityConfig,
 };
+
+use super::configuration::SharedConfig;
 
 mod handlers;
 mod transactions;
@@ -48,7 +50,7 @@ fn version_route(
 }
 
 fn status_route(
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
@@ -59,7 +61,7 @@ fn status_route(
 }
 
 fn block_route(
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
@@ -71,7 +73,7 @@ fn block_route(
 }
 
 fn block_header_route(
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "header")
@@ -83,7 +85,7 @@ fn block_header_route(
 }
 
 fn block_data_route(
-	config: RuntimeConfig,
+	config: SharedConfig,
 	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32 / "data")
@@ -151,7 +153,7 @@ fn subscriptions_route(
 fn ws_route(
 	clients: WsClients,
 	version: Version,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	db: impl Database + Clone + Send + 'static,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -207,7 +209,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 pub fn routes(
 	version: String,
 	network_version: String,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	identity_config: IdentityConfig,
 	rpc_client: Client<impl Database + Send + Sync + Clone + 'static>,
 	ws_clients: WsClients,
@@ -247,16 +249,19 @@ pub fn routes(
 mod tests {
 	use super::{transactions, types::Transaction};
 	use crate::{
-		api::v2::types::{
-			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
-			WsClients, WsError, WsResponse,
+		api::{
+			configuration::SharedConfig,
+			v2::types::{
+				DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
+				WsClients, WsError, WsResponse,
+			},
 		},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
 			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, VerifiedCellCountKey,
 			VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		},
-		types::{BlockRange, RuntimeConfig},
+		types::BlockRange,
 	};
 	use async_trait::async_trait;
 	use avail_rust::{
@@ -301,7 +306,7 @@ mod tests {
 	#[tokio::test]
 	async fn status_route_defaults() {
 		let db = MemoryDB::default();
-		let route = super::status_route(RuntimeConfig::default(), db);
+		let route = super::status_route(SharedConfig::default(), db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -318,7 +323,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn status_route() {
-		let runtime_config = RuntimeConfig {
+		let runtime_config = SharedConfig {
 			app_id: Some(1),
 			sync_start_block: Some(10),
 			..Default::default()
@@ -364,7 +369,7 @@ mod tests {
 	#[test_case(10, 20)]
 	#[tokio::test]
 	async fn block_route_not_found(latest: u32, block_number: u32) {
-		let config = RuntimeConfig::default();
+		let config = SharedConfig::default();
 		let db = data::MemoryDB::default();
 		db.put(LatestHeaderKey, latest);
 		let route = super::block_route(config, db);
@@ -379,7 +384,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_route_incomplete() {
-		let config = RuntimeConfig::default();
+		let config = SharedConfig::default();
 		let db = data::MemoryDB::default();
 		db.put(LatestHeaderKey, 10);
 		db.put(VerifiedHeaderKey, BlockRange::init(10));
@@ -401,7 +406,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_route_finished() {
-		let config = RuntimeConfig::default();
+		let config = SharedConfig::default();
 		let db = data::MemoryDB::default();
 		db.put(LatestHeaderKey, 10);
 		db.put(VerifiedHeaderKey, BlockRange::init(10));
@@ -427,7 +432,7 @@ mod tests {
 	#[test_case(10, r#"Block header is not available"#  ; "Block is in verifying-header state")]
 	#[tokio::test]
 	async fn block_header_route_bad_request(block_number: u32, expected: &str) {
-		let config = RuntimeConfig {
+		let config = SharedConfig {
 			sync_start_block: Some(1),
 			..Default::default()
 		};
@@ -448,7 +453,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_header_route_not_found() {
-		let config = RuntimeConfig::default();
+		let config = SharedConfig::default();
 		let db = data::MemoryDB::default();
 		db.put(LatestHeaderKey, 10);
 		let route = super::block_header_route(config, db);
@@ -499,7 +504,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_header_route_ok() {
-		let config = RuntimeConfig::default();
+		let config = SharedConfig::default();
 		let db = data::MemoryDB::default();
 		db.put(LatestHeaderKey, 1);
 		db.put(VerifiedHeaderKey, BlockRange::init(1));
@@ -523,7 +528,7 @@ mod tests {
 	#[test_case(10, r#"Block data is not available"#  ; "Block is in verifying-header state")]
 	#[tokio::test]
 	async fn block_data_route_bad_request(block_number: u32, expected: &str) {
-		let config = RuntimeConfig {
+		let config = SharedConfig {
 			app_id: Some(1),
 			sync_start_block: Some(1),
 			..Default::default()
@@ -547,7 +552,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_data_route_not_found() {
-		let config = RuntimeConfig::default();
+		let config = SharedConfig::default();
 		let db = data::MemoryDB::default();
 		db.put(LatestHeaderKey, 10);
 		let route = super::block_data_route(config, db);
@@ -561,7 +566,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_data_route_ok_empty() {
-		let config = RuntimeConfig {
+		let config = SharedConfig {
 			app_id: Some(1),
 			..Default::default()
 		};
@@ -586,7 +591,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn block_data_route_ok() {
-		let config = RuntimeConfig {
+		let config = SharedConfig {
 			app_id: Some(1),
 			..Default::default()
 		};
@@ -715,7 +720,7 @@ mod tests {
 	}
 
 	impl MockSetup {
-		async fn new(config: RuntimeConfig, submitter: Option<MockSubmitter>) -> Self {
+		async fn new(config: SharedConfig, submitter: Option<MockSubmitter>) -> Self {
 			let client_uuid = uuid::Uuid::new_v4().to_string();
 			let clients = WsClients::default();
 			clients
@@ -748,7 +753,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn ws_route_version() {
-		let mut test = MockSetup::new(RuntimeConfig::default(), None).await;
+		let mut test = MockSetup::new(SharedConfig::default(), None).await;
 		let request = r#"{"type":"version","request_id":"cae63fff-c4b8-4af9-b4fe-0605a5329aa0"}"#;
 		let response = test.ws_send_text(request).await;
 		assert_eq!(
@@ -759,7 +764,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn ws_route_status() {
-		let config = RuntimeConfig {
+		let config = SharedConfig {
 			app_id: Some(1),
 			sync_start_block: Some(10),
 			..Default::default()
@@ -804,7 +809,7 @@ mod tests {
 	#[test_case(r#"{"type":"unknown","request_id":"11043443-7e4c-4485-a21c-304b457b6cc7","message":""}"#,  "Failed to parse request: Cannot parse json" ; "Wrong request type")]
 	#[tokio::test]
 	async fn ws_route_bad_request(request: &str, expected: &str) {
-		let mut test = MockSetup::new(RuntimeConfig::default(), None).await;
+		let mut test = MockSetup::new(SharedConfig::default(), None).await;
 		let response = test.ws_send_text(request).await;
 		assert!(response.contains(expected));
 	}
@@ -827,7 +832,7 @@ mod tests {
 	) {
 		let submitter = submitter.then_some(MockSubmitter {});
 		let expected_request_id = expected_request_id.map(to_uuid);
-		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
+		let mut test = MockSetup::new(SharedConfig::default(), submitter).await;
 		let response = test.ws_send_text(request).await;
 		let WsError::Error(error) = serde_json::from_str(&response).unwrap();
 		assert_eq!(error.error_code, ErrorCode::BadRequest);
@@ -838,7 +843,7 @@ mod tests {
 	#[tokio::test]
 	async fn ws_route_submit_data() {
 		let submitter = Some(MockSubmitter {});
-		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
+		let mut test = MockSetup::new(SharedConfig::default(), submitter).await;
 
 		let request = r#"{"type":"submit","request_id":"fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a","message":{"data":"dHJhbnNhY3Rpb24K"}}"#;
 		let response = test.ws_send_text(request).await;
@@ -856,7 +861,7 @@ mod tests {
 	#[tokio::test]
 	async fn ws_route_submit_extrinsic() {
 		let submitter = Some(MockSubmitter {});
-		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
+		let mut test = MockSetup::new(SharedConfig::default(), submitter).await;
 
 		let request = r#"{"type":"submit","request_id":"fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a","message":{"extrinsic":"dHJhbnNhY3Rpb24K"}}"#;
 		let response = test.ws_send_text(request).await;
