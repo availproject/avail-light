@@ -251,7 +251,7 @@ pub async fn run(
 		}
 	}
 
-	if cfg.is_last_step {
+	if cfg.app_id.is_none() {
 		client.store_is_synced(true);
 	}
 }

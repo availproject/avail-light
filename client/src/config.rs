@@ -72,7 +72,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 		SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
-			is_last_step: val.app_id.is_none(),
+			app_id: val.app_id,
 		}
 	}
 }

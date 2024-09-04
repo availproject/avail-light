@@ -381,7 +381,7 @@ impl Delay {
 pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
-	pub is_last_step: bool,
+	pub app_id: Option<u32>,
 }
 
 impl Default for SyncClientConfig {
@@ -389,7 +389,7 @@ impl Default for SyncClientConfig {
 		Self {
 			confidence: 99.9,
 			disable_rpc: false,
-			is_last_step: true,
+			app_id: None,
 		}
 	}
 }
