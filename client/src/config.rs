@@ -5,8 +5,8 @@ use avail_light_core::{
 	network::{p2p::configuration::LibP2PConfig, rpc::configuration::RPCConfig},
 	telemetry::otlp::OtelConfig,
 	types::{
-		option_duration_seconds_format, tracing_level_format, AppClientConfig, Delay,
-		LightClientConfig, MaintenanceConfig, Origin, SyncClientConfig,
+		option_duration_seconds_format, tracing_level_format, AppClientConfig, MaintenanceConfig,
+		Origin, SyncClientConfig,
 	},
 };
 use serde::{Deserialize, Serialize};
@@ -55,16 +55,6 @@ pub struct RuntimeConfig {
 	pub threshold: usize,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
-}
-
-impl From<&RuntimeConfig> for LightClientConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		let block_processing_delay = val.block_processing_delay;
-		LightClientConfig {
-			confidence: val.confidence,
-			block_processing_delay: Delay(block_processing_delay),
-		}
-	}
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {

@@ -524,8 +524,10 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
-		let mut cfg = AppClientConfig::default();
-		cfg.disable_rpc = true;
+		let cfg = AppClientConfig {
+			disable_rpc: true,
+			..Default::default()
+		};
 		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockClient::new();
