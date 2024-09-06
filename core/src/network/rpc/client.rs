@@ -27,11 +27,11 @@ use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, trace, warn};
 
-use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
+use super::{configuration::RetryConfig, Nodes, Subscription, WrappedProof};
 use crate::{
 	data::{Database, RpcNodeKey, SignerNonceKey},
 	shutdown::Controller,
-	types::{Base64, DEV_FLAG_GENHASH},
+	types::{Base64, Node, DEV_FLAG_GENHASH},
 };
 
 #[derive(Debug, thiserror::Error)]

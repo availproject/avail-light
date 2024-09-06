@@ -1,7 +1,4 @@
-use crate::{
-	network::rpc::Node as RpcNode,
-	types::{BlockRange, Uuid},
-};
+use crate::types::{BlockRange, Node as RpcNode, Uuid};
 use avail_rust::{sp_core::ed25519, AvailHeader};
 use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};

@@ -3,19 +3,24 @@ use avail_rust::{
 	sp_core::bytes::from_hex,
 	AvailHeader, H256,
 };
-use codec::{Decode, Encode};
+use codec::Decode;
 use color_eyre::{eyre::eyre, Result};
 use configuration::RPCConfig;
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use serde::{de, Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display};
+use serde::{de, Deserialize};
+use std::collections::HashSet;
 use tokio::{
 	sync::broadcast,
 	time::{self, timeout},
 };
 use tracing::{debug, info};
 
-use crate::{data::Database, network::rpc, shutdown::Controller, types::GrandpaJustification};
+use crate::{
+	data::Database,
+	network::rpc,
+	shutdown::Controller,
+	types::{GrandpaJustification, Node},
+};
 
 mod client;
 pub mod configuration;
@@ -66,56 +71,6 @@ impl<'de> Deserialize<'de> for WrappedProof {
 		let data = from_hex(&String::deserialize(deserializer)?)
 			.map_err(|e| de::Error::custom(format!("{:?}", e)))?;
 		Decode::decode(&mut &data[..]).map_err(|e| de::Error::custom(format!("{:?}", e)))
-	}
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
-pub struct Node {
-	pub host: String,
-	pub system_version: String,
-	pub spec_version: u32,
-	pub genesis_hash: H256,
-}
-
-impl Node {
-	pub fn new(
-		host: String,
-		system_version: String,
-		spec_version: u32,
-		genesis_hash: H256,
-	) -> Self {
-		Self {
-			host,
-			system_version,
-			spec_version,
-			genesis_hash,
-		}
-	}
-
-	pub fn network(&self) -> String {
-		format!(
-			"{host}/{system_version}/{spec_version}",
-			host = self.host,
-			system_version = self.system_version,
-			spec_version = self.spec_version,
-		)
-	}
-}
-
-impl Default for Node {
-	fn default() -> Self {
-		Self {
-			host: "{host}".to_string(),
-			system_version: "{system_version}".to_string(),
-			spec_version: 0,
-			genesis_hash: Default::default(),
-		}
-	}
-}
-
-impl Display for Node {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "v{}", self.system_version)
 	}
 }
 
