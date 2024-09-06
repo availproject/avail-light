@@ -613,3 +613,52 @@ impl From<Base64> for String {
 		general_purpose::STANDARD.encode(value.0)
 	}
 }
+#[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
+pub struct Node {
+	pub host: String,
+	pub system_version: String,
+	pub spec_version: u32,
+	pub genesis_hash: H256,
+}
+
+impl Node {
+	pub fn new(
+		host: String,
+		system_version: String,
+		spec_version: u32,
+		genesis_hash: H256,
+	) -> Self {
+		Self {
+			host,
+			system_version,
+			spec_version,
+			genesis_hash,
+		}
+	}
+
+	pub fn network(&self) -> String {
+		format!(
+			"{host}/{system_version}/{spec_version}",
+			host = self.host,
+			system_version = self.system_version,
+			spec_version = self.spec_version,
+		)
+	}
+}
+
+impl Default for Node {
+	fn default() -> Self {
+		Self {
+			host: "{host}".to_string(),
+			system_version: "{system_version}".to_string(),
+			spec_version: 0,
+			genesis_hash: Default::default(),
+		}
+	}
+}
+
+impl Display for Node {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "v{}", self.system_version)
+	}
+}
