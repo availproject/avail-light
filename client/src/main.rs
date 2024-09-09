@@ -748,12 +748,19 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 			Multiaddr::from_str(network.bootstrap_multiaddrr())
 				.wrap_err("unable to parse default bootstrap multi-address")?,
 		);
+		if cfg.rpc.full_node_ws.is_empty() {
 		cfg.rpc.full_node_ws = network.full_node_ws();
+		}
+		if cfg.libp2p.bootstraps.is_empty() {
 		cfg.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		}
+		if cfg.otel.ot_collector_endpoint.is_empty() {
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
+		}
+		if cfg.genesis_hash.is_empty() {
 		cfg.genesis_hash = network.genesis_hash().to_string();
 	}
-
+	}
 	if let Some(port) = opts.port {
 		cfg.libp2p.port = port;
 	}
