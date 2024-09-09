@@ -517,15 +517,17 @@ mod tests {
 	use super::*;
 	use crate::{
 		data,
-		types::{AppClientConfig, Extension, RuntimeConfig},
+		types::{AppClientConfig, Extension},
 	};
 	use avail_rust::{avail_core::DataLookup, kate_recovery::testnet};
 	use hex_literal::hex;
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
-		let mut cfg = AppClientConfig::from(&RuntimeConfig::default());
-		cfg.disable_rpc = true;
+		let cfg = AppClientConfig {
+			disable_rpc: true,
+			..Default::default()
+		};
 		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockClient::new();
@@ -581,7 +583,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
-		let cfg = AppClientConfig::from(&RuntimeConfig::default());
+		let cfg = AppClientConfig::default();
 		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 16).unwrap();
 		let mut mock_client = MockClient::new();

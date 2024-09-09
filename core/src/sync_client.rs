@@ -251,7 +251,7 @@ pub async fn run(
 		}
 	}
 
-	if cfg.is_last_step {
+	if cfg.app_id.is_none() {
 		client.store_is_synced(true);
 	}
 }
@@ -261,7 +261,7 @@ mod tests {
 	use std::time::Duration;
 
 	use super::*;
-	use crate::types::{self, RuntimeConfig};
+	use crate::types;
 	use avail_rust::{
 		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -315,8 +315,10 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
-		cfg.disable_rpc = true;
+		let cfg = SyncClientConfig {
+			disable_rpc: true,
+			..Default::default()
+		};
 		let mut mock_network_client = network::MockClient::new();
 		let mut mock_client = MockClient::new();
 		let header = default_header();
@@ -404,7 +406,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
+		let cfg = SyncClientConfig::default();
 		let mut mock_network_client = network::MockClient::new();
 		let mut mock_client = MockClient::new();
 		let header = default_header();

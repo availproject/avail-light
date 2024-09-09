@@ -17,8 +17,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, MetricCounter, MetricValue, Metrics},
 	types::{
-		load_or_init_suri, IdentityConfig, MaintenanceConfig, MultiaddrConfig, RuntimeConfig,
-		SecretKey, Uuid,
+		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, MultiaddrConfig, SecretKey,
+		Uuid,
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -32,6 +32,7 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
+use config::RuntimeConfig;
 use std::{fs, path::Path, sync::Arc};
 use tokio::{
 	select,
@@ -202,7 +203,7 @@ async fn run(
 	// Spawn tokio task which runs one http server for handling RPC
 	let server = api::server::Server {
 		db: db.clone(),
-		cfg: cfg.clone(),
+		cfg: (&cfg).into(),
 		identity_cfg,
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
@@ -211,7 +212,7 @@ async fn run(
 		shutdown: shutdown.clone(),
 		p2p_client: p2p_client.clone(),
 	};
-	spawn_in_span(shutdown.with_cancel(server.bind()));
+	spawn_in_span(shutdown.with_cancel(server.bind(cfg.api.clone())));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
@@ -305,7 +306,8 @@ async fn run(
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
 		light_network_client,
-		(&cfg).into(),
+		cfg.confidence,
+		Delay(cfg.block_processing_delay),
 		channels,
 		shutdown.clone(),
 		lc_sender,
@@ -324,6 +326,7 @@ async fn run(
 }
 
 mod cli;
+mod config;
 
 pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(config_path) = &opts.config {

@@ -16,6 +16,7 @@ confy = "0.4.0"
 futures = { workspace = true }
 hex = { workspace = true }
 libp2p = { workspace = true }
+serde = { workspace = true }
 strip-ansi-escapes = "0.2.0"
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

@@ -971,6 +971,7 @@ dependencies = [
  "hex-literal",
  "libp2p",
  "proptest",
+ "serde",
  "strip-ansi-escapes",
  "test-case",
  "tikv-jemallocator",

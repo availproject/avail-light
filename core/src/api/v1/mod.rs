@@ -1,8 +1,10 @@
-use crate::{data::Database, types::RuntimeConfig};
+use crate::data::Database;
 
 use self::types::AppDataQuery;
 use std::convert::Infallible;
 use warp::{Filter, Rejection, Reply};
+
+use super::configuration::SharedConfig;
 
 mod handlers;
 mod types;
@@ -20,18 +22,17 @@ fn with_app_id(
 }
 
 fn with_cfg(
-	cfg: RuntimeConfig,
-) -> impl Filter<Extract = (RuntimeConfig,), Error = Infallible> + Clone {
+	cfg: SharedConfig,
+) -> impl Filter<Extract = (SharedConfig,), Error = Infallible> + Clone {
 	warp::any().map(move || cfg.clone())
 }
 
 pub fn routes(
 	db: impl Database + Clone + Send,
-	app_id: Option<u32>,
-	cfg: RuntimeConfig,
+	cfg: SharedConfig,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let mode = warp::path!("v1" / "mode")
-		.and(with_app_id(app_id))
+		.and(with_app_id(cfg.app_id))
 		.map(handlers::mode);
 
 	let latest_block = warp::path!("v1" / "latest_block")
@@ -40,17 +41,17 @@ pub fn routes(
 
 	let confidence = warp::path!("v1" / "confidence" / u32)
 		.and(with_db(db.clone()))
-		.and(with_cfg(cfg))
+		.and(with_cfg(cfg.clone()))
 		.map(handlers::confidence);
 
 	let appdata = (warp::path!("v1" / "appdata" / u32))
 		.and(warp::query::<AppDataQuery>())
 		.and(with_db(db.clone()))
-		.and(with_app_id(app_id))
+		.and(with_app_id(cfg.app_id))
 		.map(handlers::appdata);
 
 	let status = warp::path!("v1" / "status")
-		.and(with_app_id(app_id))
+		.and(with_app_id(cfg.app_id))
 		.and(with_db(db))
 		.map(handlers::status);
 

@@ -3,9 +3,11 @@ use super::{
 	types::{Payload, Request, Response, Status, Version, WsClients, WsError, WsResponse},
 };
 use crate::{
-	api::v2::types::{Error, Sender},
+	api::{
+		configuration::SharedConfig,
+		v2::types::{Error, Sender},
+	},
 	data::Database,
-	types::RuntimeConfig,
 	utils::spawn_in_span,
 };
 use color_eyre::{eyre::WrapErr, Result};
@@ -23,7 +25,7 @@ pub async fn connect(
 	web_socket: WebSocket,
 	clients: WsClients,
 	version: Version,
-	config: RuntimeConfig,
+	config: SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	db: impl Database + Clone,
 ) {
@@ -84,7 +86,7 @@ pub async fn connect(
 async fn handle_request(
 	message: Message,
 	version: &Version,
-	config: &RuntimeConfig,
+	config: &SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit>>,
 	db: impl Database,
 ) -> Result<WsResponse, Error> {

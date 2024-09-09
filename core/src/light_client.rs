@@ -56,7 +56,7 @@ pub enum OutputEvent {
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
-	cfg: &LightClientConfig,
+	confidence: f64
 	header: AvailHeader,
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
@@ -101,7 +101,7 @@ pub async fn process_block(
 			}
 
 			let commitments = commitments::from_slice(&commitment)?;
-			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
+			let cell_count = rpc::cell_count_for_confidence(confidence);
 			let positions = rpc::generate_random_cells(dimensions, cell_count);
 			info!(
 				block_number,
@@ -181,15 +181,16 @@ pub async fn process_block(
 /// # Arguments
 ///
 /// * `light_client` - Light client implementation
-/// * `cfg` - Light client configuration
 /// * `metrics` - Metrics registry
 /// * `state` - Processed blocks state
 /// * `channels` - Communication channels
 /// * `shutdown` - Shutdown controller
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
 	db: impl Database + Clone,
 	network_client: impl network::Client,
-	cfg: LightClientConfig,
+	confidence: f64,
+	block_processing_delay: Delay,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
 	event_sender: UnboundedSender<OutputEvent>,
@@ -211,7 +212,8 @@ pub async fn run(
 			},
 		};
 
-		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
+
+		if let Some(seconds) = block_processing_delay.sleep_duration(received_at) {
 			if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
 				seconds.as_secs_f64(),
 			)) {
@@ -224,7 +226,7 @@ pub async fn run(
 		let process_block_result = process_block(
 			db.clone(),
 			&network_client,
-			&cfg,
+			confidence,
 			header.clone(),
 			received_at,
 			event_sender,
@@ -261,7 +263,6 @@ mod tests {
 	use crate::{
 		data,
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
-		types::RuntimeConfig,
 	};
 	use avail_rust::{
 		avail::runtime_types::avail_core::{
@@ -293,7 +294,6 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
 		let db = data::MemoryDB::default();
-		let cfg = LightClientConfig::from(&RuntimeConfig::default());
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -353,8 +353,15 @@ mod tests {
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 
-		process_block(db, &mock_network_client, &cfg, header, recv, sender)
-			.await
-			.unwrap();
+		process_block(
+			db,
+			&mock_network_client,
+			99.9,
+			header,
+			recv,
+			sender,
+		)
+		.await
+		.unwrap();
 	}
 }
