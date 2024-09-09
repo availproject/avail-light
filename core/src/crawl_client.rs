@@ -3,7 +3,7 @@ use crate::{
 		p2p::Client,
 		rpc::{self, Event},
 	},
-	telemetry::{metric, otlp::Record, MetricName},
+	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
 };
 use avail_rust::kate_recovery::matrix::Partition;
@@ -58,7 +58,7 @@ pub enum OutputEvent {
 	RecordRowsSuccessRate(f64),
 }
 
-impl metric::Value for CrawlMetricValue {
+impl Value for CrawlMetricValue {
 	// Metric filter for external peers
 	// Only the metrics we wish to send to OTel should be in this list
 	fn is_allowed(&self, origin: &Origin) -> bool {

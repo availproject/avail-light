@@ -1,5 +1,8 @@
 use allow_block_list::BlockedPeers;
-use color_eyre::{eyre::WrapErr, Report, Result};
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Report, Result,
+};
 use configuration::{kad_config, LibP2PConfig};
 use libp2p::{
 	autonat, dcutr, identify,
@@ -19,7 +22,7 @@ use tokio::sync::{
 	mpsc::{self, UnboundedReceiver},
 	oneshot,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 #[cfg(feature = "network-analysis")]
 pub mod analyzer;
@@ -400,6 +403,40 @@ pub fn identity(cfg: &LibP2PConfig, db: impl Database) -> Result<(identity::Keyp
 	let keypair = get_or_init_keypair(cfg, db)?;
 	let peer_id = PeerId::from(keypair.public());
 	Ok((keypair, peer_id))
+}
+
+#[derive(PartialEq, Debug)]
+pub enum DHTKey {
+	Cell(u32, u32, u32),
+	Row(u32, u32),
+}
+
+impl TryFrom<RecordKey> for DHTKey {
+	type Error = color_eyre::Report;
+
+	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
+		match *String::from_utf8(key.to_vec())?
+			.split(':')
+			.map(str::parse::<u32>)
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.as_slice()
+		{
+			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
+			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
+			_ => Err(eyre!("Invalid DHT key")),
+		}
+	}
+}
+
+pub fn extract_block_num(key: RecordKey) -> Result<u32> {
+	key.try_into()
+		.map(|dht_key| match dht_key {
+			DHTKey::Cell(block_num, _, _) | DHTKey::Row(block_num, _) => block_num,
+		})
+		.map_err(|error| {
+			warn!("Unable to cast KAD key to DHT key: {error}");
+			eyre!("Invalid key: {error}")
+		})
 }
 
 #[cfg(test)]
