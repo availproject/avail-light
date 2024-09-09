@@ -1,7 +1,6 @@
 use avail_rust::{
-	avail::runtime_types::{
-		avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
-		bounded_collections::bounded_vec::BoundedVec,
+	avail::runtime_types::avail_core::{
+		data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension,
 	},
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{com::AppData, commitments},
@@ -9,7 +8,6 @@ use avail_rust::{
 	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
 	AvailHeader, H256,
 };
-use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -37,7 +35,7 @@ use crate::{
 		VerifiedSyncHeaderKey,
 	},
 	network::rpc::OutputEvent as RpcEvent,
-	types::{self, BlockVerified},
+	types::{self, Base64, BlockVerified},
 	utils::{decode_app_data, OptionalExtension},
 };
 
@@ -101,42 +99,6 @@ pub struct Status {
 	pub genesis_hash: String,
 	pub network: String,
 	pub blocks: Blocks,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(try_from = "String", into = "String")]
-pub struct Base64(pub Vec<u8>);
-
-impl From<Base64> for BoundedVec<u8> {
-	fn from(val: Base64) -> Self {
-		BoundedVec(val.0)
-	}
-}
-
-impl From<Base64> for Vec<u8> {
-	fn from(val: Base64) -> Self {
-		val.0
-	}
-}
-
-impl From<&Base64> for Vec<u8> {
-	fn from(val: &Base64) -> Self {
-		val.0.clone()
-	}
-}
-
-impl TryFrom<String> for Base64 {
-	type Error = DecodeError;
-
-	fn try_from(value: String) -> Result<Self, Self::Error> {
-		general_purpose::STANDARD.decode(value).map(Base64)
-	}
-}
-
-impl From<Base64> for String {
-	fn from(value: Base64) -> Self {
-		general_purpose::STANDARD.encode(value.0)
-	}
 }
 
 #[derive(Clone, Debug, Deserialize)]
