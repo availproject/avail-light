@@ -2,6 +2,7 @@
 use crate::network::rpc::OutputEvent;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_rust::{
+	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec,
 	avail_core::DataLookup,
 	kate_recovery::{commitments, matrix::Dimensions},
 	sp_core::{
@@ -14,6 +15,7 @@ use avail_rust::{
 	},
 	AvailHeader, Keypair, H256,
 };
+use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
 use libp2p::kad::Mode as KadMode;
@@ -573,5 +575,41 @@ impl Decode for Uuid {
 impl Encode for Uuid {
 	fn encode(&self) -> Vec<u8> {
 		self.0.as_bytes().to_vec()
+	}
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(try_from = "String", into = "String")]
+pub struct Base64(pub Vec<u8>);
+
+impl From<Base64> for BoundedVec<u8> {
+	fn from(val: Base64) -> Self {
+		BoundedVec(val.0)
+	}
+}
+
+impl From<Base64> for Vec<u8> {
+	fn from(val: Base64) -> Self {
+		val.0
+	}
+}
+
+impl From<&Base64> for Vec<u8> {
+	fn from(val: &Base64) -> Self {
+		val.0.clone()
+	}
+}
+
+impl TryFrom<String> for Base64 {
+	type Error = DecodeError;
+
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		general_purpose::STANDARD.decode(value).map(Base64)
+	}
+}
+
+impl From<Base64> for String {
+	fn from(value: Base64) -> Self {
+		general_purpose::STANDARD.encode(value.0)
 	}
 }
