@@ -35,7 +35,7 @@ use crate::{
 		rpc::{self, Event},
 	},
 	shutdown::Controller,
-	types::{self, BlockRange, ClientChannels, LightClientConfig},
+	types::{self, BlockRange, ClientChannels, Delay},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -56,7 +56,7 @@ pub enum OutputEvent {
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
-	confidence: f64
+	confidence: f64,
 	header: AvailHeader,
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
@@ -212,7 +212,6 @@ pub async fn run(
 			},
 		};
 
-
 		if let Some(seconds) = block_processing_delay.sleep_duration(received_at) {
 			if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
 				seconds.as_secs_f64(),
@@ -353,15 +352,8 @@ mod tests {
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 
-		process_block(
-			db,
-			&mock_network_client,
-			99.9,
-			header,
-			recv,
-			sender,
-		)
-		.await
-		.unwrap();
+		process_block(db, &mock_network_client, 99.9, header, recv, sender)
+			.await
+			.unwrap();
 	}
 }
