@@ -966,6 +966,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "confy 0.4.0",
+ "futures",
  "hex",
  "hex-literal",
  "libp2p",

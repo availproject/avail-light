@@ -1,5 +1,5 @@
 use super::{metric, MetricCounter, MetricValue};
-use crate::{network::p2p::OutputEvent, telemetry::MetricName, types::Origin};
+use crate::{telemetry::MetricName, types::Origin};
 use async_trait::async_trait;
 use color_eyre::{eyre::eyre, Result};
 use libp2p::{
@@ -13,11 +13,10 @@ use opentelemetry::{
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{broadcast, Mutex, RwLock};
-use tracing::{debug, info, warn};
+use std::{collections::HashMap, time::Duration};
+use tracing::{info, warn};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockStat {
 	pub total_count: usize,
 	pub remaining_counter: usize,
@@ -91,29 +90,30 @@ pub struct Metrics {
 	meter: Meter,
 	project_name: String,
 	origin: Origin,
-	mode: RwLock<Mode>,
-	multiaddress: RwLock<Multiaddr>,
+	mode: Mode,
+	multiaddress: Multiaddr,
 	counters: HashMap<&'static str, Counter<u64>>,
 	attributes: Vec<KeyValue>,
-	metric_buffer: Arc<Mutex<Vec<Record>>>,
-	counter_buffer: Arc<Mutex<Vec<MetricCounter>>>,
+	metric_buffer: Vec<Record>,
+	counter_buffer: Vec<MetricCounter>,
+	active_blocks: HashMap<u32, BlockStat>,
 }
 
 impl Metrics {
-	async fn attributes(&self) -> Vec<KeyValue> {
+	fn attributes(&self) -> Vec<KeyValue> {
 		let mut attributes = vec![
 			KeyValue::new("origin", self.origin.to_string()),
-			KeyValue::new("operating_mode", self.mode.read().await.to_string()),
-			KeyValue::new("multiaddress", self.multiaddress.read().await.to_string()),
+			KeyValue::new("operating_mode", self.mode.to_string()),
+			KeyValue::new("multiaddress", self.multiaddress.to_string()),
 		];
 		attributes.extend(self.attributes.clone());
 		attributes
 	}
 
-	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
+	fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
 		let gauge_name = format!("{}.{}", name, self.project_name);
 		let instrument = self.meter.u64_observable_gauge(gauge_name).try_init()?;
-		let attributes = self.attributes().await;
+		let attributes = self.attributes();
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_u64(&instrument, value, &attributes)
@@ -121,10 +121,10 @@ impl Metrics {
 		Ok(())
 	}
 
-	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
+	fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
 		let gauge_name = format!("{}.{}", name, self.project_name);
 		let instrument = self.meter.f64_observable_gauge(gauge_name).try_init()?;
-		let attributes = self.attributes().await;
+		let attributes = self.attributes();
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_f64(&instrument, value, &attributes)
@@ -132,44 +132,31 @@ impl Metrics {
 		Ok(())
 	}
 
-	async fn update_operating_mode(&self, value: Mode) {
-		let mut mode = self.mode.write().await;
-		*mode = value;
-	}
-
-	async fn update_multiaddress(&self, value: Multiaddr) {
-		let mut multiaddress = self.multiaddress.write().await;
-		*multiaddress = value;
-	}
-
-	fn extract_block_num(&self, key: &RecordKey) -> Result<u32> {
-		match key.clone().try_into() {
-			Ok(DHTKey::Cell(block_num, _, _)) | Ok(DHTKey::Row(block_num, _)) => Ok(block_num),
-			Err(error) => {
+	fn extract_block_num(&self, key: RecordKey) -> Result<u32> {
+		key.try_into()
+			.map(|dht_key| match dht_key {
+				DHTKey::Cell(block_num, _, _) | DHTKey::Row(block_num, _) => block_num,
+			})
+			.map_err(|error| {
 				warn!("Unable to cast KAD key to DHT key: {error}");
-				Err(eyre!("Invalid key: {error}"))
-			},
-		}
+				eyre!("Invalid key: {error}")
+			})
 	}
 
-	async fn log_and_record_block_completion(
-		&self,
-		block_num: u32,
-		block: &BlockStat,
-	) -> Result<()> {
-		if block.is_completed() {
-			// log Block stats
-			let success_rate = block.success_rate();
-			info!(
-				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, block.time_stat
-			);
-			// record metric values
-			super::Metrics::record(self, MetricValue::DHTPutSuccess(success_rate)).await;
-			super::Metrics::record(self, MetricValue::DHTPutDuration(block.time_stat as f64)).await;
-		}
+	fn get_block_stat(&mut self, block_num: u32) -> Result<&mut BlockStat> {
+		self.active_blocks
+			.get_mut(&block_num)
+			.ok_or_else(|| eyre!("Can't find block: {} in active block list", block_num))
+	}
 
-		Ok(())
+	fn log_and_record_metrics(&mut self, block_num: u32, success_rate: f64, time_stat: f64) {
+		info!(
+			"Cell upload success rate for block {}: {}. Duration: {}",
+			block_num, success_rate, time_stat
+		);
+
+		super::Metrics::record(self, MetricValue::DHTPutSuccess(success_rate));
+		super::Metrics::record(self, MetricValue::DHTPutDuration(time_stat));
 	}
 }
 
@@ -260,20 +247,19 @@ fn flatten_metrics(buffer: &[Record]) -> (HashMap<&'static str, u64>, HashMap<&'
 impl super::Metrics for Metrics {
 	/// Puts counter to the counter buffer if it is allowed.
 	/// If counter is not buffered, counter is incremented.
-	async fn count(&self, counter: super::MetricCounter) {
+	fn count(&mut self, counter: super::MetricCounter) {
 		if !counter.is_allowed(&self.origin) {
 			return;
 		}
 		if !counter.is_buffered() {
-			self.counters[&counter.name()].add(1, &self.attributes().await);
+			self.counters[&counter.name()].add(1, &self.attributes());
 			return;
 		}
-		let mut counter_buffer = self.counter_buffer.lock().await;
-		counter_buffer.push(counter);
+		self.counter_buffer.push(counter);
 	}
 
 	/// Puts metric to the metric buffer if it is allowed.
-	async fn record<T>(&self, value: T)
+	fn record<T>(&mut self, value: T)
 	where
 		T: metric::Value + Into<Record> + Send,
 	{
@@ -281,133 +267,94 @@ impl super::Metrics for Metrics {
 			return;
 		}
 
-		let mut metric_buffer = self.metric_buffer.lock().await;
-		metric_buffer.push(value.into());
+		self.metric_buffer.push(value.into());
 	}
 
 	/// Calculates counters and average metrics, and flushes buffers to the collector.
-	async fn flush(&self) -> Result<()> {
-		let mut counter_buffer = self.counter_buffer.lock().await;
-		let counters = flatten_counters(&counter_buffer);
-		counter_buffer.clear();
+	fn flush(&mut self) -> Result<()> {
+		let counters = flatten_counters(&self.counter_buffer);
+		self.counter_buffer.clear();
 
-		let mut metric_buffer = self.metric_buffer.lock().await;
-		let (metrics_u64, metrics_f64) = flatten_metrics(&metric_buffer);
-		metric_buffer.clear();
+		let (metrics_u64, metrics_f64) = flatten_metrics(&self.metric_buffer);
+		self.metric_buffer.clear();
 
-		let attributes = self.attributes().await;
+		let attributes = self.attributes();
 		for (counter, value) in counters {
 			self.counters[&counter].add(value, &attributes);
 		}
 
 		// TODO: Aggregate errors instead of early return
 		for (metric, value) in metrics_u64.into_iter() {
-			self.record_u64(metric, value).await?;
+			self.record_u64(metric, value)?;
 		}
 
 		for (metric, value) in metrics_f64.into_iter() {
-			self.record_f64(metric, value).await?;
+			self.record_f64(metric, value)?;
 		}
 
 		Ok(())
 	}
 
-	async fn handle_event_stream(
-		&self,
-		mut event_receiver: broadcast::Receiver<OutputEvent>,
+	fn update_multiaddress(&mut self, value: Multiaddr) {
+		self.multiaddress = value;
+	}
+
+	fn update_operating_mode(&mut self, value: Mode) {
+		self.mode = value;
+	}
+
+	fn handle_new_put_record(&mut self, block_num: u32, records: Vec<libp2p::kad::Record>) {
+		self.active_blocks
+			.entry(block_num)
+			.and_modify(|b| b.increase_block_stat_counters(records.len()))
+			.or_insert(BlockStat {
+				total_count: records.len(),
+				remaining_counter: records.len(),
+				success_counter: 0,
+				error_counter: 0,
+				time_stat: 0,
+			});
+	}
+
+	fn handle_successful_put_record(
+		&mut self,
+		record_key: RecordKey,
+		query_stats: QueryStats,
 	) -> Result<()> {
-		// blocks we monitor for PUT success rate
-		// TODO: will live here until Metrics is free of Arc
-		let mut active_blocks: HashMap<u32, BlockStat> = Default::default();
+		let block_num = self.extract_block_num(record_key)?;
+		let block = self.get_block_stat(block_num)?;
 
-		loop {
-			match event_receiver.recv().await {
-				Ok(event) => match event {
-					OutputEvent::Count => {
-						self.count(MetricCounter::EventLoopEvent).await;
-					},
-					OutputEvent::IncomingGetRecord => {
-						self.count(MetricCounter::IncomingGetRecord).await;
-					},
-					OutputEvent::IncomingPutRecord => {
-						self.count(MetricCounter::IncomingPutRecord).await;
-					},
-					OutputEvent::KadModeChange(mode) => {
-						self.update_operating_mode(mode).await;
-					},
-					OutputEvent::Ping(rtt) => {
-						self.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
-							.await;
-					},
-					OutputEvent::IncomingConnection => {
-						self.count(MetricCounter::IncomingConnections).await;
-					},
-					OutputEvent::IncomingConnectionError => {
-						self.count(MetricCounter::IncomingConnectionErrors).await;
-					},
-					OutputEvent::MultiaddressUpdate(address) => {
-						self.update_multiaddress(address).await;
-					},
-					OutputEvent::EstablishedConnection => {
-						self.count(MetricCounter::EstablishedConnections).await;
-					},
-					OutputEvent::OutgoingConnectionError => {
-						self.count(MetricCounter::OutgoingConnectionErrors).await;
-					},
-					OutputEvent::PutRecord { block_num, records } => {
-						active_blocks
-							.entry(block_num)
-							.and_modify(|block| block.increase_block_stat_counters(records.len()))
-							.or_insert(BlockStat {
-								total_count: records.len(),
-								remaining_counter: records.len(),
-								success_counter: 0,
-								error_counter: 0,
-								time_stat: 0,
-							});
-					},
-					OutputEvent::PutRecordSuccess {
-						record_key,
-						query_stats,
-					} => {
-						let block_num = self.extract_block_num(&record_key)?;
-						if let Some(block) = active_blocks.get_mut(&block_num) {
-							block.increment_success_counter();
-							block.decrement_remaining_counter();
-							block.update_time_stat(&query_stats);
+		block.increment_success_counter();
+		block.decrement_remaining_counter();
+		block.update_time_stat(&query_stats);
 
-							self.log_and_record_block_completion(block_num, block)
-								.await?;
-						} else {
-							debug!("Cant't find block: {} in active block list", block_num);
-						};
-					},
-					OutputEvent::PutRecordFailed {
-						record_key,
-						query_stats,
-					} => {
-						let block_num = self.extract_block_num(&record_key)?;
-						if let Some(block) = active_blocks.get_mut(&block_num) {
-							block.increment_error_counter();
-							block.decrement_remaining_counter();
-							block.update_time_stat(&query_stats);
+		if block.is_completed() {
+			let success_rate = block.success_rate();
+			let time_stat = block.time_stat as f64;
 
-							self.log_and_record_block_completion(block_num, block)
-								.await?;
-						} else {
-							debug!("Cant't find block: {} in active block list", block_num);
-						};
-					},
-				},
-				Err(broadcast::error::RecvError::Closed) => {
-					// channel closed, exit the loop
-					break;
-				},
-				Err(broadcast::error::RecvError::Lagged(missed_events)) => {
-					warn!("Missed {} events due to channel lag", missed_events);
-					continue;
-				},
-			}
+			self.log_and_record_metrics(block_num, success_rate, time_stat);
+		}
+
+		Ok(())
+	}
+
+	fn handle_failed_put_record(
+		&mut self,
+		record_key: RecordKey,
+		query_stats: QueryStats,
+	) -> Result<()> {
+		let block_num = self.extract_block_num(record_key)?;
+		let block = self.get_block_stat(block_num)?;
+
+		block.increment_error_counter();
+		block.decrement_remaining_counter();
+		block.update_time_stat(&query_stats);
+
+		if block.is_completed() {
+			let success_rate = block.success_rate();
+			let time_stat = block.time_stat as f64;
+
+			self.log_and_record_metrics(block_num, success_rate, time_stat);
 		}
 
 		Ok(())
@@ -466,7 +413,7 @@ pub fn initialize(
 	attributes: Vec<(&str, String)>,
 	project_name: String,
 	origin: &Origin,
-	mode: &Mode,
+	mode: Mode,
 	ot_config: OtelConfig,
 ) -> Result<Metrics> {
 	let export_config = ExportConfig {
@@ -499,12 +446,13 @@ pub fn initialize(
 		meter,
 		project_name,
 		origin: origin.clone(),
-		mode: RwLock::new(*mode),
-		multiaddress: RwLock::new(Multiaddr::empty()),
+		mode,
+		multiaddress: Multiaddr::empty(),
 		attributes,
 		counters,
-		metric_buffer: Arc::new(Mutex::new(vec![])),
-		counter_buffer: Arc::new(Mutex::new(vec![])),
+		metric_buffer: vec![],
+		counter_buffer: vec![],
+		active_blocks: Default::default(),
 	})
 }
 

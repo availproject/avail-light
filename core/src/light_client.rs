@@ -24,8 +24,8 @@ use avail_rust::{
 };
 use codec::Encode;
 use color_eyre::Result;
-use std::{sync::Arc, time::Instant};
-use tokio::sync::mpsc;
+use std::time::Instant;
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
 
 use crate::{
@@ -35,7 +35,6 @@ use crate::{
 		rpc::{self, Event},
 	},
 	shutdown::Controller,
-	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, BlockRange, ClientChannels, Delay},
 	utils::{calculate_confidence, extract_kate},
 };
@@ -57,21 +56,16 @@ pub enum OutputEvent {
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
-	metrics: &Arc<impl Metrics>,
 	confidence: f64,
 	header: AvailHeader,
 	received_at: Instant,
-	event_sender: mpsc::Sender<OutputEvent>,
+	event_sender: UnboundedSender<OutputEvent>,
 ) -> Result<Option<f64>> {
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 
-	metrics.count(MetricCounter::SessionBlocks).await;
-	event_sender.send(OutputEvent::CountSessionBlocks).await?;
-	metrics.record(MetricValue::BlockHeight(block_number)).await;
-	event_sender
-		.send(OutputEvent::RecordBlockHeight(block_number))
-		.await?;
+	event_sender.send(OutputEvent::CountSessionBlocks)?;
+	event_sender.send(OutputEvent::RecordBlockHeight(block_number))?;
 
 	info!(
 		{ block_number, block_delay = received_at.elapsed().as_secs()},
@@ -126,44 +120,18 @@ pub async fn process_block(
 				)
 				.await?;
 
-			metrics
-				.record(MetricValue::DHTFetched(fetch_stats.dht_fetched))
-				.await;
-
-			metrics
-				.record(MetricValue::DHTFetchedPercentage(
-					fetch_stats.dht_fetched_percentage,
-				))
-				.await;
-
-			metrics
-				.record(MetricValue::DHTFetchDuration(
-					fetch_stats.dht_fetch_duration,
-				))
-				.await;
-
-			event_sender
-				.send(OutputEvent::RecordDHTStats {
-					fetched: fetch_stats.dht_fetched,
-					fetched_percentage: fetch_stats.dht_fetched_percentage,
-					fetch_duration: fetch_stats.dht_fetch_duration,
-				})
-				.await?;
+			event_sender.send(OutputEvent::RecordDHTStats {
+				fetched: fetch_stats.dht_fetched,
+				fetched_percentage: fetch_stats.dht_fetched_percentage,
+				fetch_duration: fetch_stats.dht_fetch_duration,
+			})?;
 
 			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
-				metrics.record(MetricValue::RPCFetched(rpc_fetched)).await;
-				_ = event_sender
-					.send(OutputEvent::RecordRPCFetched(rpc_fetched))
-					.await;
+				event_sender.send(OutputEvent::RecordRPCFetched(rpc_fetched))?;
 			}
 
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
-				metrics
-					.record(MetricValue::RPCFetchDuration(rpc_fetch_duration))
-					.await;
-				event_sender
-					.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))
-					.await?;
+				event_sender.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))?;
 			}
 			(positions.len(), fetched.len(), unfetched.len())
 		},
@@ -193,12 +161,7 @@ pub async fn process_block(
 		"Confidence factor: {}",
 		confidence
 	);
-	metrics
-		.record(MetricValue::BlockConfidence(confidence))
-		.await;
-	event_sender
-		.send(OutputEvent::RecordBlockConfidence(confidence))
-		.await?;
+	event_sender.send(OutputEvent::RecordBlockConfidence(confidence))?;
 
 	// push latest mined block's header into column family specified
 	// for keeping block headers, to be used
@@ -228,10 +191,9 @@ pub async fn run(
 	network_client: impl network::Client,
 	confidence: f64,
 	block_processing_delay: Delay,
-	metrics: Arc<impl Metrics>,
 	mut channels: ClientChannels,
 	shutdown: Controller<String>,
-	event_sender: mpsc::Sender<OutputEvent>,
+	event_sender: UnboundedSender<OutputEvent>,
 ) {
 	info!("Starting light client...");
 
@@ -251,15 +213,9 @@ pub async fn run(
 		};
 
 		if let Some(seconds) = block_processing_delay.sleep_duration(received_at) {
-			metrics
-				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
-				.await;
-			if let Err(error) = event_sender
-				.send(OutputEvent::RecordBlockProcessingDelay(
-					seconds.as_secs_f64(),
-				))
-				.await
-			{
+			if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
+				seconds.as_secs_f64(),
+			)) {
 				error!("Cannot send OutputEvent message: {error}");
 			}
 			info!("Sleeping for {seconds:?} seconds");
@@ -269,7 +225,6 @@ pub async fn run(
 		let process_block_result = process_block(
 			db.clone(),
 			&network_client,
-			&metrics,
 			confidence,
 			header.clone(),
 			received_at,
@@ -307,7 +262,6 @@ mod tests {
 	use crate::{
 		data,
 		network::rpc::{cell_count_for_confidence, CELL_COUNT_99_99},
-		telemetry::metric::tests,
 	};
 	use avail_rust::{
 		avail::runtime_types::avail_core::{
@@ -383,7 +337,7 @@ mod tests {
 			}),
 		};
 		let recv = Instant::now();
-		let (sender, _receiver) = mpsc::channel::<OutputEvent>(100);
+		let (sender, _receiver) = mpsc::unbounded_channel::<OutputEvent>();
 		mock_network_client
 			.expect_fetch_verified()
 			.returning(move |_, _, _, _, positions| {
@@ -398,16 +352,8 @@ mod tests {
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 
-		process_block(
-			db,
-			&mock_network_client,
-			&Arc::new(tests::MockMetrics {}),
-			99.9,
-			header,
-			recv,
-			sender,
-		)
-		.await
-		.unwrap();
+		process_block(db, &mock_network_client, 99.9, header, recv, sender)
+			.await
+			.unwrap();
 	}
 }

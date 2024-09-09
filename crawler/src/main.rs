@@ -1,9 +1,12 @@
 use avail_light_core::{
-	crawl_client,
+	crawl_client::{self, CrawlMetricValue, OutputEvent as CrawlerEvent},
 	data::{Database, LatestHeaderKey, DB},
-	network::{p2p, rpc, Network},
+	network::{
+		p2p::{self, OutputEvent as P2pEvent},
+		rpc, Network,
+	},
 	shutdown::Controller,
-	telemetry::{otlp, MetricCounter, Metrics},
+	telemetry::{otlp, MetricCounter, MetricValue, Metrics},
 	types::{BlockVerified, KademliaMode},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -13,9 +16,16 @@ use color_eyre::{
 	Result,
 };
 use config::Config;
-use std::{fs, path::Path, sync::Arc};
-use tokio::sync::broadcast;
-use tracing::{info, span, warn, Level};
+use maintenance::OutputEvent as MaintenanceEvent;
+use std::{fs, path::Path};
+use tokio::{
+	select,
+	sync::{
+		broadcast,
+		mpsc::{self, UnboundedReceiver},
+	},
+};
+use tracing::{error, info, span, warn, Level};
 
 mod config;
 
@@ -78,18 +88,16 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("client_alias", config.client_alias),
 	];
 
-	let ot_metrics = Arc::new(
-		otlp::initialize(
-			metric_attributes,
-			"avail".to_string(),
-			&config.origin,
-			&KademliaMode::Client.into(),
-			config.otel.clone(),
-		)
-		.wrap_err("Unable to initialize OpenTelemetry service")?,
-	);
+	let mut metrics = otlp::initialize(
+		metric_attributes,
+		"avail".to_string(),
+		&config.origin,
+		KademliaMode::Client.into(),
+		config.otel.clone(),
+	)
+	.wrap_err("Unable to initialize OpenTelemetry service")?;
 
-	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
+	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		config.libp2p.clone(),
 		"avail".to_string(),
 		p2p_keypair,
@@ -101,14 +109,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		db.clone(),
 	)
 	.await?;
-
-	let metrics_clone = ot_metrics.clone();
-	let shutdown_clone = shutdown.clone();
-	tokio::spawn(async move {
-		shutdown_clone
-			.with_cancel(metrics_clone.handle_event_stream(event_receiver))
-			.await
-	});
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
@@ -167,45 +167,152 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let (block_tx, block_rx) = broadcast::channel::<BlockVerified>(1 << 7);
 
+	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
 		config.otel.ot_flush_block_interval,
 		block_rx,
 		shutdown.clone(),
-		ot_metrics.clone(),
+		maintenance_sender,
 	)));
 
+	let (crawler_sender, crawler_receiver) = mpsc::unbounded_channel::<CrawlerEvent>();
 	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
 		client_rpc_event_receiver,
 		p2p_client.clone(),
 		config.crawl_block_delay,
-		ot_metrics.clone(),
 		config.crawl_block_mode,
 		partition,
 		block_tx,
+		crawler_sender,
 	)));
 
-	ot_metrics.count(MetricCounter::Starts).await;
+	metrics.count(MetricCounter::Starts);
+	spawn_in_span(shutdown.with_cancel(handle_events(
+		metrics,
+		p2p_event_receiver,
+		maintenance_receiver,
+		crawler_receiver,
+	)));
+
 	crawler.await?.map_err(|message| eyre!(message))?;
 	Ok(())
 }
 
-mod maintenance {
-	use std::sync::Arc;
+async fn handle_events(
+	mut metrics: impl Metrics,
+	mut p2p_receiver: UnboundedReceiver<P2pEvent>,
+	mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
+	mut crawler_receiver: UnboundedReceiver<CrawlerEvent>,
+) {
+	loop {
+		select! {
+			Some(p2p_event) = p2p_receiver.recv() => {
+				match p2p_event {
+					P2pEvent::Count => {
+						metrics.count(MetricCounter::EventLoopEvent);
+					},
+					P2pEvent::IncomingGetRecord => {
+						metrics.count(MetricCounter::IncomingGetRecord);
+					},
+					P2pEvent::IncomingPutRecord => {
+						metrics.count(MetricCounter::IncomingPutRecord);
+					},
+					P2pEvent::KadModeChange(mode) => {
+						metrics.update_operating_mode(mode);
+					},
+					P2pEvent::Ping(rtt) => {
+						metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
+							;
+					},
+					P2pEvent::IncomingConnection => {
+						metrics.count(MetricCounter::IncomingConnections);
+					},
+					P2pEvent::IncomingConnectionError => {
+						metrics.count(MetricCounter::IncomingConnectionErrors);
+					},
+					P2pEvent::MultiaddressUpdate(address) => {
+						metrics.update_multiaddress(address);
+					},
+					P2pEvent::EstablishedConnection => {
+						metrics.count(MetricCounter::EstablishedConnections);
+					},
+					P2pEvent::OutgoingConnectionError => {
+						metrics.count(MetricCounter::OutgoingConnectionErrors);
+					},
+					P2pEvent::PutRecord { block_num, records } => {
+						metrics.handle_new_put_record(block_num, records);
+					},
+					P2pEvent::PutRecordSuccess {
+						record_key,
+						query_stats,
+					} => {
+						if let Err(error) = metrics.handle_successful_put_record(record_key, query_stats){
+							error!("Could not handle Successful PUT Record event properly: {error}");
+						};
+					},
+					P2pEvent::PutRecordFailed {
+						record_key,
+						query_stats,
+					} => {
+						if let Err(error) = metrics.handle_failed_put_record(record_key, query_stats) {
+							error!("Could not handle Failed PUT Record event properly: {error}");
+						};
+					},
+				}
+			}
+			Some(maintenance_event) = maintenance_receiver.recv() => {
+				match maintenance_event {
+					MaintenanceEvent::FlushMetrics(block_num) => {
+						if let Err(error) = metrics.flush() {
+							error!(
+								block_num,
+								"Could not handle Flush Maintenance event properly: {error}"
+							);
+						} else {
+							info!(block_num, "Flushing metrics finished");
+						};
+					},
+					MaintenanceEvent::CountUps => {
+						metrics.count(MetricCounter::Up);
+					},
+				}
+			}
+			Some(crawler_event) = crawler_receiver.recv() => {
+				match crawler_event {
+					CrawlerEvent::RecordBlockDelay(delay) => {
+						metrics.record(CrawlMetricValue::BlockDelay(delay));
+					},
+					CrawlerEvent::RecordCellSuccessRate(success_rate)=> {
+						metrics.record(CrawlMetricValue::CellsSuccessRate(success_rate));
 
-	use avail_light_core::{
-		shutdown::Controller,
-		telemetry::{MetricCounter, Metrics},
-		types::BlockVerified,
-	};
+					}
+					CrawlerEvent::RecordRowsSuccessRate(success_rate) => {
+						metrics.record(CrawlMetricValue::RowsSuccessRate(success_rate));
+					}
+				}
+			}
+			// break the loop if all channels are closed
+			else => break,
+		}
+	}
+}
+
+mod maintenance {
+	use avail_light_core::{shutdown::Controller, types::BlockVerified};
 	use color_eyre::eyre::Report;
-	use tokio::sync::broadcast;
+	use tokio::sync::{broadcast, mpsc::UnboundedSender};
 	use tracing::{error, info};
+
+	pub enum OutputEvent {
+		FlushMetrics(u32),
+		CountUps,
+	}
 
 	pub async fn run(
 		ot_flush_block_interval: u32,
 		mut block_receiver: broadcast::Receiver<BlockVerified>,
 		shutdown: Controller<String>,
-		metrics: Arc<impl Metrics>,
+		event_sender: UnboundedSender<OutputEvent>,
 	) {
 		info!("Starting maintenance...");
 
@@ -215,16 +322,26 @@ mod maintenance {
 					let block_num = block.block_num;
 					if block_num % ot_flush_block_interval == 0 {
 						info!(block_num, "Flushing metrics...");
-						if let Err(error) = metrics.flush().await {
-							error!(block_num, "Flushing metrics failed: {error:#}");
-						} else {
-							info!(block_num, "Flushing metrics finished");
+						if let Err(error) = event_sender.send(OutputEvent::FlushMetrics(block_num))
+						{
+							let error_msg =
+								format!("Failed to send FlushMetrics event: {:#}", error);
+							error!("{error_msg}");
+							_ = shutdown.trigger_shutdown(error_msg);
+							break;
 						}
 					};
-					metrics.count(MetricCounter::Up).await;
+					if let Err(error) = event_sender.send(OutputEvent::CountUps) {
+						let error_msg = format!("Failed to send CountUps event: {:#}", error);
+						error!("{error_msg}");
+						_ = shutdown.trigger_shutdown(error_msg);
+						break;
+					}
 				},
 				Err(error) => {
-					_ = shutdown.trigger_shutdown(format!("{error:#}"));
+					let error_msg = format!("Error receiving block: {:#}", error);
+					error!("{error_msg}");
+					_ = shutdown.trigger_shutdown(error_msg);
 					break;
 				},
 			}

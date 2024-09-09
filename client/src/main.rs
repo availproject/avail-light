@@ -5,16 +5,17 @@ use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
 	data::{self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, DB},
-	light_client, maintenance,
+	light_client::{self, OutputEvent as LcEvent},
+	maintenance::{self, OutputEvent as MaintenanceEvent},
 	network::{
 		self,
-		p2p::{self, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		p2p::{self, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
 		rpc, Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
-	telemetry::{self, MetricCounter, Metrics},
+	telemetry::{self, MetricCounter, MetricValue, Metrics},
 	types::{
 		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, MultiaddrConfig, SecretKey,
 		Uuid,
@@ -33,7 +34,13 @@ use color_eyre::{
 };
 use config::RuntimeConfig;
 use std::{fs, path::Path, sync::Arc};
-use tokio::sync::{broadcast, mpsc};
+use tokio::{
+	select,
+	sync::{
+		broadcast,
+		mpsc::{self, UnboundedReceiver},
+	},
+};
 use tracing::{error, info, span, trace, warn, Level};
 
 #[cfg(feature = "network-analysis")]
@@ -80,18 +87,16 @@ async fn run(
 		),
 	];
 
-	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(
-			metric_attributes,
-			cfg.project_name.clone(),
-			&cfg.origin,
-			&cfg.libp2p.kademlia.operation_mode.into(),
-			cfg.otel.clone(),
-		)
-		.wrap_err("Unable to initialize OpenTelemetry service")?,
-	);
+	let mut metrics = telemetry::otlp::initialize(
+		metric_attributes.clone(),
+		cfg.project_name.clone(),
+		&cfg.origin,
+		cfg.libp2p.kademlia.operation_mode.into(),
+		cfg.otel.clone(),
+	)
+	.wrap_err("Unable to initialize OpenTelemetry service")?;
 
-	let (p2p_client, p2p_event_loop, event_receiver) = p2p::init(
+	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		cfg.libp2p.clone(),
 		cfg.project_name.clone(),
 		id_keys,
@@ -103,14 +108,6 @@ async fn run(
 		db.clone(),
 	)
 	.await?;
-
-	let metrics_clone = ot_metrics.clone();
-	let shutdown_clone = shutdown.clone();
-	tokio::spawn(async move {
-		shutdown_clone
-			.with_cancel(metrics_clone.handle_event_stream(event_receiver))
-			.await
-	});
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
@@ -290,10 +287,9 @@ async fn run(
 	}
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
-	let (maintenance_sender, _) = mpsc::channel::<maintenance::OutputEvent>(1000);
+	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
 		p2p_client.clone(),
-		ot_metrics.clone(),
 		block_rx,
 		static_config_params,
 		shutdown.clone(),
@@ -306,19 +302,25 @@ async fn run(
 	};
 
 	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
-	let (lc_sender, _) = mpsc::channel::<light_client::OutputEvent>(1000);
+	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
 		light_network_client,
 		cfg.confidence,
 		Delay(cfg.block_processing_delay),
-		ot_metrics.clone(),
 		channels,
 		shutdown.clone(),
 		lc_sender,
 	)));
 
-	ot_metrics.count(MetricCounter::Starts).await;
+	metrics.count(MetricCounter::Starts);
+
+	spawn_in_span(shutdown.with_cancel(handle_events(
+		metrics,
+		p2p_event_receiver,
+		maintenance_receiver,
+		lc_receiver,
+	)));
 
 	Ok(())
 }
@@ -383,6 +385,130 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	Ok(cfg)
+}
+
+async fn handle_events(
+	mut metrics: impl Metrics,
+	mut p2p_receiver: UnboundedReceiver<P2pEvent>,
+	mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
+	mut lc_receiver: UnboundedReceiver<LcEvent>,
+) {
+	loop {
+		select! {
+				Some(p2p_event) = p2p_receiver.recv() => {
+					match p2p_event {
+						P2pEvent::Count => {
+							metrics.count(MetricCounter::EventLoopEvent);
+						},
+						P2pEvent::IncomingGetRecord => {
+							metrics.count(MetricCounter::IncomingGetRecord);
+						},
+						P2pEvent::IncomingPutRecord => {
+							metrics.count(MetricCounter::IncomingPutRecord);
+						},
+						P2pEvent::KadModeChange(mode) => {
+							metrics.update_operating_mode(mode);
+						},
+						P2pEvent::Ping(rtt) => {
+							metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
+						},
+						P2pEvent::IncomingConnection => {
+							metrics.count(MetricCounter::IncomingConnections);
+						},
+						P2pEvent::IncomingConnectionError => {
+							metrics.count(MetricCounter::IncomingConnectionErrors);
+						},
+						P2pEvent::MultiaddressUpdate(address) => {
+							metrics.update_multiaddress(address);
+						},
+						P2pEvent::EstablishedConnection => {
+							metrics.count(MetricCounter::EstablishedConnections);
+						},
+						P2pEvent::OutgoingConnectionError => {
+							metrics.count(MetricCounter::OutgoingConnectionErrors);
+						},
+						P2pEvent::PutRecord { block_num, records } => {
+							metrics.handle_new_put_record(block_num, records);
+						},
+						P2pEvent::PutRecordSuccess {
+							record_key,
+							query_stats,
+						} => {
+							if let Err(error) = metrics.handle_successful_put_record(record_key, query_stats){
+								error!("Could not handle Successful PUT Record event properly: {error}");
+							};
+						},
+						P2pEvent::PutRecordFailed {
+							record_key,
+							query_stats,
+						} => {
+							if let Err(error) = metrics.handle_failed_put_record(record_key, query_stats) {
+								error!("Could not handle Failed PUT Record event properly: {error}");
+							};
+						},
+					}
+				}
+			Some(maintenance_event) = maintenance_receiver.recv() => {
+				match maintenance_event {
+					MaintenanceEvent::FlushMetrics(block_num) => {
+						if let Err(error) = metrics.flush() {
+							error!(
+								block_num,
+								"Could not handle Flush Maintenance event properly: {error}"
+							);
+						} else {
+							info!(block_num, "Flushing metrics finished");
+						};
+					},
+					MaintenanceEvent::RecordStats {
+						connected_peers,
+						block_confidence_treshold,
+						replication_factor,
+						query_timeout,
+					} => {
+						metrics.record(MetricValue::DHTConnectedPeers(connected_peers));
+						metrics.record(MetricValue::BlockConfidenceThreshold(block_confidence_treshold));
+						metrics.record(MetricValue::DHTReplicationFactor(replication_factor));
+						metrics.record(MetricValue::DHTQueryTimeout(query_timeout));
+					},
+					MaintenanceEvent::CountUps => {
+						metrics.count(MetricCounter::Up);
+					},
+				}
+			}
+			Some(lc_event) = lc_receiver.recv() => {
+				match lc_event {
+					LcEvent::RecordBlockProcessingDelay(delay) => {
+						metrics.record(MetricValue::BlockProcessingDelay(delay));
+					},
+					LcEvent::CountSessionBlocks => {
+						metrics.count(MetricCounter::SessionBlocks);
+					},
+					LcEvent::RecordBlockHeight(block_num) => {
+						metrics.record(MetricValue::BlockHeight(block_num));
+					},
+					LcEvent::RecordDHTStats {
+						fetched, fetched_percentage, fetch_duration
+					} => {
+						metrics.record(MetricValue::DHTFetched(fetched));
+						metrics.record(MetricValue::DHTFetchedPercentage(fetched_percentage));
+						metrics.record(MetricValue::DHTFetchDuration(fetch_duration));
+					},
+					LcEvent::RecordRPCFetched(fetched) => {
+						metrics.record(MetricValue::RPCFetched(fetched));
+					},
+					LcEvent::RecordRPCFetchDuration(duration) => {
+						metrics.record(MetricValue::RPCFetchDuration(duration));
+					}
+					LcEvent::RecordBlockConfidence(confidence) => {
+						metrics.record(MetricValue::BlockConfidence(confidence));
+					}
+				}
+			}
+			// break the loop if all channels are closed
+			else => break,
+		}
+	}
 }
 
 #[tokio::main]

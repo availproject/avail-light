@@ -3,20 +3,17 @@ use crate::{
 		p2p::Client,
 		rpc::{self, Event},
 	},
-	telemetry::{metric, otlp::Record, MetricName, Metrics},
+	telemetry::{metric, otlp::Record, MetricName},
 	types::{self, BlockVerified, Delay, Origin},
 };
 use avail_rust::kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
-use std::{
-	sync::Arc,
-	time::{Duration, Instant},
-};
-use tokio::sync::broadcast;
+use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, mpsc::UnboundedSender};
 use tracing::{error, info};
 
 #[derive(Clone)]
-enum CrawlMetricValue {
+pub enum CrawlMetricValue {
 	CellsSuccessRate(f64),
 	RowsSuccessRate(f64),
 	BlockDelay(f64),
@@ -55,6 +52,12 @@ pub enum CrawlMode {
 	Both,
 }
 
+pub enum OutputEvent {
+	RecordBlockDelay(f64),
+	RecordCellSuccessRate(f64),
+	RecordRowsSuccessRate(f64),
+}
+
 impl metric::Value for CrawlMetricValue {
 	// Metric filter for external peers
 	// Only the metrics we wish to send to OTel should be in this list
@@ -67,10 +70,10 @@ pub async fn run(
 	mut message_rx: broadcast::Receiver<Event>,
 	network_client: Client,
 	delay: u64,
-	metrics: Arc<impl Metrics>,
 	mode: CrawlMode,
 	partition: Partition,
 	block_sender: broadcast::Sender<BlockVerified>,
+	event_sender: UnboundedSender<OutputEvent>,
 ) {
 	info!("Starting crawl client...");
 
@@ -96,9 +99,11 @@ pub async fn run(
 
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
-			let _ = metrics
-				.record(CrawlMetricValue::BlockDelay(seconds.as_secs_f64()))
-				.await;
+			if let Err(error) =
+				event_sender.send(OutputEvent::RecordBlockDelay(seconds.as_secs_f64()))
+			{
+				error!("Failed to send RecordBlockDelay event: {error}");
+			}
 			tokio::time::sleep(seconds).await;
 		}
 		let block_number = block.block_num;
@@ -125,9 +130,11 @@ pub async fn run(
 				block_number,
 				partition, success_rate, total, fetched, "Fetched block cells",
 			);
-			let _ = metrics
-				.record(CrawlMetricValue::CellsSuccessRate(success_rate))
-				.await;
+
+			if let Err(error) = event_sender.send(OutputEvent::RecordCellSuccessRate(success_rate))
+			{
+				error!("Failed to send RecordCellSuccessRate event: {error}");
+			}
 		}
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
@@ -147,9 +154,11 @@ pub async fn run(
 				block_number,
 				success_rate, total, fetched, "Fetched block rows"
 			);
-			let _ = metrics
-				.record(CrawlMetricValue::RowsSuccessRate(success_rate))
-				.await;
+
+			if let Err(error) = event_sender.send(OutputEvent::RecordRowsSuccessRate(success_rate))
+			{
+				error!("Failed to send RecordRowsSuccessRate event: {error}");
+			}
 		}
 
 		if let Err(error) = block_sender.send(block) {

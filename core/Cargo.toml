@@ -20,7 +20,7 @@ codec = { package = "parity-scale-codec", version = "3", default-features = fals
 color-eyre = { workspace = true }
 confy = { workspace = true }
 derive_more = { version = "0.99.17", features = ["from"] }
-futures = { version = "0.3.15", default-features = false, features = ["std", "async-await"] }
+futures = { workspace = true }
 hex = { workspace = true }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 itertools = "0.10.5"
