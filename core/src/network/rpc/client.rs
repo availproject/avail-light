@@ -23,11 +23,10 @@ use tracing::{info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
-	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
 	data::{Database, RpcNodeKey, SignerNonceKey},
 	shutdown::Controller,
-	types::DEV_FLAG_GENHASH,
+	types::{Base64, DEV_FLAG_GENHASH},
 };
 
 #[derive(Clone)]
