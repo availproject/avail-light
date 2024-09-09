@@ -115,6 +115,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - run: docker-compose --version
+      
       - name: Checkout avail-test repository with submodules
         uses: actions/checkout@v2
         with:
