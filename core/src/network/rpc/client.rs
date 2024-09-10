@@ -553,7 +553,7 @@ impl<D: Database> Client<D> {
 				client
 					.tx
 					.data_availability
-					.submit_data(data, WaitFor::BlockInclusion, signer, Some(options))
+					.submit_data(data, WaitFor::BlockFinalization, signer, Some(options))
 					.await
 					.map(|success| SubmitResponse {
 						block_hash: success.block_hash,
