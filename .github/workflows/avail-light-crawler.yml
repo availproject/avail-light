@@ -114,16 +114,6 @@ jobs:
     needs: [binary_publish]
     runs-on: ubuntu-20.04
     steps:
-      - name: Trigger repository_dispatch for release
-        shell: bash
-        run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
-            https://api.github.com/repos/availproject/avail-light-infra/dispatches \
-            -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}" }}'
-                      
       - name: Trigger repository dispatch for crawler
         if: false
         shell: bash
