@@ -1,6 +1,6 @@
 use allow_block_list::BlockedPeers;
 use color_eyre::{eyre::WrapErr, Report, Result};
-use configuration::LibP2PConfig;
+use configuration::{kad_config, LibP2PConfig};
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
@@ -277,8 +277,7 @@ async fn build_swarm(
 
 	let mut swarm;
 
-	let mut kad_cfg: kad::Config = cfg.into();
-	kad_cfg.set_protocol_names(vec![protocol_name(genesis_hash)]);
+	let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
 
 	let behaviour = |key: &identity::Keypair, relay_client| {
 		Ok(Behaviour {
@@ -286,7 +285,7 @@ async fn build_swarm(
 			identify: identify::Behaviour::new(identify_cfg),
 			relay_client,
 			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
-			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, cfg.into()),
+			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, kad_cfg),
 			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
 			mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
 			upnp: upnp::tokio::Behaviour::default(),
@@ -305,15 +304,14 @@ async fn build_swarm(
 	} else {
 		swarm = tokio_swarm
 			.with_tcp(
-				tcp::Config::default().port_reuse(false).nodelay(false),
+				tcp::Config::default().nodelay(false),
 				noise::Config::new,
 				yamux::Config::default,
 			)?
-			.with_other_transport(|id_keys| {
-				Ok(webrtc::tokio::Transport::new(
-					id_keys.clone(),
-					webrtc::tokio::Certificate::generate(&mut thread_rng())?,
-				))
+			.with_other_transport(|keypair| {
+				use webrtc::tokio::{Certificate, Transport};
+				let certificate = Certificate::generate(&mut thread_rng());
+				Ok(Transport::new(keypair.clone(), certificate?))
 			})?
 			.with_dns()?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?

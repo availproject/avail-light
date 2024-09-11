@@ -1,4 +1,4 @@
-use super::ProvidersConfig;
+use super::{protocol_name, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
@@ -195,23 +195,21 @@ impl LibP2PConfig {
 	}
 }
 
-impl From<&LibP2PConfig> for kad::Config {
-	fn from(cfg: &LibP2PConfig) -> Self {
-		// create Kademlia Config
-		let mut kad_cfg = kad::Config::default();
-		kad_cfg
-			.set_publication_interval(Some(cfg.kademlia.publication_interval))
-			.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
-			.set_replication_factor(cfg.kademlia.record_replication_factor)
-			.set_query_timeout(cfg.kademlia.query_timeout)
-			.set_parallelism(cfg.kademlia.query_parallelism)
-			.set_caching(kad::Caching::Enabled {
-				max_peers: cfg.kademlia.caching_max_peers,
-			})
-			.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
-			.set_record_filtering(kad::StoreInserts::FilterBoth);
-		kad_cfg
-	}
+pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
+	// create Kademlia Config
+	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
+	kad_cfg
+		.set_publication_interval(Some(cfg.kademlia.publication_interval))
+		.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
+		.set_replication_factor(cfg.kademlia.record_replication_factor)
+		.set_query_timeout(cfg.kademlia.query_timeout)
+		.set_parallelism(cfg.kademlia.query_parallelism)
+		.set_caching(kad::Caching::Enabled {
+			max_peers: cfg.kademlia.caching_max_peers,
+		})
+		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
+		.set_record_filtering(kad::StoreInserts::FilterBoth);
+	kad_cfg
 }
 
 impl From<&LibP2PConfig> for MemoryStoreConfig {
