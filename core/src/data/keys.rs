@@ -33,3 +33,5 @@ pub const IS_SYNCED_KEY: &str = "is_synced";
 pub const CLIENT_ID_KEY: &str = "client_id";
 /// Key for storing P2P keypair
 pub const P2P_KEYPAIR_KEY: &str = "p2p_keypair";
+/// Key for storing signer nonce
+pub const SIGNER_NONCE: &str = "signer_nonce";

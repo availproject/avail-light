@@ -4,7 +4,10 @@ use crate::cli::CliOpts;
 use avail_light_core::{
 	api,
 	consts::EXPECTED_SYSTEM_VERSION,
-	data::{self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, DB},
+	data::{
+		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
+		SignerNonceKey, DB,
+	},
 	light_client::{self, OutputEvent as LcEvent},
 	maintenance::{self, OutputEvent as MaintenanceEvent},
 	network::{
@@ -154,6 +157,11 @@ async fn run(
 
 	let (rpc_client, rpc_events, rpc_subscriptions) =
 		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
+
+	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
+	let sdk = rpc_client.current_client().await;
+	let nonce = sdk.api.tx().account_nonce(&account_id).await?;
+	db.put(SignerNonceKey, nonce);
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_events.subscribe();

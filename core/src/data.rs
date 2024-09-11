@@ -296,3 +296,17 @@ impl RecordKey for P2PKeypairKey {
 		P2P_KEYPAIR_KEY.into()
 	}
 }
+
+pub struct SignerNonceKey;
+
+impl RecordKey for SignerNonceKey {
+	type Type = u64;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		SIGNER_NONCE.into()
+	}
+}
