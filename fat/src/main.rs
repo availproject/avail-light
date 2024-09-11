@@ -1,4 +1,6 @@
 use avail_light_core::{
+	api::{self, configuration::SharedConfig},
+	consts::EXPECTED_SYSTEM_VERSION,
 	data::{Database, LatestHeaderKey, DB},
 	fat_client::{self, OutputEvent as FatEvent},
 	network::{
@@ -7,7 +9,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 	telemetry::{self, MetricCounter, MetricValue, Metrics},
-	types::{BlockVerified, ClientChannels, KademliaMode, Origin},
+	types::{BlockVerified, ClientChannels, IdentityConfig, KademliaMode, Origin},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -78,6 +80,9 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition = config.fat.block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
+	// TODO: Remove once the P2P API is decoupled
+	let identity_cfg = IdentityConfig::from_suri("//Alice".to_string(), None)?;
+
 	let metric_attributes = vec![
 		("role", "fat".to_string()),
 		("version", version.to_string()),
@@ -111,10 +116,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let addrs = vec![
-		config.libp2p.tcp_multiaddress(),
-		config.libp2p.webrtc_multiaddress(),
-	];
+	let addrs = vec![config.libp2p.tcp_multiaddress()];
 
 	p2p_client
 		.start_listening(addrs)
@@ -183,6 +185,21 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		block_sender: block_tx,
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
+
+	let ws_clients = api::v2::types::WsClients::default();
+
+	let server = api::server::Server {
+		db: db.clone(),
+		cfg: SharedConfig::default(),
+		identity_cfg,
+		version: format!("v{}", clap::crate_version!()),
+		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
+		node_client: rpc_client.clone(),
+		ws_clients: ws_clients.clone(),
+		shutdown: shutdown.clone(),
+		p2p_client: p2p_client.clone(),
+	};
+	spawn_in_span(shutdown.with_cancel(server.bind(config.api.clone())));
 
 	let fat_client = fat_client::new(p2p_client.clone(), rpc_client.clone());
 	let (fat_sender, fat_receiver) = mpsc::unbounded_channel::<FatEvent>();
