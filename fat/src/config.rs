@@ -1,6 +1,7 @@
 use std::{fs, time::Duration};
 
 use avail_light_core::{
+	api::configuration::APIConfig,
 	fat_client,
 	network::{
 		p2p::{configuration::LibP2PConfig, BOOTSTRAP_LIST_EMPTY_MESSAGE},
@@ -10,7 +11,7 @@ use avail_light_core::{
 	telemetry::otlp::OtelConfig,
 	types::{
 		block_matrix_partition_format, option_duration_seconds_format, tracing_level_format,
-		MultiaddrConfig,
+		MultiaddrConfig, SecretKey,
 	},
 };
 use avail_rust::kate_recovery::matrix::Partition;
@@ -40,6 +41,21 @@ pub struct CliOpts {
 	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[arg(long, value_parser = block_matrix_partition_format::parse)]
 	pub block_matrix_partition: Option<Partition>,
+	/// Seed string for libp2p keypair generation
+	#[arg(long)]
+	pub seed: Option<String>,
+	/// P2P port
+	#[arg(short, long)]
+	pub port: Option<u16>,
+	/// Set client alias for use in logs and metrics
+	#[arg(long)]
+	pub client_alias: Option<String>,
+	/// Path to the avail_path, where RocksDB stores its data
+	#[arg(long)]
+	pub avail_path: Option<String>,
+	/// HTTP port
+	#[arg(long)]
+	pub http_server_port: Option<u16>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,6 +83,8 @@ pub struct Config {
 	pub otel: OtelConfig,
 	#[serde(flatten)]
 	pub fat: fat_client::Config,
+	#[serde(flatten)]
+	pub api: APIConfig,
 }
 
 impl Default for Config {
@@ -82,6 +100,7 @@ impl Default for Config {
 			otel: Default::default(),
 			fat: Default::default(),
 			block_processing_delay: Some(Duration::from_secs(20)),
+			api: Default::default(),
 		}
 	}
 }
@@ -104,6 +123,32 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 		config.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		config.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		config.genesis_hash = network.genesis_hash().to_string();
+	}
+
+	if let Some(seed) = &opts.seed {
+		config.libp2p.secret_key = Some(SecretKey::Seed {
+			seed: seed.to_string(),
+		})
+	}
+
+	if let Some(port) = opts.port {
+		config.libp2p.port = port;
+	}
+
+	if let Some(client_alias) = &opts.client_alias {
+		config.client_alias = client_alias.clone()
+	}
+
+	if let Some(avail_path) = &opts.avail_path {
+		config.avail_path = avail_path.to_string();
+	}
+
+	if let Some(http_port) = opts.http_server_port {
+		config.api.http_server_port = http_port;
+	}
+
+	if let Some(http_port) = opts.http_server_port {
+		config.api.http_server_port = http_port;
 	}
 
 	if config.libp2p.bootstraps.is_empty() {
