@@ -121,16 +121,4 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
-            -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}" }}'
-                      
-      - name: Trigger repository dispatch for crawler
-        if: false
-        shell: bash
-        run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
-            ${{ secrets.CRAWLER_BUILD_URL}} \
-            -d "{\"event_type\": \"lc_crawler_build\", \"client_payload\": {\"tag\": \"${{ github.ref_name }}\"}}" \
-            | grep -q "204"
+            -d '{"event_type": "binary_release", "client_payload": {"fatclient_version": "${{ github.ref_name }}" }}'
