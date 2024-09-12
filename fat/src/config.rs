@@ -62,16 +62,20 @@ pub struct CliOpts {
 pub struct Config {
 	/// Genesis hash of the network to be connected to.
 	/// Set to "DEV" to connect to any network.
-	pub genesis_hash: String,
-	/// Log level.
-	#[serde(with = "tracing_level_format")]
-	pub log_level: Level,
-	/// Log format: JSON for `true`, plain text for `false`.
-	pub log_format_json: bool,
-	/// Database file system path.
-	pub avail_path: String,
-	/// Client alias for use in logs and metrics.
-	pub client_alias: String,
+	#[serde(default = "default_genesis_hash")]
+    pub genesis_hash: String,
+    /// Log level.
+    #[serde(default = "default_log_level", with = "tracing_level_format")]
+    pub log_level: Level,
+    /// Log format: JSON for `true`, plain text for `false`.
+	#[serde(default = "default_log_format_json")]
+    pub log_format_json: bool,
+    /// Database file system path.
+    #[serde(default = "default_avail_path")]
+    pub avail_path: String,
+    /// Client alias for use in logs and metrics.
+    #[serde(default = "default_client_alias")]
+    pub client_alias: String,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
 	#[serde(with = "option_duration_seconds_format")]
 	pub block_processing_delay: Option<Duration>,
@@ -90,11 +94,11 @@ pub struct Config {
 impl Default for Config {
 	fn default() -> Self {
 		Self {
-			genesis_hash: "DEV".to_owned(),
-			log_level: Level::INFO,
-			log_format_json: false,
-			avail_path: "avail_path".to_string(),
-			client_alias: "fat".to_string(),
+			genesis_hash: default_genesis_hash(),
+			log_level: default_log_level(),
+			log_format_json: default_log_format_json(),
+			avail_path: default_avail_path(),
+			client_alias: default_client_alias(),
 			libp2p: Default::default(),
 			rpc: Default::default(),
 			otel: Default::default(),
@@ -103,6 +107,26 @@ impl Default for Config {
 			api: Default::default(),
 		}
 	}
+}
+
+fn default_genesis_hash() -> String {
+    "DEV".to_string()
+}
+
+fn default_avail_path() -> String {
+    "avail_path".to_string()
+}
+
+fn default_client_alias() -> String {
+    "fat".to_string()
+}
+
+fn default_log_level() -> Level {
+    Level::INFO
+}
+
+fn default_log_format_json() -> bool {
+    false
 }
 
 pub fn load(opts: &CliOpts) -> Result<Config> {
