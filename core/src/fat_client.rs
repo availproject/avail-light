@@ -65,7 +65,10 @@ pub fn new(
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: 1/1)
-	#[serde(with = "block_matrix_partition_format", default = "default_block_matrix_partition")]
+	#[serde(
+		with = "block_matrix_partition_format",
+		default = "default_block_matrix_partition"
+	)]
 	pub block_matrix_partition: Partition,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	#[serde(default = "default_max_cells_per_rpc")]
@@ -86,15 +89,15 @@ impl Default for Config {
 }
 
 fn default_block_matrix_partition() -> Partition {
-    ENTIRE_BLOCK
+	ENTIRE_BLOCK
 }
 
 fn default_max_cells_per_rpc() -> usize {
-    30
+	30
 }
 
 fn default_query_proof_rpc_parallel_tasks() -> usize {
-    8
+	8
 }
 
 pub const ENTIRE_BLOCK: Partition = Partition {
