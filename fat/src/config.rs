@@ -59,6 +59,7 @@ pub struct CliOpts {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
 	/// Genesis hash of the network to be connected to.
 	/// Set to "DEV" to connect to any network.

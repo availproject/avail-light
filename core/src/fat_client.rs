@@ -63,6 +63,7 @@ pub fn new(
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: 1/1)
 	#[serde(with = "block_matrix_partition_format")]
