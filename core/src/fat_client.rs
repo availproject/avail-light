@@ -63,47 +63,31 @@ pub fn new(
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: 1/1)
-	#[serde(
-		with = "block_matrix_partition_format",
-		default = "default_block_matrix_partition"
-	)]
+	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Partition,
 	/// Maximum number of cells per request for proof queries (default: 30).
-	#[serde(default = "default_max_cells_per_rpc")]
 	pub max_cells_per_rpc: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
-	#[serde(default = "default_query_proof_rpc_parallel_tasks")]
 	pub query_proof_rpc_parallel_tasks: usize,
-}
-
-impl Default for Config {
-	fn default() -> Self {
-		Self {
-			block_matrix_partition: default_block_matrix_partition(),
-			max_cells_per_rpc: default_max_cells_per_rpc(),
-			query_proof_rpc_parallel_tasks: default_query_proof_rpc_parallel_tasks(),
-		}
-	}
-}
-
-fn default_block_matrix_partition() -> Partition {
-	ENTIRE_BLOCK
-}
-
-fn default_max_cells_per_rpc() -> usize {
-	30
-}
-
-fn default_query_proof_rpc_parallel_tasks() -> usize {
-	8
 }
 
 pub const ENTIRE_BLOCK: Partition = Partition {
 	number: 1,
 	fraction: 1,
 };
+
+impl Default for Config {
+	fn default() -> Self {
+		Self {
+			block_matrix_partition: ENTIRE_BLOCK,
+			max_cells_per_rpc: 30,
+			query_proof_rpc_parallel_tasks: 8,
+		}
+	}
+}
 
 #[async_trait]
 impl<T: Database + Sync> Client for FatClient<T> {
