@@ -212,6 +212,7 @@ async fn run() -> Result<()> {
 							observed_addr,
 							..
 						},
+						connection_id: _,
 					} => {
 						debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
 
@@ -225,7 +226,10 @@ async fn run() -> Result<()> {
 						};
 					},
 
-					identify::Event::Sent { peer_id } => {
+					identify::Event::Sent {
+						peer_id,
+						connection_id: _,
+					} => {
 						debug!("Identity Sent event to: {peer_id:?}");
 					},
 

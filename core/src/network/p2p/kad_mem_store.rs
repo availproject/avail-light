@@ -143,7 +143,7 @@ impl RecordStore for MemoryStore {
 	}
 
 	fn add_provider(&mut self, record: ProviderRecord) -> Result<()> {
-		self.providers.add_provider(self.local_key.clone(), record)
+		self.providers.add_provider(self.local_key, record)
 	}
 
 	fn providers(&self, key: &RecordKey) -> Vec<ProviderRecord> {
