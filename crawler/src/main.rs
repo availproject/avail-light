@@ -2,7 +2,7 @@ use avail_light_core::{
 	crawl_client::{self, CrawlMetricValue, OutputEvent as CrawlerEvent},
 	data::{Database, LatestHeaderKey, DB},
 	network::{
-		p2p::{self, extract_block_num, OutputEvent as P2pEvent},
+		p2p::{self, OutputEvent as P2pEvent},
 		rpc, Network,
 	},
 	shutdown::Controller,
@@ -19,9 +19,8 @@ use color_eyre::{
 	Result,
 };
 use config::Config;
-use libp2p::kad::{QueryStats, RecordKey};
 use maintenance::OutputEvent as MaintenanceEvent;
-use std::{collections::HashMap, fs, path::Path, time::Duration};
+use std::{fs, path::Path};
 use tokio::{
 	select,
 	sync::{
@@ -197,55 +196,10 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	Ok(())
 }
 
-#[derive(Debug, Clone)]
-struct BlockStat {
-	total_count: usize,
-	remaining_counter: usize,
-	success_counter: usize,
-	error_counter: usize,
-	time_stat: u64,
-}
-
-impl BlockStat {
-	fn increase_cell_counters(&mut self, cell_number: usize) {
-		self.total_count += cell_number;
-		self.remaining_counter += cell_number;
-	}
-
-	fn increment_success_counter(&mut self) {
-		self.success_counter += 1;
-	}
-
-	fn increment_error_counter(&mut self) {
-		self.error_counter += 1;
-	}
-
-	fn decrement_remaining_counter(&mut self) {
-		self.remaining_counter -= 1;
-	}
-
-	fn is_completed(&self) -> bool {
-		self.remaining_counter == 0
-	}
-
-	fn update_time_stat(&mut self, stats: &QueryStats) {
-		self.time_stat = stats
-			.duration()
-			.as_ref()
-			.map(Duration::as_secs)
-			.unwrap_or_default();
-	}
-
-	fn success_rate(&self) -> f64 {
-		self.success_counter as f64 / self.total_count as f64
-	}
-}
-
 struct CrawlerState {
 	metrics: Metrics,
 	multiaddress: String,
 	metric_attributes: Vec<(String, String)>,
-	active_blocks: HashMap<u32, BlockStat>,
 }
 
 impl CrawlerState {
@@ -258,7 +212,6 @@ impl CrawlerState {
 			metrics,
 			multiaddress,
 			metric_attributes,
-			active_blocks: Default::default(),
 		}
 	}
 
@@ -271,81 +224,6 @@ impl CrawlerState {
 
 		attrs.extend(self.metric_attributes.clone());
 		attrs
-	}
-
-	fn get_block_stat(&mut self, block_num: u32) -> Result<&mut BlockStat> {
-		self.active_blocks
-			.get_mut(&block_num)
-			.ok_or_else(|| eyre!("Can't find block: {} in active block list", block_num))
-	}
-
-	fn handle_new_put_record(&mut self, block_num: u32, records: Vec<libp2p::kad::Record>) {
-		self.active_blocks
-			.entry(block_num)
-			.and_modify(|b| b.increase_cell_counters(records.len()))
-			.or_insert(BlockStat {
-				total_count: records.len(),
-				remaining_counter: records.len(),
-				success_counter: 0,
-				error_counter: 0,
-				time_stat: 0,
-			});
-	}
-
-	fn handle_successful_put_record(
-		&mut self,
-		record_key: RecordKey,
-		query_stats: QueryStats,
-	) -> Result<()> {
-		let block_num = extract_block_num(record_key)?;
-		let block = self.get_block_stat(block_num)?;
-
-		block.increment_success_counter();
-		block.decrement_remaining_counter();
-		block.update_time_stat(&query_stats);
-
-		if block.is_completed() {
-			let success_rate = block.success_rate();
-			let time_stat = block.time_stat as f64;
-
-			info!(
-				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, time_stat
-			);
-			self.metrics
-				.record(MetricValue::DHTPutSuccess(success_rate));
-			self.metrics.record(MetricValue::DHTPutDuration(time_stat));
-		}
-
-		Ok(())
-	}
-
-	fn handle_failed_put_record(
-		&mut self,
-		record_key: RecordKey,
-		query_stats: QueryStats,
-	) -> Result<()> {
-		let block_num = extract_block_num(record_key)?;
-		let block = self.get_block_stat(block_num)?;
-
-		block.increment_error_counter();
-		block.decrement_remaining_counter();
-		block.update_time_stat(&query_stats);
-
-		if block.is_completed() {
-			let success_rate = block.success_rate();
-			let time_stat = block.time_stat as f64;
-
-			info!(
-				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, time_stat
-			);
-			self.metrics
-				.record(MetricValue::DHTPutSuccess(success_rate));
-			self.metrics.record(MetricValue::DHTPutDuration(time_stat));
-		}
-
-		Ok(())
 	}
 
 	async fn handle_events(
@@ -361,12 +239,6 @@ impl CrawlerState {
 					match p2p_event {
 						P2pEvent::Count => {
 							self.metrics.count(MetricCounter::EventLoopEvent, self.attributes());
-						},
-						P2pEvent::IncomingGetRecord => {
-							self.metrics.count(MetricCounter::IncomingGetRecord, self.attributes());
-						},
-						P2pEvent::IncomingPutRecord => {
-							self.metrics.count(MetricCounter::IncomingPutRecord, self.attributes());
 						},
 						P2pEvent::Ping(rtt) => {
 							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
@@ -387,26 +259,7 @@ impl CrawlerState {
 						P2pEvent::OutgoingConnectionError => {
 							self.metrics.count(MetricCounter::OutgoingConnectionErrors, self.attributes());
 						},
-						P2pEvent::PutRecord { block_num, records } => {
-							self.handle_new_put_record(block_num, records);
-						},
-						P2pEvent::PutRecordSuccess {
-							record_key,
-							query_stats,
-						} => {
-							if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
-								error!("Could not handle Successful PUT Record event properly: {error}");
-							};
-						},
-						P2pEvent::PutRecordFailed {
-							record_key,
-							query_stats,
-						} => {
-							if let Err(error) = self.handle_failed_put_record(record_key, query_stats) {
-								error!("Could not handle Failed PUT Record event properly: {error}");
-							};
-						},
-						// KadModeChange Event doesn't need to be handled for Crawler Clients
+						// Crawler doesn't need to handle all P2P events and KAD mode changes
 						_ => {}
 					}
 				}
