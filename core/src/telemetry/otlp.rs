@@ -1,11 +1,6 @@
-use super::{metric, MetricCounter, MetricValue};
+use super::{MetricCounter, MetricValue, Value};
 use crate::{telemetry::MetricName, types::Origin};
-use async_trait::async_trait;
-use color_eyre::{eyre::eyre, Result};
-use libp2p::{
-	kad::{Mode, QueryStats, RecordKey},
-	Multiaddr,
-};
+use color_eyre::Result;
 use opentelemetry::{
 	global,
 	metrics::{Counter, Meter},
@@ -14,74 +9,6 @@ use opentelemetry::{
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
-use tracing::{info, warn};
-
-#[derive(Debug, Clone)]
-pub struct BlockStat {
-	pub total_count: usize,
-	pub remaining_counter: usize,
-	pub success_counter: usize,
-	pub error_counter: usize,
-	pub time_stat: u64,
-}
-
-impl BlockStat {
-	pub fn increase_block_stat_counters(&mut self, cell_number: usize) {
-		self.total_count += cell_number;
-		self.remaining_counter += cell_number;
-	}
-
-	fn increment_success_counter(&mut self) {
-		self.success_counter += 1;
-	}
-
-	fn increment_error_counter(&mut self) {
-		self.error_counter += 1;
-	}
-
-	fn decrement_remaining_counter(&mut self) {
-		self.remaining_counter -= 1;
-	}
-
-	fn is_completed(&self) -> bool {
-		self.remaining_counter == 0
-	}
-
-	fn update_time_stat(&mut self, stats: &QueryStats) {
-		self.time_stat = stats
-			.duration()
-			.as_ref()
-			.map(Duration::as_secs)
-			.unwrap_or_default();
-	}
-
-	fn success_rate(&self) -> f64 {
-		self.success_counter as f64 / self.total_count as f64
-	}
-}
-
-#[derive(PartialEq, Debug)]
-enum DHTKey {
-	Cell(u32, u32, u32),
-	Row(u32, u32),
-}
-
-impl TryFrom<RecordKey> for DHTKey {
-	type Error = color_eyre::Report;
-
-	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
-		match *String::from_utf8(key.to_vec())?
-			.split(':')
-			.map(str::parse::<u32>)
-			.collect::<std::result::Result<Vec<_>, _>>()?
-			.as_slice()
-		{
-			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
-			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
-			_ => Err(eyre!("Invalid DHT key")),
-		}
-	}
-}
 
 // NOTE: Buffers are less space efficient, as opposed to the solution with in place compute.
 // That can be optimized by using dedicated data structure with proper bounds.
@@ -90,30 +17,22 @@ pub struct Metrics {
 	meter: Meter,
 	project_name: String,
 	origin: Origin,
-	mode: Mode,
-	multiaddress: Multiaddr,
 	counters: HashMap<&'static str, Counter<u64>>,
-	attributes: Vec<KeyValue>,
 	metric_buffer: Vec<Record>,
 	counter_buffer: Vec<MetricCounter>,
-	active_blocks: HashMap<u32, BlockStat>,
 }
 
 impl Metrics {
-	fn attributes(&self) -> Vec<KeyValue> {
-		let mut attributes = vec![
-			KeyValue::new("origin", self.origin.to_string()),
-			KeyValue::new("operating_mode", self.mode.to_string()),
-			KeyValue::new("multiaddress", self.multiaddress.to_string()),
-		];
-		attributes.extend(self.attributes.clone());
+	fn map_attributes(&self, attributes: Vec<(String, String)>) -> Vec<KeyValue> {
 		attributes
+			.into_iter()
+			.map(|(k, v)| KeyValue::new(k, v))
+			.collect()
 	}
 
-	fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
+	fn record_u64(&self, name: &'static str, value: u64, attributes: Vec<KeyValue>) -> Result<()> {
 		let gauge_name = format!("{}.{}", name, self.project_name);
 		let instrument = self.meter.u64_observable_gauge(gauge_name).try_init()?;
-		let attributes = self.attributes();
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_u64(&instrument, value, &attributes)
@@ -121,10 +40,9 @@ impl Metrics {
 		Ok(())
 	}
 
-	fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
+	fn record_f64(&self, name: &'static str, value: f64, attributes: Vec<KeyValue>) -> Result<()> {
 		let gauge_name = format!("{}.{}", name, self.project_name);
 		let instrument = self.meter.f64_observable_gauge(gauge_name).try_init()?;
-		let attributes = self.attributes();
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_f64(&instrument, value, &attributes)
@@ -132,31 +50,54 @@ impl Metrics {
 		Ok(())
 	}
 
-	fn extract_block_num(&self, key: RecordKey) -> Result<u32> {
-		key.try_into()
-			.map(|dht_key| match dht_key {
-				DHTKey::Cell(block_num, _, _) | DHTKey::Row(block_num, _) => block_num,
-			})
-			.map_err(|error| {
-				warn!("Unable to cast KAD key to DHT key: {error}");
-				eyre!("Invalid key: {error}")
-			})
+	/// Puts counter to the counter buffer if it is allowed.
+	/// If counter is not buffered, counter is incremented.
+	pub fn count(&mut self, counter: super::MetricCounter, attributes: Vec<(String, String)>) {
+		if !counter.is_allowed(&self.origin) {
+			return;
+		}
+		if !counter.is_buffered() {
+			self.counters[&counter.name()].add(1, &self.map_attributes(attributes));
+			return;
+		}
+		self.counter_buffer.push(counter);
 	}
 
-	fn get_block_stat(&mut self, block_num: u32) -> Result<&mut BlockStat> {
-		self.active_blocks
-			.get_mut(&block_num)
-			.ok_or_else(|| eyre!("Can't find block: {} in active block list", block_num))
+	/// Puts metric to the metric buffer if it is allowed.
+	pub fn record<T>(&mut self, value: T)
+	where
+		T: Value + Into<Record> + Send,
+	{
+		if !value.is_allowed(&self.origin) {
+			return;
+		}
+
+		self.metric_buffer.push(value.into());
 	}
 
-	fn log_and_record_metrics(&mut self, block_num: u32, success_rate: f64, time_stat: f64) {
-		info!(
-			"Cell upload success rate for block {}: {}. Duration: {}",
-			block_num, success_rate, time_stat
-		);
+	/// Calculates counters and average metrics, and flushes buffers to the collector.
+	pub fn flush(&mut self, attributes: Vec<(String, String)>) -> Result<()> {
+		let metric_attributes = self.map_attributes(attributes);
+		let counters = flatten_counters(&self.counter_buffer);
+		self.counter_buffer.clear();
 
-		super::Metrics::record(self, MetricValue::DHTPutSuccess(success_rate));
-		super::Metrics::record(self, MetricValue::DHTPutDuration(time_stat));
+		let (metrics_u64, metrics_f64) = flatten_metrics(&self.metric_buffer);
+		self.metric_buffer.clear();
+
+		for (counter, value) in counters {
+			self.counters[&counter].add(value, &metric_attributes);
+		}
+
+		// TODO: Aggregate errors instead of early return
+		for (metric, value) in metrics_u64.into_iter() {
+			self.record_u64(metric, value, metric_attributes.clone())?;
+		}
+
+		for (metric, value) in metrics_f64.into_iter() {
+			self.record_f64(metric, value, metric_attributes.clone())?;
+		}
+
+		Ok(())
 	}
 }
 
@@ -243,124 +184,6 @@ fn flatten_metrics(buffer: &[Record]) -> (HashMap<&'static str, u64>, HashMap<&'
 	(u64_metrics, f64_metrics)
 }
 
-#[async_trait]
-impl super::Metrics for Metrics {
-	/// Puts counter to the counter buffer if it is allowed.
-	/// If counter is not buffered, counter is incremented.
-	fn count(&mut self, counter: super::MetricCounter) {
-		if !counter.is_allowed(&self.origin) {
-			return;
-		}
-		if !counter.is_buffered() {
-			self.counters[&counter.name()].add(1, &self.attributes());
-			return;
-		}
-		self.counter_buffer.push(counter);
-	}
-
-	/// Puts metric to the metric buffer if it is allowed.
-	fn record<T>(&mut self, value: T)
-	where
-		T: metric::Value + Into<Record> + Send,
-	{
-		if !value.is_allowed(&self.origin) {
-			return;
-		}
-
-		self.metric_buffer.push(value.into());
-	}
-
-	/// Calculates counters and average metrics, and flushes buffers to the collector.
-	fn flush(&mut self) -> Result<()> {
-		let counters = flatten_counters(&self.counter_buffer);
-		self.counter_buffer.clear();
-
-		let (metrics_u64, metrics_f64) = flatten_metrics(&self.metric_buffer);
-		self.metric_buffer.clear();
-
-		let attributes = self.attributes();
-		for (counter, value) in counters {
-			self.counters[&counter].add(value, &attributes);
-		}
-
-		// TODO: Aggregate errors instead of early return
-		for (metric, value) in metrics_u64.into_iter() {
-			self.record_u64(metric, value)?;
-		}
-
-		for (metric, value) in metrics_f64.into_iter() {
-			self.record_f64(metric, value)?;
-		}
-
-		Ok(())
-	}
-
-	fn update_multiaddress(&mut self, value: Multiaddr) {
-		self.multiaddress = value;
-	}
-
-	fn update_operating_mode(&mut self, value: Mode) {
-		self.mode = value;
-	}
-
-	fn handle_new_put_record(&mut self, block_num: u32, records: Vec<libp2p::kad::Record>) {
-		self.active_blocks
-			.entry(block_num)
-			.and_modify(|b| b.increase_block_stat_counters(records.len()))
-			.or_insert(BlockStat {
-				total_count: records.len(),
-				remaining_counter: records.len(),
-				success_counter: 0,
-				error_counter: 0,
-				time_stat: 0,
-			});
-	}
-
-	fn handle_successful_put_record(
-		&mut self,
-		record_key: RecordKey,
-		query_stats: QueryStats,
-	) -> Result<()> {
-		let block_num = self.extract_block_num(record_key)?;
-		let block = self.get_block_stat(block_num)?;
-
-		block.increment_success_counter();
-		block.decrement_remaining_counter();
-		block.update_time_stat(&query_stats);
-
-		if block.is_completed() {
-			let success_rate = block.success_rate();
-			let time_stat = block.time_stat as f64;
-
-			self.log_and_record_metrics(block_num, success_rate, time_stat);
-		}
-
-		Ok(())
-	}
-
-	fn handle_failed_put_record(
-		&mut self,
-		record_key: RecordKey,
-		query_stats: QueryStats,
-	) -> Result<()> {
-		let block_num = self.extract_block_num(record_key)?;
-		let block = self.get_block_stat(block_num)?;
-
-		block.increment_error_counter();
-		block.decrement_remaining_counter();
-		block.update_time_stat(&query_stats);
-
-		if block.is_completed() {
-			let success_rate = block.success_rate();
-			let time_stat = block.time_stat as f64;
-
-			self.log_and_record_metrics(block_num, success_rate, time_stat);
-		}
-
-		Ok(())
-	}
-}
-
 fn init_counters(
 	meter: Meter,
 	origin: &Origin,
@@ -382,7 +205,7 @@ fn init_counters(
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
 	.map(|counter| {
 		let otel_counter_name = format!("{}.{}", project_name, counter.name());
-		// Keep the `static str as the local bufer map key, but change the OTel counter name`
+		// Keep the `static str as the local buffer map key, but change the OTel counter name`
 		(counter.name(), meter.u64_counter(otel_counter_name).init())
 	})
 	.collect()
@@ -409,13 +232,7 @@ impl Default for OtelConfig {
 	}
 }
 
-pub fn initialize(
-	attributes: Vec<(&str, String)>,
-	project_name: String,
-	origin: &Origin,
-	mode: Mode,
-	ot_config: OtelConfig,
-) -> Result<Metrics> {
+pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) -> Result<Metrics> {
 	let export_config = ExportConfig {
 		endpoint: ot_config.ot_collector_endpoint,
 		timeout: Duration::from_secs(10),
@@ -435,24 +252,15 @@ pub fn initialize(
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
 
-	let attributes = attributes
-		.into_iter()
-		.map(|(k, v)| KeyValue::new(k.to_string(), v))
-		.collect();
-
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
 	let counters = init_counters(meter.clone(), origin, project_name.clone());
 	Ok(Metrics {
 		meter,
 		project_name,
 		origin: origin.clone(),
-		mode,
-		multiaddress: Multiaddr::empty(),
-		attributes,
 		counters,
 		metric_buffer: vec![],
 		counter_buffer: vec![],
-		active_blocks: Default::default(),
 	})
 }
 

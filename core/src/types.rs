@@ -406,6 +406,7 @@ pub struct MaintenanceConfig {
 	pub num_cpus_threshold: usize,
 }
 
+#[derive(Clone)]
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
 	pub avail_key_pair: Keypair,

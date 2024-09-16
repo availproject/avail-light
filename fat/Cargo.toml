@@ -11,6 +11,7 @@ avail-rust.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 confy.workspace = true
+libp2p = { workspace = true }
 serde.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
