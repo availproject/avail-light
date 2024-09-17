@@ -114,6 +114,7 @@ jobs:
   compatibility_tests:
     runs-on: self-hosted
     steps:
+      - run: docker --version
       - name: Checkout avail-test repository with submodules
         uses: actions/checkout@v2
         with:
@@ -151,7 +152,7 @@ jobs:
             -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
             https://api.github.com/repos/availproject/avail-light-infra/dispatches \
             -d '{"event_type": "binary_release", "client_payload": {"avail_light_version": "${{ github.ref_name }}" }}'
-                      
+
   # build avail image and publish to dockerhub
   docker_build_push:
     needs: [binary_publish]
