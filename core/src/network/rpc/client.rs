@@ -549,7 +549,7 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let data = Data { 0: data.0.clone() };
 			async move {
-				let mut nonce = self.db.get(SignerNonceKey).unwrap_or(0_u64);
+				let nonce = self.db.get(SignerNonceKey).unwrap_or(0_u64);
 
 				let options = AvailExtrinsicParamsBuilder::new()
 					.nonce(nonce)
@@ -562,21 +562,16 @@ impl<D: Database> Client<D> {
 					.submit_data(data, WaitFor::BlockInclusion, signer, Some(options))
 					.await;
 
-				nonce += 1;
-
 				let submit_response = match data_submission {
 					Ok(success) => Ok(SubmitResponse {
 						block_hash: success.block_hash,
 						hash: success.tx_hash,
 						index: success.tx_index,
 					}),
-					Err(error) => {
-						nonce -= 1;
-						Err(eyre!("{error}"))
-					},
+					Err(error) => Err(eyre!("{error}")),
 				};
 
-				self.db.put(SignerNonceKey, nonce);
+				self.db.put(SignerNonceKey, nonce + 1);
 
 				submit_response
 			}
