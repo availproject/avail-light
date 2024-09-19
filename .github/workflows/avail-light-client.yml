@@ -109,12 +109,14 @@ jobs:
       - name: Run e2e tests
         working-directory: avail-test
         run: |
+          set -eo pipefail
           export PATH="/root/.cargo/bin:$PATH"
           ./run_tests_ci.sh 
 
       - name: Run compat tests
         working-directory: avail-test
         run: |
+          set -eo pipefail
           export PATH="/root/.cargo/bin:$PATH"
           cargo run --package compat-test-tool --bin compat-test-tool
         env:
