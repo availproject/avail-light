@@ -89,25 +89,6 @@ jobs:
           name: ${{ matrix.output_name }}
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
-  binary_publish:
-    needs: [build]
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: binaries
-          pattern: avail-light*
-          merge-multiple: true
-
-      - name: publish binaries
-        uses: svenstaro/upload-release-action@v2
-        with:
-         repo_token: ${{ secrets.PAT_TOKEN }}
-         file: /home/runner/work/avail-light/avail-light/binaries/avail-light*
-         release_name: ${{ github.ref_name }}
-         tag: ${{ github.ref_name }}
-         overwrite: true
-         file_glob: true
 
 
   compatibility_tests:
@@ -139,8 +120,28 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+  binary_publish:
+    needs: [compatibility_tests]
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          pattern: avail-light*
+          merge-multiple: true
+
+      - name: publish binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+         repo_token: ${{ secrets.PAT_TOKEN }}
+         file: /home/runner/work/avail-light/avail-light/binaries/avail-light*
+         release_name: ${{ github.ref_name }}
+         tag: ${{ github.ref_name }}
+         overwrite: true
+         file_glob: true
+
   trigger_deploy_workflow:
-    needs: [binary_publish]
+    needs: [compatibility_tests]
     runs-on: ubuntu-20.04
     steps:
       - name: Trigger repository_dispatch for release
@@ -155,7 +156,7 @@ jobs:
 
   # build avail image and publish to dockerhub
   docker_build_push:
-    needs: [binary_publish]
+    needs: [compatibility_tests]
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout
