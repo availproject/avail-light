@@ -144,7 +144,7 @@ impl EventLoop {
 					},
 				connection_id: _,
 			})) => {
-				trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}.");
+				debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}.");
 				let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
 					Ok(agent) => agent,
 					Err(e) => {
@@ -167,7 +167,7 @@ impl EventLoop {
 				}
 
 				if protocols.contains(&self.swarm.behaviour_mut().kademlia.protocol_names()[0]) {
-					trace!("Adding peer {peer_id} to routing table.");
+					debug!("Adding peer {peer_id} to routing table.");
 					for addr in listen_addrs {
 						self.swarm
 							.behaviour_mut()
@@ -176,7 +176,7 @@ impl EventLoop {
 					}
 				} else {
 					// Block and remove non-Avail peers
-					debug!("Removing and blocking non-avail peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+					debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 					self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 				}
 			},

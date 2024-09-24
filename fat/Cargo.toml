@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-fat"
-version = "0.1.0"
+version = "1.12.0"
 authors.workspace = true
 edition = "2021"
 repository.workspace = true
