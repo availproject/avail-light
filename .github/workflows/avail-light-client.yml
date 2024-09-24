@@ -1,7 +1,7 @@
 name: Avail Light Client Release
 on:
   push:
-    branches:
+    branches-ignore:
       - '**'
     tags:
       - 'avail-light-client-v*.*.*'
