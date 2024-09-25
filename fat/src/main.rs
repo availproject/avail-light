@@ -74,7 +74,8 @@ async fn main() -> Result<()> {
 
 async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
-	info!("Running Avail Light Fat Client v{version}");
+	let rev = env!("GIT_COMMIT_HASH");
+	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using configuration: {config:?}");
 
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
@@ -177,7 +178,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		db: db.clone(),
 		cfg: SharedConfig::default(),
 		identity_cfg,
-		version: format!("v{}", clap::crate_version!()),
+		version: format!("v{version}"),
 		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),

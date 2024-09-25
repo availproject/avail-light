@@ -151,7 +151,9 @@ async fn run() -> Result<()> {
 		warn!("Using default log level: {err}");
 	}
 
-	info!("Relay node starting ...");
+	let version = clap::crate_version!();
+	let rev = env!("GIT_COMMIT_HASH");
+	info!(version, rev, "Running {}", clap::crate_name!());
 
 	tokio::spawn(server::run((&cfg).into()));
 

@@ -73,6 +73,9 @@ async fn run() -> Result<()> {
 		warn!("Using default log level: {err}");
 	}
 
+	let version = clap::crate_version!();
+	let rev = env!("GIT_COMMIT_HASH");
+	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using config: {:?}", cfg);
 
 	let cfg_libp2p: LibP2PConfig = (&cfg).into();

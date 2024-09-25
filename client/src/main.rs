@@ -71,7 +71,8 @@ async fn run(
 	execution_id: Uuid,
 ) -> Result<()> {
 	let version = clap::crate_version!();
-	info!("Running Avail Light Client version: {version}.");
+	let rev = env!("GIT_COMMIT_HASH");
+	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using config: {cfg:?}");
 	info!(
 		"Avail ss58 address: {}, public key: {}",
