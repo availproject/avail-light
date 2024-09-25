@@ -12,7 +12,7 @@ use std::{
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
 pub const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
-pub const IDENTITY_PROTOCOL: &str = "/avail_kad/id/1.0.0";
+pub const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
 pub const IDENTITY_AGENT_BASE: &str = "avail-light-client";
 pub const IDENTITY_AGENT_ROLE: &str = "bootstrap";
 pub const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
