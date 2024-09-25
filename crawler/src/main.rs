@@ -75,7 +75,8 @@ pub async fn main() -> Result<()> {
 
 async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
 	let version = clap::crate_version!();
-	info!("Running Avail Light Client Crawler v{version}");
+	let rev = env!("GIT_COMMIT_HASH");
+	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using configuration: {config:?}");
 
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
