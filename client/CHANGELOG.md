@@ -1,7 +1,8 @@
 # Changelog
 
-## 1.12.0
+## [1.12.0](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.0) - 2024-09-27
 
+- Log version and commit hash on startup
 - Switch to `avail-rust`
 - Move `crawl` feature to separate bin
 - Binary name changed from `avail-light` to `avail-light-client`

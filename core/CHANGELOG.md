@@ -1,7 +1,8 @@
 # Changelog
 
-## [1.12.0]
+## 1.12.0
 
+- Add `nonce` management to the light client
 - Update `libp2p` to v0.54
 - Add `WebRTC` listener with config parameter and CLI option for port setting
 - Remove old crate patches that were required when `subxt` was directly used
@@ -14,12 +15,12 @@
 - Refactor the `/peers/get-multiaddress` endpoint so that it returns all of the peers multi-addresses
 - Fix `operating_mode` metric attribute not switching properly when Kademlia mode changes
 
-## [1.11.1](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.1) - 2024-07-23
+## 1.11.1
 
 - Add `mainnet` CLI option for connecting to Avail mainnet
 - Add `--client-alias` CLI parameter and `client-alias` config parameter for setting human readable alias of the client
 
-## [1.11.0](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.11.0) - 2024-07-18
+## 1.11.0
 
 - Return empty data on `v2/blocks/{block_number}/data` endpoint in case of `incomplete` blocks
 - Remove deprecation notice from `--avail-passphrase` and fix `--avail-suri` CLI parameter usage
