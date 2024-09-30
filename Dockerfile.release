@@ -1,8 +1,8 @@
 FROM --platform=$BUILDPLATFORM ubuntu:20.04
 
 ARG TARGETARCH
-ARG AVAIL_TAG=v1.12.0
-ARG AVAIL_LC_BIN=https://github.com/availproject/avail-light/releases/download/avail-light-client-$AVAIL_TAG/avail-light-linux-$TARGETARCH.tar.gz
+ARG AVAIL_TAG=avail-light-client-v1.12.0
+ARG AVAIL_LC_BIN=https://github.com/availproject/avail-light/releases/download/$AVAIL_TAG/avail-light-linux-$TARGETARCH.tar.gz
 
 WORKDIR /opt/release
 
