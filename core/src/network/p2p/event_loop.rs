@@ -81,6 +81,7 @@ struct EventLoopConfig {
 	// Used for checking protocol version
 	is_fat_client: bool,
 	kad_record_ttl: TimeToLive,
+	manual_inserts_enabled: bool,
 }
 
 #[derive(Debug)]
@@ -197,6 +198,7 @@ impl EventLoop {
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
+				manual_inserts_enabled: cfg.kademlia.manual_kbucket_insert,
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -267,6 +269,22 @@ impl EventLoop {
 					},
 					kad::Event::RoutablePeer { peer, address } => {
 						trace!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
+
+						if self.event_loop_config.manual_inserts_enabled {
+							let local_peer_id = self.swarm.local_peer_id().clone();
+							if let Some(bucket) =
+								self.swarm.behaviour_mut().kademlia.kbucket(local_peer_id)
+							{
+								if bucket.iter().all(|e| *e.node.key.preimage() != peer) {
+									self.swarm
+										.behaviour_mut()
+										.kademlia
+										.add_address(&peer, address);
+								} else {
+									trace!("No k-bucket found for peer {peer:?}");
+								}
+							}
+						}
 					},
 					kad::Event::UnroutablePeer { peer } => {
 						trace!("UnroutablePeer. Peer: {peer:?}");
