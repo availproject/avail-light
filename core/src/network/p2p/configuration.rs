@@ -1,7 +1,11 @@
 use super::{protocol_name, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
-use libp2p::{kad, multiaddr::Protocol, Multiaddr};
+use libp2p::{
+	kad::{self, BucketInserts},
+	multiaddr::Protocol,
+	Multiaddr,
+};
 use serde::{Deserialize, Serialize};
 use std::{
 	borrow::Cow,
@@ -91,6 +95,8 @@ pub struct KademliaConfig {
 	pub operation_mode: KademliaMode,
 	/// Sets the automatic Kademlia server mode switch (default: true)
 	pub automatic_server_mode: bool,
+	/// Enables manual kbucket insert (default: true)
+	pub manual_kbucket_insert: bool,
 }
 
 impl Default for KademliaConfig {
@@ -110,6 +116,7 @@ impl Default for KademliaConfig {
 			max_kad_provided_keys: 1024,
 			operation_mode: KademliaMode::Client,
 			automatic_server_mode: true,
+			manual_kbucket_insert: true,
 		}
 	}
 }
@@ -209,6 +216,11 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
 		.set_record_filtering(kad::StoreInserts::FilterBoth);
+
+	if cfg.kademlia.manual_kbucket_insert {
+		kad_cfg.set_kbucket_inserts(BucketInserts::Manual);
+	}
+
 	kad_cfg
 }
 
