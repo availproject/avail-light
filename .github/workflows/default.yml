@@ -11,71 +11,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_and_test:
-    runs-on: ubuntu-latest # NOTE: if disc space is low after the clean-up, switch to `self-hosted` runner
+
+  formatting:
+    name: cargo fmt
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # Remove everything except large packages, to keep LLVM environment
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          tool-chain: true
-          large-packages: false
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions-rs/toolchain@v1
-        with:
-            toolchain: stable
-            components: rustfmt, clippy, llvm-tools-preview
-            profile: minimal
-            default: true
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v2
-
-      - name: Check `TOML`, `JSON`, and `MarkDown` formatting
+          components: rustfmt
+      - name: Check Rust formatting
+        uses: actions-rust-lang/rustfmt@v1
+      - name: Check TOML, JSON, and MarkDown formatting
         uses: dprint/check@v2.1
 
-      - name: Check code formatting
-        uses: actions-rs/cargo@v1
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          command: fmt
-          args: --check
+          components: clippy
+      - run: cargo clippy --workspace -- -D warnings
 
-      - name: Check clippy lints
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --workspace -- -D warnings
-
-      - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace --benches --tests
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-protoc@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo test --workspace --benches --tests
         env:
           RUSTFLAGS: "-C instrument-coverage"
           LLVM_PROFILE_FILE: "profile-%p-%m.profraw"
-
+      - name: Install grcov
+        run: cargo +stable install --force grcov
       - name: Generate test code coverage report
-        run: |
-          cargo +stable install --force grcov
-          grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
-
+        run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
       - name: Upload test code coverage report to codecov.io
         uses: codecov/codecov-action@v2
         with:
           files: lcov.info
-
       - name: Cleanup
         run: find . -name \*.profraw -type f -exec rm -f {} +
