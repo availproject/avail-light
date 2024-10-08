@@ -9,7 +9,7 @@
 
 `avail-light-bootstrap` is a Bootstrap node for Avail Light Client. Bootstraps act as the initial point of contact for other Avail clients, helping them discover other peers in the network.
 
-These network entry points alow other newly joined nodes to discover new peers and to connect to them.
+These network entry points allow other newly joined nodes to discover new peers and to connect to them.
 
 To start a Bootstrap node, run:
 

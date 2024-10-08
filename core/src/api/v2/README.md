@@ -80,7 +80,7 @@ Content-Type: application/json
 - **app_data** - range of blocks with app data retrieved and verified
 - **historical_sync** - state for historical blocks syncing up to configured block (omitted if historical sync is not configured)
 
-Blocks without data transactions, or blocks that fails to commit to the data, are considered incomplete and commitments will be empty.
+Blocks without data transactions, or blocks that fail to commit to the data, are considered incomplete and commitments will be empty.
 Ranges of **available** and **app_data** blocks can contain **incomplete** blocks.
 
 ### Historical sync
@@ -286,11 +286,11 @@ Content-Type: application/json
 ## **POST** `/v2/p2p/peers/dial`
 
 Dials a peer on the light client P2P network and waits for it's response.
-If the dial goes through, a 200 OK response, the example JSON is stated bellow.
+If the dial goes through, a 200 OK response, the example JSON is stated below.
 
 If an error occurs on the dial 3 types of responses can be returned:
 
-1. 200 OK with the `dial_error` field set, which contains a error type and description.
+1. 200 OK with the `dial_error` field set, which contains an error type and description.
 2. 400 Bad Request if some of the user inputs are not valid
 3. 500 Internal Server Error for other errors
 
@@ -339,7 +339,7 @@ Content-Type: application/json
 ## **POST** `/v2/p2p/peers/get-multiaddress`
 
 Returns a reachable multiaddress for a peer on the light client P2P network.
-If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated bellow.
+If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated below.
 
 In case of an error the following response is received:
 
