@@ -1,19 +1,21 @@
 //! Shared light client structs and enums.
 use crate::network::rpc::Event;
-use crate::utils::{extract_app_lookup, extract_kate};
+use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_rust::{
 	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec,
 	avail_core::DataLookup,
 	kate_recovery::{commitments, matrix::Dimensions},
-	sp_core::{
-		crypto::{self, Ss58Codec},
-		{blake2_256, bytes, ed25519, H256},
-	},
+	sp_core::{bytes, ed25519, H256},
+	AvailHeader,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use avail_rust::{
+	sp_core::crypto::{self, Ss58Codec},
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
 		SecretString, SecretUri,
 	},
-	AvailHeader, Keypair,
+	Keypair,
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::{Decode, Encode, Input};
@@ -23,9 +25,15 @@ use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias as tokio;
+#[cfg(not(target_arch = "wasm32"))]
 use tracing::{info, warn};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -212,8 +220,8 @@ pub mod tracing_level_format {
 
 pub mod option_duration_seconds_format {
 	use super::duration_seconds_format;
+	use super::Duration;
 	use serde::{self, Deserialize, Deserializer, Serializer};
-	use std::time::Duration;
 
 	pub fn serialize<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -235,8 +243,8 @@ pub mod option_duration_seconds_format {
 }
 
 pub mod duration_seconds_format {
+	use super::Duration;
 	use serde::{self, Deserialize, Deserializer, Serializer};
-	use std::time::Duration;
 
 	pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -255,8 +263,8 @@ pub mod duration_seconds_format {
 }
 
 pub mod duration_millis_format {
+	use super::Duration;
 	use serde::{self, Deserialize, Deserializer, Serializer};
-	use std::time::Duration;
 
 	pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -349,8 +357,13 @@ impl From<&MultiaddrConfig> for (PeerId, Multiaddr) {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum SecretKey {
-	Seed { seed: String },
-	Key { key: String },
+	#[cfg(not(target_arch = "wasm32"))]
+	Seed {
+		seed: String,
+	},
+	Key {
+		key: String,
+	},
 }
 
 pub struct Delay(pub Option<Duration>);
@@ -408,6 +421,7 @@ pub struct MaintenanceConfig {
 	pub num_cpus_threshold: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
@@ -418,6 +432,7 @@ pub struct IdentityConfig {
 	pub avail_public_key: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_or_init_suri(path: &str) -> Result<String> {
 	#[derive(Default, Serialize, Deserialize)]
 	struct Config {
@@ -452,6 +467,7 @@ pub fn load_or_init_suri(path: &str) -> Result<String> {
 	Ok(mnemonic.to_string())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl IdentityConfig {
 	pub fn from_suri(suri: String, password: Option<&String>) -> Result<Self> {
 		let mut suri = SecretUri::from_str(&suri)?;

@@ -1,22 +1,39 @@
 use std::collections::HashMap;
 
-use avail_rust::sp_core::{
-	blake2_256,
-	ed25519::{self, Public},
-	Pair, H256,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use avail_rust::sp_core::ed25519;
+use avail_rust::sp_core::{ed25519::Public, H256};
 use codec::Encode;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use crate::types::{GrandpaJustification, SignerMessage};
+use crate::{
+	types::{GrandpaJustification, SignerMessage},
+	utils::blake2_256,
+};
 use color_eyre::{eyre::eyre, Result};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidatorSet {
 	pub set_id: u64,
 	pub validator_set: Vec<Public>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn verify_signature(public_key: [u8; 32], signature: [u8; 64], message: Vec<u8>) -> bool {
+	<ed25519::Pair as avail_rust::sp_core::Pair>::verify(
+		&ed25519::Signature(signature),
+		message,
+		&ed25519::Public(public_key),
+	)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn verify_signature(public_key: [u8; 32], signature: [u8; 64], message: Vec<u8>) -> bool {
+	let public_key = ed25519_compact::PublicKey::from_slice(&public_key).unwrap();
+	let signature = ed25519_compact::Signature::from_slice(&signature).unwrap();
+	public_key.verify(message, &signature).is_ok()
 }
 
 pub fn check_finality(
@@ -47,12 +64,7 @@ pub fn check_finality(
 				&justification.round,
 				&validator_set.set_id, // Set ID is needed here.
 			));
-			let is_ok = <ed25519::Pair as Pair>::verify(
-				&precommit.signature,
-				signed_message,
-				&precommit.id,
-			);
-
+			let is_ok = verify_signature(precommit.id.0, precommit.signature.0, signed_message);
 			let ancestry = confirm_ancestry(
 				&precommit.precommit.target_hash,
 				&justification.commit.target_hash,
