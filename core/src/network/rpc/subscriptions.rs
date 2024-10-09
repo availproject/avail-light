@@ -1,17 +1,17 @@
 use avail_rust::{
 	primitives::block::grandpa::AuthorityId,
-	sp_core::{
-		blake2_256,
-		ed25519::{self, Public},
-	},
+	sp_core::ed25519::{self, Public},
 	AvailHeader,
 };
 use codec::Encode;
 use color_eyre::{eyre::eyre, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, trace};
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use super::{Client, Subscription};
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
 	},
 	finality::{check_finality, ValidatorSet},
 	types::{BlockRange, GrandpaJustification},
-	utils::filter_auth_set_changes,
+	utils::{blake2_256, filter_auth_set_changes},
 };
 
 #[derive(Clone, Debug)]

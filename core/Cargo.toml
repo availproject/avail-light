@@ -4,32 +4,55 @@ version = "1.0.2"
 edition = "2021"
 description = "Avail Light core driving library"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 # Internal deps
 avail-rust = { workspace = true }
 dusk-plonk = { workspace = true }
 
 # 3rd-party
-async-std = { workspace = true }
 async-stream = "0.3.5"
 async-trait = { workspace = true }
 base64 = "0.21.0"
 better-panic = "0.3.0"
-chrono = "0.4.19"
+blake2b_simd = "1.0.2"
+clap = { workspace = true }
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 color-eyre = { workspace = true }
 confy = { workspace = true }
-derive_more = { version = "0.99.17", features = ["from"] }
+derive_more = { version = "1", features = ["from"] }
+dusk-bytes = { version = "0.1.6", default-features = false }
 futures = { workspace = true }
+getrandom = { version = "0.2.15", features = ["js"] }
 hex = { workspace = true }
-hyper = { version = "0.14.23", features = ["full", "http1"] }
 itertools = "0.10.5"
+libp2p-allow-block-list = { workspace = true }
+mockall = "0.11.3"
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0.125"
+smallvec = "1.6.1"
+strip-ansi-escapes = "0.2.0"
+strum = { version = "0.26.3", features = ["derive"] }
+sysinfo = "0.30.12"
+tokio = { workspace = true }
+tokio-retry = "0.3"
+tokio-stream = { workspace = true }
+tokio-util = "0.7.10"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-std = { workspace = true }
+chrono = "0.4.19"
+libp2p = { workspace = true }
+hyper = { version = "0.14.23", features = ["full", "http1"] }
 jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 libc = "0.2.150"
-libp2p = { workspace = true }
-libp2p-allow-block-list = { workspace = true }
-libp2p-webrtc = { version = "=0.8.0-alpha", features = ["tokio"] }
-mockall = "0.11.3"
+libp2p-webrtc = { workspace = true, features = ["tokio"] }
 multihash = { workspace = true }
 num = "0.4.0"
 num_cpus = "1.13.0"
@@ -37,32 +60,28 @@ pcap = "1.1.0"
 rand = "0.8.4"
 rand_chacha = "0.3"
 rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"], optional = true }
-semver = { workspace = true }
-serde = { workspace = true }
-serde_json = "1.0.125"
-smallvec = "1.6.1"
-strip-ansi-escapes = "0.2.0"
-sysinfo = "0.30.12"
 threadpool = "1.8.1"
-tokio = { workspace = true }
-tokio-retry = "0.3"
-tokio-stream = { workspace = true }
-tokio-util = "0.7.10"
-tracing = { workspace = true }
-uuid = { workspace = true }
 void = { workspace = true }
 warp = { workspace = true }
 
 # OpenTelemetry
-clap = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
-strum = { version = "0.26.3", features = ["derive"] }
-tracing-subscriber = { workspace = true }
 
-[dev-dependencies]
-hex-literal = "0.4.0"
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ed25519-compact = "2.1.1"
+thiserror-no-std = "2.0.2"
+rand = { version = "0.8.4", default-features = false }
+libp2p = { workspace = true, features = ["wasm-bindgen"] }
+libp2p-webrtc-websys = { workspace = true }
+wasm-bindgen = "0.2.90"
+wasm-timer = "0.2.5"
+web-time = "1.1.0"
+tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+hex-literal = "0.4.1"
 proptest = "1.0.0"
 test-case = "3.2.1"
 
