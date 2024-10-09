@@ -16,6 +16,10 @@ use color_eyre::{
 };
 use futures::{Stream, TryStreamExt};
 use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
+#[cfg(not(target_arch = "wasm32"))]
+use thiserror::Error;
+#[cfg(target_arch = "wasm32")]
+use thiserror_no_std::Error;
 use tokio::sync::{broadcast::Sender, RwLock};
 use tokio_retry::Retry;
 use tokio_stream::{Elapsed, StreamExt, StreamMap};
@@ -29,7 +33,7 @@ use crate::{
 	types::{Base64, DEV_FLAG_GENHASH},
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 enum RetryError {
 	#[error("No previously connected node found in database")]
 	NoPreviousNode,
@@ -39,7 +43,7 @@ enum RetryError {
 	Shutdown(String),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 enum ClientCreationError {
 	#[error("SDK failed to provide new RPC client: {0}")]
 	SdkFailure(Report),
@@ -96,9 +100,11 @@ impl GenesisHash {
 		}
 
 		let bytes: [u8; 32] = from_hex(hex_str)
-			.map_err(|_| ClientCreationError::InvalidGenesisHash(hex_str.to_string()))?
+			.map_err(|_| Report::msg(ClientCreationError::InvalidGenesisHash(hex_str.to_string())))?
 			.try_into()
-			.map_err(|_| ClientCreationError::InvalidGenesisHash(hex_str.to_string()))?;
+			.map_err(|_| {
+				Report::msg(ClientCreationError::InvalidGenesisHash(hex_str.to_string()))
+			})?;
 
 		Ok(Self::Hash(H256::from(bytes)))
 	}
@@ -188,8 +194,8 @@ impl<D: Database> Client<D> {
 
 		match connection_result {
 			Ok(Ok(ConnectionAttempt { client, node, .. })) => Ok((client, node)),
-			Ok(Err(err)) => Err(RetryError::ConnectionFailed(err).into()),
-			Err(err) => Err(RetryError::Shutdown(err.to_string()).into()),
+			Ok(Err(err)) => Err(Report::msg(RetryError::ConnectionFailed(err))),
+			Err(err) => Err(Report::msg(RetryError::Shutdown(err.to_string()))),
 		}
 	}
 
@@ -222,7 +228,7 @@ impl<D: Database> Client<D> {
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		if nodes.is_empty() {
-			return Err(ClientCreationError::NoNodesAvailable.into());
+			return Err(Report::msg(ClientCreationError::NoNodesAvailable));
 		}
 
 		let mut last_error = None;
@@ -242,10 +248,9 @@ impl<D: Database> Client<D> {
 			}
 		}
 
-		Err(ClientCreationError::AllNodesFailed {
+		Err(Report::msg(ClientCreationError::AllNodesFailed {
 			last_error: last_error.unwrap_or_else(|| eyre!("No error recorded")),
-		}
-		.into())
+		}))
 	}
 
 	// Tries to connect to the provided RPC host, verifies the genesis hash,
@@ -262,13 +267,12 @@ impl<D: Database> Client<D> {
 		match Self::create_rpc_client(&node.host, expected_genesis_hash).await {
 			Ok((client, node)) => {
 				// Execute the provided  RPC function call with the created client
-				let result =
-					f(client.clone())
-						.await
-						.map_err(|e| ClientCreationError::RpcCallFailed {
-							host: node.host.clone(),
-							error: e,
-						})?;
+				let result = f(client.clone()).await.map_err(|e| {
+					Report::msg(ClientCreationError::RpcCallFailed {
+						host: node.host.clone(),
+						error: e,
+					})
+				})?;
 
 				Ok(ConnectionAttempt {
 					client,
@@ -276,11 +280,10 @@ impl<D: Database> Client<D> {
 					result,
 				})
 			},
-			Err(err) => Err(ClientCreationError::ConnectionFailed {
+			Err(err) => Err(Report::msg(ClientCreationError::ConnectionFailed {
 				host: node.host.clone(),
 				error: err,
-			}
-			.into()),
+			})),
 		}
 	}
 
@@ -288,7 +291,7 @@ impl<D: Database> Client<D> {
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
 		let client = SDK::new_insecure(host)
 			.await
-			.map_err(|e| ClientCreationError::SdkFailure(eyre!("{e}")))?;
+			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{e}"))))?;
 
 		// Verify genesis hash
 		let genesis_hash = client.api.genesis_hash();
@@ -297,12 +300,11 @@ impl<D: Database> Client<D> {
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
 
 		if !expected_hash.matches(&genesis_hash) {
-			return Err(ClientCreationError::GenesisHashMismatch {
+			return Err(Report::msg(ClientCreationError::GenesisHashMismatch {
 				host: host.to_string(),
 				expected: expected_genesis_hash.to_string(),
 				found: format!("{:?}", genesis_hash),
-			}
-			.into());
+			}));
 		}
 
 		// Fetch system and runtime information
@@ -311,7 +313,7 @@ impl<D: Database> Client<D> {
 			.system
 			.version()
 			.await
-			.map_err(|e| ClientCreationError::SystemVersionError(e.into()))?;
+			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(e.into())))?;
 
 		let runtime_version = client.api.runtime_version();
 
@@ -338,7 +340,11 @@ impl<D: Database> Client<D> {
 		}
 
 		// If current client failed try to reconnect using stored node
-		let connected_node = self.db.get(RpcNodeKey).ok_or(RetryError::NoPreviousNode)?;
+		let connected_node = self
+			.db
+			.get(RpcNodeKey)
+			.ok_or(RetryError::NoPreviousNode)
+			.map_err(Report::msg)?;
 
 		warn!(
 			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
@@ -372,8 +378,8 @@ impl<D: Database> Client<D> {
 
 		match retry_result {
 			Ok(Ok(result)) => Ok(result),
-			Ok(Err(err)) => Err(RetryError::ConnectionFailed(err).into()),
-			Err(err) => Err(RetryError::Shutdown(err.to_string()).into()),
+			Ok(Err(err)) => Err(Report::msg(RetryError::ConnectionFailed(err))),
+			Err(err) => Err(Report::msg(RetryError::Shutdown(err.to_string()))),
 		}
 	}
 
@@ -407,8 +413,8 @@ impl<D: Database> Client<D> {
 				self.db.put(RpcNodeKey, node);
 				Ok(result)
 			},
-			Ok(Err(err)) => Err(RetryError::ConnectionFailed(err).into()),
-			Err(err) => Err(RetryError::Shutdown(err.to_string()).into()),
+			Ok(Err(err)) => Err(Report::msg(RetryError::ConnectionFailed(err))),
+			Err(err) => Err(Report::msg(RetryError::Shutdown(err.to_string()))),
 		}
 	}
 

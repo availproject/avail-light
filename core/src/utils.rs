@@ -119,9 +119,16 @@ pub fn filter_auth_set_changes(header: &AvailHeader) -> Vec<Vec<(AuthorityId, u6
 }
 
 pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
+	#[cfg(not(target_arch = "wasm32"))]
 	// initialize color-eyre hooks
 	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
 		.display_location_section(true)
+		.display_env_section(true)
+		.into_hooks();
+
+	#[cfg(target_arch = "wasm32")]
+	// initialize color-eyre hooks
+	let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
 		.display_env_section(true)
 		.into_hooks();
 
