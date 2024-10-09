@@ -8,7 +8,7 @@ use avail_rust::{
 		self, backend::legacy::rpc_methods::StorageKey, client::RuntimeVersion, rpc_params,
 		tx::SubmittableExtrinsic, utils::AccountId32,
 	},
-	AvailExtrinsicParamsBuilder, AvailHeader, Data, Keypair, WaitFor, SDK,
+	AvailHeader, Data, Keypair, Nonce, Options, WaitFor, SDK,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -767,13 +767,8 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let data = Data { 0: data.0.clone() };
 			async move {
-				let nonce = self.db.get(SignerNonceKey).unwrap_or(0_u64);
-
-				let options = AvailExtrinsicParamsBuilder::new()
-					.nonce(nonce)
-					.app_id(app_id.0)
-					.build();
-
+				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
+				let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
 				let data_submission = client
 					.tx
 					.data_availability
