@@ -11,7 +11,7 @@ use serde::{de, Deserialize};
 use std::collections::HashSet;
 use tokio::{
 	sync::broadcast,
-	time::{self, timeout},
+	time::{timeout, Duration},
 };
 use tracing::{debug, info};
 
@@ -217,7 +217,7 @@ pub async fn wait_for_finalized_header(
 	mut rpc_events_receiver: broadcast::Receiver<Event>,
 	timeout_seconds: u64,
 ) -> Result<AvailHeader> {
-	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
+	let timeout_seconds = Duration::from_secs(timeout_seconds);
 	match timeout(timeout_seconds, rpc_events_receiver.recv()).await {
 		Ok(Ok(rpc::Event::HeaderUpdate { header, .. })) => Ok(header),
 		Ok(Err(error)) => Err(eyre!("Failed to receive finalized header: {error}")),

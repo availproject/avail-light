@@ -22,6 +22,10 @@ use std::{
 	sync::Arc,
 	task::{Context, Poll},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use thiserror::Error;
+#[cfg(target_arch = "wasm32")]
+use thiserror_no_std::Error;
 use tokio::sync::RwLock;
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
@@ -34,7 +38,7 @@ use crate::{
 	types::{Base64, Node, DEV_FLAG_GENHASH},
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 enum RetryError {
 	#[error("No previously connected node found in database")]
 	NoPreviousNode,
@@ -44,7 +48,7 @@ enum RetryError {
 	Shutdown(String),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 enum ClientCreationError {
 	#[error("SDK failed to provide new RPC client: {0}")]
 	SdkFailure(Report),

@@ -258,8 +258,7 @@ mod tests {
 			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, RpcNodeKey,
 			VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		},
-		network::rpc::Node,
-		types::BlockRange,
+		types::{BlockRange, Node},
 	};
 	use async_trait::async_trait;
 	use avail_rust::{

@@ -29,13 +29,16 @@ color-eyre = "0.6.2"
 confy = "0.5.1"
 hex = "0.4.3"
 rand = "0.8.4"
-libp2p = { version = "0.54", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
-libp2p-allow-block-list = "0.4"
-libp2p-webrtc = { version = "=0.8.0-alpha", features = ["tokio"] }
+libp2p = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+libp2p-allow-block-list = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3" }
+libp2p-webrtc = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3" }
+libp2p-webrtc-websys = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3" }
+# libp2p = { version = "0.54", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+# libp2p-allow-block-list = "0.4"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.35", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }
@@ -60,3 +63,9 @@ incremental = false
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+[patch.crates-io]
+# Patching sp-io since some dependencies references patched and some non-patched versions,
+# and we need to specify `disable-allocator` feature to enable wasm compilation.
+# Patch needs to match patched tag of dependencies, for feature toggle to be applied.
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-10" }
