@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-fat"
-version = "1.12.2"
+version = "1.12.3"
 authors.workspace = true
 build = "../build.rs"
 edition = "2021"

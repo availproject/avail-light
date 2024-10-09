@@ -1,4 +1,6 @@
 use color_eyre::{eyre::eyre, Result};
+#[cfg(target_arch = "wasm32")]
+use fluvio_wasm_timer::Interval;
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
@@ -9,25 +11,31 @@ use libp2p::{
 		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, Mode, PutRecordOk,
 		QueryId, QueryResult, RecordKey,
 	},
-	mdns,
 	multiaddr::Protocol,
 	ping,
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
 		SwarmEvent,
 	},
-	upnp, Multiaddr, PeerId, Swarm,
+	Multiaddr, PeerId, Swarm,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::{mdns, upnp};
 use rand::seq::SliceRandom;
-use std::{collections::HashMap, str::FromStr, time::Duration};
-use tokio::{
-	sync::{
-		mpsc::{UnboundedReceiver, UnboundedSender},
-		oneshot,
-	},
-	time::{self, Instant},
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+use std::{collections::HashMap, str::FromStr};
+use tokio::sync::{
+	mpsc::{UnboundedReceiver, UnboundedSender},
+	oneshot,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::{interval, Instant};
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias as tokio;
 use tracing::{debug, error, info, trace, warn};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 use super::{
 	configuration::LibP2PConfig, Behaviour, BehaviourEvent, Command, OutputEvent, QueryChannel,
@@ -194,9 +202,14 @@ impl EventLoop {
 			.delay_token()
 			.expect("There should not be any shutdowns at the begging of the P2P Event Loop");
 		let mut event_counter = EventCounter::new(30);
-		let mut report_timer = time::interval(event_counter.report_interval);
+
+		#[cfg(not(target_arch = "wasm32"))]
+		let mut report_timer = interval(event_counter.report_interval);
+		#[cfg(target_arch = "wasm32")]
+		let mut report_timer = Interval::new(event_counter.report_interval);
 
 		loop {
+			#[cfg(not(target_arch = "wasm32"))]
 			tokio::select! {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite")).await;
@@ -213,6 +226,34 @@ impl EventLoop {
 					},
 				},
 				_ = report_timer.tick() => {
+					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
+					event_counter.reset_counter();
+				},
+				// if the shutdown was triggered,
+				// break the loop immediately, proceed to the cleanup phase
+				_ = self.shutdown.triggered_shutdown() => {
+					info!("Shutdown triggered, exiting the network event loop");
+					break;
+				}
+			}
+
+			#[cfg(target_arch = "wasm32")]
+			tokio::select! {
+				event = self.swarm.next() => {
+					self.handle_event(event.expect("Swarm stream should be infinite")).await;
+					event_counter.add_event();
+
+					_ = self.event_sender.send(OutputEvent::Count);
+				},
+				command = self.command_receiver.recv() => match command {
+					Some(c) => _ = (c)(&mut self),
+					//
+					None => {
+						warn!("Command channel closed, exiting the network event loop");
+						break;
+					},
+				},
+				_ = report_timer.next() => {
 					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
 				},
@@ -422,6 +463,7 @@ impl EventLoop {
 					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 				},
 			},
+			#[cfg(not(target_arch = "wasm32"))]
 			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
 				match event {
 					mdns::Event::Discovered(addrs_list) => {
@@ -482,6 +524,7 @@ impl EventLoop {
 					_ = self.event_sender.send(OutputEvent::Ping(rtt));
 				}
 			},
+			#[cfg(not(target_arch = "wasm32"))]
 			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
 				upnp::Event::NewExternalAddr(addr) => {
 					trace!("[UPnP] New external address: {addr}");

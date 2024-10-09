@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-core"
-version = "1.0.5"
+version = "1.1.0"
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -13,37 +13,44 @@ avail-rust = { workspace = true }
 dusk-plonk = { workspace = true }
 
 # 3rd-party
-better-panic = "0.3.0"
-codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
-color-eyre = { workspace = true }
-derive_more = { version = "1", features = ["from"] }
-dusk-bytes = "0.1.7"
-futures = { workspace = true }
-getrandom = { version = "0.2.15", features = ["js"] }
-itertools = "0.10.5"
-strip-ansi-escapes = "0.2.0"
-tokio = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-async-std = { workspace = true }
 async-stream = "0.3.5"
 async-trait = { workspace = true }
 base64 = "0.21.0"
-chrono = "0.4.19"
-confy = { workspace = true }
+better-panic = "0.3.0"
+clap = { workspace = true }
+codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 convert_case = "0.6.0"
-derive_more = { version = "1", features = ["from"] }
+derive_more = { version = "1", features = ["from", "display"] }
+dusk-bytes = "0.1.7"
 futures = { workspace = true }
+getrandom = { version = "0.2.15", features = ["js"] }
 hex = { workspace = true }
+itertools = "0.10.5"
+libp2p-allow-block-list = { workspace = true }
+mockall = "0.11.3"
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0.125"
+smallvec = "1.6.1"
+strip-ansi-escapes = "0.2.0"
+strum = { version = "0.26.3", features = ["derive"] }
+sysinfo = "0.30.12"
+tokio = { workspace = true }
+tokio-retry = "0.3"
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-std = { workspace = true }
+color-eyre = { workspace = true, default-features = true }
+confy = { workspace = true }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 libc = "0.2.150"
 libp2p = { workspace = true }
-libp2p-allow-block-list = { workspace = true }
-libp2p-webrtc = { version = "=0.8.0-alpha", features = ["tokio"] }
-mockall = "0.11.3"
+libp2p-webrtc = { workspace = true, features = ["tokio"] }
 multihash = { workspace = true }
 num = "0.4.0"
 num_cpus = "1.13.0"
@@ -51,34 +58,32 @@ pcap = "1.1.0"
 rand = { workspace = true, default-features = true }
 rand_chacha = "0.3"
 rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"], optional = true }
-semver = { workspace = true }
-serde = { workspace = true }
-serde_json = "1.0.125"
-smallvec = "1.6.1"
 strip-ansi-escapes = "0.2.0"
-sysinfo = "0.30.12"
 thiserror = "1.0.64"
 threadpool = "1.8.1"
-tokio-retry = "0.3"
-tokio-stream = { workspace = true }
 tokio-util = "0.7.10"
 tracing = { workspace = true }
-uuid = { workspace = true }
+tracing-subscriber = { workspace = true }
 void = { workspace = true }
 warp = { workspace = true }
 
 # OpenTelemetry
-clap = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
-strum = { version = "0.26.3", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd = "1.0.2"
+color-eyre = { workspace = true }
+ed25519-compact = "2.1.1"
+# NOTE: This is used due bug explained at: https://github.com/tomaka/wasm-timer/pull/13
+fluvio-wasm-timer = "0.2.5"
+libp2p = { workspace = true, features = ["wasm-bindgen"] }
+libp2p-webrtc-websys = { workspace = true }
 rand = { workspace = true, features = ["std_rng"] }
 thiserror-no-std = "2.0.2"
 tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
+wasm-bindgen = "0.2.90"
 web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

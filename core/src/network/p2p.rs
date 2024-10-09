@@ -8,23 +8,35 @@ use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
 	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
-	mdns, noise, ping, relay,
+	noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, upnp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
+	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::{mdns, tcp, upnp};
+#[cfg(not(target_arch = "wasm32"))]
 use libp2p_webrtc as webrtc;
+#[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
+#[cfg(not(target_arch = "wasm32"))]
 use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::Ipv4Addr, str::FromStr, time::Duration};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+use std::{fmt, net::Ipv4Addr, str::FromStr};
 use tokio::sync::{
 	mpsc::{self, UnboundedReceiver},
 	oneshot,
 };
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias as tokio;
 use tracing::{info, warn};
+#[cfg(target_arch = "wasm32")]
+use web_time::Duration;
 
 #[cfg(feature = "network-analysis")]
+#[cfg(not(target_arch = "wasm32"))]
 pub mod analyzer;
 mod client;
 pub mod configuration;
@@ -170,10 +182,12 @@ pub struct Behaviour {
 	kademlia: kad::Behaviour<Store>,
 	identify: identify::Behaviour,
 	ping: ping::Behaviour,
+	#[cfg(not(target_arch = "wasm32"))]
 	mdns: mdns::tokio::Behaviour,
 	auto_nat: autonat::Behaviour,
 	relay_client: relay::client::Behaviour,
 	dcutr: dcutr::Behaviour,
+	#[cfg(not(target_arch = "wasm32"))]
 	upnp: upnp::tokio::Behaviour,
 	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
 }
@@ -274,7 +288,11 @@ async fn build_swarm(
 
 	// build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
+	#[cfg(not(target_arch = "wasm32"))]
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
+
+	#[cfg(target_arch = "wasm32")]
+	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_wasm_bindgen();
 
 	let mut swarm;
 
@@ -288,12 +306,25 @@ async fn build_swarm(
 			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
 			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, kad_cfg),
 			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
+			#[cfg(not(target_arch = "wasm32"))]
 			mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
+			#[cfg(not(target_arch = "wasm32"))]
 			upnp: upnp::tokio::Behaviour::default(),
 			blocked_peers: allow_block_list::Behaviour::default(),
 		})
 	};
+	#[cfg(target_arch = "wasm32")]
+	{
+		use libp2p_webrtc_websys as webrtc;
+		swarm = tokio_swarm
+			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(&key)))?
+			.with_relay_client(noise::Config::new, yamux::Config::default)?
+			.with_behaviour(behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
+			.build();
+	}
 
+	#[cfg(not(target_arch = "wasm32"))]
 	if cfg.ws_transport_enable {
 		swarm = tokio_swarm
 			.with_websocket(noise::Config::new, yamux::Config::default)
@@ -340,6 +371,7 @@ async fn build_swarm(
 // From such generated keypair it derives multihash identifier of the local peer.
 fn keypair(secret_key: &SecretKey) -> Result<identity::Keypair> {
 	let keypair = match secret_key {
+		#[cfg(not(target_arch = "wasm32"))]
 		// If seed is provided, generate secret key from seed
 		SecretKey::Seed { seed } => {
 			let seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
