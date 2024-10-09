@@ -26,13 +26,15 @@ anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.73"
 clap = { version = "4.4.4", features = ["derive", "cargo"] }
-color-eyre = "0.6.2"
+color-eyre = { version = "0.6.2", default-features = false }
 confy = "0.5.1"
 hex = "0.4.3"
 rand = { version = "0.8.5", default-features = false }
-libp2p = { version = "0.54", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
-libp2p-allow-block-list = "0.4"
-libp2p-webrtc = { version = "=0.8.0-alpha", features = ["tokio"] }
+# TODO: Replace with released libp2p version once webrtc-websys compilation issue is resolved
+libp2p = { git = "https://github.com/libp2p/rust-libp2p", rev = "aa9317fbdd88cc4c9a39ea608fa1d57e022297fc", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+libp2p-allow-block-list = { git = "https://github.com/libp2p/rust-libp2p", rev = "aa9317fbdd88cc4c9a39ea608fa1d57e022297fc" }
+libp2p-webrtc = { git = "https://github.com/libp2p/rust-libp2p", rev = "aa9317fbdd88cc4c9a39ea608fa1d57e022297fc" }
+libp2p-webrtc-websys = { git = "https://github.com/libp2p/rust-libp2p", rev = "aa9317fbdd88cc4c9a39ea608fa1d57e022297fc" }
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
@@ -61,3 +63,9 @@ incremental = false
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+[patch.crates-io]
+# Patching sp-io since some dependencies references patched and some non-patched versions,
+# and we need to specify `disable-allocator` feature to enable wasm compilation.
+# Patch needs to match patched tag of dependencies, for feature toggle to be applied.
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-10" }

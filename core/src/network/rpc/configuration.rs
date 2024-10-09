@@ -1,7 +1,10 @@
 use crate::types::duration_millis_format;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use tokio_retry::strategy::{jitter, ExponentialBackoff, FibonacciBackoff};
+#[cfg(target_arch = "wasm32")]
+use web_time::Duration;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]

@@ -16,10 +16,15 @@ use libp2p::{
 	swarm::dial_opts::{DialOpts, PeerCondition},
 	Multiaddr, PeerId,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 use sysinfo::System;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias as tokio;
 use tracing::{debug, info, trace, warn};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,

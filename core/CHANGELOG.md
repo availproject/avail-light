@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+
+- Enable WASM compilation of the network, light_client and related mods
+
 ## [1.0.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.0.5) - 2024-11-29
 
 - Rename `MultiaddrConfig` type to `PeerAddress` for better clarity

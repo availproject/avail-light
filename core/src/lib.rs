@@ -6,17 +6,13 @@ pub mod app_client;
 #[cfg(feature = "crawl")]
 #[cfg(not(target_arch = "wasm32"))]
 pub mod crawl_client;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod data;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fat_client;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod finality;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod light_client;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod maintenance;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod network;
 pub mod proof;
 pub mod shutdown;
@@ -26,6 +22,5 @@ pub mod sync_client;
 pub mod sync_finality;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod telemetry;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod types;
 pub mod utils;

@@ -8,12 +8,16 @@ use color_eyre::{eyre::eyre, Result};
 use configuration::RPCConfig;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, time::Instant};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+use std::{collections::HashSet, fmt::Display};
 use tokio::{
 	sync::broadcast::{Receiver, Sender},
-	time::{self, timeout},
+	time::{timeout, Duration},
 };
 use tracing::{debug, info};
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 mod client;
 pub mod configuration;
@@ -273,7 +277,7 @@ pub async fn wait_for_finalized_header(
 	mut rpc_events_receiver: Receiver<OutputEvent>,
 	timeout_seconds: u64,
 ) -> Result<AvailHeader> {
-	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
+	let timeout_seconds = Duration::from_secs(timeout_seconds);
 
 	let result = timeout(timeout_seconds, async {
 		while let Ok(event) = rpc_events_receiver.recv().await {

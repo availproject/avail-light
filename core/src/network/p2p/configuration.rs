@@ -3,12 +3,15 @@ use crate::network::p2p::MemoryStoreConfig;
 use crate::types::{duration_seconds_format, KademliaMode, PeerAddress, SecretKey};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
 use std::{
 	borrow::Cow,
 	net::Ipv4Addr,
 	num::{NonZeroU8, NonZeroUsize},
-	time::Duration,
 };
+#[cfg(target_arch = "wasm32")]
+use web_time::Duration;
 
 /// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
 #[derive(Clone, Serialize, Deserialize, Debug)]
