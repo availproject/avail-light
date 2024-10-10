@@ -56,7 +56,9 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace -- -D warnings
+          # TODO: Enable avail-light-web once issue with rocksdb feature being applied
+          # accross the workspace is resolved
+          args: --workspace --exclude avail-light-web -- -D warnings
 
       - name: Run tests
         uses: actions-rs/cargo@v1

@@ -19,14 +19,18 @@
 
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
-	sp_core::blake2_256,
 	AvailHeader, H256,
 };
 use codec::Encode;
 use color_eyre::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias as tokio;
 use tracing::{error, info};
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use crate::{
 	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
@@ -36,9 +40,10 @@ use crate::{
 	},
 	shutdown::Controller,
 	types::{self, BlockRange, ClientChannels, Delay},
-	utils::{calculate_confidence, extract_kate},
+	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
+#[derive(Debug)]
 pub enum OutputEvent {
 	RecordBlockProcessingDelay(f64),
 	CountSessionBlocks,
