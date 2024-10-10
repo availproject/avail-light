@@ -126,12 +126,20 @@ async fn run() -> Result<()> {
 		}
 	});
 
-	// Listen on all interfaces with TCP
+	let addrs = vec![
+		construct_multiaddress(cfg.ws_transport_enable, cfg.port),
+		webrtc_multiaddress(cfg.webrtc_port),
+	];
+
+	// Listen on all interfaces
 	network_client
-		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
+		.start_listening(addrs)
 		.await
 		.context("Unable to create P2P listener.")?;
-	info!("Started listening for TCP traffic on port: {:?}.", cfg.port);
+	info!(
+		"TCP listener started on port {}. WebRTC listening on port {}.",
+		cfg.port, cfg.webrtc_port
+	);
 
 	info!("Bootstrap node starting ...");
 	// add bootstrap nodes, if provided
@@ -167,4 +175,10 @@ fn construct_multiaddress(is_websocket: bool, port: u16) -> Multiaddr {
 	}
 
 	tcp_multiaddress
+}
+
+fn webrtc_multiaddress(webrtc_port: u16) -> Multiaddr {
+	Multiaddr::from(Ipv4Addr::UNSPECIFIED)
+		.with(Protocol::Udp(webrtc_port))
+		.with(Protocol::WebRTCDirect)
 }
