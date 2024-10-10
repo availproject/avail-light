@@ -271,9 +271,11 @@ impl EventLoop {
 						trace!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
 
 						if self.event_loop_config.manual_inserts_enabled {
-							let local_peer_id = self.swarm.local_peer_id().clone();
-							if let Some(bucket) =
-								self.swarm.behaviour_mut().kademlia.kbucket(local_peer_id)
+							if let Some(bucket) = self
+								.swarm
+								.behaviour_mut()
+								.kademlia
+								.kbucket(*self.swarm.local_peer_id())
 							{
 								if bucket.iter().all(|e| *e.node.key.preimage() != peer) {
 									self.swarm
