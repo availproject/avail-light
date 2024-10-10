@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use tokio::sync::{mpsc, oneshot};
 
@@ -12,18 +13,25 @@ impl Client {
 		Self { command_sender }
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::StartListening {
-				addr,
-				response_sender,
-			})
-			.await
-			.context("Command receiver should not be dropped")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped")?
+	pub async fn start_listening(&self, addrs: Vec<Multiaddr>) -> Result<()> {
+		let futures = addrs.into_iter().map(|addr| {
+			let command_sender = self.command_sender.clone();
+			async move {
+				let (response_sender, response_receiver) = oneshot::channel();
+				command_sender
+					.send(Command::StartListening {
+						addr,
+						response_sender,
+					})
+					.await
+					.context("Command receiver should not be dropped")?;
+				response_receiver.await.context("Sender not to be dropped")
+			}
+		});
+
+		try_join_all(futures).await?;
+
+		Ok(())
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, multiaddr: Multiaddr) -> Result<()> {
