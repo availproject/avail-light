@@ -8,7 +8,7 @@ use avail_rust::{
 		self, backend::legacy::rpc_methods::StorageKey, client::RuntimeVersion, rpc_params,
 		tx::SubmittableExtrinsic, utils::AccountId32,
 	},
-	AvailExtrinsicParamsBuilder, AvailHeader, Data, Keypair, WaitFor, SDK,
+	AvailHeader, Data, Keypair, Nonce, Options, WaitFor, SDK,
 };
 use color_eyre::{
 	eyre::{eyre, Context},
@@ -21,13 +21,12 @@ use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
+use super::{configuration::RetryConfig, Nodes, Subscription, WrappedProof};
 use crate::{
-	api::v2::types::Base64,
 	consts::ExpectedNodeVariant,
 	data::{Database, RpcNodeKey, SignerNonceKey},
 	shutdown::Controller,
-	types::DEV_FLAG_GENHASH,
+	types::{Base64, Node, DEV_FLAG_GENHASH},
 };
 
 #[derive(Clone)]
@@ -549,13 +548,8 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let data = Data { 0: data.0.clone() };
 			async move {
-				let nonce = self.db.get(SignerNonceKey).unwrap_or(0_u64);
-
-				let options = AvailExtrinsicParamsBuilder::new()
-					.nonce(nonce)
-					.app_id(app_id.0)
-					.build();
-
+				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
+				let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
 				let data_submission = client
 					.tx
 					.data_availability

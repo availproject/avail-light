@@ -1,7 +1,4 @@
-use crate::{
-	network::rpc::Node as RpcNode,
-	types::{BlockRange, Uuid},
-};
+use crate::types::{BlockRange, Node as RpcNode, Uuid};
 use avail_rust::{sp_core::ed25519, AvailHeader};
 use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -300,7 +297,7 @@ impl RecordKey for P2PKeypairKey {
 pub struct SignerNonceKey;
 
 impl RecordKey for SignerNonceKey {
-	type Type = u64;
+	type Type = u32;
 
 	fn space(&self) -> Option<&'static str> {
 		Some(APP_STATE_CF)
