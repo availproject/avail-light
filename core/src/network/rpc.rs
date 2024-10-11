@@ -140,25 +140,24 @@ impl Nodes {
 		}
 	}
 
-	/// Shuffles the list of available Nodes, excluding the host used for the current Subxt client creation.
+	/// Shuffles the list of available Nodes, partitioning the host used for the current Subxt client creation.
 	///
-	/// This method returns a new shuffled list of Nodes from the original list, excluding the Node
+	/// This method returns a new shuffled list of Nodes from the original list, and the Node
 	/// associated with the current Subxt client host.
-	/// The purpose of this exclusion is to prevent accidentally reconnecting to the same host in case of errors.
+	/// The purpose of this partitioning is to prevent accidentally reconnecting to the same host in case of errors.
 	/// If there's a need to switch to a different host, the shuffled list provides a randomized order of available Nodes.
-	fn shuffle(&self, current_host: String) -> Vec<Node> {
-		if self.list.len() <= 1 {
-			return self.list.clone();
+	fn shuffle(&self, current_host: &str) -> (Vec<Node>, Vec<Node>) {
+		let nodes = self.list.clone();
+
+		if nodes.len() <= 1 {
+			return (nodes, vec![]);
 		}
 
-		let mut list = self
-			.list
-			.iter()
-			.filter(|&Node { host, .. }| host != &current_host)
-			.cloned()
-			.collect::<Vec<Node>>();
-		list.shuffle(&mut thread_rng());
-		list
+		let (mut first, second): (Vec<_>, Vec<_>) = nodes
+			.into_iter()
+			.partition(|Node { host, .. }| host != current_host);
+		first.shuffle(&mut thread_rng());
+		(first, second)
 	}
 
 	pub fn iter(&self) -> NodesIterator {

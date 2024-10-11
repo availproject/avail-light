@@ -59,8 +59,8 @@ impl<D: Database> Client<D> {
 		let (client, node, _) = match shutdown
 			.with_cancel(Retry::spawn(retry_config.clone(), || async {
 				Self::try_connect_and_execute(
-					nodes.shuffle(Default::default()),
-					ExpectedNodeVariant::default(),
+					&nodes.shuffle(Default::default()).0,
+					&ExpectedNodeVariant::default(),
 					expected_genesis_hash,
 					|_| futures::future::ok(()),
 				)
@@ -92,7 +92,7 @@ impl<D: Database> Client<D> {
 
 	async fn create_subxt_client(
 		host: &str,
-		expected_node: ExpectedNodeVariant,
+		expected_node: &ExpectedNodeVariant,
 		expected_genesis_hash: &str,
 	) -> Result<(SDK, Node)> {
 		let client = SDK::new_insecure(host)
@@ -143,8 +143,8 @@ impl<D: Database> Client<D> {
 	}
 
 	async fn try_connect_and_execute<T, F, Fut>(
-		nodes: Vec<Node>,
-		expected_node: ExpectedNodeVariant,
+		nodes: &[Node],
+		expected_node: &ExpectedNodeVariant,
 		expected_genesis_hash: &str,
 		mut f: F,
 	) -> Result<(Arc<SDK>, Node, T)>
@@ -155,13 +155,12 @@ impl<D: Database> Client<D> {
 		// go through the provided list of Nodes to try and find and appropriate one,
 		// after a successful connection, try to execute passed function call
 		for Node { host, .. } in nodes.iter() {
-			let result =
-				Self::create_subxt_client(host, expected_node.clone(), expected_genesis_hash)
-					.and_then(move |(client, node)| {
-						let client = Arc::new(client);
-						f(client.clone()).map_ok(move |res| (client, node, res))
-					})
-					.await;
+			let result = Self::create_subxt_client(host, expected_node, expected_genesis_hash)
+				.and_then(move |(client, node)| {
+					let client = Arc::new(client);
+					f(client.clone()).map_ok(move |res| (client, node, res))
+				})
+				.await;
 
 			match result {
 				Err(error) => warn!(host, %error, "Skipping connection with this node"),
@@ -200,49 +199,74 @@ impl<D: Database> Client<D> {
 				))
 			},
 		}
+
 		// if retries were not successful, find another Node where this could still be done
-		if let Some(connected_node) = self.db.get(RpcNodeKey) {
-			warn!(
-				"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
-				connected_node.host
-			);
+		let Some(connected_node) = self.db.get(RpcNodeKey) else {
+			return Err(eyre!(
+				"Couldn't find a persisted Node that was connected previously."
+			));
+		};
 
-			// shuffle nodes, if possible
-			let nodes = self.nodes.shuffle(connected_node.host);
-			// go through available Nodes, try to connect, Retry connecting if needed
-			let (client, node, result) = match self
-				.shutdown
-				.with_cancel(Retry::spawn(self.retry_config.clone(), || async {
-					let nodes = nodes.clone();
-					Self::try_connect_and_execute(
-						nodes,
-						ExpectedNodeVariant::default(),
-						&self.expected_genesis_hash,
-						move |client| f(client).map_err(Report::from),
-					)
-					.await
-				}))
-				.await
-			{
-				Ok(res) => res?,
-				Err(err) => {
-					return Err(eyre!(
-					"RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
-				))
-				},
-			};
+		warn!(
+			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
+			connected_node.host
+		);
 
-			// retries gave results,
-			// update db with currently connected Node and keep a reference to the created Client
-			*self.subxt_client.write().await = client;
-			self.db.put(RpcNodeKey, node);
+		let expected_node = &ExpectedNodeVariant::default();
+		let expected_genesis_hash = &self.expected_genesis_hash;
 
-			return Ok(result);
-		}
+		// shuffle nodes, if possible
+		let (nodes, previous) = self.nodes.shuffle(&connected_node.host);
 
-		Err(eyre!(
-			"Couldn't find a persisted Node that was connected previously."
-		))
+		let nodes_fn = || async {
+			let f = move |client| f(client).map_err(Report::from);
+			Self::try_connect_and_execute(&nodes, expected_node, expected_genesis_hash, f).await
+		};
+
+		// go through available Nodes, try to connect, Retry connecting if needed
+		match self
+                        .shutdown
+                        .with_cancel(Retry::spawn(self.retry_config.clone(), nodes_fn))
+                        .await
+                {
+                        Ok(Ok((client, node, result))) => {
+                                // retries gave results,
+                                // update db with currently connected Node and keep a reference to the created Client
+                                *self.subxt_client.write().await = client;
+                                self.db.put(RpcNodeKey, node);
+                                return Ok(result);
+                        },
+                        Ok(_) => {},
+                        Err(err) => {
+                                return Err(eyre!(
+                                        "RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
+                                ))
+                        },
+                };
+
+		let previous_fn = || async {
+			let f = move |client| f(client).map_err(Report::from);
+			Self::try_connect_and_execute(&previous, expected_node, expected_genesis_hash, f).await
+		};
+
+		// go through other Nodes, try to connect, Retry connecting if needed
+		match self
+                        .shutdown
+                        .with_cancel(Retry::spawn(self.retry_config.clone(), previous_fn))
+                        .await
+                {
+                        Ok(Ok((client, node, result))) => {
+                            // retries gave results,
+                            // update db with currently connected Node and keep a reference to the created Client
+                            *self.subxt_client.write().await = client;
+                            self.db.put(RpcNodeKey, node);
+                            Ok(result)
+                        },
+                        Ok(Err(error)) => Err(error),
+                        Err(err) => Err(eyre!(
+                            "RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
+                        )),
+                }
 	}
 
 	async fn create_subxt_subscriptions(
