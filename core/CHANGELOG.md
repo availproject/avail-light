@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.1
+
+- Fix skipping of only available node during retries in case of intermittent failure
+- Increase maximum retry delay to 10 seconds
+
 ## 1.12.0
 
 - Add `nonce` management to the light client
