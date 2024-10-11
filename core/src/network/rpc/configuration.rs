@@ -24,8 +24,8 @@ impl Default for RPCConfig {
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			retry: RetryConfig::Fibonacci(FibonacciConfig {
 				base: 1,
-				max_delay: Duration::from_millis(10),
-				retries: 6,
+				max_delay: Duration::from_millis(10000),
+				retries: 8,
 			}),
 		}
 	}
