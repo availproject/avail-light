@@ -15,8 +15,8 @@ hex = { workspace = true }
 libp2p = { workspace = true }
 libp2p-allow-block-list = { workspace = true }
 libp2p-webrtc = { workspace = true }
-rand = { workspace = true }
 multihash = { workspace = true }
+rand = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
