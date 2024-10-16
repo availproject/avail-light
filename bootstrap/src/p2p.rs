@@ -103,9 +103,6 @@ pub async fn init(
 			.build()
 	}
 
-	for listener in swarm.listeners() {
-		info!("Bootstrap is listening on: {:?}", listener);
-	}
 	// enable Kademlila Server mode
 	swarm.behaviour_mut().kademlia.set_mode(Some(Mode::Server));
 

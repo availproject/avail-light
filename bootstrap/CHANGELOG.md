@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.0] 
+
+- Add webrtc support to bootstrap
+
 ## [0.3.0](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.3.0) - 2024-09-27
 
 - Bump `otel` version to `0.24.0`

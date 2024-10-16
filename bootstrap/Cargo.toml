@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-bootstrap"
-version = "0.3.0"
+version = "0.4.0"
 build = "../build.rs"
 edition = "2021"
 description = "Avail network Bootstrap Node for p2p Light Client"
