@@ -28,8 +28,10 @@ clap = { version = "4.4.4", features = ["derive", "cargo"] }
 color-eyre = "0.6.2"
 confy = "0.5.1"
 hex = "0.4.3"
+rand = "0.8.4"
 libp2p = { version = "0.54", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
 libp2p-allow-block-list = "0.4"
+libp2p-webrtc = { version = "=0.8.0-alpha", features = ["tokio"] }
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }

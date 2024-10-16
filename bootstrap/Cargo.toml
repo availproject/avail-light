@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-bootstrap"
-version = "0.3.0"
+version = "0.4.0"
 build = "../build.rs"
 edition = "2021"
 description = "Avail network Bootstrap Node for p2p Light Client"
@@ -14,7 +14,9 @@ confy = { workspace = true }
 hex = { workspace = true }
 libp2p = { workspace = true }
 libp2p-allow-block-list = { workspace = true }
+libp2p-webrtc = { workspace = true }
 multihash = { workspace = true }
+rand = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }

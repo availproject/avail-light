@@ -17,7 +17,7 @@ use tokio::{
 	sync::{mpsc, oneshot},
 	time::{interval_at, Instant, Interval},
 };
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use crate::types::AgentVersion;
 
@@ -257,7 +257,7 @@ impl EventLoop {
 			},
 			SwarmEvent::NewListenAddr { address, .. } => {
 				let local_peer_id = *self.swarm.local_peer_id();
-				debug!(
+				info!(
 					"Local node is listening on: {:?}",
 					address.with(Protocol::P2p(local_peer_id))
 				)
