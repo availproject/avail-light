@@ -1,9 +1,11 @@
 # Changelog
 
-## 1.12.1
+## 1.0.3
 
 - Fix skipping of only available node during retries in case of intermittent failure
 - Increase maximum retry delay to 10 seconds
+
+# Changelog (pre-monorepo)
 
 ## 1.12.0
 
