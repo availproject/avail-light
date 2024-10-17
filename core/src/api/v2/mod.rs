@@ -5,7 +5,7 @@ use warp::{Filter, Rejection, Reply};
 
 use self::{
 	handlers::{handle_rejection, log_internal_server_error},
-	types::{DataQuery, PublishMessage, Version, WsClients},
+	types::{DataQuery, PublishMessage, WsClients},
 };
 
 use crate::{
@@ -42,11 +42,14 @@ fn with_ws_clients(
 }
 
 fn version_route(
-	version: Version,
+	version: String,
+	db: impl Database + Clone + Send,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "version")
 		.and(warp::get())
 		.map(move || version.clone())
+		.and(with_db(db))
+		.map(handlers::version)
 }
 
 fn status_route(
@@ -152,7 +155,7 @@ fn subscriptions_route(
 
 fn ws_route(
 	clients: WsClients,
-	version: Version,
+	version: String,
 	config: SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	db: impl Database + Clone + Send + 'static,
@@ -208,7 +211,6 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 #[allow(clippy::too_many_arguments)]
 pub fn routes(
 	version: String,
-	network_version: String,
 	config: SharedConfig,
 	identity_config: IdentityConfig,
 	rpc_client: Client<impl Database + Send + Sync + Clone + 'static>,
@@ -216,11 +218,6 @@ pub fn routes(
 	db: impl Database + Clone + Send + 'static,
 	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	let version = Version {
-		version,
-		network_version,
-	};
-
 	let app_id = config.app_id.as_ref();
 
 	let submitter = app_id.map(|&app_id| {
@@ -231,7 +228,7 @@ pub fn routes(
 		})
 	});
 
-	version_route(version.clone())
+	version_route(version.clone(), db.clone())
 		.or(status_route(config.clone(), db.clone()))
 		.or(block_route(config.clone(), db.clone()))
 		.or(block_header_route(config.clone(), db.clone()))
@@ -252,15 +249,16 @@ mod tests {
 		api::{
 			configuration::SharedConfig,
 			v2::types::{
-				DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
+				DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic,
 				WsClients, WsError, WsResponse,
 			},
 		},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, VerifiedCellCountKey,
-			VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, RpcNodeKey,
+			VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		},
+		network::rpc::Node,
 		types::BlockRange,
 	};
 	use async_trait::async_trait;
@@ -279,18 +277,20 @@ mod tests {
 	use test_case::test_case;
 	use uuid::Uuid;
 
-	fn v1() -> Version {
-		Version {
-			version: "v1.0.0".to_string(),
-			network_version: "nv1.0.0".to_string(),
+	fn default_node() -> Node {
+		Node {
+			host: "host".to_string(),
+			system_version: "nv1.0.0".to_string(),
+			spec_version: 0,
+			genesis_hash: H256::zero(),
 		}
 	}
 
-	const NETWORK: &str = "{host}/{system_version}/0";
-
 	#[tokio::test]
 	async fn version_route() {
-		let route = super::version_route(v1());
+		let db = MemoryDB::default();
+		db.put(RpcNodeKey, default_node());
+		let route = super::version_route("v1.0.0".to_string(), db);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/version")
@@ -306,6 +306,7 @@ mod tests {
 	#[tokio::test]
 	async fn status_route_defaults() {
 		let db = MemoryDB::default();
+		db.put(RpcNodeKey, default_node());
 		let route = super::status_route(SharedConfig::default(), db);
 		let response = warp::test::request()
 			.method("GET")
@@ -315,7 +316,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light"],"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":0}}}}"#,
+			r#"{{"modes":["light"],"genesis_hash":"{:x?}","network":"host/nv1.0.0/0","blocks":{{"latest":0}}}}"#,
 			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
@@ -329,6 +330,7 @@ mod tests {
 			..Default::default()
 		};
 		let db = MemoryDB::default();
+		db.put(RpcNodeKey, default_node());
 
 		db.put(IsSyncedKey, false);
 		db.put(LatestHeaderKey, 30);
@@ -358,7 +360,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:#x}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}"#,
+			r#"{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:#x}","network":"host/nv1.0.0/0","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}"#,
 			gen_hash
 		);
 		assert_eq!(response.body(), &expected);
@@ -728,9 +730,19 @@ mod tests {
 				.await;
 
 			let db = MemoryDB::default();
+
+			let node = Node {
+				host: "host".to_string(),
+				system_version: "nv1.0.0".to_string(),
+				spec_version: 0,
+				genesis_hash: H256::zero(),
+			};
+
+			db.put(RpcNodeKey, node);
+
 			let route = super::ws_route(
 				clients.clone(),
-				v1(),
+				"v1.0.0".to_string(),
 				config.clone(),
 				submitter.map(Arc::new),
 				db.clone(),
@@ -794,7 +806,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:x?}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}}}"#,
+			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:x?}","network":"host/nv1.0.0/0","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}}}"#,
 			gen_hash
 		);
 

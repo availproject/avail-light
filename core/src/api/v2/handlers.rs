@@ -12,7 +12,7 @@ use crate::{
 		configuration::SharedConfig,
 		v2::types::{ErrorCode, InternalServerError},
 	},
-	data::{AppDataKey, BlockHeaderKey, Database, VerifiedCellCountKey},
+	data::{AppDataKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
 	utils::calculate_confidence,
 };
 use avail_rust::AvailHeader;
@@ -48,7 +48,7 @@ pub async fn ws(
 	subscription_id: String,
 	ws: Ws,
 	clients: WsClients,
-	version: Version,
+	version: String,
 	config: SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	db: impl Database + Clone + Send + 'static,
@@ -68,6 +68,14 @@ pub async fn ws(
 			db.clone(),
 		)
 	}))
+}
+
+pub fn version(version: String, db: impl Database) -> impl Reply {
+	let network_version = db.get(RpcNodeKey).unwrap_or_default().system_version;
+	Version {
+		version,
+		network_version,
+	}
 }
 
 pub fn status(config: SharedConfig, db: impl Database) -> impl Reply {

@@ -3,7 +3,6 @@
 use crate::cli::CliOpts;
 use avail_light_core::{
 	api,
-	consts::EXPECTED_SYSTEM_VERSION,
 	data::{
 		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
 		SignerNonceKey, DB,
@@ -197,7 +196,6 @@ async fn run(
 		cfg: (&cfg).into(),
 		identity_cfg: identity_cfg.clone(),
 		version: format!("v{}", clap::crate_version!()),
-		network_version: EXPECTED_SYSTEM_VERSION[1].to_string(),
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),

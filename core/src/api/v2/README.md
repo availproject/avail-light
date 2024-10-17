@@ -2,7 +2,7 @@
 
 ## **GET** `/v2/version`
 
-Gets the version of the light client binary, and the version of the compatible network.
+Gets the version of the light client binary, and the version of the network connected to.
 
 Response:
 
@@ -17,7 +17,7 @@ Content-Type: application/json
 ```
 
 - **version** - the Avail Light Client version
-- **network_version** - Avail network version supported by the Avail Light Client
+- **network_version** - Avail network version connected to by the Avail Light Client
 
 ## **GET** `/v2/status`
 
@@ -65,7 +65,7 @@ Content-Type: application/json
 - **modes** - active modes
 - **app_id** - if **app** mode is active, this field contains configured application ID
 - **genesis_hash** - genesis hash of the network to which the light client is connected
-- **network** - network host, version and spec version light client is currently con
+- **network** - network host, version and spec version light client is currently connected to
 - **blocks** - state of processed blocks
 
 ### Modes

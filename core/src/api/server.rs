@@ -30,7 +30,6 @@ pub struct Server<T: Database> {
 	pub cfg: SharedConfig,
 	pub identity_cfg: IdentityConfig,
 	pub version: String,
-	pub network_version: String,
 	pub node_client: rpc::Client<T>,
 	pub ws_clients: v2::types::WsClients,
 	pub shutdown: Controller<String>,
@@ -52,7 +51,6 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 		let v1_api = v1::routes(self.db.clone(), self.cfg.clone());
 		let v2_api = v2::routes(
 			self.version.clone(),
-			self.network_version.clone(),
 			self.cfg,
 			self.identity_cfg,
 			self.node_client.clone(),
