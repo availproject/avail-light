@@ -7,7 +7,7 @@ use crate::{
 		configuration::SharedConfig,
 		v2::types::{Error, Sender},
 	},
-	data::Database,
+	data::{Database, RpcNodeKey},
 	utils::spawn_in_span,
 };
 use color_eyre::{eyre::WrapErr, Result};
@@ -24,7 +24,7 @@ pub async fn connect(
 	subscription_id: String,
 	web_socket: WebSocket,
 	clients: WsClients,
-	version: Version,
+	version: String,
 	config: SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	db: impl Database + Clone,
@@ -85,7 +85,7 @@ pub async fn connect(
 
 async fn handle_request(
 	message: Message,
-	version: &Version,
+	version: &str,
 	config: &SharedConfig,
 	submitter: Option<Arc<impl transactions::Submit>>,
 	db: impl Database,
@@ -96,7 +96,13 @@ async fn handle_request(
 
 	let request_id = request.request_id;
 	match request.payload {
-		Payload::Version => Ok(Response::new(request_id, version.clone()).into()),
+		Payload::Version => {
+			let version = Version {
+				version: version.to_string(),
+				network_version: db.get(RpcNodeKey).unwrap_or_default().system_version,
+			};
+			Ok(Response::new(request_id, version).into())
+		},
 		Payload::Status => {
 			let status = Status::new(config, db);
 			Ok(Response::new(request_id, status).into())

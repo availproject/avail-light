@@ -2,7 +2,9 @@
 
 ## 1.0.3
 
-- Fix skipping of only available node during retries in case of intermittent failure
+- Return current node version on the API instead of preconfigured
+- Remove node version check
+- Fix skipping of only available node during retries in case of temporary failure
 - Increase maximum retry delay to 10 seconds
 
 # Changelog (pre-monorepo)

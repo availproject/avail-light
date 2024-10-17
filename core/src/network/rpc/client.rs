@@ -24,7 +24,6 @@ use tracing::{info, warn};
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
-	consts::ExpectedNodeVariant,
 	data::{Database, RpcNodeKey, SignerNonceKey},
 	shutdown::Controller,
 	types::DEV_FLAG_GENHASH,
@@ -60,7 +59,6 @@ impl<D: Database> Client<D> {
 			.with_cancel(Retry::spawn(retry_config.clone(), || async {
 				Self::try_connect_and_execute(
 					&nodes.shuffle(Default::default()).0,
-					&ExpectedNodeVariant::default(),
 					expected_genesis_hash,
 					|_| futures::future::ok(()),
 				)
@@ -90,11 +88,7 @@ impl<D: Database> Client<D> {
 		})
 	}
 
-	async fn create_subxt_client(
-		host: &str,
-		expected_node: &ExpectedNodeVariant,
-		expected_genesis_hash: &str,
-	) -> Result<(SDK, Node)> {
+	async fn create_subxt_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
 		let client = SDK::new_insecure(host)
 			.await
 			.map_err(|error| eyre!("{error}"))?;
@@ -124,14 +118,6 @@ impl<D: Database> Client<D> {
 		let system_version: String = client.rpc.system.version().await?;
 		let runtime_version: RuntimeVersion = client.api.runtime_version();
 
-		if !expected_node.matches(&system_version) {
-			return Err(eyre!(
-				"Expected Node system version:{:?}, found: {}. Skipping to another node.",
-				expected_node.system_version,
-				system_version,
-			));
-		}
-
 		let variant = Node::new(
 			host.to_string(),
 			system_version,
@@ -144,7 +130,6 @@ impl<D: Database> Client<D> {
 
 	async fn try_connect_and_execute<T, F, Fut>(
 		nodes: &[Node],
-		expected_node: &ExpectedNodeVariant,
 		expected_genesis_hash: &str,
 		mut f: F,
 	) -> Result<(Arc<SDK>, Node, T)>
@@ -155,7 +140,7 @@ impl<D: Database> Client<D> {
 		// go through the provided list of Nodes to try and find and appropriate one,
 		// after a successful connection, try to execute passed function call
 		for Node { host, .. } in nodes.iter() {
-			let result = Self::create_subxt_client(host, expected_node, expected_genesis_hash)
+			let result = Self::create_subxt_client(host, expected_genesis_hash)
 				.and_then(move |(client, node)| {
 					let client = Arc::new(client);
 					f(client.clone()).map_ok(move |res| (client, node, res))
@@ -212,7 +197,6 @@ impl<D: Database> Client<D> {
 			connected_node.host
 		);
 
-		let expected_node = &ExpectedNodeVariant::default();
 		let expected_genesis_hash = &self.expected_genesis_hash;
 
 		// shuffle nodes, if possible
@@ -220,7 +204,7 @@ impl<D: Database> Client<D> {
 
 		let nodes_fn = || async {
 			let f = move |client| f(client).map_err(Report::from);
-			Self::try_connect_and_execute(&nodes, expected_node, expected_genesis_hash, f).await
+			Self::try_connect_and_execute(&nodes, expected_genesis_hash, f).await
 		};
 
 		// go through available Nodes, try to connect, Retry connecting if needed
@@ -246,7 +230,7 @@ impl<D: Database> Client<D> {
 
 		let previous_fn = || async {
 			let f = move |client| f(client).map_err(Report::from);
-			Self::try_connect_and_execute(&previous, expected_node, expected_genesis_hash, f).await
+			Self::try_connect_and_execute(&previous, expected_genesis_hash, f).await
 		};
 
 		// go through other Nodes, try to connect, Retry connecting if needed

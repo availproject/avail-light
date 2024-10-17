@@ -1,6 +1,5 @@
 use avail_light_core::{
 	api::{self, configuration::SharedConfig},
-	consts::EXPECTED_SYSTEM_VERSION,
 	data::{Database, LatestHeaderKey, DB},
 	fat_client::{self, OutputEvent as FatEvent},
 	network::{
@@ -179,7 +178,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		cfg: SharedConfig::default(),
 		identity_cfg,
 		version: format!("v{version}"),
-		network_version: EXPECTED_SYSTEM_VERSION[0].to_string(),
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
