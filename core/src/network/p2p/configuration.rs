@@ -14,13 +14,13 @@ use std::{
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct AutoNATConfig {
-	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 20 sec)
+	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence has not been reached yet. (default: 20 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_retry_interval: Duration,
 	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 360 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_refresh_interval: Duration,
-	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
+	/// AutoNat on init delay before starting the first probe. (default: 5 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_boot_delay: Duration,
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
@@ -80,7 +80,7 @@ pub struct KademliaConfig {
 	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
 	pub disjoint_query_paths: bool,
 	/// The maximum number of records in the memory store. (default: 2400000)
-	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
+	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produced in 20s block time for fat clients
 	/// (256x512) * 3 * 60
 	pub max_kad_record_number: usize,
 	/// The maximum size of record values, in bytes. (default: 8192).
