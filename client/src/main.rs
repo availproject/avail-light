@@ -4,7 +4,7 @@ use crate::cli::CliOpts;
 use avail_light_core::{
 	api,
 	data::{
-		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
+		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RpcNodeKey,
 		SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
@@ -303,7 +303,7 @@ async fn run(
 	)));
 
 	// construct Metric Attributes and initialize Metrics
-	let metric_attributes = vec![
+	let mut metric_attributes = vec![
 		("version".to_string(), version.to_string()),
 		("role".to_string(), "lightnode".to_string()),
 		("peerID".to_string(), peer_id.to_string()),
@@ -316,6 +316,10 @@ async fn run(
 			cfg.client_alias.clone().unwrap_or("".to_string()),
 		),
 	];
+
+	if let Some(connected_ws) = db.get(RpcNodeKey) {
+		metric_attributes.push(("fullnode_ws".to_string(), connected_ws.host));
+	}
 
 	let metrics =
 		telemetry::otlp::initialize(cfg.project_name.clone(), &cfg.origin, cfg.otel.clone())
