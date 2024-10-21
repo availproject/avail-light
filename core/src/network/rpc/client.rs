@@ -123,11 +123,7 @@ impl Stream for MergedSubscriptions {
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
 		// Randomly decide which stream to poll first
 		let poll_headers_first = rand::thread_rng().gen_bool(0.5);
-		if poll_headers_first {
-			self.poll_both(cx, true)
-		} else {
-			self.poll_both(cx, false)
-		}
+		self.poll_both(cx, poll_headers_first)
 	}
 }
 
@@ -169,7 +165,7 @@ impl MergedSubscriptions {
 				error!("Error in Avail Headers stream: {:?}", e);
 				return Poll::Ready(Some(Err(e)));
 			},
-			// Do nothing here, fall into pooling the next stream
+			// Do nothing here, fall into polling the next stream
 			Poll::Pending => {},
 		}
 
