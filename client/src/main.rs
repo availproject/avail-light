@@ -303,7 +303,7 @@ async fn run(
 	)));
 
 	// construct Metric Attributes and initialize Metrics
-	let mut metric_attributes = vec![
+	let metric_attributes = vec![
 		("version".to_string(), version.to_string()),
 		("role".to_string(), "lightnode".to_string()),
 		("peerID".to_string(), peer_id.to_string()),
@@ -317,9 +317,10 @@ async fn run(
 		),
 	];
 
-	if let Some(connected_ws) = db.get(RpcNodeKey) {
-		metric_attributes.push(("connected_host".to_string(), connected_ws.host));
-	}
+	let host = db
+		.get(RpcNodeKey)
+		.map(|connected_ws| connected_ws.host)
+		.ok_or_else(|| eyre!("No connected host found"))?;
 
 	let metrics =
 		telemetry::otlp::initialize(cfg.project_name.clone(), &cfg.origin, cfg.otel.clone())
@@ -328,6 +329,7 @@ async fn run(
 	let mut state = ClientState::new(
 		metrics,
 		cfg.libp2p.kademlia.operation_mode.into(),
+		host,
 		Multiaddr::empty(),
 		metric_attributes,
 	);
@@ -451,6 +453,7 @@ struct ClientState {
 	metrics: Metrics,
 	kad_mode: Mode,
 	multiaddress: Multiaddr,
+	connected_host: String,
 	metric_attributes: Vec<(String, String)>,
 	active_blocks: HashMap<u32, BlockStat>,
 }
@@ -459,6 +462,7 @@ impl ClientState {
 	fn new(
 		metrics: Metrics,
 		kad_mode: Mode,
+		connected_host: String,
 		multiaddress: Multiaddr,
 		metric_attributes: Vec<(String, String)>,
 	) -> Self {
@@ -466,6 +470,7 @@ impl ClientState {
 			metrics,
 			kad_mode,
 			multiaddress,
+			connected_host,
 			metric_attributes,
 			active_blocks: Default::default(),
 		}
@@ -479,10 +484,18 @@ impl ClientState {
 		self.kad_mode = value;
 	}
 
+	fn update_connected_host(&mut self, value: String) {
+		self.connected_host = value;
+	}
+
 	fn attributes(&self) -> Vec<(String, String)> {
 		let mut attrs = vec![
 			("operating_mode".to_string(), self.kad_mode.to_string()),
 			("multiaddress".to_string(), self.multiaddress.to_string()),
+			(
+				"connected_host".to_string(),
+				self.connected_host.to_string(),
+			),
 		];
 
 		attrs.extend(self.metric_attributes.clone());
@@ -663,16 +676,8 @@ impl ClientState {
 							self.metrics.count(MetricCounter::SessionBlocks,self.attributes());
 						},
 						LcEvent::ConnectedHost(host) => {
-							if let Some((_, v)) = self.metric_attributes.iter_mut().find(|(k, _)| *k == "connected_host") {
-								*v = host;
-							}
-
-							if let Err(error) = self.metrics.flush(self.attributes()) {
-								error!("Could not handle flush event properly: {error}");
-							} else {
-								info!("Flushing metrics finished");
-							};
-						},
+							self.update_connected_host(host);
+						}
 						LcEvent::RecordBlockHeight(block_num) => {
 							self.metrics.record(MetricValue::BlockHeight(block_num));
 						},
