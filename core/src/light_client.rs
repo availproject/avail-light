@@ -29,7 +29,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
 
 use crate::{
-	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
+	data::{AchievedConfidenceKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
 	network::{
 		self,
 		rpc::{self, Event},
@@ -43,6 +43,7 @@ pub enum OutputEvent {
 	RecordBlockProcessingDelay(f64),
 	CountSessionBlocks,
 	RecordBlockHeight(u32),
+	ConnectedHost(String),
 	RecordDHTStats {
 		fetched: f64,
 		fetched_percentage: f64,
@@ -128,6 +129,10 @@ pub async fn process_block(
 
 			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
 				event_sender.send(OutputEvent::RecordRPCFetched(rpc_fetched))?;
+			}
+
+			if let Some(connected_host) = db.get(RpcNodeKey) {
+				event_sender.send(OutputEvent::ConnectedHost(connected_host.host))?;
 			}
 
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {

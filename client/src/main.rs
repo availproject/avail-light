@@ -318,7 +318,7 @@ async fn run(
 	];
 
 	if let Some(connected_ws) = db.get(RpcNodeKey) {
-		metric_attributes.push(("fullnode_ws".to_string(), connected_ws.host));
+		metric_attributes.push(("connected_host".to_string(), connected_ws.host));
 	}
 
 	let metrics =
@@ -662,6 +662,17 @@ impl ClientState {
 						LcEvent::CountSessionBlocks => {
 							self.metrics.count(MetricCounter::SessionBlocks,self.attributes());
 						},
+						LcEvent::ConnectedHost(host) => {
+							if let Some((_, v)) = self.metric_attributes.iter_mut().find(|(k, _)| *k == "connected_host") {
+								*v = host;
+							}
+
+							if let Err(error) = self.metrics.flush(self.attributes()) {
+								error!("Could not handle flush event properly: {error}");
+							} else {
+								info!("Flushing metrics finished");
+							};
+						},
 						LcEvent::RecordBlockHeight(block_num) => {
 							self.metrics.record(MetricValue::BlockHeight(block_num));
 						},
@@ -677,10 +688,10 @@ impl ClientState {
 						},
 						LcEvent::RecordRPCFetchDuration(duration) => {
 							self.metrics.record(MetricValue::RPCFetchDuration(duration));
-						}
+						},
 						LcEvent::RecordBlockConfidence(confidence) => {
 							self.metrics.record(MetricValue::BlockConfidence(confidence));
-						}
+						},
 					}
 				}
 				// break the loop if all channels are closed
