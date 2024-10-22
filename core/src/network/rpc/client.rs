@@ -85,7 +85,10 @@ struct ConnectionAttempt<T> {
 	result: T,
 }
 
-struct GenesisHash(H256);
+enum GenesisHash {
+	Dev,
+	Hash(H256),
+}
 
 impl GenesisHash {
 	fn from_hex(hex_str: &str) -> Result<Self> {
@@ -95,7 +98,7 @@ impl GenesisHash {
 				hex_str
 			);
 			// Return a dummy hash for development
-			return Ok(Self(H256::zero()));
+			return Ok(Self::Dev);
 		}
 
 		let bytes: [u8; 32] = from_hex(hex_str)
@@ -103,11 +106,14 @@ impl GenesisHash {
 			.try_into()
 			.map_err(|_| ClientCreationError::InvalidGenesisHash(hex_str.to_string()))?;
 
-		Ok(Self(H256::from(bytes)))
+		Ok(Self::Hash(H256::from(bytes)))
 	}
 
 	fn matches(&self, other: &H256) -> bool {
-		self.0.eq(other)
+		match self {
+			GenesisHash::Dev => true,
+			GenesisHash::Hash(hash) => hash.eq(other),
+		}
 	}
 }
 
