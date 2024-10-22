@@ -131,10 +131,6 @@ pub async fn process_block(
 				event_sender.send(OutputEvent::RecordRPCFetched(rpc_fetched))?;
 			}
 
-			if let Some(connected_host) = db.get(RpcNodeKey) {
-				event_sender.send(OutputEvent::ConnectedHost(connected_host.host))?;
-			}
-
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
 				event_sender.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))?;
 			}
