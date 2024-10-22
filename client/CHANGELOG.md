@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.1
+## [1.12.1](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.1) - 2024-10-22
 
 - Update avail-light-core to 1.0.3
 
