@@ -10,12 +10,15 @@ use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display};
 use tokio::{
-	sync::broadcast,
+	sync::{broadcast, mpsc::UnboundedSender},
 	time::{self, timeout},
 };
 use tracing::{debug, info};
 
-use crate::{data::Database, network::rpc, shutdown::Controller, types::GrandpaJustification};
+use crate::{
+	data::Database, light_client::OutputEvent as LcEvent, network::rpc, shutdown::Controller,
+	types::GrandpaJustification,
+};
 
 mod client;
 pub mod configuration;
@@ -188,6 +191,7 @@ pub async fn init<T: Database + Clone>(
 	genesis_hash: &str,
 	rpc: &RPCConfig,
 	shutdown: Controller<String>,
+	client_sender: Option<UnboundedSender<LcEvent>>,
 ) -> Result<(Client<T>, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
 	let rpc_client = Client::new(
 		db.clone(),
@@ -195,6 +199,7 @@ pub async fn init<T: Database + Clone>(
 		genesis_hash,
 		rpc.retry.clone(),
 		shutdown,
+		client_sender,
 	)
 	.await?;
 	// create output channel for RPC Subscription Events

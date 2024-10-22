@@ -136,9 +136,16 @@ async fn run(
 	let public_params_hash = hex::encode(blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
+	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 
-	let (rpc_client, rpc_events, rpc_subscriptions) =
-		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+		db.clone(),
+		&cfg.genesis_hash,
+		&cfg.rpc,
+		shutdown.clone(),
+		Some(lc_sender.clone()),
+	)
+	.await?;
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
@@ -291,7 +298,6 @@ async fn run(
 	};
 
 	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
-	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
 		light_network_client,

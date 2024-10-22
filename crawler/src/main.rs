@@ -122,6 +122,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		&config.genesis_hash,
 		&config.rpc,
 		shutdown.clone(),
+		None,
 	)
 	.await?;
 

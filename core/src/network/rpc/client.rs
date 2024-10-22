@@ -16,7 +16,7 @@ use color_eyre::{
 };
 use futures::{Stream, TryFutureExt, TryStreamExt};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
@@ -25,6 +25,7 @@ use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof}
 use crate::{
 	api::v2::types::Base64,
 	data::{Database, RpcNodeKey, SignerNonceKey},
+	light_client::OutputEvent as LcEvent,
 	shutdown::Controller,
 	types::DEV_FLAG_GENHASH,
 };
@@ -37,6 +38,7 @@ pub struct Client<T: Database> {
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
+	client_sender: Option<UnboundedSender<LcEvent>>,
 }
 
 pub struct SubmitResponse {
@@ -52,6 +54,7 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
+		client_sender: Option<UnboundedSender<LcEvent>>,
 	) -> Result<Self> {
 		// try and connect appropriate Node from the provided list
 		// will do retries with the provided Retry Config
@@ -85,6 +88,7 @@ impl<D: Database> Client<D> {
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
 			shutdown,
+			client_sender,
 		})
 	}
 
@@ -217,6 +221,10 @@ impl<D: Database> Client<D> {
                                 // retries gave results,
                                 // update db with currently connected Node and keep a reference to the created Client
                                 *self.subxt_client.write().await = client;
+								if let Some(event_sender) = &self.client_sender {
+									let connected_host: String = node.host.clone();
+									event_sender.send(LcEvent::ConnectedHost(connected_host))?;
+								}
                                 self.db.put(RpcNodeKey, node);
                                 return Ok(result);
                         },
