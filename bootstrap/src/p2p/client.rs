@@ -2,6 +2,13 @@ use anyhow::{Context, Result};
 use libp2p::{Multiaddr, PeerId};
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
+pub struct PeerInfo {
+	pub peer_id: String,
+	pub local_listeners: Vec<String>,
+	pub external_listeners: Vec<String>,
+}
+
 #[derive(Clone)]
 pub struct Client {
 	command_sender: mpsc::Sender<Command>,
@@ -121,6 +128,15 @@ impl Client {
 			.context("Command receiver not to be dropped.")?;
 		response_receiver.await.context("Sender not to be dropped.")
 	}
+
+	pub async fn get_local_peer_info(&self) -> Result<PeerInfo> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::GetLocalPeerInfo { response_sender })
+			.await
+			.context("Command receiver not to be dropped.")?;
+		response_receiver.await.context("Sender not to be dropped.")
+	}
 }
 
 #[derive(Debug)]
@@ -151,5 +167,8 @@ pub enum Command {
 	},
 	GetMultiaddress {
 		response_sender: oneshot::Sender<Option<Multiaddr>>,
+	},
+	GetLocalPeerInfo {
+		response_sender: oneshot::Sender<PeerInfo>,
 	},
 }
