@@ -199,6 +199,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let metric_attributes = vec![
 		("role".to_string(), "fat".to_string()),
+		("origin".to_string(), Origin::FatClient.to_string()),
 		("version".to_string(), version.to_string()),
 		("peerID".to_string(), p2p_peer_id.to_string()),
 		("partition_size".to_string(), partition_size),
