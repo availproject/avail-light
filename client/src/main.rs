@@ -684,7 +684,7 @@ impl ClientState {
 						},
 						LcEvent::ConnectedHost(host) => {
 							self.update_connected_host(host);
-						}
+						},
 						LcEvent::RecordBlockHeight(block_num) => {
 							self.metrics.record(MetricValue::BlockHeight(block_num));
 						},
