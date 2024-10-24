@@ -25,7 +25,7 @@ use tokio::{
 		mpsc::{UnboundedReceiver, UnboundedSender},
 		oneshot,
 	},
-	time::{self, interval_at, Instant, Interval},
+	time::{self, Instant},
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -66,15 +66,6 @@ impl RelayState {
 			self.address = addr;
 		}
 	}
-}
-
-// BootstrapState keeps track of all things bootstrap related
-struct BootstrapState {
-	// referring to the initial bootstrap process,
-	// one that runs when the Light Client node starts up
-	is_startup_done: bool,
-	// timer that is responsible for firing periodic bootstraps
-	timer: Interval,
 }
 
 struct EventLoopConfig {
@@ -134,7 +125,6 @@ pub struct EventLoop {
 	// Tracking swarm events (i.e. peer dialing)
 	pub pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
 	relay: RelayState,
-	bootstrap: BootstrapState,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
 	pub kad_mode: Mode,
@@ -173,8 +163,6 @@ impl EventLoop {
 		event_sender: UnboundedSender<OutputEvent>,
 		shutdown: Controller<String>,
 	) -> Self {
-		let bootstrap_interval = cfg.bootstrap_period;
-
 		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
 
 		Self {
@@ -188,10 +176,6 @@ impl EventLoop {
 				address: Multiaddr::empty(),
 				is_circuit_established: false,
 				nodes: relay_nodes,
-			},
-			bootstrap: BootstrapState {
-				is_startup_done: false,
-				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 			shutdown,
 			event_loop_config: EventLoopConfig {
@@ -227,7 +211,6 @@ impl EventLoop {
 						break;
 					},
 				},
-				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				_ = report_timer.tick() => {
 					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
@@ -367,22 +350,11 @@ impl EventLoop {
 							}) => {
 								debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
-									if let Some(QueryChannel::Bootstrap(ch)) =
-										self.pending_kad_queries.remove(&id)
-									{
-										_ = ch.send(Ok(()));
-										// we can say that the startup bootstrap is done here
-										self.bootstrap.is_startup_done = true;
-									}
+									info!("Bootstrap completed.");
 								}
 							},
 							Err(err) => {
 								debug!("Bootstrap error event. Error: {err:?}.");
-								if let Some(QueryChannel::Bootstrap(ch)) =
-									self.pending_kad_queries.remove(&id)
-								{
-									_ = ch.send(Err(err.into()));
-								}
 							},
 						},
 						_ => {},
@@ -619,14 +591,6 @@ impl EventLoop {
 					_ => {},
 				}
 			},
-		}
-	}
-
-	fn handle_periodic_bootstraps(&mut self) {
-		// commence with periodic bootstraps,
-		// only when the initial startup bootstrap is done
-		if self.bootstrap.is_startup_done {
-			_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 		}
 	}
 

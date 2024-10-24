@@ -113,10 +113,10 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let bootstraps = &config.libp2p.bootstraps;
-		match bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
-			Ok(()) => info!("Bootstrap done."),
-			Err(e) => warn!("Bootstrap error: {e:?}."),
-		}
+		let _ = bootstrap_p2p_client
+			.bootstrap_on_startup(bootstraps)
+			.await
+			.map_err(|e| warn!("Bootstrap unsuccessful: {e:?}."));
 	}));
 
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(

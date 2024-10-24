@@ -146,19 +146,6 @@ impl Client {
 		.await
 	}
 
-	pub async fn bootstrap(&self) -> Result<()> {
-		self.execute_sync(|response_sender| {
-			Box::new(move |context: &mut EventLoop| {
-				let query_id = context.swarm.behaviour_mut().kademlia.bootstrap()?;
-				context
-					.pending_kad_queries
-					.insert(query_id, QueryChannel::Bootstrap(response_sender));
-				Ok(())
-			})
-		})
-		.await
-	}
-
 	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
@@ -172,6 +159,8 @@ impl Client {
 			.map_err(|_| eyre!("Failed to send the Add AutoNat Server Command to the EventLoop"))
 	}
 
+	// Bootstrap is triggered automatically on add_address call
+	// Bootstrap nodes are also used as autonat servers
 	pub async fn bootstrap_on_startup(&self, bootstraps: &[MultiaddrConfig]) -> Result<()> {
 		for (peer, addr) in bootstraps.iter().map(Into::into) {
 			self.dial_peer(peer, vec![addr.clone()])
@@ -181,7 +170,7 @@ impl Client {
 
 			self.add_autonat_server(peer, addr).await?;
 		}
-		self.bootstrap().await
+		Ok(())
 	}
 
 	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {

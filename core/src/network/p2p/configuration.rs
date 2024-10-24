@@ -55,6 +55,9 @@ pub struct KademliaConfig {
 	/// Record TTL, publication and replication intervals are co-dependent, meaning that TTL >> publication_interval >> replication_interval.
 	#[serde(with = "duration_seconds_format")]
 	pub kad_record_ttl: Duration,
+	/// Defines a period of time in which periodic bootstraps will be repeated in seconds. (default: 5 min)
+	#[serde(with = "duration_seconds_format")]
+	pub bootstrap_period: Duration,
 	/// Sets the (re-)publication interval of stored records in seconds. (default: 12h).
 	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
 	/// This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
@@ -97,6 +100,7 @@ impl Default for KademliaConfig {
 	fn default() -> Self {
 		Self {
 			kad_record_ttl: Duration::from_secs(24 * 60 * 60),
+			bootstrap_period: Duration::from_secs(5 * 60),
 			publication_interval: Default::default(),
 			record_replication_interval: Duration::from_secs(3 * 60 * 60),
 			record_replication_factor: NonZeroUsize::new(5).unwrap(),
@@ -136,9 +140,6 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
-	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
-	#[serde(with = "duration_seconds_format")]
-	pub bootstrap_period: Duration,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
 	#[serde(with = "duration_seconds_format")]
@@ -163,7 +164,6 @@ impl Default for LibP2PConfig {
 			autonat: Default::default(),
 			kademlia: Default::default(),
 			relays: Default::default(),
-			bootstrap_period: Duration::from_secs(3600),
 			connection_idle_timeout: Duration::from_secs(30),
 			max_negotiating_inbound_streams: 128,
 			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
@@ -208,7 +208,8 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 			max_peers: cfg.kademlia.caching_max_peers,
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
-		.set_record_filtering(kad::StoreInserts::FilterBoth);
+		.set_record_filtering(kad::StoreInserts::FilterBoth)
+		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_period));
 	kad_cfg
 }
 
