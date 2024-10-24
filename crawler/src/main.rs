@@ -3,7 +3,8 @@ use avail_light_core::{
 	data::{Database, LatestHeaderKey, DB},
 	network::{
 		p2p::{self, OutputEvent as P2pEvent},
-		rpc, Network,
+		rpc::{self, OutputEvent as RpcEvent},
+		Network,
 	},
 	shutdown::Controller,
 	telemetry::{

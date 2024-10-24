@@ -12,7 +12,8 @@ use avail_light_core::{
 	network::{
 		self,
 		p2p::{self, extract_block_num, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
-		rpc, Network,
+		rpc::{self, OutputEvent as RpcEvent},
+		Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -136,14 +137,14 @@ async fn run(
 	let public_params_hash = hex::encode(blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 
+	let (rpc_sender, rpc_receiver) = mpsc::unbounded_channel::<RpcEvent>();
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.genesis_hash,
 		&cfg.rpc,
 		shutdown.clone(),
-		Some(lc_sender.clone()),
+		Some(rpc_sender),
 	)
 	.await?;
 
@@ -298,6 +299,7 @@ async fn run(
 	};
 
 	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
+	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
 		light_network_client,
@@ -343,7 +345,12 @@ async fn run(
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
-			.handle_events(p2p_event_receiver, maintenance_receiver, lc_receiver)
+			.handle_events(
+				p2p_event_receiver,
+				maintenance_receiver,
+				lc_receiver,
+				rpc_receiver,
+			)
 			.await;
 	}));
 
@@ -589,6 +596,7 @@ impl ClientState {
 		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut lc_receiver: UnboundedReceiver<LcEvent>,
+		mut rpc_receiver: UnboundedReceiver<RpcEvent>,
 	) {
 		self.metrics.count(MetricCounter::Starts, self.attributes());
 		loop {
@@ -682,9 +690,6 @@ impl ClientState {
 						LcEvent::CountSessionBlocks => {
 							self.metrics.count(MetricCounter::SessionBlocks,self.attributes());
 						},
-						LcEvent::ConnectedHost(host) => {
-							self.update_connected_host(host);
-						},
 						LcEvent::RecordBlockHeight(block_num) => {
 							self.metrics.record(MetricValue::BlockHeight(block_num));
 						},
@@ -703,6 +708,13 @@ impl ClientState {
 						},
 						LcEvent::RecordBlockConfidence(confidence) => {
 							self.metrics.record(MetricValue::BlockConfidence(confidence));
+						},
+					}
+				}
+				Some(rpc_event) = rpc_receiver.recv() => {
+					match rpc_event {
+						RpcEvent::ConnectedHost(host) => {
+							self.update_connected_host(host);
 						},
 					}
 				}

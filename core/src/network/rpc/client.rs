@@ -31,7 +31,7 @@ use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof}
 use crate::{
 	api::v2::types::Base64,
 	data::{Database, RpcNodeKey, SignerNonceKey},
-	light_client::OutputEvent as LcEvent,
+	network::rpc::OutputEvent as RpcEvent,
 	shutdown::Controller,
 	types::DEV_FLAG_GENHASH,
 };
@@ -203,7 +203,7 @@ pub struct Client<T: Database> {
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
-	client_sender: Option<UnboundedSender<LcEvent>>,
+	rpc_sender: Option<UnboundedSender<RpcEvent>>,
 }
 
 pub struct SubmitResponse {
@@ -220,7 +220,7 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
-		client_sender: Option<UnboundedSender<LcEvent>>,
+		rpc_sender: Option<UnboundedSender<RpcEvent>>,
 	) -> Result<Self> {
 		let (client, node) = Self::initialize_connection(
 			&nodes,
@@ -237,7 +237,7 @@ impl<D: Database> Client<D> {
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
 			shutdown,
-			client_sender,
+			rpc_sender,
 		};
 
 		client.db.put(RpcNodeKey, node);
@@ -289,7 +289,7 @@ impl<D: Database> Client<D> {
 		nodes: &[Node],
 		expected_genesis_hash: &str,
 		f: F,
-		client_sender: Option<UnboundedSender<LcEvent>>,
+		rpc_sender: Option<UnboundedSender<RpcEvent>>,
 	) -> Result<ConnectionAttempt<T>>
 	where
 		F: FnMut(SDK) -> Fut + Copy,
@@ -304,8 +304,8 @@ impl<D: Database> Client<D> {
 			match Self::try_node_connection_and_exec(node, expected_genesis_hash, f).await {
 				Ok(attempt) => {
 					info!("Successfully connected to RPC: {}", node.host);
-					if let Some(event_sender) = client_sender.as_ref() {
-						event_sender.send(LcEvent::ConnectedHost(node.host.clone()))?;
+					if let Some(sender) = rpc_sender {
+						sender.send(RpcEvent::ConnectedHost(node.host.clone()))?;
 					}
 					return Ok(attempt);
 				},
@@ -458,9 +458,9 @@ impl<D: Database> Client<D> {
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		let nodes_fn = move || {
-			let client_sender = self.client_sender.clone();
+			let rpc_sender = self.rpc_sender.clone();
 			async move {
-				Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f, client_sender)
+				Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f, rpc_sender)
 					.await
 			}
 		};

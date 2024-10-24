@@ -43,7 +43,6 @@ pub enum OutputEvent {
 	RecordBlockProcessingDelay(f64),
 	CountSessionBlocks,
 	RecordBlockHeight(u32),
-	ConnectedHost(String),
 	RecordDHTStats {
 		fetched: f64,
 		fetched_percentage: f64,
