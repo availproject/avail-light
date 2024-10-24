@@ -138,8 +138,14 @@ async fn run(
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 
-	let (rpc_client, rpc_events, rpc_subscriptions) =
-		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone(), Some(lc_sender.clone())).await?;
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+		db.clone(),
+		&cfg.genesis_hash,
+		&cfg.rpc,
+		shutdown.clone(),
+		Some(lc_sender.clone()),
+	)
+	.await?;
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;

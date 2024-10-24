@@ -29,7 +29,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
 
 use crate::{
-	data::{AchievedConfidenceKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
+	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	network::{
 		self,
 		rpc::{self, Event},

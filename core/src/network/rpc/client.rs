@@ -22,7 +22,7 @@ use std::{
 	sync::Arc,
 	task::{Context, Poll},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, trace, warn};
@@ -31,6 +31,7 @@ use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof}
 use crate::{
 	api::v2::types::Base64,
 	data::{Database, RpcNodeKey, SignerNonceKey},
+	light_client::OutputEvent as LcEvent,
 	shutdown::Controller,
 	types::DEV_FLAG_GENHASH,
 };
@@ -202,6 +203,7 @@ pub struct Client<T: Database> {
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
+	client_sender: Option<UnboundedSender<LcEvent>>,
 }
 
 pub struct SubmitResponse {
@@ -218,6 +220,7 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
+		client_sender: Option<UnboundedSender<LcEvent>>,
 	) -> Result<Self> {
 		let (client, node) = Self::initialize_connection(
 			&nodes,
@@ -234,6 +237,7 @@ impl<D: Database> Client<D> {
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
 			shutdown,
+			client_sender,
 		};
 
 		client.db.put(RpcNodeKey, node);
@@ -270,8 +274,13 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 	) -> Result<ConnectionAttempt<()>> {
 		// Not passing any RPC function calls since this is a first try of connecting RPC nodes
-		Self::try_connect_and_execute(nodes, expected_genesis_hash, |_| futures::future::ok(()))
-			.await
+		Self::try_connect_and_execute(
+			nodes,
+			expected_genesis_hash,
+			|_| futures::future::ok(()),
+			None,
+		)
+		.await
 	}
 
 	// Iterates through the RPC nodes, tries to create the first successful connection, verifies the genesis hash,
@@ -280,6 +289,7 @@ impl<D: Database> Client<D> {
 		nodes: &[Node],
 		expected_genesis_hash: &str,
 		f: F,
+		client_sender: Option<UnboundedSender<LcEvent>>,
 	) -> Result<ConnectionAttempt<T>>
 	where
 		F: FnMut(SDK) -> Fut + Copy,
@@ -294,6 +304,9 @@ impl<D: Database> Client<D> {
 			match Self::try_node_connection_and_exec(node, expected_genesis_hash, f).await {
 				Ok(attempt) => {
 					info!("Successfully connected to RPC: {}", node.host);
+					if let Some(event_sender) = client_sender.as_ref() {
+						event_sender.send(LcEvent::ConnectedHost(node.host.clone()))?;
+					}
 					return Ok(attempt);
 				},
 				Err(err) => {
@@ -444,8 +457,13 @@ impl<D: Database> Client<D> {
 		F: FnMut(SDK) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		let nodes_fn =
-			|| async { Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f).await };
+		let nodes_fn = move || {
+			let client_sender = self.client_sender.clone();
+			async move {
+				Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f, client_sender)
+					.await
+			}
+		};
 
 		match self
 			.shutdown
