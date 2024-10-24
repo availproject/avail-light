@@ -17,9 +17,10 @@ mod client;
 mod event_loop;
 
 use crate::{
-	p2p::client::{Client, Command},
+	p2p::client::Command,
 	types::{LibP2PConfig, SecretKey},
 };
+pub use client::Client;
 use event_loop::EventLoop;
 use libp2p_allow_block_list as allow_block_list;
 use tracing::info;

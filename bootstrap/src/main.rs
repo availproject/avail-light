@@ -86,7 +86,7 @@ async fn run() -> Result<()> {
 			.await
 			.context("Failed to initialize P2P Network Service.")?;
 
-	tokio::spawn(server::run((&cfg).into()));
+	tokio::spawn(server::run((&cfg).into(), network_client.clone()));
 
 	let ot_metrics = telemetry::otlp::initialize(
 		cfg.ot_collector_endpoint,

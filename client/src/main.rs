@@ -306,6 +306,7 @@ async fn run(
 	let metric_attributes = vec![
 		("version".to_string(), version.to_string()),
 		("role".to_string(), "lightnode".to_string()),
+		("origin".to_string(), cfg.origin.to_string()),
 		("peerID".to_string(), peer_id.to_string()),
 		("avail_address".to_string(), identity_cfg.avail_public_key),
 		("network".to_string(), Network::name(&cfg.genesis_hash)),

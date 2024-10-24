@@ -11,34 +11,197 @@ use avail_rust::{
 	AvailExtrinsicParamsBuilder, AvailHeader, Data, Keypair, WaitFor, SDK,
 };
 use color_eyre::{
-	eyre::{eyre, Context},
+	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use futures::{Stream, TryFutureExt, TryStreamExt};
-use std::sync::Arc;
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use futures::{Stream, TryStreamExt};
+use rand::Rng;
+use std::{
+	iter::Iterator,
+	pin::Pin,
+	sync::Arc,
+	task::{Context, Poll},
+};
+use tokio::sync::RwLock;
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
-use tracing::{info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
 	api::v2::types::Base64,
 	data::{Database, RpcNodeKey, SignerNonceKey},
-	light_client::OutputEvent as LcEvent,
 	shutdown::Controller,
 	types::DEV_FLAG_GENHASH,
 };
 
+#[derive(Debug, thiserror::Error)]
+enum RetryError {
+	#[error("No previously connected node found in database")]
+	NoPreviousNode,
+	#[error("All connection attempts failed: {0}")]
+	ConnectionFailed(Report),
+	#[error("Retry strategy halted due to shutdown: {0}")]
+	Shutdown(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ClientCreationError {
+	#[error("SDK failed to provide new RPC client: {0}")]
+	SdkFailure(Report),
+
+	#[error("Failed to create RPC client for host {host}: {error}")]
+	ConnectionFailed { host: String, error: Report },
+
+	#[error("Genesis hash mismatch for host {host}. Expected: {expected}, found: {found}")]
+	GenesisHashMismatch {
+		host: String,
+		expected: String,
+		found: String,
+	},
+
+	#[error("Invalid genesis hash configuration: {0}")]
+	InvalidGenesisHash(String),
+
+	#[error("Failed to fetch system version: {0}")]
+	SystemVersionError(Report),
+
+	#[error("No available RPC nodes to connect to")]
+	NoNodesAvailable,
+
+	#[error("Failed to connect to any RPC node")]
+	AllNodesFailed {
+		#[source]
+		last_error: Report,
+	},
+
+	#[error("RPC function execution failed for host {host}: {error}")]
+	RpcCallFailed { host: String, error: Report },
+}
+
+struct ConnectionAttempt<T> {
+	client: SDK,
+	node: Node,
+	result: T,
+}
+
+enum GenesisHash {
+	Dev,
+	Hash(H256),
+}
+
+impl GenesisHash {
+	fn from_hex(hex_str: &str) -> Result<Self> {
+		if hex_str.starts_with(DEV_FLAG_GENHASH) {
+			warn!(
+				"Genesis hash configured for development ({}), skipping verification",
+				hex_str
+			);
+			// Return a dummy hash for development
+			return Ok(Self::Dev);
+		}
+
+		let bytes: [u8; 32] = from_hex(hex_str)
+			.map_err(|_| ClientCreationError::InvalidGenesisHash(hex_str.to_string()))?
+			.try_into()
+			.map_err(|_| ClientCreationError::InvalidGenesisHash(hex_str.to_string()))?;
+
+		Ok(Self::Hash(H256::from(bytes)))
+	}
+
+	fn matches(&self, other: &H256) -> bool {
+		match self {
+			GenesisHash::Dev => true,
+			GenesisHash::Hash(hash) => hash.eq(other),
+		}
+	}
+}
+
+// Custom type for merged subscription streams
+struct MergedSubscriptions {
+	headers: Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>,
+	justifications: Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>,
+}
+
+impl Stream for MergedSubscriptions {
+	type Item = Result<Subscription, subxt::error::Error>;
+
+	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+		// Randomly decide which stream to poll first
+		let poll_headers_first = rand::thread_rng().gen_bool(0.5);
+		self.poll_both(cx, poll_headers_first)
+	}
+}
+
+impl MergedSubscriptions {
+	// Helper method used to avoid code duplication
+	fn poll_both(
+		&mut self,
+		cx: &mut Context<'_>,
+		headers_first: bool,
+	) -> Poll<Option<<Self as Stream>::Item>> {
+		// Switch streams based on if Headers streams bool is set
+		let (first, second, first_label, second_label) = if headers_first {
+			(
+				&mut self.headers,
+				&mut self.justifications,
+				"Avail Headers",
+				"Grandpa Justification",
+			)
+		} else {
+			(
+				&mut self.justifications,
+				&mut self.headers,
+				"Grandpa Justification",
+				"Avail Headers",
+			)
+		};
+
+		// Poll the first chosen stream
+		match first.as_mut().poll_next(cx) {
+			Poll::Ready(None) => {
+				debug!("{first_label} stream ended, terminating merged stream");
+				return Poll::Ready(None);
+			},
+			Poll::Ready(Some(Ok(item))) => {
+				trace!("Received {first_label} item");
+				return Poll::Ready(Some(Ok(item)));
+			},
+			Poll::Ready(Some(Err(e))) => {
+				error!("Error in Avail Headers stream: {:?}", e);
+				return Poll::Ready(Some(Err(e)));
+			},
+			// Do nothing here, fall into polling the next stream
+			Poll::Pending => {},
+		}
+
+		// If the first stream is pending, try the second stream
+		match second.as_mut().poll_next(cx) {
+			Poll::Ready(None) => {
+				debug!("{second_label} stream ended, terminating merged stream");
+				Poll::Ready(None)
+			},
+			Poll::Ready(Some(Ok(item))) => {
+				trace!("Received {second_label} item");
+				Poll::Ready(Some(Ok(item)))
+			},
+			Poll::Ready(Some(Err(e))) => {
+				error!("Error in Avail Headers stream: {:?}", e);
+				Poll::Ready(Some(Err(e)))
+			},
+			Poll::Pending => Poll::Pending,
+		}
+	}
+}
+
 #[derive(Clone)]
 pub struct Client<T: Database> {
-	subxt_client: Arc<RwLock<Arc<SDK>>>,
+	subxt_client: Arc<RwLock<SDK>>,
 	db: T,
 	nodes: Nodes,
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
-	client_sender: Option<UnboundedSender<LcEvent>>,
 }
 
 pub struct SubmitResponse {
@@ -48,232 +211,305 @@ pub struct SubmitResponse {
 }
 
 impl<D: Database> Client<D> {
+	/// Creates new RPC Client
 	pub async fn new(
 		db: D,
 		nodes: Nodes,
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
-		client_sender: Option<UnboundedSender<LcEvent>>,
 	) -> Result<Self> {
-		// try and connect appropriate Node from the provided list
-		// will do retries with the provided Retry Config
-		let (client, node, _) = match shutdown
-			.with_cancel(Retry::spawn(retry_config.clone(), || async {
-				Self::try_connect_and_execute(
-					&nodes.shuffle(Default::default()).0,
-					expected_genesis_hash,
-					|_| futures::future::ok(()),
-				)
-				.await
-			}))
-			.await
-		{
-			Ok(result) => result?,
-			Err(err) => {
-				return Err(eyre!(
-					"RPC Client creation Retry strategy halted due to shutdown: {err}"
-				))
-			},
-		};
+		let (client, node) = Self::initialize_connection(
+			&nodes,
+			expected_genesis_hash,
+			retry_config.clone(),
+			shutdown.clone(),
+		)
+		.await?;
 
-		// update application wide State with the newly connected Node
-		// store the currently persisted node from DB implementation
-		db.put(RpcNodeKey, node);
-
-		Ok(Self {
+		let client = Self {
 			subxt_client: Arc::new(RwLock::new(client)),
 			db,
 			nodes,
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
 			shutdown,
-			client_sender,
-		})
-	}
-
-	async fn create_subxt_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
-		let client = SDK::new_insecure(host)
-			.await
-			.map_err(|error| eyre!("{error}"))?;
-
-		// check genesis hash
-		let genesis_hash = client.api.genesis_hash();
-		info!("Genesis hash: {:?}", genesis_hash);
-		if let Some(cfg_genhash) = from_hex(expected_genesis_hash)
-			.ok()
-			.and_then(|e| TryInto::<[u8; 32]>::try_into(e).ok().map(H256::from))
-		{
-			if !genesis_hash.eq(&cfg_genhash) {
-				Err(eyre!(
-					"Genesis hash doesn't match the configured one! Change the config or the node url ({}).", host
-				))?
-			}
-		} else if expected_genesis_hash.starts_with(DEV_FLAG_GENHASH) {
-			warn!("Genesis hash configured for development ({}), skipping the genesis hash check entirely.", expected_genesis_hash);
-		} else {
-			Err(eyre!(
-				"Genesis hash invalid, badly configured or missing (\"{}\").",
-				expected_genesis_hash
-			))?
 		};
 
-		// check system and runtime versions
-		let system_version: String = client.rpc.system.version().await?;
-		let runtime_version: RuntimeVersion = client.api.runtime_version();
+		client.db.put(RpcNodeKey, node);
 
-		let variant = Node::new(
+		Ok(client)
+	}
+
+	// Initializes the first connection to the shuffled list of RPC nodes using the provided Retry strategy.
+	// The process can be interrupted by the Shutdown signal.
+	async fn initialize_connection(
+		nodes: &Nodes,
+		expected_genesis_hash: &str,
+		retry_config: RetryConfig,
+		shutdown: Controller<String>,
+	) -> Result<(SDK, Node)> {
+		let (available_nodes, _) = nodes.shuffle(Default::default());
+
+		let connection_result = shutdown
+			.with_cancel(Retry::spawn(retry_config, || {
+				Self::attempt_connection(&available_nodes, expected_genesis_hash)
+			}))
+			.await;
+
+		match connection_result {
+			Ok(Ok(ConnectionAttempt { client, node, .. })) => Ok((client, node)),
+			Ok(Err(err)) => Err(RetryError::ConnectionFailed(err).into()),
+			Err(err) => Err(RetryError::Shutdown(err.to_string()).into()),
+		}
+	}
+
+	// Attempts to establish the first successful connection from the list of provided Nodes with a matching genesis hash.
+	async fn attempt_connection(
+		nodes: &[Node],
+		expected_genesis_hash: &str,
+	) -> Result<ConnectionAttempt<()>> {
+		// Not passing any RPC function calls since this is a first try of connecting RPC nodes
+		Self::try_connect_and_execute(nodes, expected_genesis_hash, |_| futures::future::ok(()))
+			.await
+	}
+
+	// Iterates through the RPC nodes, tries to create the first successful connection, verifies the genesis hash,
+	// and tries to executes the given RPC function.
+	async fn try_connect_and_execute<T, F, Fut>(
+		nodes: &[Node],
+		expected_genesis_hash: &str,
+		f: F,
+	) -> Result<ConnectionAttempt<T>>
+	where
+		F: FnMut(SDK) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		if nodes.is_empty() {
+			return Err(ClientCreationError::NoNodesAvailable.into());
+		}
+
+		let mut last_error = None;
+		for node in nodes {
+			match Self::try_node_connection_and_exec(node, expected_genesis_hash, f).await {
+				Ok(attempt) => {
+					info!("Successfully connected to RPC: {}", node.host);
+					return Ok(attempt);
+				},
+				Err(err) => {
+					warn!(host = %node.host, error = %err, "Failed to connect to RPC node");
+					last_error = Some(err);
+				},
+			}
+		}
+
+		Err(ClientCreationError::AllNodesFailed {
+			last_error: last_error.unwrap_or_else(|| eyre!("No error recorded")),
+		}
+		.into())
+	}
+
+	// Tries to connect to the provided RPC host, verifies the genesis hash,
+	// and tries to executes the given RPC function.
+	async fn try_node_connection_and_exec<T, F, Fut>(
+		node: &Node,
+		expected_genesis_hash: &str,
+		mut f: F,
+	) -> Result<ConnectionAttempt<T>>
+	where
+		F: FnMut(SDK) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		match Self::create_rpc_client(&node.host, expected_genesis_hash).await {
+			Ok((client, node)) => {
+				// Execute the provided  RPC function call with the created client
+				let result =
+					f(client.clone())
+						.await
+						.map_err(|e| ClientCreationError::RpcCallFailed {
+							host: node.host.clone(),
+							error: e,
+						})?;
+
+				Ok(ConnectionAttempt {
+					client,
+					node,
+					result,
+				})
+			},
+			Err(err) => Err(ClientCreationError::ConnectionFailed {
+				host: node.host.clone(),
+				error: err,
+			}
+			.into()),
+		}
+	}
+
+	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
+	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
+		let client = SDK::new_insecure(host)
+			.await
+			.map_err(|e| ClientCreationError::SdkFailure(eyre!("{e}")))?;
+
+		// Verify genesis hash
+		let genesis_hash = client.api.genesis_hash();
+		info!("Genesis hash for {}: {:?}", host, genesis_hash);
+
+		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
+
+		if !expected_hash.matches(&genesis_hash) {
+			return Err(ClientCreationError::GenesisHashMismatch {
+				host: host.to_string(),
+				expected: expected_genesis_hash.to_string(),
+				found: format!("{:?}", genesis_hash),
+			}
+			.into());
+		}
+
+		// Fetch system and runtime information
+		let system_version = client
+			.rpc
+			.system
+			.version()
+			.await
+			.map_err(|e| ClientCreationError::SystemVersionError(e.into()))?;
+
+		let runtime_version = client.api.runtime_version();
+
+		// Create Node variant
+		let node = Node::new(
 			host.to_string(),
 			system_version,
 			runtime_version.spec_version,
 			genesis_hash,
 		);
 
-		Ok((client, variant))
+		Ok((client, node))
 	}
 
-	async fn try_connect_and_execute<T, F, Fut>(
-		nodes: &[Node],
-		expected_genesis_hash: &str,
-		mut f: F,
-	) -> Result<(Arc<SDK>, Node, T)>
+	// Provides the Retry strategy for the passed RPC function call
+	async fn with_retries<F, Fut, T>(&self, f: F) -> Result<T>
 	where
-		F: FnMut(Arc<SDK>) -> Fut + Copy,
+		F: FnMut(SDK) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		// go through the provided list of Nodes to try and find and appropriate one,
-		// after a successful connection, try to execute passed function call
-		for Node { host, .. } in nodes.iter() {
-			let result = Self::create_subxt_client(host, expected_genesis_hash)
-				.and_then(move |(client, node)| {
-					let client = Arc::new(client);
-					f(client.clone()).map_ok(move |res| (client, node, res))
-				})
-				.await;
-
-			match result {
-				Err(error) => warn!(host, %error, "Skipping connection with this node"),
-				ok => {
-					info!("Connected to RPC: {}", host);
-					return ok;
-				},
-			}
+		// First attempt with current client
+		if let Ok(result) = self.try_with_current_client(f).await {
+			return Ok(result);
 		}
 
-		Err(eyre!("Failed to connect any appropriate working node"))
-	}
-
-	async fn with_retries<F, Fut, T>(&self, mut f: F) -> Result<T>
-	where
-		F: FnMut(Arc<SDK>) -> Fut + Copy,
-		Fut: std::future::Future<Output = Result<T>>,
-	{
-		// try and execute the passed function, use the Retry strategy if needed
-		match self
-			.shutdown
-			.with_cancel(Retry::spawn(
-				self.retry_config.clone(),
-				move || async move { f(self.current_client().await).await },
-			))
-			.await
-		{
-			// this was successful, return early
-			Ok(Ok(result)) => return Ok(result),
-			// if there was an error, skip ahead and try to find a new Node
-			Ok(Err(_)) => {},
-			// shutdown happened, stop everything
-			Err(err) => {
-				return Err(eyre!(
-					"RPC Client call Retry Strategy halted due to shutdown: {err}"
-				))
-			},
-		}
-
-		// if retries were not successful, find another Node where this could still be done
-		let Some(connected_node) = self.db.get(RpcNodeKey) else {
-			return Err(eyre!(
-				"Couldn't find a persisted Node that was connected previously."
-			));
-		};
+		// If current client failed try to reconnect using stored node
+		let connected_node = self.db.get(RpcNodeKey).ok_or(RetryError::NoPreviousNode)?;
 
 		warn!(
 			"Executing RPC call with host: {} failed. Trying to create a new RPC connection.",
 			connected_node.host
 		);
 
-		let expected_genesis_hash = &self.expected_genesis_hash;
+		// Try new nodes first, then previous nodes if new ones fail
+		let (new_nodes, previous_nodes) = self.nodes.shuffle(&connected_node.host);
 
-		// shuffle nodes, if possible
-		let (nodes, previous) = self.nodes.shuffle(&connected_node.host);
+		if let Ok(result) = self.try_nodes_with_retries(f, &new_nodes).await {
+			return Ok(result);
+		}
 
-		let nodes_fn = || async {
-			let f = move |client| f(client).map_err(Report::from);
-			Self::try_connect_and_execute(&nodes, expected_genesis_hash, f).await
-		};
-
-		// go through available Nodes, try to connect, Retry connecting if needed
-		match self
-                        .shutdown
-                        .with_cancel(Retry::spawn(self.retry_config.clone(), nodes_fn))
-                        .await
-                {
-                        Ok(Ok((client, node, result))) => {
-                                // retries gave results,
-                                // update db with currently connected Node and keep a reference to the created Client
-                                *self.subxt_client.write().await = client;
-								if let Some(event_sender) = &self.client_sender {
-									let connected_host: String = node.host.clone();
-									event_sender.send(LcEvent::ConnectedHost(connected_host))?;
-								}
-                                self.db.put(RpcNodeKey, node);
-                                return Ok(result);
-                        },
-                        Ok(_) => {},
-                        Err(err) => {
-                                return Err(eyre!(
-                                        "RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
-                                ))
-                        },
-                };
-
-		let previous_fn = || async {
-			let f = move |client| f(client).map_err(Report::from);
-			Self::try_connect_and_execute(&previous, expected_genesis_hash, f).await
-		};
-
-		// go through other Nodes, try to connect, Retry connecting if needed
-		match self
-                        .shutdown
-                        .with_cancel(Retry::spawn(self.retry_config.clone(), previous_fn))
-                        .await
-                {
-                        Ok(Ok((client, node, result))) => {
-                            // retries gave results,
-                            // update db with currently connected Node and keep a reference to the created Client
-                            *self.subxt_client.write().await = client;
-                            self.db.put(RpcNodeKey, node);
-                            Ok(result)
-                        },
-                        Ok(Err(error)) => Err(error),
-                        Err(err) => Err(eyre!(
-                            "RPC Node selection for passed Client calls' Retry Strategy halted due to shutdown: {err}"
-                        )),
-                }
+		// Fall back to previous nodes, if new nodes failed
+		self.try_nodes_with_retries(f, &previous_nodes).await
 	}
 
-	async fn create_subxt_subscriptions(
-		client: Arc<SDK>,
+	// Tries to execute the provided RPC function call only with the currently connected RPC node
+	async fn try_with_current_client<F, Fut, T>(&self, mut f: F) -> Result<T>
+	where
+		F: FnMut(SDK) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		let retry_result = self
+			.shutdown
+			.with_cancel(Retry::spawn(
+				self.retry_config.clone(),
+				move || async move { f(self.current_client().await).await },
+			))
+			.await;
+
+		match retry_result {
+			Ok(Ok(result)) => Ok(result),
+			Ok(Err(err)) => Err(RetryError::ConnectionFailed(err).into()),
+			Err(err) => Err(RetryError::Shutdown(err.to_string()).into()),
+		}
+	}
+
+	// Iterates through the nodes to find the first successful connection, executes the given RPC function, and retries on failure using the provided Retry strategy.
+	async fn try_nodes_with_retries<F, Fut, T>(&self, f: F, nodes: &[Node]) -> Result<T>
+	where
+		F: FnMut(SDK) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
+		let nodes_fn =
+			|| async { Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f).await };
+
+		match self
+			.shutdown
+			.with_cancel(Retry::spawn(self.retry_config.clone(), nodes_fn))
+			.await
+		{
+			Ok(Ok(ConnectionAttempt {
+				client,
+				node,
+				result,
+			})) => {
+				*self.subxt_client.write().await = client;
+				self.db.put(RpcNodeKey, node);
+				Ok(result)
+			},
+			Ok(Err(err)) => Err(RetryError::ConnectionFailed(err).into()),
+			Err(err) => Err(RetryError::Shutdown(err.to_string()).into()),
+		}
+	}
+
+	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
+		async_stream::stream! {
+			loop {
+				match self.with_retries(Self::create_rpc_subscriptions).await {
+					Ok(mut stream) => {
+						while let Some(result) = stream.next().await {
+							match result {
+								Ok(item) => yield Ok(item),
+								Err(err) => {
+									warn!(error = %err, "Received error on RPC Subscription stream. Creating new connection.");
+									break;
+								}
+							}
+						}
+						warn!("RPC Subscription Stream exhausted. Creating new connection.");
+					}
+					Err(err) => {
+						warn!(error = %err, "Failed to create RPC Subscription stream.");
+						yield Err(err);
+						return;
+					}
+				}
+			}
+		}
+	}
+
+	pub async fn current_client(&self) -> SDK {
+		self.subxt_client.read().await.clone()
+	}
+
+	async fn create_rpc_subscriptions(
+		client: SDK,
 	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>> {
-		// create Header subscription
-		let header_subscription = client
+		// Create fused Avail Header subscription
+		let headers = client
 			.api
 			.backend()
 			.stream_finalized_block_headers()
-			.await?;
-		// map Header subscription to the same type for later matching
-		let headers = header_subscription.map_ok(|(header, _)| Subscription::Header(header));
+			.await?
+			.map_ok(|(header, _)| Subscription::Header(header))
+			.fuse();
 
-		let justification_subscription = client
+		// Create fused GrandpaJustification subscription
+		let justifications = client
 			.rpc
 			.client
 			.subscribe(
@@ -281,48 +517,14 @@ impl<D: Database> Client<D> {
 				rpc_params![],
 				"grandpa_unsubscribeJustifications",
 			)
-			.await?;
-		// map Justification subscription to the same type for later matching
-		let justifications = justification_subscription.map_ok(Subscription::Justification);
+			.await?
+			.map_ok(Subscription::Justification)
+			.fuse();
 
-		Ok(headers.merge(justifications))
-	}
-
-	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
-		async_stream::stream! {
-			'outer: loop{
-				let mut stream = match self.with_retries(|client| async move{
-					Self::create_subxt_subscriptions(client)
-						.await
-				}).await {
-					Ok(s) => s,
-					Err(err) => {
-						yield Err(err);
-						return;
-					}
-				};
-
-				loop {
-					// no more subscriptions left on stream, we have to try and create a new stream
-					let Some(result) = stream.next().await else {
-						warn!("No more items on Subscriptions Stream. Trying to create a new one.");
-						continue 'outer
-					};
-					match result {
-						Ok(item) => yield Ok(item),
-						// if Error was received, we need to switch to another RPC Client
-						Err(err)=> {
-							warn!(%err, "Received Error on stream. Trying to create a new one.");
-							continue 'outer
-						}
-					}
-				}
-			}
-		}
-	}
-
-	pub async fn current_client(&self) -> Arc<SDK> {
-		self.subxt_client.read().await.clone()
+		Ok(MergedSubscriptions {
+			headers: Box::pin(headers),
+			justifications: Box::pin(justifications),
+		})
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {

@@ -21,7 +21,10 @@ use tracing::{debug, info, trace};
 
 use crate::types::AgentVersion;
 
-use super::{client::Command, Behaviour, BehaviourEvent};
+use super::{
+	client::{Command, PeerInfo},
+	Behaviour, BehaviourEvent,
+};
 
 enum QueryChannel {
 	Bootstrap(oneshot::Sender<Result<()>>),
@@ -348,6 +351,22 @@ impl EventLoop {
 			Command::GetMultiaddress { response_sender } => {
 				let last_address = self.swarm.external_addresses().last();
 				_ = response_sender.send(last_address.cloned());
+			},
+			Command::GetLocalPeerInfo { response_sender } => {
+				let local_listeners: Vec<String> =
+					self.swarm.listeners().map(ToString::to_string).collect();
+
+				let external_addresses: Vec<String> = self
+					.swarm
+					.external_addresses()
+					.map(ToString::to_string)
+					.collect();
+
+				_ = response_sender.send(PeerInfo {
+					peer_id: self.swarm.local_peer_id().to_string(),
+					local_listeners,
+					external_listeners: external_addresses,
+				});
 			},
 		}
 	}
