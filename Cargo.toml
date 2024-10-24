@@ -7,6 +7,7 @@ members = [
 	"crawler",
 	"fat",
 	"relay",
+	"web",
 ]
 default-members = ["client"]
 resolver = "2"
@@ -17,7 +18,7 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-rust = { git = "https://github.com/availproject/avail.git", branch = "main" }
+avail-rust = { git = "https://github.com/availproject/avail.git", branch = "avail-rust-wasm" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 avail-light-core = { path = "./core" }
 
@@ -25,17 +26,20 @@ anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.73"
 clap = { version = "4.4.4", features = ["derive", "cargo"] }
-color-eyre = "0.6.2"
+color-eyre = { version = "0.6.2", default-features = false }
 confy = "0.5.1"
 hex = "0.4.3"
 rand = "0.8.4"
-libp2p = { version = "0.54", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
-libp2p-allow-block-list = "0.4"
-libp2p-webrtc = { version = "=0.8.0-alpha", features = ["tokio"] }
+libp2p = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+libp2p-allow-block-list = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3" }
+libp2p-webrtc = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3" }
+libp2p-webrtc-websys = { git = "https://github.com/libp2p/rust-libp2p", rev = "9a45db3f82b760c93099e66ec77a7a772d1f6cd3" }
+# libp2p = { version = "0.54", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "upnp", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+# libp2p-allow-block-list = "0.4"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.35", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }
@@ -60,3 +64,9 @@ incremental = false
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+[patch.crates-io]
+# Patching sp-io since some dependencies references patched and some non-patched versions,
+# and we need to specify `disable-allocator` feature to enable wasm compilation.
+# Patch needs to match patched tag of dependencies, for feature toggle to be applied.
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-10" }

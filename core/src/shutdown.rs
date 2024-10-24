@@ -9,6 +9,7 @@ use std::{
 	sync::{Arc, Mutex},
 	task::Waker,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use utils::user_signal;
 
 mod completed;
@@ -162,6 +163,7 @@ impl<T: Clone> Controller<T> {
 		}
 	}
 
+	#[cfg(not(target_arch = "wasm32"))]
 	/// Triggers a shutdown when each of the default termination signals is received.
 	///
 	/// On Unix-based systems, these signals are Ctrl-C (SIGINT) or SIGTERM,
@@ -382,6 +384,8 @@ mod tests {
 		runtime,
 		time::{sleep, timeout},
 	};
+	#[cfg(target_arch = "wasm32")]
+	use tokio_with_wasm::alias as tokio;
 
 	use crate::shutdown::{Controller, ShutdownHasCompleted, ShutdownHasStarted};
 
