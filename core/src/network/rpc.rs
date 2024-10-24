@@ -199,7 +199,6 @@ pub async fn init<T: Database + Clone>(
 		genesis_hash,
 		rpc.retry.clone(),
 		shutdown,
-		client_sender,
 	)
 	.await?;
 	// create output channel for RPC Subscription Events
