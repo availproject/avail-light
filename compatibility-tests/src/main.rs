@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
 	};
 
 	let shutdown = Controller::new();
-	let (rpc_client, _, subscriptions) = rpc::init(db, "DEV", &rpc_cfg, shutdown).await?;
+	let (rpc_client, _, subscriptions) = rpc::init(db, "DEV", &rpc_cfg, shutdown, None).await?;
 	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;

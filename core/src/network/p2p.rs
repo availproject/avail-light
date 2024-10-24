@@ -72,7 +72,6 @@ pub enum OutputEvent {
 	IncomingGetRecord,
 	IncomingPutRecord,
 	KadModeChange(Mode),
-
 	Ping(Duration),
 	IncomingConnection,
 	IncomingConnectionError,

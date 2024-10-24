@@ -4,7 +4,7 @@ use crate::cli::CliOpts;
 use avail_light_core::{
 	api,
 	data::{
-		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
+		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RpcNodeKey,
 		SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
@@ -12,7 +12,8 @@ use avail_light_core::{
 	network::{
 		self,
 		p2p::{self, extract_block_num, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
-		rpc, Network,
+		rpc::{self, OutputEvent as RpcEvent},
+		Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -137,8 +138,15 @@ async fn run(
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let (rpc_client, rpc_events, rpc_subscriptions) =
-		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
+	let (rpc_sender, rpc_receiver) = mpsc::unbounded_channel::<RpcEvent>();
+	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+		db.clone(),
+		&cfg.genesis_hash,
+		&cfg.rpc,
+		shutdown.clone(),
+		Some(rpc_sender),
+	)
+	.await?;
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
@@ -318,6 +326,11 @@ async fn run(
 		),
 	];
 
+	let host = db
+		.get(RpcNodeKey)
+		.map(|connected_ws| connected_ws.host)
+		.ok_or_else(|| eyre!("No connected host found"))?;
+
 	let metrics =
 		telemetry::otlp::initialize(cfg.project_name.clone(), &cfg.origin, cfg.otel.clone())
 			.wrap_err("Unable to initialize OpenTelemetry service")?;
@@ -325,13 +338,19 @@ async fn run(
 	let mut state = ClientState::new(
 		metrics,
 		cfg.libp2p.kademlia.operation_mode.into(),
+		host,
 		Multiaddr::empty(),
 		metric_attributes,
 	);
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
-			.handle_events(p2p_event_receiver, maintenance_receiver, lc_receiver)
+			.handle_events(
+				p2p_event_receiver,
+				maintenance_receiver,
+				lc_receiver,
+				rpc_receiver,
+			)
 			.await;
 	}));
 
@@ -448,6 +467,7 @@ struct ClientState {
 	metrics: Metrics,
 	kad_mode: Mode,
 	multiaddress: Multiaddr,
+	connected_host: String,
 	metric_attributes: Vec<(String, String)>,
 	active_blocks: HashMap<u32, BlockStat>,
 }
@@ -456,6 +476,7 @@ impl ClientState {
 	fn new(
 		metrics: Metrics,
 		kad_mode: Mode,
+		connected_host: String,
 		multiaddress: Multiaddr,
 		metric_attributes: Vec<(String, String)>,
 	) -> Self {
@@ -463,6 +484,7 @@ impl ClientState {
 			metrics,
 			kad_mode,
 			multiaddress,
+			connected_host,
 			metric_attributes,
 			active_blocks: Default::default(),
 		}
@@ -476,10 +498,18 @@ impl ClientState {
 		self.kad_mode = value;
 	}
 
+	fn update_connected_host(&mut self, value: String) {
+		self.connected_host = value;
+	}
+
 	fn attributes(&self) -> Vec<(String, String)> {
 		let mut attrs = vec![
 			("operating_mode".to_string(), self.kad_mode.to_string()),
 			("multiaddress".to_string(), self.multiaddress.to_string()),
+			(
+				"connected_host".to_string(),
+				self.connected_host.to_string(),
+			),
 		];
 
 		attrs.extend(self.metric_attributes.clone());
@@ -566,6 +596,7 @@ impl ClientState {
 		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut lc_receiver: UnboundedReceiver<LcEvent>,
+		mut rpc_receiver: UnboundedReceiver<RpcEvent>,
 	) {
 		self.metrics.count(MetricCounter::Starts, self.attributes());
 		loop {
@@ -674,10 +705,17 @@ impl ClientState {
 						},
 						LcEvent::RecordRPCFetchDuration(duration) => {
 							self.metrics.record(MetricValue::RPCFetchDuration(duration));
-						}
+						},
 						LcEvent::RecordBlockConfidence(confidence) => {
 							self.metrics.record(MetricValue::BlockConfidence(confidence));
-						}
+						},
+					}
+				}
+				Some(rpc_event) = rpc_receiver.recv() => {
+					match rpc_event {
+						RpcEvent::ConnectedHost(host) => {
+							self.update_connected_host(host);
+						},
 					}
 				}
 				// break the loop if all channels are closed
