@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.2
+
+- Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
+
 ## 1.12.1
 
 - Add back origin attribute to metrics
