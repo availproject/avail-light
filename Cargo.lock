@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-core"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "async-std",
  "async-stream",

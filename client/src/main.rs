@@ -115,16 +115,11 @@ async fn run(
 	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bs_result = p2p_clone
+		if let Err(error) = p2p_clone
 			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-			.await;
-		match bs_result {
-			Ok(_) => {
-				info!("Bootstrap done.");
-			},
-			Err(e) => {
-				warn!("Bootstrap process: {e:?}.");
-			},
+			.await
+		{
+			warn!("Bootstrap unsuccessful: {error:#}");
 		}
 	}));
 
