@@ -1,11 +1,8 @@
 # Changelog
 
-## 1.12.2
-
-- Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
-
 ## 1.12.1
 
+- Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
 - Add back origin attribute to metrics
 - Update avail-light-core to 1.0.3
 
