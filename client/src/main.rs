@@ -115,10 +115,12 @@ async fn run(
 	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		let _ = p2p_clone
+		if let Err(error) = p2p_clone
 			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
 			.await
-			.map_err(|e| warn!("Bootstrap unsuccessful: {e:?}."));
+		{
+			warn!("Bootstrap unsuccessful: {error:#}");
+		}
 	}));
 
 	#[cfg(feature = "network-analysis")]
