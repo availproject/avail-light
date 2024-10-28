@@ -60,6 +60,9 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+mod cli;
+mod config;
+
 /// Light Client for Avail Blockchain
 
 async fn run(
@@ -138,13 +141,13 @@ async fn run(
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let (rpc_sender, rpc_receiver) = mpsc::unbounded_channel::<RpcEvent>();
+	let (rpc_event_sender, rpc_event_receiver) = mpsc::unbounded_channel::<RpcEvent>();
 	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.genesis_hash,
 		&cfg.rpc,
 		shutdown.clone(),
-		Some(rpc_sender),
+		rpc_event_sender,
 	)
 	.await?;
 
@@ -326,9 +329,9 @@ async fn run(
 		),
 	];
 
-	let host = db
+	let rpc_host = db
 		.get(RpcNodeKey)
-		.map(|connected_ws| connected_ws.host)
+		.map(|node| node.host)
 		.ok_or_else(|| eyre!("No connected host found"))?;
 
 	let metrics =
@@ -338,7 +341,7 @@ async fn run(
 	let mut state = ClientState::new(
 		metrics,
 		cfg.libp2p.kademlia.operation_mode.into(),
-		host,
+		rpc_host,
 		Multiaddr::empty(),
 		metric_attributes,
 	);
@@ -349,16 +352,13 @@ async fn run(
 				p2p_event_receiver,
 				maintenance_receiver,
 				lc_receiver,
-				rpc_receiver,
+				rpc_event_receiver,
 			)
 			.await;
 	}));
 
 	Ok(())
 }
-
-mod cli;
-mod config;
 
 pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(config_path) = &opts.config {
@@ -467,7 +467,7 @@ struct ClientState {
 	metrics: Metrics,
 	kad_mode: Mode,
 	multiaddress: Multiaddr,
-	connected_host: String,
+	rpc_host: String,
 	metric_attributes: Vec<(String, String)>,
 	active_blocks: HashMap<u32, BlockStat>,
 }
@@ -484,7 +484,7 @@ impl ClientState {
 			metrics,
 			kad_mode,
 			multiaddress,
-			connected_host,
+			rpc_host: connected_host,
 			metric_attributes,
 			active_blocks: Default::default(),
 		}
@@ -498,18 +498,15 @@ impl ClientState {
 		self.kad_mode = value;
 	}
 
-	fn update_connected_host(&mut self, value: String) {
-		self.connected_host = value;
+	fn update_rpc_host(&mut self, value: String) {
+		self.rpc_host = value;
 	}
 
 	fn attributes(&self) -> Vec<(String, String)> {
 		let mut attrs = vec![
 			("operating_mode".to_string(), self.kad_mode.to_string()),
 			("multiaddress".to_string(), self.multiaddress.to_string()),
-			(
-				"connected_host".to_string(),
-				self.connected_host.to_string(),
-			),
+			("rpc_host".to_string(), self.rpc_host.to_string()),
 		];
 
 		attrs.extend(self.metric_attributes.clone());
@@ -714,7 +711,7 @@ impl ClientState {
 				Some(rpc_event) = rpc_receiver.recv() => {
 					match rpc_event {
 						RpcEvent::ConnectedHost(host) => {
-							self.update_connected_host(host);
+							self.update_rpc_host(host);
 						},
 					}
 				}

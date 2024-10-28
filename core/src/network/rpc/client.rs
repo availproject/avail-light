@@ -203,7 +203,7 @@ pub struct Client<T: Database> {
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
-	rpc_sender: Option<UnboundedSender<RpcEvent>>,
+	event_sender: UnboundedSender<RpcEvent>,
 }
 
 pub struct SubmitResponse {
@@ -220,13 +220,14 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
-		rpc_sender: Option<UnboundedSender<RpcEvent>>,
+		event_sender: UnboundedSender<RpcEvent>,
 	) -> Result<Self> {
 		let (client, node) = Self::initialize_connection(
 			&nodes,
 			expected_genesis_hash,
 			retry_config.clone(),
 			shutdown.clone(),
+			event_sender.clone(),
 		)
 		.await?;
 
@@ -237,7 +238,7 @@ impl<D: Database> Client<D> {
 			retry_config,
 			expected_genesis_hash: expected_genesis_hash.to_string(),
 			shutdown,
-			rpc_sender,
+			event_sender,
 		};
 
 		client.db.put(RpcNodeKey, node);
@@ -252,12 +253,17 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
+		event_sender: UnboundedSender<RpcEvent>,
 	) -> Result<(SDK, Node)> {
 		let (available_nodes, _) = nodes.shuffle(Default::default());
 
 		let connection_result = shutdown
 			.with_cancel(Retry::spawn(retry_config, || {
-				Self::attempt_connection(&available_nodes, expected_genesis_hash)
+				Self::attempt_connection(
+					&available_nodes,
+					expected_genesis_hash,
+					event_sender.clone(),
+				)
 			}))
 			.await;
 
@@ -272,13 +278,14 @@ impl<D: Database> Client<D> {
 	async fn attempt_connection(
 		nodes: &[Node],
 		expected_genesis_hash: &str,
+		event_sender: UnboundedSender<RpcEvent>,
 	) -> Result<ConnectionAttempt<()>> {
 		// Not passing any RPC function calls since this is a first try of connecting RPC nodes
 		Self::try_connect_and_execute(
 			nodes,
 			expected_genesis_hash,
 			|_| futures::future::ok(()),
-			None,
+			event_sender,
 		)
 		.await
 	}
@@ -289,7 +296,7 @@ impl<D: Database> Client<D> {
 		nodes: &[Node],
 		expected_genesis_hash: &str,
 		f: F,
-		rpc_sender: Option<UnboundedSender<RpcEvent>>,
+		event_sender: UnboundedSender<RpcEvent>,
 	) -> Result<ConnectionAttempt<T>>
 	where
 		F: FnMut(SDK) -> Fut + Copy,
@@ -304,9 +311,9 @@ impl<D: Database> Client<D> {
 			match Self::try_node_connection_and_exec(node, expected_genesis_hash, f).await {
 				Ok(attempt) => {
 					info!("Successfully connected to RPC: {}", node.host);
-					if let Some(sender) = rpc_sender {
-						sender.send(RpcEvent::ConnectedHost(node.host.clone()))?;
-					}
+					// output event, signaling newly connected RPC host
+					event_sender.send(RpcEvent::ConnectedHost(node.host.clone()))?;
+
 					return Ok(attempt);
 				},
 				Err(err) => {
@@ -457,12 +464,14 @@ impl<D: Database> Client<D> {
 		F: FnMut(SDK) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		let nodes_fn = move || {
-			let rpc_sender = self.rpc_sender.clone();
-			async move {
-				Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f, rpc_sender)
-					.await
-			}
+		let nodes_fn = move || async move {
+			Self::try_connect_and_execute(
+				nodes,
+				&self.expected_genesis_hash,
+				f,
+				self.event_sender.clone(),
+			)
+			.await
 		};
 
 		match self
