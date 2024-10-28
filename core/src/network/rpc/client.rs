@@ -21,11 +21,12 @@ use std::{
 	pin::Pin,
 	sync::Arc,
 	task::{Context, Poll},
+	time::Duration,
 };
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, time::timeout};
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
@@ -117,10 +118,26 @@ impl GenesisHash {
 	}
 }
 
+type SubscriptionStream =
+	Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>;
+
 // Custom type for merged subscription streams
 struct MergedSubscriptions {
-	headers: Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>,
-	justifications: Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>,
+	headers: SubscriptionStream,
+	justifications: SubscriptionStream,
+}
+
+impl MergedSubscriptions {
+	fn streams(&mut self, headers_first: bool) -> Vec<(&mut SubscriptionStream, &str)> {
+		let mut streams = vec![
+			(&mut self.headers, "Avail Headers"),
+			(&mut self.justifications, "Grandpa Justification"),
+		];
+		if !headers_first {
+			streams.reverse();
+		}
+		streams
+	}
 }
 
 impl Stream for MergedSubscriptions {
@@ -129,68 +146,27 @@ impl Stream for MergedSubscriptions {
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
 		// Randomly decide which stream to poll first
 		let poll_headers_first = rand::thread_rng().gen_bool(0.5);
-		self.poll_both(cx, poll_headers_first)
-	}
-}
 
-impl MergedSubscriptions {
-	// Helper method used to avoid code duplication
-	fn poll_both(
-		&mut self,
-		cx: &mut Context<'_>,
-		headers_first: bool,
-	) -> Poll<Option<<Self as Stream>::Item>> {
-		// Switch streams based on if Headers streams bool is set
-		let (first, second, first_label, second_label) = if headers_first {
-			(
-				&mut self.headers,
-				&mut self.justifications,
-				"Avail Headers",
-				"Grandpa Justification",
-			)
-		} else {
-			(
-				&mut self.justifications,
-				&mut self.headers,
-				"Grandpa Justification",
-				"Avail Headers",
-			)
-		};
-
-		// Poll the first chosen stream
-		match first.as_mut().poll_next(cx) {
-			Poll::Ready(None) => {
-				debug!("{first_label} stream ended, terminating merged stream");
-				return Poll::Ready(None);
-			},
-			Poll::Ready(Some(Ok(item))) => {
-				trace!("Received {first_label} item");
-				return Poll::Ready(Some(Ok(item)));
-			},
-			Poll::Ready(Some(Err(e))) => {
-				error!("Error in Avail Headers stream: {:?}", e);
-				return Poll::Ready(Some(Err(e)));
-			},
-			// Do nothing here, fall into polling the next stream
-			Poll::Pending => {},
+		for (stream, label) in self.streams(poll_headers_first) {
+			let result = match (*stream).as_mut().poll_next(cx) {
+				Poll::Ready(None) => {
+					debug!("{label} stream ended, terminating merged stream");
+					Poll::Ready(None)
+				},
+				Poll::Ready(Some(Ok(item))) => {
+					info!("Received {label} item");
+					Poll::Ready(Some(Ok(item)))
+				},
+				Poll::Ready(Some(Err(e))) => {
+					error!("Error in {label} stream: {:?}", e);
+					Poll::Ready(Some(Err(e)))
+				},
+				Poll::Pending => continue,
+			};
+			return result;
 		}
 
-		// If the first stream is pending, try the second stream
-		match second.as_mut().poll_next(cx) {
-			Poll::Ready(None) => {
-				debug!("{second_label} stream ended, terminating merged stream");
-				Poll::Ready(None)
-			},
-			Poll::Ready(Some(Ok(item))) => {
-				trace!("Received {second_label} item");
-				Poll::Ready(Some(Ok(item)))
-			},
-			Poll::Ready(Some(Err(e))) => {
-				error!("Error in Avail Headers stream: {:?}", e);
-				Poll::Ready(Some(Err(e)))
-			},
-			Poll::Pending => Poll::Pending,
-		}
+		Poll::Pending
 	}
 }
 
@@ -467,18 +443,22 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
+		let timeout_in = Duration::from_secs(30);
 		async_stream::stream! {
 			loop {
 				match self.with_retries(Self::create_rpc_subscriptions).await {
 					Ok(mut stream) => {
-						while let Some(result) = stream.next().await {
-							match result {
-								Ok(item) => yield Ok(item),
-								Err(err) => {
-									warn!(error = %err, "Received error on RPC Subscription stream. Creating new connection.");
-									break;
-								}
+						loop {
+							match timeout(timeout_in, stream.next()).await {
+								Ok(Some(Ok(item))) => {
+									yield Ok(item);
+									continue;
+								},
+								Ok(Some(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+								Ok(None) => {},
+								Err(error) => warn!(%error, "Received timeout on RPC Subscription stream. Creating new connection."),
 							}
+							break;
 						}
 						warn!("RPC Subscription Stream exhausted. Creating new connection.");
 					}

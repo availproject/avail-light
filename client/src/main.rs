@@ -150,11 +150,9 @@ async fn run(
 	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
 		"Subscription loop failure triggered shutdown".to_string(),
 		async {
-			let result = rpc_subscriptions.run().await;
-			if let Err(ref err) = result {
-				error!(%err, "Subscription loop ended with error");
+			if let Err(error) = rpc_subscriptions.run().await {
+				error!(%error, "Subscription loop ended with error");
 			};
-			result
 		},
 	)));
 
@@ -172,7 +170,7 @@ async fn run(
 			if !rpc_subscriptions_handle.is_finished() {
 				return Err(report);
 			}
-			let Ok(Ok(Err(subscriptions_error))) = rpc_subscriptions_handle.await else {
+			let Ok(Err(subscriptions_error)) = rpc_subscriptions_handle.await else {
 				return Err(report);
 			};
 			return Err(eyre!(subscriptions_error));
