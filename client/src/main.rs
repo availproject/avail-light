@@ -2,7 +2,7 @@
 
 use crate::cli::CliOpts;
 use avail_light_core::{
-	api,
+	api::{self, v2::types::ApiData},
 	data::{
 		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RpcNodeKey,
 		SignerNonceKey, DB,
@@ -25,11 +25,7 @@ use avail_light_core::{
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::{
-	avail_core::AppId,
-	kate_recovery::{com::AppData, couscous},
-	sp_core::blake2_128,
-};
+use avail_rust::{avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -141,13 +137,13 @@ async fn run(
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let (rpc_event_sender, rpc_event_receiver) = mpsc::unbounded_channel::<RpcEvent>();
-	let (rpc_client, rpc_events, rpc_subscriptions) = rpc::init(
+	let (rpc_event_sender, rpc_event_receiver) = broadcast::channel(1000);
+	let (rpc_client, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&cfg.genesis_hash,
 		&cfg.rpc,
 		shutdown.clone(),
-		rpc_event_sender,
+		rpc_event_sender.clone(),
 	)
 	.await?;
 
@@ -157,9 +153,9 @@ async fn run(
 	db.put(SignerNonceKey, nonce);
 
 	// Subscribing to RPC events before first event is published
-	let publish_rpc_event_receiver = rpc_events.subscribe();
-	let first_header_rpc_event_receiver = rpc_events.subscribe();
-	let client_rpc_event_receiver = rpc_events.subscribe();
+	let publish_rpc_event_receiver = rpc_event_sender.subscribe();
+	let first_header_rpc_event_receiver = rpc_event_sender.subscribe();
+	let client_rpc_event_receiver = rpc_event_sender.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
@@ -217,7 +213,7 @@ async fn run(
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
 	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
-		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
+		let (data_tx, data_rx) = broadcast::channel::<ApiData>(1 << 7);
 		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -329,14 +325,14 @@ async fn run(
 		),
 	];
 
+	let metrics =
+		telemetry::otlp::initialize(cfg.project_name.clone(), &cfg.origin, cfg.otel.clone())
+			.wrap_err("Unable to initialize OpenTelemetry service")?;
+
 	let rpc_host = db
 		.get(RpcNodeKey)
 		.map(|node| node.host)
 		.ok_or_else(|| eyre!("No connected host found"))?;
-
-	let metrics =
-		telemetry::otlp::initialize(cfg.project_name.clone(), &cfg.origin, cfg.otel.clone())
-			.wrap_err("Unable to initialize OpenTelemetry service")?;
 
 	let mut state = ClientState::new(
 		metrics,
@@ -476,7 +472,7 @@ impl ClientState {
 	fn new(
 		metrics: Metrics,
 		kad_mode: Mode,
-		connected_host: String,
+		rpc_host: String,
 		multiaddress: Multiaddr,
 		metric_attributes: Vec<(String, String)>,
 	) -> Self {
@@ -484,7 +480,7 @@ impl ClientState {
 			metrics,
 			kad_mode,
 			multiaddress,
-			rpc_host: connected_host,
+			rpc_host,
 			metric_attributes,
 			active_blocks: Default::default(),
 		}
@@ -593,7 +589,7 @@ impl ClientState {
 		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut lc_receiver: UnboundedReceiver<LcEvent>,
-		mut rpc_receiver: UnboundedReceiver<RpcEvent>,
+		mut rpc_receiver: broadcast::Receiver<RpcEvent>,
 	) {
 		self.metrics.count(MetricCounter::Starts, self.attributes());
 		loop {
@@ -708,11 +704,10 @@ impl ClientState {
 						},
 					}
 				}
-				Some(rpc_event) = rpc_receiver.recv() => {
-					match rpc_event {
-						RpcEvent::ConnectedHost(host) => {
-							self.update_rpc_host(host);
-						},
+
+				Ok(rpc_event) = rpc_receiver.recv() => {
+					if let RpcEvent::ConnectedHost(host) = rpc_event {
+						self.update_rpc_host(host);
 					}
 				}
 				// break the loop if all channels are closed

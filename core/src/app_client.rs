@@ -45,6 +45,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
+	api::v2::types::ApiData,
 	data::{AppDataKey, Database, IsSyncedKey, RecordKey, VerifiedDataKey, VerifiedSyncDataKey},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
@@ -428,7 +429,7 @@ pub async fn run(
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
 	sync_range: Range<u32>,
-	data_verified_sender: broadcast::Sender<(u32, AppData)>,
+	data_verified_sender: broadcast::Sender<ApiData>,
 	shutdown: Controller<String>,
 ) {
 	info!("Starting for app {app_id}...");
@@ -502,7 +503,7 @@ pub async fn run(
 				},
 			};
 		set_data_verified_state(db.clone(), &sync_range, block_number);
-		if let Err(error) = data_verified_sender.send((block_number, data)) {
+		if let Err(error) = data_verified_sender.send(ApiData(block_number, data)) {
 			error!("Cannot send data verified message: {error}");
 			let _ =
 				shutdown.trigger_shutdown(format!("Cannot send data verified message: {error:#}"));

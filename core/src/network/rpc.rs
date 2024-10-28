@@ -8,31 +8,27 @@ use color_eyre::{eyre::eyre, Result};
 use configuration::RPCConfig;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display};
+use std::{collections::HashSet, fmt::Display, time::Instant};
 use tokio::{
-	sync::{broadcast, mpsc::UnboundedSender},
+	sync::broadcast::{Receiver, Sender},
 	time::{self, timeout},
 };
 use tracing::{debug, info};
-
-use crate::{
-	data::Database,
-	network::rpc::{self, OutputEvent as RpcEvent},
-	shutdown::Controller,
-	types::GrandpaJustification,
-};
 
 mod client;
 pub mod configuration;
 mod subscriptions;
 
+use crate::{
+	data::Database, network::rpc::OutputEvent as RpcEvent, shutdown::Controller,
+	types::GrandpaJustification,
+};
+pub use client::Client;
 use subscriptions::SubscriptionLoop;
+
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
-pub use subscriptions::Event;
-
-pub use client::Client;
 
 pub enum Subscription {
 	Header(AvailHeader),
@@ -40,8 +36,13 @@ pub enum Subscription {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum OutputEvent {
 	ConnectedHost(String),
+	HeaderUpdate {
+		header: AvailHeader,
+		received_at: Instant,
+	},
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -198,22 +199,20 @@ pub async fn init<T: Database + Clone>(
 	genesis_hash: &str,
 	rpc: &RPCConfig,
 	shutdown: Controller<String>,
-	event_sender: UnboundedSender<RpcEvent>,
-) -> Result<(Client<T>, broadcast::Sender<Event>, SubscriptionLoop<T>)> {
+	event_sender: Sender<RpcEvent>,
+) -> Result<(Client<T>, SubscriptionLoop<T>)> {
 	let rpc_client = Client::new(
 		db.clone(),
 		Nodes::new(&rpc.full_node_ws),
 		genesis_hash,
 		rpc.retry.clone(),
 		shutdown,
-		event_sender,
+		event_sender.clone(),
 	)
 	.await?;
-	// create output channel for RPC Subscription Events
-	let (event_sender, _) = broadcast::channel(1000);
 	let subscriptions = SubscriptionLoop::new(db, rpc_client.clone(), event_sender.clone()).await?;
 
-	Ok((rpc_client, event_sender, subscriptions))
+	Ok((rpc_client, subscriptions))
 }
 
 /// Generates random cell positions for sampling
@@ -271,13 +270,24 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 }
 
 pub async fn wait_for_finalized_header(
-	mut rpc_events_receiver: broadcast::Receiver<Event>,
+	mut rpc_events_receiver: Receiver<OutputEvent>,
 	timeout_seconds: u64,
 ) -> Result<AvailHeader> {
 	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
-	match timeout(timeout_seconds, rpc_events_receiver.recv()).await {
-		Ok(Ok(rpc::Event::HeaderUpdate { header, .. })) => Ok(header),
-		Ok(Err(error)) => Err(eyre!("Failed to receive finalized header: {error}")),
-		Err(_) => Err(eyre!("Timeout on waiting for first finalized header")),
+
+	let result = timeout(timeout_seconds, async {
+		while let Ok(event) = rpc_events_receiver.recv().await {
+			if let OutputEvent::HeaderUpdate { header, .. } = event {
+				return Ok(header);
+			}
+			// silently skip ConnectedHost event
+		}
+		Err(eyre!("RPC event receiver chanel closed"))
+	})
+	.await;
+
+	match result {
+		Ok(header) => header,
+		Err(_) => Err(eyre!("Timeout while waiting for first finalized header")),
 	}
 }

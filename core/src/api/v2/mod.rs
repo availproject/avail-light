@@ -170,12 +170,12 @@ fn ws_route(
 		.and_then(handlers::ws)
 }
 
-pub async fn publish<T: Clone + TryInto<PublishMessage>>(
+pub async fn publish<T: Clone + TryInto<Option<PublishMessage>>>(
 	topic: Topic,
 	mut receiver: broadcast::Receiver<T>,
 	clients: WsClients,
 ) where
-	<T as TryInto<PublishMessage>>::Error: Display,
+	<T as TryInto<Option<PublishMessage>>>::Error: Display,
 {
 	loop {
 		let message = match receiver.recv().await {
@@ -185,25 +185,27 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 				return;
 			},
 		};
-
-		let message: PublishMessage = match message.try_into() {
-			Ok(message) => message,
+		let message: Option<PublishMessage> = match message.try_into() {
+			Ok(Some(message)) => Some(message),
+			Ok(None) => continue, // Silently skip
 			Err(error) => {
 				error!(?topic, "Cannot create message: {error}");
 				continue;
 			},
 		};
 
-		match clients.publish(&topic, message).await {
-			Ok(results) => {
-				let published = results.iter().filter(|&result| result.is_ok()).count();
-				let failed = results.iter().filter(|&result| result.is_err()).count();
-				info!(?topic, published, failed, "Message published to clients");
-				for error in results.into_iter().filter_map(Result::err) {
-					debug!(?topic, "Cannot publish message to client: {error}")
-				}
-			},
-			Err(error) => error!(?topic, "Cannot publish message: {error}"),
+		if let Some(message) = message {
+			match clients.publish(&topic, message).await {
+				Ok(results) => {
+					let published = results.iter().filter(|&result| result.is_ok()).count();
+					let failed = results.iter().filter(|&result| result.is_err()).count();
+					info!(?topic, published, failed, "Message published to clients");
+					for error in results.into_iter().filter_map(Result::err) {
+						debug!(?topic, "Cannot publish message to client: {error}")
+					}
+				},
+				Err(error) => error!(?topic, "Cannot publish message: {error}"),
+			}
 		}
 	}
 }

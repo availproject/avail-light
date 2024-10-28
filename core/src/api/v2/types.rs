@@ -36,7 +36,7 @@ use crate::{
 		LatestSyncKey, RpcNodeKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
 		VerifiedSyncHeaderKey,
 	},
-	network::rpc::Event as RpcEvent,
+	network::rpc::OutputEvent as RpcEvent,
 	types::{self, BlockVerified},
 	utils::{decode_app_data, OptionalExtension},
 };
@@ -517,7 +517,7 @@ impl TryFrom<ApiDigest> for Digest {
 	}
 }
 
-impl TryFrom<RpcEvent> for PublishMessage {
+impl TryFrom<RpcEvent> for Option<PublishMessage> {
 	type Error = Report;
 
 	fn try_from(value: RpcEvent) -> Result<Self, Self::Error> {
@@ -525,7 +525,9 @@ impl TryFrom<RpcEvent> for PublishMessage {
 			RpcEvent::HeaderUpdate { header, .. } => header
 				.try_into()
 				.map(Box::new)
-				.map(PublishMessage::HeaderVerified),
+				.map(PublishMessage::HeaderVerified)
+				.map(Some),
+			RpcEvent::ConnectedHost(_) => Ok(None), // silently skip ConnectedHost event
 		}
 	}
 }
@@ -537,14 +539,16 @@ pub struct ConfidenceMessage {
 	confidence: Option<f64>,
 }
 
-impl TryFrom<BlockVerified> for PublishMessage {
+impl TryFrom<BlockVerified> for Option<PublishMessage> {
 	type Error = Report;
 
 	fn try_from(value: BlockVerified) -> Result<Self, Self::Error> {
-		Ok(PublishMessage::ConfidenceAchieved(ConfidenceMessage {
-			block_number: value.block_num,
-			confidence: value.confidence,
-		}))
+		Ok(Some(PublishMessage::ConfidenceAchieved(
+			ConfidenceMessage {
+				block_number: value.block_num,
+				confidence: value.confidence,
+			},
+		)))
 	}
 }
 
@@ -620,18 +624,22 @@ pub fn filter_fields(data_transactions: &mut [DataTransaction], fields: &HashSet
 	}
 }
 
-impl TryFrom<(u32, AppData)> for PublishMessage {
+#[derive(Clone)]
+pub struct ApiData(pub u32, pub AppData);
+
+impl TryFrom<ApiData> for Option<PublishMessage> {
 	type Error = Report;
 
-	fn try_from((block_number, app_data): (u32, AppData)) -> Result<Self, Self::Error> {
+	fn try_from(ApiData(block_number, app_data): ApiData) -> Result<Self, Self::Error> {
 		let data_transactions = app_data
 			.into_iter()
 			.map(TryFrom::try_from)
 			.collect::<Result<Vec<_>>>()?;
-		Ok(PublishMessage::DataVerified(DataMessage {
+
+		Ok(Some(PublishMessage::DataVerified(DataMessage {
 			block_number,
 			data_transactions,
-		}))
+		})))
 	}
 }
 

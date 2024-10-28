@@ -1,5 +1,5 @@
 //! Shared light client structs and enums.
-use crate::network::rpc::Event;
+use crate::network::rpc::OutputEvent;
 use crate::utils::{extract_app_lookup, extract_kate};
 use avail_rust::{
 	avail_core::DataLookup,
@@ -61,7 +61,7 @@ pub struct BlockVerified {
 
 pub struct ClientChannels {
 	pub block_sender: broadcast::Sender<BlockVerified>,
-	pub rpc_event_receiver: broadcast::Receiver<Event>,
+	pub rpc_event_receiver: broadcast::Receiver<OutputEvent>,
 }
 
 impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {

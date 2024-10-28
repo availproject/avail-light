@@ -31,7 +31,7 @@ use crate::{
 	data::{BlockHeaderKey, Database},
 	network::{
 		p2p::Client as P2pClient,
-		rpc::{Client as RpcClient, Event},
+		rpc::{Client as RpcClient, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
 	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
@@ -247,10 +247,12 @@ pub async fn run(
 		let event_sender = event_sender.clone();
 		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
 			Ok(event) => match event {
-				Event::HeaderUpdate {
+				RpcEvent::HeaderUpdate {
 					header,
 					received_at,
 				} => (header, received_at),
+				// skip ConnectedHost event
+				RpcEvent::ConnectedHost(_) => continue,
 			},
 			Err(error) => {
 				error!("Cannot receive message: {error}");

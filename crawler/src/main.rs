@@ -1,6 +1,6 @@
 use avail_light_core::{
 	crawl_client::{self, CrawlMetricValue, OutputEvent as CrawlerEvent},
-	data::{Database, LatestHeaderKey, DB},
+	data::{Database, LatestHeaderKey, RpcNodeKey, DB},
 	network::{
 		p2p::{self, OutputEvent as P2pEvent},
 		rpc, Network,
@@ -83,9 +83,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition = config.crawl_block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
-	let metrics = otlp::initialize("avail".to_string(), &config.origin, config.otel.clone())
-		.wrap_err("Unable to initialize OpenTelemetry service")?;
-
 	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		config.libp2p.clone(),
 		"avail".to_string(),
@@ -117,17 +114,18 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		}
 	}));
 
-	let (_, rpc_events, rpc_subscriptions) = rpc::init(
+	let (rpc_events_sender, _) = broadcast::channel(1000);
+	let (_, rpc_subscriptions) = rpc::init(
 		db.clone(),
 		&config.genesis_hash,
 		&config.rpc,
 		shutdown.clone(),
-		None,
+		rpc_events_sender.clone(),
 	)
 	.await?;
 
-	let first_header_rpc_event_receiver = rpc_events.subscribe();
-	let client_rpc_event_receiver = rpc_events.subscribe();
+	let first_header_rpc_event_receiver = rpc_events_sender.subscribe();
+	let client_rpc_event_receiver = rpc_events_sender.subscribe();
 
 	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
 		"Subscription loop failure triggered shutdown".to_string(),
@@ -187,7 +185,15 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("operating_mode".to_string(), "client".to_string()),
 	];
 
-	let mut state = CrawlerState::new(metrics, String::default(), metric_attributes);
+	let metrics = otlp::initialize("avail".to_string(), &config.origin, config.otel.clone())
+		.wrap_err("Unable to initialize OpenTelemetry service")?;
+
+	let rpc_host = db
+		.get(RpcNodeKey)
+		.map(|node| node.host)
+		.ok_or_else(|| eyre!("No connected host found"))?;
+
+	let mut state = CrawlerState::new(metrics, String::default(), rpc_host, metric_attributes);
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
@@ -202,6 +208,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 struct CrawlerState {
 	metrics: Metrics,
 	multiaddress: String,
+	rpc_host: String,
 	metric_attributes: Vec<(String, String)>,
 }
 
@@ -209,11 +216,13 @@ impl CrawlerState {
 	fn new(
 		metrics: Metrics,
 		multiaddress: String,
+		rpc_host: String,
 		metric_attributes: Vec<(String, String)>,
 	) -> Self {
 		CrawlerState {
 			metrics,
 			multiaddress,
+			rpc_host,
 			metric_attributes,
 		}
 	}
@@ -223,7 +232,10 @@ impl CrawlerState {
 	}
 
 	fn attributes(&self) -> Vec<(String, String)> {
-		let mut attrs = vec![("multiaddress".to_string(), self.multiaddress.clone())];
+		let mut attrs = vec![
+			("multiaddress".to_string(), self.multiaddress.clone()),
+			("rpc_host".to_string(), self.rpc_host.to_string()),
+		];
 
 		attrs.extend(self.metric_attributes.clone());
 		attrs

@@ -22,7 +22,7 @@ use std::{
 	sync::Arc,
 	task::{Context, Poll},
 };
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use tokio::sync::{broadcast::Sender, RwLock};
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, trace, warn};
@@ -203,7 +203,7 @@ pub struct Client<T: Database> {
 	retry_config: RetryConfig,
 	expected_genesis_hash: String,
 	shutdown: Controller<String>,
-	event_sender: UnboundedSender<RpcEvent>,
+	event_sender: Sender<RpcEvent>,
 }
 
 pub struct SubmitResponse {
@@ -220,7 +220,7 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
-		event_sender: UnboundedSender<RpcEvent>,
+		event_sender: Sender<RpcEvent>,
 	) -> Result<Self> {
 		let (client, node) = Self::initialize_connection(
 			&nodes,
@@ -253,7 +253,7 @@ impl<D: Database> Client<D> {
 		expected_genesis_hash: &str,
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
-		event_sender: UnboundedSender<RpcEvent>,
+		event_sender: Sender<RpcEvent>,
 	) -> Result<(SDK, Node)> {
 		let (available_nodes, _) = nodes.shuffle(Default::default());
 
@@ -278,7 +278,7 @@ impl<D: Database> Client<D> {
 	async fn attempt_connection(
 		nodes: &[Node],
 		expected_genesis_hash: &str,
-		event_sender: UnboundedSender<RpcEvent>,
+		event_sender: Sender<RpcEvent>,
 	) -> Result<ConnectionAttempt<()>> {
 		// Not passing any RPC function calls since this is a first try of connecting RPC nodes
 		Self::try_connect_and_execute(
@@ -296,7 +296,7 @@ impl<D: Database> Client<D> {
 		nodes: &[Node],
 		expected_genesis_hash: &str,
 		f: F,
-		event_sender: UnboundedSender<RpcEvent>,
+		event_sender: Sender<RpcEvent>,
 	) -> Result<ConnectionAttempt<T>>
 	where
 		F: FnMut(SDK) -> Fut + Copy,

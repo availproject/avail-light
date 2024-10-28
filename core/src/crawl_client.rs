@@ -1,8 +1,5 @@
 use crate::{
-	network::{
-		p2p::Client,
-		rpc::{self, Event},
-	},
+	network::{p2p::Client, rpc},
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
 };
@@ -67,7 +64,7 @@ impl Value for CrawlMetricValue {
 }
 
 pub async fn run(
-	mut message_rx: broadcast::Receiver<Event>,
+	mut message_rx: broadcast::Receiver<rpc::OutputEvent>,
 	network_client: Client,
 	delay: u64,
 	mode: CrawlMode,
@@ -79,7 +76,7 @@ pub async fn run(
 
 	let delay = Delay(Some(Duration::from_secs(delay)));
 
-	while let Ok(rpc::Event::HeaderUpdate {
+	while let Ok(rpc::OutputEvent::HeaderUpdate {
 		header,
 		received_at,
 	}) = message_rx.recv().await
