@@ -3,20 +3,16 @@ use libp2p::{
 	autonat::{self, InboundProbeEvent, OutboundProbeEvent},
 	futures::StreamExt,
 	identify::{Event as IdentifyEvent, Info},
-	kad::{self, BootstrapOk, QueryId, QueryResult},
+	kad::{self, BootstrapOk, QueryResult},
 	multiaddr::Protocol,
 	swarm::SwarmEvent,
-	Multiaddr, PeerId, Swarm,
+	PeerId, Swarm,
 };
 use std::{
 	collections::{hash_map, HashMap},
 	str::FromStr,
-	time::Duration,
 };
-use tokio::{
-	sync::{mpsc, oneshot},
-	time::{interval_at, Instant, Interval},
-};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace};
 
 use crate::types::AgentVersion;
@@ -26,49 +22,24 @@ use super::{
 	Behaviour, BehaviourEvent,
 };
 
-enum QueryChannel {
-	Bootstrap(oneshot::Sender<Result<()>>),
-}
-
 enum SwarmChannel {
 	Dial(oneshot::Sender<Result<()>>),
-	ConnectionEstablished(oneshot::Sender<(PeerId, Multiaddr)>),
-}
-
-// BootstrapState keeps track of all things bootstrap related
-struct BootstrapState {
-	// referring to this initial bootstrap process,
-	// one that runs when this node starts up
-	is_startup_done: bool,
-	// timer that is responsible for firing periodic bootstraps
-	timer: Interval,
 }
 
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
-	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_swarm_events: HashMap<PeerId, SwarmChannel>,
-	bootstrap: BootstrapState,
 }
 
 impl EventLoop {
-	pub fn new(
-		swarm: Swarm<Behaviour>,
-		command_receiver: mpsc::Receiver<Command>,
-		bootstrap_interval: Duration,
-	) -> Self {
+	pub fn new(swarm: Swarm<Behaviour>, command_receiver: mpsc::Receiver<Command>) -> Self {
 		Self {
 			swarm,
 			command_receiver,
-			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
 			pending_swarm_events: Default::default(),
-			bootstrap: BootstrapState {
-				is_startup_done: false,
-				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
-			},
 		}
 	}
 
@@ -82,7 +53,6 @@ impl EventLoop {
 					// shutting down whole network event loop
 					None => return,
 				},
-				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 			}
 		}
 	}
@@ -103,35 +73,21 @@ impl EventLoop {
 					}
 				},
 				kad::Event::OutboundQueryProgressed {
-					id,
 					result: QueryResult::Bootstrap(bootstrap_result),
 					..
-				} => {
-					match bootstrap_result {
-						Ok(BootstrapOk {
-							peer,
-							num_remaining,
-						}) => {
-							trace!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
-							if num_remaining == 0 {
-								if let Some(QueryChannel::Bootstrap(ch)) =
-									self.pending_kad_queries.remove(&id)
-								{
-									_ = ch.send(Ok(()));
-									// we can say that the initial bootstrap at initialization is done
-									self.bootstrap.is_startup_done = true;
-								}
-							}
-						},
-						Err(err) => {
-							trace!("Bootstrap error event. Error: {err:?}.");
-							if let Some(QueryChannel::Bootstrap(ch)) =
-								self.pending_kad_queries.remove(&id)
-							{
-								_ = ch.send(Err(err.into()));
-							}
-						},
-					}
+				} => match bootstrap_result {
+					Ok(BootstrapOk {
+						peer,
+						num_remaining,
+					}) => {
+						debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
+						if num_remaining == 0 {
+							debug!("Bootstrap complete!");
+						}
+					},
+					Err(err) => {
+						debug!("Bootstrap error event. Error: {err:?}.");
+					},
 				},
 				_ => {},
 			},
@@ -238,23 +194,10 @@ impl EventLoop {
 			SwarmEvent::ConnectionEstablished {
 				endpoint, peer_id, ..
 			} => {
-				// while waiting for a first successful connection,
-				// we're interested in a case where we are dialing back
 				if endpoint.is_dialer() {
-					if let Some(event) = self.pending_swarm_events.remove(&peer_id) {
-						match event {
-							// check if there is a command waiting for a response for established 1st connection
-							SwarmChannel::ConnectionEstablished(ch) => {
-								// signal back that we have successfully established a connection,
-								// give us back PeerId and Multiaddress
-								let addr = endpoint.get_remote_address().to_owned();
-								_ = ch.send((peer_id, addr));
-							},
-							SwarmChannel::Dial(ch) => {
-								// signal back that dial was a success
-								_ = ch.send(Ok(()));
-							},
-						}
+					if let Some(SwarmChannel::Dial(ch)) = self.pending_swarm_events.remove(&peer_id)
+					{
+						_ = ch.send(Ok(()));
 					}
 				}
 			},
@@ -309,38 +252,6 @@ impl EventLoop {
 					.add_address(&peer_id, multiaddr);
 				self.pending_kad_routing.insert(peer_id, response_sender);
 			},
-			Command::Bootstrap { response_sender } => {
-				match self.swarm.behaviour_mut().kademlia.bootstrap() {
-					Ok(query_id) => {
-						self.pending_kad_queries
-							.insert(query_id, QueryChannel::Bootstrap(response_sender));
-					},
-					// no available peers for bootstrap
-					// send error immediately through response channel
-					Err(err) => {
-						_ = response_sender.send(Err(err.into()));
-					},
-				}
-			},
-			Command::WaitConnection {
-				peer_id,
-				response_sender,
-			} => match peer_id {
-				// this means that we're waiting on a connection from
-				// a peer with provided PeerId
-				Some(id) => {
-					self.pending_swarm_events
-						.insert(id, SwarmChannel::ConnectionEstablished(response_sender));
-				},
-				// sending no particular PeerId means that we're
-				// waiting someone to establish connection with us
-				None => {
-					self.pending_swarm_events.insert(
-						self.swarm.local_peer_id().to_owned(),
-						SwarmChannel::ConnectionEstablished(response_sender),
-					);
-				},
-			},
 			Command::CountDHTPeers { response_sender } => {
 				let mut total_peers: usize = 0;
 				for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
@@ -368,14 +279,6 @@ impl EventLoop {
 					external_listeners: external_addresses,
 				});
 			},
-		}
-	}
-
-	fn handle_periodic_bootstraps(&mut self) {
-		// periodic bootstraps should only start after the initial one is done
-		if self.bootstrap.is_startup_done {
-			debug!("Starting periodic Bootstrap.");
-			_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 		}
 	}
 }

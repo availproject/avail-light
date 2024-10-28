@@ -64,7 +64,9 @@ pub async fn init(
 	let kad_store = MemoryStore::new(id_keys.public().to_peer_id());
 	// create Kademlia Config
 	let mut kad_cfg = kad::Config::new(cfg.kademlia.protocol_name);
-	kad_cfg.set_query_timeout(cfg.kademlia.query_timeout);
+	kad_cfg
+		.set_query_timeout(cfg.kademlia.query_timeout)
+		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_interval));
 	// build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
@@ -112,7 +114,7 @@ pub async fn init(
 
 	Ok((
 		Client::new(command_sender),
-		EventLoop::new(swarm, command_receiver, cfg.bootstrap_interval),
+		EventLoop::new(swarm, command_receiver),
 	))
 }
 
