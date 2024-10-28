@@ -148,9 +148,10 @@ async fn run() -> Result<()> {
 		network_client
 			.add_bootstrap_nodes(cfg.bootstraps.iter().map(Into::into).collect())
 			.await?;
+	} else {
+		info!("No bootstrap list provided, starting client as the first bootstrap on the network.")
 	}
-	network_client.bootstrap().await?;
-	info!("Bootstrap done.");
+
 	loop_handle.await?;
 
 	Ok(())

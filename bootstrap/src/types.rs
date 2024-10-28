@@ -114,7 +114,6 @@ pub struct LibP2PConfig {
 	pub identify: IdentifyConfig,
 	pub kademlia: KademliaConfig,
 	pub secret_key: Option<SecretKey>,
-	pub bootstrap_interval: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -124,7 +123,6 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			identify: IdentifyConfig::new(),
 			kademlia: rtcfg.into(),
 			secret_key: rtcfg.secret_key.clone(),
-			bootstrap_interval: Duration::from_secs(rtcfg.bootstrap_period),
 		}
 	}
 }
@@ -133,6 +131,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 pub struct KademliaConfig {
 	pub query_timeout: Duration,
 	pub protocol_name: StreamProtocol,
+	pub bootstrap_interval: Duration,
 }
 
 impl From<&RuntimeConfig> for KademliaConfig {
@@ -149,6 +148,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 		KademliaConfig {
 			query_timeout: Duration::from_secs(val.kad_query_timeout.into()),
 			protocol_name,
+			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 		}
 	}
 }
