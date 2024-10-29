@@ -15,17 +15,11 @@ use color_eyre::{
 	Report, Result,
 };
 use futures::{Stream, TryStreamExt};
-use rand::Rng;
-use std::{
-	iter::Iterator,
-	pin::Pin,
-	sync::Arc,
-	task::{Context, Poll},
-};
+use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use tokio_retry::Retry;
-use tokio_stream::StreamExt;
-use tracing::{debug, error, info, trace, warn};
+use tokio_stream::{Elapsed, StreamExt};
+use tracing::{error, info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
@@ -117,82 +111,8 @@ impl GenesisHash {
 	}
 }
 
-// Custom type for merged subscription streams
-struct MergedSubscriptions {
-	headers: Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>,
-	justifications: Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>,
-}
-
-impl Stream for MergedSubscriptions {
-	type Item = Result<Subscription, subxt::error::Error>;
-
-	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		// Randomly decide which stream to poll first
-		let poll_headers_first = rand::thread_rng().gen_bool(0.5);
-		self.poll_both(cx, poll_headers_first)
-	}
-}
-
-impl MergedSubscriptions {
-	// Helper method used to avoid code duplication
-	fn poll_both(
-		&mut self,
-		cx: &mut Context<'_>,
-		headers_first: bool,
-	) -> Poll<Option<<Self as Stream>::Item>> {
-		// Switch streams based on if Headers streams bool is set
-		let (first, second, first_label, second_label) = if headers_first {
-			(
-				&mut self.headers,
-				&mut self.justifications,
-				"Avail Headers",
-				"Grandpa Justification",
-			)
-		} else {
-			(
-				&mut self.justifications,
-				&mut self.headers,
-				"Grandpa Justification",
-				"Avail Headers",
-			)
-		};
-
-		// Poll the first chosen stream
-		match first.as_mut().poll_next(cx) {
-			Poll::Ready(None) => {
-				debug!("{first_label} stream ended, terminating merged stream");
-				return Poll::Ready(None);
-			},
-			Poll::Ready(Some(Ok(item))) => {
-				trace!("Received {first_label} item");
-				return Poll::Ready(Some(Ok(item)));
-			},
-			Poll::Ready(Some(Err(e))) => {
-				error!("Error in Avail Headers stream: {:?}", e);
-				return Poll::Ready(Some(Err(e)));
-			},
-			// Do nothing here, fall into polling the next stream
-			Poll::Pending => {},
-		}
-
-		// If the first stream is pending, try the second stream
-		match second.as_mut().poll_next(cx) {
-			Poll::Ready(None) => {
-				debug!("{second_label} stream ended, terminating merged stream");
-				Poll::Ready(None)
-			},
-			Poll::Ready(Some(Ok(item))) => {
-				trace!("Received {second_label} item");
-				Poll::Ready(Some(Ok(item)))
-			},
-			Poll::Ready(Some(Err(e))) => {
-				error!("Error in Avail Headers stream: {:?}", e);
-				Poll::Ready(Some(Err(e)))
-			},
-			Poll::Pending => Poll::Pending,
-		}
-	}
-}
+type SubscriptionStream =
+	Pin<Box<dyn Stream<Item = Result<Result<Subscription, subxt::error::Error>, Elapsed>> + Send>>;
 
 #[derive(Clone)]
 pub struct Client<T: Database> {
@@ -471,16 +391,19 @@ impl<D: Database> Client<D> {
 			loop {
 				match self.with_retries(Self::create_rpc_subscriptions).await {
 					Ok(mut stream) => {
-						while let Some(result) = stream.next().await {
-							match result {
-								Ok(item) => yield Ok(item),
-								Err(err) => {
-									warn!(error = %err, "Received error on RPC Subscription stream. Creating new connection.");
-									break;
-								}
+						loop {
+							match stream.next().await {
+								Some(Ok(Ok(item))) => {
+									yield Ok(item);
+									continue;
+								},
+								Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+								Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+								None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
 							}
+							break;
 						}
-						warn!("RPC Subscription Stream exhausted. Creating new connection.");
+
 					}
 					Err(err) => {
 						warn!(error = %err, "Failed to create RPC Subscription stream.");
@@ -496,35 +419,42 @@ impl<D: Database> Client<D> {
 		self.subxt_client.read().await.clone()
 	}
 
-	async fn create_rpc_subscriptions(
-		client: SDK,
-	) -> Result<impl Stream<Item = Result<Subscription, subxt::error::Error>>> {
+	async fn create_rpc_subscriptions(client: SDK) -> Result<SubscriptionStream> {
+		let timeout_in = Duration::from_secs(30);
+
 		// Create fused Avail Header subscription
-		let headers = client
-			.api
-			.backend()
-			.stream_finalized_block_headers()
-			.await?
-			.map_ok(|(header, _)| Subscription::Header(header))
-			.fuse();
+		let headers: SubscriptionStream = Box::pin(
+			client
+				.api
+				.backend()
+				.stream_finalized_block_headers()
+				.await?
+				.map_ok(|(header, _)| Subscription::Header(header))
+				.inspect_ok(|_| info!("Received header on the stream"))
+				.inspect_err(|error| warn!(%error, "Received error on headers stream"))
+				.timeout(timeout_in)
+				.fuse(),
+		);
 
 		// Create fused GrandpaJustification subscription
-		let justifications = client
-			.rpc
-			.client
-			.subscribe(
-				"grandpa_subscribeJustifications",
-				rpc_params![],
-				"grandpa_unsubscribeJustifications",
-			)
-			.await?
-			.map_ok(Subscription::Justification)
-			.fuse();
+		let justifications: SubscriptionStream = Box::pin(
+			client
+				.rpc
+				.client
+				.subscribe(
+					"grandpa_subscribeJustifications",
+					rpc_params![],
+					"grandpa_unsubscribeJustifications",
+				)
+				.await?
+				.map_ok(Subscription::Justification)
+				.inspect_ok(|_| info!("Received justification on the stream"))
+				.inspect_err(|error| warn!(%error, "Received error on justifications stream"))
+				.timeout(timeout_in)
+				.fuse(),
+		);
 
-		Ok(MergedSubscriptions {
-			headers: Box::pin(headers),
-			justifications: Box::pin(justifications),
-		})
+		Ok(Box::pin(headers.merge(justifications)))
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {

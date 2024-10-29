@@ -89,16 +89,13 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		let subscriptions = self.rpc_client.clone().subscription_stream().await;
 		futures::pin_mut!(subscriptions);
 
-		while let Some(result) = subscriptions.next().await {
-			match result {
-				Ok(sub) => {
-					self.handle_new_subscription(sub).await;
-				},
-				Err(err) => return Err(eyre!(err)),
-			};
+		loop {
+			match subscriptions.next().await {
+				Some(Ok(sub)) => self.handle_new_subscription(sub).await,
+				Some(Err(error)) => return Err(eyre!(error)),
+				None => return Err(eyre!("No available subscriptions")),
+			}
 		}
-
-		Ok(())
 	}
 
 	async fn handle_new_subscription(&mut self, subscription: Subscription) {
