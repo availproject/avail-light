@@ -15,12 +15,7 @@ use color_eyre::{
 	Report, Result,
 };
 use futures::{Stream, TryStreamExt};
-use std::{
-	iter::Iterator,
-	pin::Pin,
-	sync::Arc,
-	time::Duration,
-};
+use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::{broadcast::Sender, RwLock};
 use tokio_retry::Retry;
 use tokio_stream::{Elapsed, StreamExt};
