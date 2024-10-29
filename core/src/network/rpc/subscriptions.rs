@@ -93,7 +93,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 			match subscriptions.next().await {
 				Some(Ok(sub)) => self.handle_new_subscription(sub).await,
 				Some(Err(error)) => return Err(eyre!(error)),
-				None => return Err(eyre!("Subscriptions ended")),
+				None => return Err(eyre!("No available subscriptions")),
 			}
 		}
 	}
