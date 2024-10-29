@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- Add timeouts to RPC subscriptions
+- Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
+
 ## 1.0.3
 
 - Return current node version on the API instead of preconfigured

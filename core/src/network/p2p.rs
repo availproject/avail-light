@@ -159,7 +159,6 @@ impl AgentVersion {
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
 type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;

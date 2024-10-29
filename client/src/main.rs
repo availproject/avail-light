@@ -115,16 +115,11 @@ async fn run(
 	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bs_result = p2p_clone
+		if let Err(error) = p2p_clone
 			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-			.await;
-		match bs_result {
-			Ok(_) => {
-				info!("Bootstrap done.");
-			},
-			Err(e) => {
-				warn!("Bootstrap process: {e:?}.");
-			},
+			.await
+		{
+			warn!("Bootstrap unsuccessful: {error:#}");
 		}
 	}));
 
@@ -162,11 +157,9 @@ async fn run(
 	let rpc_subscriptions_handle = spawn_in_span(shutdown.with_cancel(shutdown.with_trigger(
 		"Subscription loop failure triggered shutdown".to_string(),
 		async {
-			let result = rpc_subscriptions.run().await;
-			if let Err(ref err) = result {
-				error!(%err, "Subscription loop ended with error");
+			if let Err(error) = rpc_subscriptions.run().await {
+				error!(%error, "Subscription loop ended with error");
 			};
-			result
 		},
 	)));
 
@@ -184,7 +177,7 @@ async fn run(
 			if !rpc_subscriptions_handle.is_finished() {
 				return Err(report);
 			}
-			let Ok(Ok(Err(subscriptions_error))) = rpc_subscriptions_handle.await else {
+			let Ok(Err(subscriptions_error)) = rpc_subscriptions_handle.await else {
 				return Err(report);
 			};
 			return Err(eyre!(subscriptions_error));
