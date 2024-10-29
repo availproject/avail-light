@@ -92,7 +92,7 @@ jobs:
 
 
   compatibility_tests:
-    runs-on: self-hosted
+    runs-on: lc-gh-runner
     steps:
       - run: docker-compose --version
       
