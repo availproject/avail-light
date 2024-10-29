@@ -23,7 +23,10 @@ use std::{
 	task::{Context, Poll},
 	time::Duration,
 };
-use tokio::{sync::RwLock, time::timeout};
+use tokio::{
+	sync::RwLock,
+	time::{timeout, Instant},
+};
 use tokio_retry::Retry;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
@@ -125,13 +128,30 @@ type SubscriptionStream =
 struct MergedSubscriptions {
 	headers: SubscriptionStream,
 	justifications: SubscriptionStream,
+	last_header_at: Instant,
+	last_justification_at: Instant,
+	timeout_in: Duration,
+}
+
+enum StreamType {
+	Headers,
+	Justifications,
+}
+
+impl StreamType {
+	fn label(&self) -> &str {
+		match self {
+			StreamType::Headers => "Avail Headers",
+			StreamType::Justifications => "Grandpa Justifications",
+		}
+	}
 }
 
 impl MergedSubscriptions {
-	fn streams(&mut self, headers_first: bool) -> Vec<(&mut SubscriptionStream, &str)> {
+	fn streams(&mut self, headers_first: bool) -> Vec<(&mut SubscriptionStream, StreamType)> {
 		let mut streams = vec![
-			(&mut self.headers, "Avail Headers"),
-			(&mut self.justifications, "Grandpa Justification"),
+			(&mut self.headers, StreamType::Headers),
+			(&mut self.justifications, StreamType::Justifications),
 		];
 		if !headers_first {
 			streams.reverse();
@@ -147,7 +167,9 @@ impl Stream for MergedSubscriptions {
 		// Randomly decide which stream to poll first
 		let poll_headers_first = rand::thread_rng().gen_bool(0.5);
 
-		for (stream, label) in self.streams(poll_headers_first) {
+		for (stream, stream_type) in self.streams(poll_headers_first) {
+			let label = stream_type.label();
+
 			let result = match (*stream).as_mut().poll_next(cx) {
 				Poll::Ready(None) => {
 					debug!("{label} stream ended, terminating merged stream");
@@ -155,6 +177,12 @@ impl Stream for MergedSubscriptions {
 				},
 				Poll::Ready(Some(Ok(item))) => {
 					info!("Received {label} item");
+
+					match stream_type {
+						StreamType::Headers => self.last_header_at = Instant::now(),
+						StreamType::Justifications => self.last_justification_at = Instant::now(),
+					}
+
 					Poll::Ready(Some(Ok(item)))
 				},
 				Poll::Ready(Some(Err(e))) => {
@@ -163,7 +191,22 @@ impl Stream for MergedSubscriptions {
 				},
 				Poll::Pending => continue,
 			};
+
 			return result;
+		}
+
+		let now = Instant::now();
+
+		if now.duration_since(self.last_header_at) > self.timeout_in {
+			return Poll::Ready(Some(Err(subxt::Error::Other(
+				"Headers stream timeout".to_string(),
+			))));
+		}
+
+		if now.duration_since(self.last_justification_at) > self.timeout_in {
+			return Poll::Ready(Some(Err(subxt::Error::Other(
+				"Justifications stream timeout".to_string(),
+			))));
 		}
 
 		Poll::Pending
@@ -443,7 +486,7 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
-		let timeout_in = Duration::from_secs(30);
+		let timeout_in = Duration::from_secs(60);
 		async_stream::stream! {
 			loop {
 				match self.with_retries(Self::create_rpc_subscriptions).await {
@@ -504,6 +547,9 @@ impl<D: Database> Client<D> {
 		Ok(MergedSubscriptions {
 			headers: Box::pin(headers),
 			justifications: Box::pin(justifications),
+			last_header_at: Instant::now(),
+			last_justification_at: Instant::now(),
+			timeout_in: Duration::from_secs(60),
 		})
 	}
 
