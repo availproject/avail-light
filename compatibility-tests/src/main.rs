@@ -10,6 +10,7 @@ use avail_rust::kate_recovery::matrix::Position;
 use clap::Parser;
 use color_eyre::Result;
 use std::time::Duration;
+use tokio::sync::broadcast;
 
 #[derive(Parser)]
 struct CommandArgs {
@@ -40,7 +41,8 @@ async fn main() -> Result<()> {
 	};
 
 	let shutdown = Controller::new();
-	let (rpc_client, _, subscriptions) = rpc::init(db, "DEV", &rpc_cfg, shutdown).await?;
+	let (rpc_sender, _) = broadcast::channel(1000);
+	let (rpc_client, subscriptions) = rpc::init(db, "DEV", &rpc_cfg, shutdown, rpc_sender).await?;
 	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;

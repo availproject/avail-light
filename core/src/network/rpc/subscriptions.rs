@@ -13,7 +13,7 @@ use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, trace};
 
-use super::{Client, Subscription};
+use super::{Client, OutputEvent, Subscription};
 use crate::{
 	data::{
 		Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey, IsFinalitySyncedKey,
@@ -23,14 +23,6 @@ use crate::{
 	types::{BlockRange, GrandpaJustification},
 	utils::filter_auth_set_changes,
 };
-
-#[derive(Clone, Debug)]
-pub enum Event {
-	HeaderUpdate {
-		header: AvailHeader,
-		received_at: Instant,
-	},
-}
 
 struct BlockData {
 	justifications: Vec<GrandpaJustification>,
@@ -42,13 +34,17 @@ struct BlockData {
 
 pub struct SubscriptionLoop<T: Database> {
 	rpc_client: Client<T>,
-	event_sender: Sender<Event>,
+	event_sender: Sender<OutputEvent>,
 	db: T,
 	block_data: BlockData,
 }
 
 impl<T: Database + Clone> SubscriptionLoop<T> {
-	pub async fn new(db: T, rpc_client: Client<T>, event_sender: Sender<Event>) -> Result<Self> {
+	pub async fn new(
+		db: T,
+		rpc_client: Client<T>,
+		event_sender: Sender<OutputEvent>,
+	) -> Result<Self> {
 		// get the Hash of the Finalized Head [with Retries]
 		let last_finalized_block_hash = rpc_client.get_finalized_head_hash().await?;
 
@@ -217,7 +213,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 						};
 						// send as output event
 						self.event_sender
-							.send(Event::HeaderUpdate {
+							.send(OutputEvent::HeaderUpdate {
 								header,
 								received_at,
 							})
@@ -241,7 +237,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 
 				// finally, send the Verified Block Header
 				self.event_sender
-					.send(Event::HeaderUpdate {
+					.send(OutputEvent::HeaderUpdate {
 						header,
 						received_at,
 					})

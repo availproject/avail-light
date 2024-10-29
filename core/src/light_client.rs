@@ -32,7 +32,7 @@ use crate::{
 	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	network::{
 		self,
-		rpc::{self, Event},
+		rpc::{self, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
 	types::{self, BlockRange, ClientChannels, Delay},
@@ -201,10 +201,12 @@ pub async fn run(
 		let event_sender = event_sender.clone();
 		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
 			Ok(event) => match event {
-				Event::HeaderUpdate {
+				RpcEvent::HeaderUpdate {
 					header,
 					received_at,
 				} => (header, received_at),
+				// skip ConnectedHost event
+				RpcEvent::ConnectedHost(_) => continue,
 			},
 			Err(error) => {
 				error!("Cannot receive message: {error}");

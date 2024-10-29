@@ -2,9 +2,9 @@
 
 use crate::cli::CliOpts;
 use avail_light_core::{
-	api,
+	api::{self, v2::types::ApiData},
 	data::{
-		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
+		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RpcNodeKey,
 		SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
@@ -12,7 +12,8 @@ use avail_light_core::{
 	network::{
 		self,
 		p2p::{self, extract_block_num, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
-		rpc, Network,
+		rpc::{self, OutputEvent as RpcEvent},
+		Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -24,11 +25,7 @@ use avail_light_core::{
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::{
-	avail_core::AppId,
-	kate_recovery::{com::AppData, couscous},
-	sp_core::blake2_128,
-};
+use avail_rust::{avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -58,6 +55,9 @@ use tikv_jemallocator::Jemalloc;
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+mod cli;
+mod config;
 
 /// Light Client for Avail Blockchain
 
@@ -132,8 +132,15 @@ async fn run(
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let (rpc_client, rpc_events, rpc_subscriptions) =
-		rpc::init(db.clone(), &cfg.genesis_hash, &cfg.rpc, shutdown.clone()).await?;
+	let (rpc_event_sender, rpc_event_receiver) = broadcast::channel(1000);
+	let (rpc_client, rpc_subscriptions) = rpc::init(
+		db.clone(),
+		&cfg.genesis_hash,
+		&cfg.rpc,
+		shutdown.clone(),
+		rpc_event_sender.clone(),
+	)
+	.await?;
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
@@ -141,9 +148,9 @@ async fn run(
 	db.put(SignerNonceKey, nonce);
 
 	// Subscribing to RPC events before first event is published
-	let publish_rpc_event_receiver = rpc_events.subscribe();
-	let first_header_rpc_event_receiver = rpc_events.subscribe();
-	let client_rpc_event_receiver = rpc_events.subscribe();
+	let publish_rpc_event_receiver = rpc_event_sender.subscribe();
+	let first_header_rpc_event_receiver = rpc_event_sender.subscribe();
+	let client_rpc_event_receiver = rpc_event_sender.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
@@ -199,7 +206,7 @@ async fn run(
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
 	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
-		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
+		let (data_tx, data_rx) = broadcast::channel::<ApiData>(1 << 7);
 		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -315,24 +322,32 @@ async fn run(
 		telemetry::otlp::initialize(cfg.project_name.clone(), &cfg.origin, cfg.otel.clone())
 			.wrap_err("Unable to initialize OpenTelemetry service")?;
 
+	let rpc_host = db
+		.get(RpcNodeKey)
+		.map(|node| node.host)
+		.ok_or_else(|| eyre!("No connected host found"))?;
+
 	let mut state = ClientState::new(
 		metrics,
 		cfg.libp2p.kademlia.operation_mode.into(),
+		rpc_host,
 		Multiaddr::empty(),
 		metric_attributes,
 	);
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
-			.handle_events(p2p_event_receiver, maintenance_receiver, lc_receiver)
+			.handle_events(
+				p2p_event_receiver,
+				maintenance_receiver,
+				lc_receiver,
+				rpc_event_receiver,
+			)
 			.await;
 	}));
 
 	Ok(())
 }
-
-mod cli;
-mod config;
 
 pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(config_path) = &opts.config {
@@ -441,6 +456,7 @@ struct ClientState {
 	metrics: Metrics,
 	kad_mode: Mode,
 	multiaddress: Multiaddr,
+	rpc_host: String,
 	metric_attributes: Vec<(String, String)>,
 	active_blocks: HashMap<u32, BlockStat>,
 }
@@ -449,6 +465,7 @@ impl ClientState {
 	fn new(
 		metrics: Metrics,
 		kad_mode: Mode,
+		rpc_host: String,
 		multiaddress: Multiaddr,
 		metric_attributes: Vec<(String, String)>,
 	) -> Self {
@@ -456,6 +473,7 @@ impl ClientState {
 			metrics,
 			kad_mode,
 			multiaddress,
+			rpc_host,
 			metric_attributes,
 			active_blocks: Default::default(),
 		}
@@ -469,10 +487,15 @@ impl ClientState {
 		self.kad_mode = value;
 	}
 
+	fn update_rpc_host(&mut self, value: String) {
+		self.rpc_host = value;
+	}
+
 	fn attributes(&self) -> Vec<(String, String)> {
 		let mut attrs = vec![
 			("operating_mode".to_string(), self.kad_mode.to_string()),
 			("multiaddress".to_string(), self.multiaddress.to_string()),
+			("rpc_host".to_string(), self.rpc_host.to_string()),
 		];
 
 		attrs.extend(self.metric_attributes.clone());
@@ -559,6 +582,7 @@ impl ClientState {
 		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut lc_receiver: UnboundedReceiver<LcEvent>,
+		mut rpc_receiver: broadcast::Receiver<RpcEvent>,
 	) {
 		self.metrics.count(MetricCounter::Starts, self.attributes());
 		loop {
@@ -667,10 +691,16 @@ impl ClientState {
 						},
 						LcEvent::RecordRPCFetchDuration(duration) => {
 							self.metrics.record(MetricValue::RPCFetchDuration(duration));
-						}
+						},
 						LcEvent::RecordBlockConfidence(confidence) => {
 							self.metrics.record(MetricValue::BlockConfidence(confidence));
-						}
+						},
+					}
+				}
+
+				Ok(rpc_event) = rpc_receiver.recv() => {
+					if let RpcEvent::ConnectedHost(host) = rpc_event {
+						self.update_rpc_host(host);
 					}
 				}
 				// break the loop if all channels are closed
