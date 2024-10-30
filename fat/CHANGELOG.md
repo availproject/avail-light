@@ -2,6 +2,7 @@
 
 ## 1.12.1
 
+- Set default block processing delay to 0
 - Update `avail-light-core` to 1.0.4
 - Add back origin attribute to metrics
 

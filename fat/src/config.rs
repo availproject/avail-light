@@ -73,7 +73,7 @@ pub struct Config {
 	pub avail_path: String,
 	/// Client alias for use in logs and metrics.
 	pub client_alias: String,
-	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
+	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0).
 	#[serde(with = "option_duration_seconds_format")]
 	pub block_processing_delay: Option<Duration>,
 	#[serde(flatten)]
@@ -100,7 +100,7 @@ impl Default for Config {
 			rpc: Default::default(),
 			otel: Default::default(),
 			fat: Default::default(),
-			block_processing_delay: Some(Duration::from_secs(20)),
+			block_processing_delay: Some(Duration::from_secs(0)),
 			api: Default::default(),
 		}
 	}
