@@ -23,6 +23,10 @@ pub struct Metrics {
 }
 
 impl Metrics {
+	fn gauge_name(&self, name: &'static str) -> String {
+		format!("{project_name}.{name}", project_name = self.project_name)
+	}
+
 	fn map_attributes(&self, attributes: Vec<(String, String)>) -> Vec<KeyValue> {
 		attributes
 			.into_iter()
@@ -31,7 +35,7 @@ impl Metrics {
 	}
 
 	fn record_u64(&self, name: &'static str, value: u64, attributes: Vec<KeyValue>) -> Result<()> {
-		let gauge_name = format!("{}.{}", name, self.project_name);
+		let gauge_name = self.gauge_name(name);
 		let instrument = self.meter.u64_observable_gauge(gauge_name).try_init()?;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
@@ -41,7 +45,7 @@ impl Metrics {
 	}
 
 	fn record_f64(&self, name: &'static str, value: f64, attributes: Vec<KeyValue>) -> Result<()> {
-		let gauge_name = format!("{}.{}", name, self.project_name);
+		let gauge_name = self.gauge_name(name);
 		let instrument = self.meter.f64_observable_gauge(gauge_name).try_init()?;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
@@ -204,7 +208,7 @@ fn init_counters(
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
 	.map(|counter| {
-		let otel_counter_name = format!("{}.{}", project_name, counter.name());
+		let otel_counter_name = format!("{project_name}.{name}", name = counter.name());
 		// Keep the `static str as the local buffer map key, but change the OTel counter name`
 		(counter.name(), meter.u64_counter(otel_counter_name).init())
 	})
