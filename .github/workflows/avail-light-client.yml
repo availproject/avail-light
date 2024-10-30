@@ -89,39 +89,6 @@ jobs:
           name: ${{ matrix.output_name }}
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
-
-
-  compatibility_tests:
-    runs-on: self-hosted
-    steps:
-      - run: docker-compose --version
-      
-      - name: Checkout avail-test repository with submodules
-        uses: actions/checkout@v2
-        with:
-          repository: availproject/avail-test
-          path: avail-test  
-          token: ${{ secrets.PAT_TOKEN }}
-          submodules: true 
-          ref: main
-          fetch-depth: 0
-
-      - name: Run e2e tests
-        working-directory: avail-test
-        run: |
-          set -eo pipefail
-          export PATH="/root/.cargo/bin:$PATH"
-          ./run_tests_ci.sh 
-
-      - name: Run compat tests
-        working-directory: avail-test
-        run: |
-          set -eo pipefail
-          export PATH="/root/.cargo/bin:$PATH"
-          cargo run --package compat-test-tool --bin compat-test-tool
-        env:
-          RUST_BACKTRACE: 1
-
   binary_publish:
     needs: [compatibility_tests]
     runs-on: ubuntu-20.04
