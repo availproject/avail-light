@@ -90,7 +90,6 @@ jobs:
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
 
   binary_publish:
-    needs: [compatibility_tests]
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/download-artifact@v4
@@ -110,7 +109,6 @@ jobs:
          file_glob: true
 
   trigger_deploy_workflow:
-    needs: [compatibility_tests]
     runs-on: ubuntu-20.04
     steps:
       - name: Trigger repository_dispatch for release
@@ -125,7 +123,6 @@ jobs:
 
   # build avail image and publish to dockerhub
   docker_build_push:
-    needs: [compatibility_tests]
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout
