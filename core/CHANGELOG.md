@@ -2,6 +2,7 @@
 
 ## 1.0.4
 
+- Fix telemetry naming, put project name as prefix instead of suffix
 - Add timeouts to RPC subscriptions
 - Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
 
