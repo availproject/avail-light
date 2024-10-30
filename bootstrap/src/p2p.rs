@@ -88,6 +88,7 @@ pub async fn init(
 			.with_websocket(noise::Config::new, yamux::Config::default)
 			.await?
 			.with_behaviour(behaviour)?
+			.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
 			.build()
 	} else {
 		swarm = tokio_swarm
@@ -103,6 +104,7 @@ pub async fn init(
 			})?
 			.with_dns()?
 			.with_behaviour(behaviour)?
+			.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
 			.build()
 	}
 

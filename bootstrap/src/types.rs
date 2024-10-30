@@ -114,6 +114,7 @@ pub struct LibP2PConfig {
 	pub identify: IdentifyConfig,
 	pub kademlia: KademliaConfig,
 	pub secret_key: Option<SecretKey>,
+	pub connection_idle_timeout: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -123,6 +124,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			identify: IdentifyConfig::new(),
 			kademlia: rtcfg.into(),
 			secret_key: rtcfg.secret_key.clone(),
+			connection_idle_timeout: Duration::from_secs(rtcfg.connection_idle_timeout),
 		}
 	}
 }
