@@ -1,9 +1,9 @@
-use warp::{Filter, Rejection, Reply};
 use crate::api::server::{handle_rejection, log_internal_server_error};
 use crate::network::p2p::Client;
+use warp::{Filter, Rejection, Reply};
 
 pub mod p2p;
-use p2p::{dial_external_peer, get_peer_multiaddr, get_peer_info};
+use p2p::{dial_external_peer, get_peer_info, get_peer_multiaddr};
 
 fn p2p_local_info_route(
 	p2p_client: Client,
@@ -41,9 +41,8 @@ fn p2p_peer_multiaddr_route(
 pub fn routes(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	
 	p2p_local_info_route(p2p_client.clone())
-        .or(p2p_peers_dial_route(p2p_client.clone()))
-        .or(p2p_peer_multiaddr_route(p2p_client.clone()))
-        .recover(handle_rejection)
+		.or(p2p_peers_dial_route(p2p_client.clone()))
+		.or(p2p_peer_multiaddr_route(p2p_client.clone()))
+		.recover(handle_rejection)
 }
