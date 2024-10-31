@@ -18,7 +18,7 @@ use futures::{Stream, TryStreamExt};
 use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::{broadcast::Sender, RwLock};
 use tokio_retry::Retry;
-use tokio_stream::{Elapsed, StreamExt};
+use tokio_stream::{Elapsed, StreamExt, StreamMap};
 use tracing::{error, info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
@@ -481,7 +481,32 @@ impl<D: Database> Client<D> {
 				.fuse(),
 		);
 
-		Ok(Box::pin(headers.merge(justifications)))
+		let mut last_stream = 0;
+		let mut per_stream_count = 0;
+
+		let mut streams = StreamMap::new();
+		streams.insert(0, Box::pin(headers));
+		streams.insert(1, Box::pin(justifications));
+		let streams = streams
+			.take_while(move |&(stream, _)| {
+				if last_stream != stream {
+					last_stream = stream;
+					per_stream_count = 0;
+					return true;
+				}
+
+				per_stream_count += 1;
+
+				if per_stream_count < 3 {
+					return true;
+				}
+
+				// If one of the streams is inactive third time in a row, reconnect
+				warn!("Stream stalled, restarting...");
+				false
+			})
+			.map(|(_, value)| value);
+		Ok(Box::pin(streams))
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
