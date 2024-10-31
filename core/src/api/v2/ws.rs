@@ -1,8 +1,11 @@
 use super::transactions;
 use crate::{
 	api::{
-		types::{Error, Sender, Payload, Request, Response, Status, Version, WsClients, WsError, WsResponse},
 		configuration::SharedConfig,
+		types::{
+			Error, Payload, Request, Response, Sender, Status, Version, WsClients, WsError,
+			WsResponse,
+		},
 	},
 	data::{Database, RpcNodeKey},
 	utils::spawn_in_span,

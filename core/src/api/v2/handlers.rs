@@ -1,14 +1,11 @@
-use super::{
-	transactions,
-	ws,
-};
+use super::{transactions, ws};
 use crate::{
 	api::{
 		configuration::SharedConfig,
 		types::{
-			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse, DataTransaction,
-			Error, FieldsQueryParameter, Header, Status, SubmitResponse, Subscription, SubscriptionId,
-			Transaction, Version, WsClients,
+			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse,
+			DataTransaction, Error, FieldsQueryParameter, Header, Status, SubmitResponse,
+			Subscription, SubscriptionId, Transaction, Version, WsClients,
 		},
 	},
 	data::{AppDataKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
@@ -167,4 +164,3 @@ pub async fn block_data(
 		data_transactions,
 	})
 }
-

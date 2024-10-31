@@ -4,15 +4,11 @@ use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
 
 use crate::api::{
-	types::{DataQuery, PublishMessage, WsClients, Topic},
 	server::{handle_rejection, log_internal_server_error},
+	types::{DataQuery, PublishMessage, Topic, WsClients},
 };
 
-use crate::{
-	data::Database,
-	network::rpc::Client,
-	types::IdentityConfig,
-};
+use crate::{data::Database, network::rpc::Client, types::IdentityConfig};
 
 use super::configuration::SharedConfig;
 
@@ -214,7 +210,7 @@ mod tests {
 			configuration::SharedConfig,
 			types::{
 				DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic,
-				WsClients, WsError, WsResponse, Transaction
+				Transaction, WsClients, WsError, WsResponse,
 			},
 		},
 		data::{
