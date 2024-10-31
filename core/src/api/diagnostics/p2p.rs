@@ -1,5 +1,5 @@
 use crate::{
-	api::v2::types::Error,
+	api::types::Error,
 	network::p2p::{self, MultiAddressInfo},
 };
 use libp2p::{swarm::DialError, Multiaddr, PeerId};
