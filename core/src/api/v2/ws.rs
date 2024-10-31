@@ -1,11 +1,8 @@
-use super::{
-	transactions,
-	types::{Payload, Request, Response, Status, Version, WsClients, WsError, WsResponse},
-};
+use super::transactions;
 use crate::{
 	api::{
+		types::{Error, Sender, Payload, Request, Response, Status, Version, WsClients, WsError, WsResponse},
 		configuration::SharedConfig,
-		v2::types::{Error, Sender},
 	},
 	data::{Database, RpcNodeKey},
 	utils::spawn_in_span,

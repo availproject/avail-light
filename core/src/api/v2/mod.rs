@@ -3,15 +3,14 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
 
-use self::{
-	handlers::{handle_rejection, log_internal_server_error},
-	types::{DataQuery, PublishMessage, WsClients},
+use crate::api::{
+	types::{DataQuery, PublishMessage, WsClients, Topic},
+	server::{handle_rejection, log_internal_server_error},
 };
 
 use crate::{
-	api::v2::types::Topic,
 	data::Database,
-	network::{p2p, rpc::Client},
+	network::rpc::Client,
 	types::IdentityConfig,
 };
 
@@ -19,7 +18,6 @@ use super::configuration::SharedConfig;
 
 mod handlers;
 mod transactions;
-pub mod types;
 mod ws;
 
 async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
@@ -111,38 +109,6 @@ fn submit_route(
 		.map(log_internal_server_error)
 }
 
-fn p2p_local_info_route(
-	p2p_client: p2p::Client,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "local" / "info")
-		.and(warp::get())
-		.and(warp::any().map(move || p2p_client.clone()))
-		.then(handlers::p2p::get_peer_info)
-		.map(log_internal_server_error)
-}
-
-fn p2p_peers_dial_route(
-	p2p_client: p2p::Client,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "peers" / "dial")
-		.and(warp::post())
-		.and(warp::any().map(move || p2p_client.clone()))
-		.and(warp::body::json())
-		.then(handlers::p2p::dial_external_peer)
-		.map(log_internal_server_error)
-}
-
-fn p2p_peer_multiaddr_route(
-	p2p_client: p2p::Client,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v2" / "p2p" / "peers" / "get-multiaddress")
-		.and(warp::post())
-		.and(warp::any().map(move || p2p_client.clone()))
-		.and(warp::body::json())
-		.then(handlers::p2p::get_peer_multiaddr)
-		.map(log_internal_server_error)
-}
-
 fn subscriptions_route(
 	clients: WsClients,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -218,7 +184,6 @@ pub fn routes(
 	rpc_client: Client<impl Database + Send + Sync + Clone + 'static>,
 	ws_clients: WsClients,
 	db: impl Database + Clone + Send + 'static,
-	p2p_client: p2p::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let app_id = config.app_id.as_ref();
 
@@ -238,21 +203,18 @@ pub fn routes(
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, db.clone()))
-		.or(p2p_local_info_route(p2p_client.clone()))
-		.or(p2p_peers_dial_route(p2p_client.clone()))
-		.or(p2p_peer_multiaddr_route(p2p_client.clone()))
 		.recover(handle_rejection)
 }
 
 #[cfg(test)]
 mod tests {
-	use super::{transactions, types::Transaction};
+	use super::transactions;
 	use crate::{
 		api::{
 			configuration::SharedConfig,
-			v2::types::{
+			types::{
 				DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic,
-				WsClients, WsError, WsResponse,
+				WsClients, WsError, WsResponse, Transaction
 			},
 		},
 		data::{

@@ -890,15 +890,13 @@ pub enum WsError {
 
 #[cfg(test)]
 mod tests {
+	use super::{BlockStatus, Header, HeaderMessage, PublishMessage};
 	use std::time::Duration;
-
 	use avail_rust::{
 		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, sp_core::H256,
 	};
 	use tokio::sync::mpsc;
-
 	use crate::{
-		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, LatestHeaderKey,
 			LatestSyncKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,

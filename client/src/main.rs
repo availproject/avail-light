@@ -2,7 +2,7 @@
 
 use crate::cli::CliOpts;
 use avail_light_core::{
-	api::{self, v2::types::ApiData},
+	api::{self, types::ApiData},
 	data::{
 		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RpcNodeKey,
 		SignerNonceKey, DB,
@@ -188,7 +188,7 @@ async fn run(
 	db.put(LatestHeaderKey, block_header.number);
 	let sync_range = cfg.sync_range(block_header.number);
 
-	let ws_clients = api::v2::types::WsClients::default();
+	let ws_clients = api::types::WsClients::default();
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let server = api::server::Server {
@@ -223,20 +223,20 @@ async fn run(
 	});
 
 	spawn_in_span(shutdown.with_cancel(api::v2::publish(
-		api::v2::types::Topic::HeaderVerified,
+		api::types::Topic::HeaderVerified,
 		publish_rpc_event_receiver,
 		ws_clients.clone(),
 	)));
 
 	spawn_in_span(shutdown.with_cancel(api::v2::publish(
-		api::v2::types::Topic::ConfidenceAchieved,
+		api::types::Topic::ConfidenceAchieved,
 		block_tx.subscribe(),
 		ws_clients.clone(),
 	)));
 
 	if let Some(data_rx) = data_rx {
 		spawn_in_span(shutdown.with_cancel(api::v2::publish(
-			api::v2::types::Topic::DataVerified,
+			api::types::Topic::DataVerified,
 			data_rx,
 			ws_clients,
 		)));

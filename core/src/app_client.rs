@@ -45,7 +45,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	api::v2::types::ApiData,
+	api::types::ApiData,
 	data::{AppDataKey, Database, IsSyncedKey, RecordKey, VerifiedDataKey, VerifiedSyncDataKey},
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
