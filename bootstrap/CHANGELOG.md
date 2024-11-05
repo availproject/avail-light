@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.0]
+## [0.4.0](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.4.0) - 2024-11-05
 
 - Fix missing swarm config
 - Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
