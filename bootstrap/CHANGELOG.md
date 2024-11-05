@@ -2,6 +2,7 @@
 
 ## [0.4.0]
 
+- Fix missing swarm config
 - Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process
 - Add `/p2p/local/info` endpoint
 - Add webrtc support to bootstrap

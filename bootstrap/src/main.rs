@@ -82,7 +82,7 @@ async fn run() -> Result<()> {
 	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
 	let (network_client, network_event_loop) =
-		p2p::init(cfg_libp2p, id_keys, cfg.ws_transport_enable)
+		p2p::init(&cfg_libp2p, id_keys, cfg.ws_transport_enable)
 			.await
 			.context("Failed to initialize P2P Network Service.")?;
 

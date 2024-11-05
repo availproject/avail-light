@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
 	fmt::{self, Display},
 	net::SocketAddr,
+	num::{NonZero, NonZeroU8, NonZeroUsize},
 	str::FromStr,
 	time::Duration,
 };
@@ -80,6 +81,10 @@ pub struct RuntimeConfig {
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
 	pub connection_idle_timeout: u64,
+	pub max_negotiating_inbound_streams: usize,
+	pub task_command_buffer_size: NonZeroUsize,
+	pub per_connection_event_buffer_size: usize,
+	pub dial_concurrency_factor: NonZeroU8,
 	/// Autonat server config - max total dial requests (Default: 30).
 	pub autonat_throttle_clients_global_max: usize,
 	/// Autonat server config - max dial requests for a single peer (Default: 3).
@@ -114,6 +119,11 @@ pub struct LibP2PConfig {
 	pub identify: IdentifyConfig,
 	pub kademlia: KademliaConfig,
 	pub secret_key: Option<SecretKey>,
+	pub connection_idle_timeout: Duration,
+	pub max_negotiating_inbound_streams: usize,
+	pub task_command_buffer_size: NonZeroUsize,
+	pub per_connection_event_buffer_size: usize,
+	pub dial_concurrency_factor: NonZeroU8,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -123,6 +133,11 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			identify: IdentifyConfig::new(),
 			kademlia: rtcfg.into(),
 			secret_key: rtcfg.secret_key.clone(),
+			connection_idle_timeout: Duration::from_secs(rtcfg.connection_idle_timeout),
+			max_negotiating_inbound_streams: rtcfg.max_negotiating_inbound_streams,
+			task_command_buffer_size: rtcfg.task_command_buffer_size,
+			per_connection_event_buffer_size: rtcfg.per_connection_event_buffer_size,
+			dial_concurrency_factor: rtcfg.dial_concurrency_factor,
 		}
 	}
 }
@@ -191,6 +206,10 @@ impl Default for RuntimeConfig {
 			autonat_throttle_clients_period: 1,
 			autonat_only_global_ips: true,
 			connection_idle_timeout: 30,
+			max_negotiating_inbound_streams: 20,
+			task_command_buffer_size: NonZero::new(30000).unwrap(),
+			per_connection_event_buffer_size: 10000,
+			dial_concurrency_factor: NonZero::new(5).unwrap(),
 			kad_query_timeout: 60,
 			bootstraps: vec![],
 			bootstrap_period: 300,
