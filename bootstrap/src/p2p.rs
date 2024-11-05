@@ -34,8 +34,17 @@ pub struct Behaviour {
 	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
 }
 
+fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {
+	config
+		.with_idle_connection_timeout(cfg.connection_idle_timeout)
+		.with_max_negotiating_inbound_streams(cfg.max_negotiating_inbound_streams)
+		.with_notify_handler_buffer_size(cfg.task_command_buffer_size)
+		.with_dial_concurrency_factor(cfg.dial_concurrency_factor)
+		.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
+}
+
 pub async fn init(
-	cfg: LibP2PConfig,
+	cfg: &LibP2PConfig,
 	id_keys: Keypair,
 	is_ws_transport: bool,
 ) -> Result<(Client, EventLoop)> {
@@ -63,7 +72,7 @@ pub async fn init(
 	// create new Kademlia Memory Store
 	let kad_store = MemoryStore::new(id_keys.public().to_peer_id());
 	// create Kademlia Config
-	let mut kad_cfg = kad::Config::new(cfg.kademlia.protocol_name);
+	let mut kad_cfg = kad::Config::new(cfg.kademlia.protocol_name.clone());
 	kad_cfg
 		.set_query_timeout(cfg.kademlia.query_timeout)
 		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_interval));
@@ -103,6 +112,7 @@ pub async fn init(
 			})?
 			.with_dns()?
 			.with_behaviour(behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
 			.build()
 	}
 
