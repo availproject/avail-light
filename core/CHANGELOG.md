@@ -2,6 +2,7 @@
 
 ## 1.0.4
 
+- Fix put record metric event in case of errors
 - Fix telemetry naming, put project name as prefix instead of suffix
 - Add timeouts to RPC subscriptions
 - Integrate upstream `rust-libp2p` `0.54` changes to the bootstrap process

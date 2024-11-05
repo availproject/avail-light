@@ -19,7 +19,7 @@ use libp2p::{
 use std::time::{Duration, Instant};
 use sysinfo::System;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
@@ -195,11 +195,10 @@ impl Client {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
 				for record in records.clone() {
-					let _ = context
-						.swarm
-						.behaviour_mut()
-						.kademlia
-						.put_record(record, quorum);
+					let kademlia = &mut context.swarm.behaviour_mut().kademlia;
+					if let Err(error) = kademlia.put_record(record, quorum) {
+						warn!("Put record failed: {error}");
+					}
 				}
 
 				context

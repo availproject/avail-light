@@ -308,10 +308,6 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(Err(error)) => {
-							if self.pending_kad_queries.remove(&id).is_none() {
-								return;
-							};
-
 							match error {
 								kad::PutRecordError::QuorumFailed { key, .. }
 								| kad::PutRecordError::Timeout { key, .. } => {
@@ -330,8 +326,6 @@ impl EventLoop {
 						},
 
 						QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
-							_ = self.pending_kad_queries.remove(&id);
-
 							// Remove local records for fat clients (memory optimization)
 							if self.event_loop_config.is_fat_client {
 								debug!("Pruning local records on fat client");
