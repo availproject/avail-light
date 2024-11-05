@@ -313,7 +313,7 @@ impl EventLoop {
 								| kad::PutRecordError::Timeout { key, .. } => {
 									// Remove local records for fat clients (memory optimization)
 									if self.event_loop_config.is_fat_client {
-										debug!("Pruning local records on fat client");
+										trace!("Pruning local records on fat client");
 										self.swarm.behaviour_mut().kademlia.remove_record(&key);
 									}
 
@@ -328,7 +328,7 @@ impl EventLoop {
 						QueryResult::PutRecord(Ok(PutRecordOk { key })) => {
 							// Remove local records for fat clients (memory optimization)
 							if self.event_loop_config.is_fat_client {
-								debug!("Pruning local records on fat client");
+								trace!("Pruning local records on fat client");
 								self.swarm.behaviour_mut().kademlia.remove_record(&key);
 							}
 
