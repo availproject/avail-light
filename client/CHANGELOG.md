@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.2
+## [1.12.2](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.2) - 2024-11-05
 
 - Update `avail-light-core` to 1.0.4
 - Add back origin attribute to metrics
