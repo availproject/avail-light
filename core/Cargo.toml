@@ -17,6 +17,7 @@ base64 = "0.21.0"
 better-panic = "0.3.0"
 chrono = "0.4.19"
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
+convert_case = "0.6.0"
 color-eyre = { workspace = true }
 confy = { workspace = true }
 derive_more = { version = "0.99.17", features = ["from"] }

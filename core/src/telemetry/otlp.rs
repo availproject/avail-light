@@ -1,6 +1,7 @@
 use super::{MetricCounter, MetricValue, Value};
 use crate::{telemetry::MetricName, types::Origin};
 use color_eyre::{eyre::eyre, Result};
+use convert_case::{Case, Casing};
 use opentelemetry::{
 	global,
 	metrics::{Counter, Meter},
@@ -275,11 +276,14 @@ pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) 
 }
 
 fn to_snake_case(project_name: &str) -> String {
-	project_name.to_lowercase().replace(' ', "_")
+	project_name.to_case(Case::Snake)
 }
 
 fn is_valid_project_name(project_name: &str) -> bool {
-	project_name.chars().all(|c| c.is_alphanumeric())
+	!project_name.trim().is_empty()
+		&& project_name
+			.chars()
+			.all(|c| c.is_alphanumeric() || c.is_whitespace())
 }
 
 const INVALID_PROJECT_NAME: &str = r#"
@@ -395,5 +399,26 @@ mod tests {
 		assert_eq!(m_f64.get("light.dht.fetch_duration"), Some(&1.7));
 		assert_eq!(m_f64.get("light.block.confidence"), Some(&98.5));
 		assert_eq!(m_f64.get("light.dht.connected_peers"), Some(&85.0));
+	}
+
+	#[tokio::test]
+	async fn test_project_name_patterns() {
+		let project_name_with_spaces = String::from("My Project 002");
+		let metrics = initialize(
+			project_name_with_spaces,
+			&Origin::External,
+			OtelConfig::default(),
+		);
+		assert_eq!(metrics.is_ok(), true);
+		assert_eq!(metrics.unwrap().project_name, "my_project_002");
+
+		let non_alphanumeric_project_name = String::from("MyProject003#");
+		let metrics = initialize(
+			non_alphanumeric_project_name,
+			&Origin::External,
+			OtelConfig::default(),
+		);
+		assert_eq!(metrics.is_err(), true);
+		assert_eq!(metrics.unwrap_err().to_string(), INVALID_PROJECT_NAME);
 	}
 }
