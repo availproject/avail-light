@@ -1,6 +1,6 @@
 use super::{MetricCounter, MetricValue, Value};
 use crate::{telemetry::MetricName, types::Origin};
-use color_eyre::Result;
+use color_eyre::{eyre::eyre, Result};
 use opentelemetry::{
 	global,
 	metrics::{Counter, Meter},
@@ -192,8 +192,8 @@ fn init_counters(
 	meter: Meter,
 	origin: &Origin,
 	project_name: String,
-) -> HashMap<&'static str, Counter<u64>> {
-	[
+) -> Result<HashMap<&'static str, Counter<u64>>> {
+	let counters = [
 		MetricCounter::Starts,
 		MetricCounter::Up,
 		MetricCounter::SessionBlocks,
@@ -212,7 +212,9 @@ fn init_counters(
 		// Keep the `static str as the local buffer map key, but change the OTel counter name`
 		(counter.name(), meter.u64_counter(otel_counter_name).init())
 	})
-	.collect()
+	.collect();
+
+	Ok(counters)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -237,6 +239,10 @@ impl Default for OtelConfig {
 }
 
 pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) -> Result<Metrics> {
+	if !is_valid_project_name(&project_name) {
+		return Err(eyre!("{INVALID_PROJECT_NAME}"));
+	}
+	let project_name = to_snake_case(&project_name);
 	let export_config = ExportConfig {
 		endpoint: ot_config.ot_collector_endpoint,
 		timeout: Duration::from_secs(10),
@@ -257,7 +263,7 @@ pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) 
 	let meter = global::meter("avail_light_client");
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = init_counters(meter.clone(), origin, project_name.clone());
+	let counters = init_counters(meter.clone(), origin, project_name.clone())?;
 	Ok(Metrics {
 		meter,
 		project_name,
@@ -267,6 +273,18 @@ pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) 
 		counter_buffer: vec![],
 	})
 }
+
+fn to_snake_case(project_name: &str) -> String {
+	project_name.to_lowercase().replace(' ', "_")
+}
+
+fn is_valid_project_name(project_name: &str) -> bool {
+	project_name.chars().all(|c| c.is_alphanumeric())
+}
+
+const INVALID_PROJECT_NAME: &str = r#"
+Project name must only contain alphanumeric characters.
+"#;
 
 #[cfg(test)]
 mod tests {
