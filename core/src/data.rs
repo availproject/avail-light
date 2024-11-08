@@ -300,7 +300,7 @@ impl RecordKey for P2PKeypairKey {
 pub struct SignerNonceKey;
 
 impl RecordKey for SignerNonceKey {
-	type Type = u64;
+	type Type = u32;
 
 	fn space(&self) -> Option<&'static str> {
 		Some(APP_STATE_CF)

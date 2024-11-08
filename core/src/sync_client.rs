@@ -31,8 +31,8 @@ use crate::{
 use async_trait::async_trait;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
-	sp_core::{blake2_256, H256},
-	AvailHeader,
+	sp_core::blake2_256,
+	AvailHeader, H256,
 };
 use codec::Encode;
 use color_eyre::{
