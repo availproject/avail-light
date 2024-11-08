@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use avail_rust::sp_core::{
-	blake2_256,
-	ed25519::{self, Public},
-	Pair, H256,
+use avail_rust::{
+	sp_core::{
+		blake2_256,
+		ed25519::{self, Public},
+		Pair,
+	},
+	H256,
 };
 use codec::Encode;
 use itertools::Itertools;

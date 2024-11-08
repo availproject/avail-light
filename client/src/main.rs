@@ -145,7 +145,7 @@ async fn run(
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
 	let nonce = client.api.tx().account_nonce(&account_id).await?;
-	db.put(SignerNonceKey, nonce);
+	db.put(SignerNonceKey, nonce.try_into()?);
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_event_sender.subscribe();
@@ -729,7 +729,7 @@ pub async fn main() -> Result<()> {
 		None => load_or_init_suri(&opts.identity)?,
 		Some(suri) => suri,
 	};
-	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase.as_ref())?;
+	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
 
 	if opts.clean && Path::new(&cfg.avail_path).exists() {
 		info!("Cleaning up local state directory");

@@ -6,13 +6,13 @@ use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
 	sp_core::{
 		crypto::{self, Ss58Codec},
-		{blake2_256, bytes, ed25519, H256},
+		{blake2_256, bytes, ed25519},
 	},
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
 		SecretString, SecretUri,
 	},
-	AvailHeader, Keypair,
+	AvailHeader, Keypair, H256,
 };
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
@@ -451,11 +451,11 @@ pub fn load_or_init_suri(path: &str) -> Result<String> {
 }
 
 impl IdentityConfig {
-	pub fn from_suri(suri: String, password: Option<&String>) -> Result<Self> {
+	pub fn from_suri(suri: String, password: Option<String>) -> Result<Self> {
 		let mut suri = SecretUri::from_str(&suri)?;
 
 		if let Some(password) = password {
-			suri.password = Some(SecretString::from_str(password)?);
+			suri.password = Some(SecretString::from(password));
 		}
 
 		let avail_key_pair = Keypair::from_uri(&suri)?;

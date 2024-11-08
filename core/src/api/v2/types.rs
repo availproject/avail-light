@@ -5,9 +5,9 @@ use avail_rust::{
 	},
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{com::AppData, commitments},
-	sp_core::{blake2_256, H256},
+	sp_core::blake2_256,
 	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
-	AvailHeader,
+	AvailHeader, H256,
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::Encode;
@@ -893,7 +893,7 @@ mod tests {
 	use std::time::Duration;
 
 	use avail_rust::{
-		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, sp_core::H256,
+		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, H256,
 	};
 	use tokio::sync::mpsc;
 

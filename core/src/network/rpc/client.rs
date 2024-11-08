@@ -3,12 +3,12 @@ use avail_rust::{
 	avail_core::AppId,
 	kate_recovery::{data::Cell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
-	sp_core::{bytes::from_hex, crypto, ed25519::Public, H256, U256},
+	sp_core::{bytes::from_hex, crypto, ed25519::Public},
 	subxt::{
 		self, backend::legacy::rpc_methods::StorageKey, client::RuntimeVersion, rpc_params,
 		tx::SubmittableExtrinsic, utils::AccountId32,
 	},
-	AvailExtrinsicParamsBuilder, AvailHeader, Data, Keypair, WaitFor, SDK,
+	AvailHeader, Data, Keypair, Nonce, Options, WaitFor, H256, SDK, U256,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -598,15 +598,7 @@ impl<D: Database> Client<D> {
 					.map_err(|error| subxt::Error::Other(format!("{error}")))?;
 				Ok(rows
 					.iter()
-					.map(|row| {
-						row.iter()
-							.flat_map(|cell| {
-								let mut bytes = [0u8; 32];
-								cell.to_big_endian(&mut bytes);
-								bytes.to_vec()
-							})
-							.collect()
-					})
+					.map(|row| row.iter().flat_map(|cell| cell.to_big_endian()).collect())
 					.collect())
 			}
 		})
@@ -625,7 +617,7 @@ impl<D: Database> Client<D> {
 			}
 
 			let mut result = [0u8; 80];
-			scalar.to_big_endian(&mut result[48..]);
+			result[..48].copy_from_slice(&scalar.to_big_endian());
 			result[..48].copy_from_slice(&proof);
 			Ok(result)
 		}
@@ -749,12 +741,9 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let data = Data { 0: data.0.clone() };
 			async move {
-				let nonce = self.db.get(SignerNonceKey).unwrap_or(0_u64);
+				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
 
-				let options = AvailExtrinsicParamsBuilder::new()
-					.nonce(nonce)
-					.app_id(app_id.0)
-					.build();
+				let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
 
 				let data_submission = client
 					.tx

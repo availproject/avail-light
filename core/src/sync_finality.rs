@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use avail_rust::{
-	sp_core::{blake2_256, ed25519, twox_128, H256},
+	sp_core::{blake2_256, ed25519, twox_128},
 	subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32},
-	AvailHeader,
+	AvailHeader, H256,
 };
 use codec::Encode;
 use color_eyre::{

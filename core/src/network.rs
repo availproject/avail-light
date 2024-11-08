@@ -5,7 +5,7 @@ use avail_rust::{
 		data::Cell,
 		matrix::{Dimensions, Position},
 	},
-	sp_core::H256,
+	H256,
 };
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
