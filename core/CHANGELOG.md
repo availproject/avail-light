@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- Update `avail-rust` to the latest version (WASM compatibility updates)
+
 ## 1.0.4
 
 - Fix put record metric event in case of errors
