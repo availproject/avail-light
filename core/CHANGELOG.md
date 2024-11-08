@@ -6,6 +6,7 @@
 
 ## 1.0.4
 
+- Enforce alphanumeric and snake case constraints on otel initialization handler
 - Fix put record metric event in case of errors
 - Fix telemetry naming, put project name as prefix instead of suffix
 - Add timeouts to RPC subscriptions
