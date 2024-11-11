@@ -1,7 +1,9 @@
 use super::{MetricCounter, MetricValue, Value};
-use crate::{telemetry::MetricName, types::Origin};
-use color_eyre::{eyre::eyre, Result};
-use convert_case::{Case, Casing};
+use crate::{
+	telemetry::MetricName,
+	types::{Origin, ProjectName},
+};
+use color_eyre::Result;
 use opentelemetry::{
 	global,
 	metrics::{Counter, Meter},
@@ -16,7 +18,7 @@ use std::{collections::HashMap, time::Duration};
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	project_name: String,
+	project_name: ProjectName,
 	origin: Origin,
 	counters: HashMap<&'static str, Counter<u64>>,
 	metric_buffer: Vec<Record>,
@@ -25,7 +27,7 @@ pub struct Metrics {
 
 impl Metrics {
 	fn gauge_name(&self, name: &'static str) -> String {
-		format!("{project_name}.{name}", project_name = self.project_name)
+		format!("{project_name}.{name}", project_name = self.project_name.0)
 	}
 
 	fn map_attributes(&self, attributes: Vec<(String, String)>) -> Vec<KeyValue> {
@@ -192,9 +194,9 @@ fn flatten_metrics(buffer: &[Record]) -> (HashMap<&'static str, u64>, HashMap<&'
 fn init_counters(
 	meter: Meter,
 	origin: &Origin,
-	project_name: String,
-) -> Result<HashMap<&'static str, Counter<u64>>> {
-	let counters = [
+	project_name: ProjectName,
+) -> HashMap<&'static str, Counter<u64>> {
+	[
 		MetricCounter::Starts,
 		MetricCounter::Up,
 		MetricCounter::SessionBlocks,
@@ -209,13 +211,15 @@ fn init_counters(
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
 	.map(|counter| {
-		let otel_counter_name = format!("{project_name}.{name}", name = counter.name());
+		let otel_counter_name = format!(
+			"{project}.{name}",
+			name = counter.name(),
+			project = project_name.0
+		);
 		// Keep the `static str as the local buffer map key, but change the OTel counter name`
 		(counter.name(), meter.u64_counter(otel_counter_name).init())
 	})
-	.collect();
-
-	Ok(counters)
+	.collect()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -239,11 +243,11 @@ impl Default for OtelConfig {
 	}
 }
 
-pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) -> Result<Metrics> {
-	if !is_valid_project_name(&project_name) {
-		return Err(eyre!("{INVALID_PROJECT_NAME}"));
-	}
-	let project_name = to_snake_case(&project_name);
+pub fn initialize(
+	project_name: ProjectName,
+	origin: &Origin,
+	ot_config: OtelConfig,
+) -> Result<Metrics> {
 	let export_config = ExportConfig {
 		endpoint: ot_config.ot_collector_endpoint,
 		timeout: Duration::from_secs(10),
@@ -264,7 +268,7 @@ pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) 
 	let meter = global::meter("avail_light_client");
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
-	let counters = init_counters(meter.clone(), origin, project_name.clone())?;
+	let counters = init_counters(meter.clone(), origin, project_name.clone());
 	Ok(Metrics {
 		meter,
 		project_name,
@@ -274,21 +278,6 @@ pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) 
 		counter_buffer: vec![],
 	})
 }
-
-fn to_snake_case(project_name: &str) -> String {
-	project_name.to_case(Case::Snake)
-}
-
-fn is_valid_project_name(project_name: &str) -> bool {
-	!project_name.trim().is_empty()
-		&& project_name
-			.chars()
-			.all(|c| c.is_alphanumeric() || c.is_whitespace())
-}
-
-const INVALID_PROJECT_NAME: &str = r#"
-Project name must only contain alphanumeric characters.
-"#;
 
 #[cfg(test)]
 mod tests {
@@ -399,26 +388,5 @@ mod tests {
 		assert_eq!(m_f64.get("light.dht.fetch_duration"), Some(&1.7));
 		assert_eq!(m_f64.get("light.block.confidence"), Some(&98.5));
 		assert_eq!(m_f64.get("light.dht.connected_peers"), Some(&85.0));
-	}
-
-	#[tokio::test]
-	async fn test_project_name_patterns() {
-		let project_name_with_spaces = String::from("My Project 002");
-		let metrics = initialize(
-			project_name_with_spaces,
-			&Origin::External,
-			OtelConfig::default(),
-		);
-		assert_eq!(metrics.is_ok(), true);
-		assert_eq!(metrics.unwrap().project_name, "my_project_002");
-
-		let non_alphanumeric_project_name = String::from("MyProject003#");
-		let metrics = initialize(
-			non_alphanumeric_project_name,
-			&Origin::External,
-			OtelConfig::default(),
-		);
-		assert_eq!(metrics.is_err(), true);
-		assert_eq!(metrics.unwrap_err().to_string(), INVALID_PROJECT_NAME);
 	}
 }

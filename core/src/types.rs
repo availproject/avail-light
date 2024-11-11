@@ -18,9 +18,10 @@ use avail_rust::{
 use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
+use convert_case::{Case, Casing};
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
-use serde::{de::Error, Deserialize, Serialize};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -611,5 +612,77 @@ impl TryFrom<String> for Base64 {
 impl From<Base64> for String {
 	fn from(value: Base64) -> Self {
 		general_purpose::STANDARD.encode(value.0)
+	}
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectName(pub String);
+
+impl ProjectName {
+	pub fn new<S: Into<String>>(name: S) -> Self {
+		ProjectName(name.into().to_case(Case::Snake))
+	}
+}
+
+impl Default for ProjectName {
+	fn default() -> Self {
+		ProjectName::new("avail")
+	}
+}
+
+impl Serialize for ProjectName {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		serializer.serialize_str(&self.0)
+	}
+}
+
+impl<'de> Deserialize<'de> for ProjectName {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let s = String::deserialize(deserializer)?;
+		let snake_case_name = s.to_case(Case::Snake);
+		if snake_case_name
+			.chars()
+			.all(|c| c.is_alphanumeric() || c == '_')
+		{
+			Ok(ProjectName(snake_case_name))
+		} else {
+			Err(serde::de::Error::custom(INVALID_PROJECT_NAME))
+		}
+	}
+}
+const INVALID_PROJECT_NAME: &str = r#"
+Project name must only contain alphanumeric characters.
+"#;
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use serde_json;
+
+	#[test]
+	fn test_project_name_patterns() {
+		// Project name with spaces
+		let json_data = "\"Project 001\"";
+		let deserialized: ProjectName = serde_json::from_str(json_data).unwrap();
+		assert_eq!(deserialized.0, "project_001");
+
+		// Project name with caps and spaces
+		let json_data = "\"PROJECT 002\"";
+		let deserialized: ProjectName = serde_json::from_str(json_data).unwrap();
+		assert_eq!(deserialized.0, "project_002");
+
+		// Project name with special alphanumeric characters (disallowed)
+		let json_data = "\"project_002#%\"";
+		let deserialized_res: Result<ProjectName, _> = serde_json::from_str(json_data);
+		match deserialized_res {
+			Err(e) => assert_eq!(e.to_string(), INVALID_PROJECT_NAME.to_string()),
+			Ok(_) => panic!("Deserialization should have failed"),
+		}
 	}
 }

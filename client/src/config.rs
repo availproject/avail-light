@@ -6,7 +6,7 @@ use avail_light_core::{
 	telemetry::otlp::OtelConfig,
 	types::{
 		option_duration_seconds_format, tracing_level_format, AppClientConfig, MaintenanceConfig,
-		Origin, SyncClientConfig,
+		Origin, ProjectName, SyncClientConfig,
 	},
 };
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ use tracing::Level;
 #[serde(default)]
 pub struct RuntimeConfig {
 	/// Name of the project running the client. (default: "avail")
-	pub project_name: String,
+	pub project_name: ProjectName,
 	#[serde(flatten)]
 	pub api: APIConfig,
 	#[serde(flatten)]
@@ -104,7 +104,7 @@ impl From<&RuntimeConfig> for SharedConfig {
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
-			project_name: "avail".to_string(),
+			project_name: ProjectName::new("avail".to_string()),
 			api: Default::default(),
 			libp2p: Default::default(),
 			rpc: Default::default(),
