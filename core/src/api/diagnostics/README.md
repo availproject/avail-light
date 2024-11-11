@@ -2,7 +2,7 @@
 
 This API is intended to be used for P2P network observability and diagnostics.
 
-## **GET** `/p2p/local/info`
+## **GET** `/v1/p2p/local/info`
 
 Returns:
 
@@ -36,7 +36,7 @@ Content-Type: application/json
 }
 ```
 
-## **POST** `/p2p/peers/dial`
+## **POST** `/v1/p2p/peers/dial`
 
 Dials a peer on the light client P2P network and waits for it's response.
 If the dial goes through, a 200 OK response, the example JSON is stated below.
@@ -50,7 +50,7 @@ If an error occurs on the dial 3 types of responses can be returned:
 Request:
 
 ```yaml
-POST /v2/p2p/peers/dial HTTP/1.1
+POST /v1/p2p/peers/dial HTTP/1.1
 {
   "multiaddress": "{target-peers-multi-address}"
   "peer_id": "{target-peers-peer-id}"
@@ -89,7 +89,7 @@ Content-Type: application/json
 }
 ```
 
-## **POST** `/p2p/peers/get-multiaddress`
+## **POST** `/v1/p2p/peers/multiaddress`
 
 Returns a reachable multiaddress for a peer on the light client P2P network.
 If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated below.
@@ -101,7 +101,7 @@ In case of an error the following response is received:
 Request:
 
 ```yaml
-POST /v2/p2p/peers/get-multiaddress HTTP/1.1
+POST /v1/p2p/peers/multiaddress HTTP/1.1
 {
   "peer_id": "{target-peers-peer-id}"
 }

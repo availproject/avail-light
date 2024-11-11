@@ -8,7 +8,7 @@ use p2p::{dial_external_peer, get_peer_info, get_peer_multiaddr};
 fn p2p_local_info_route(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("p2p" / "local" / "info")
+	warp::path!("v1" / "p2p" / "local" / "info")
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.then(get_peer_info)
@@ -18,7 +18,7 @@ fn p2p_local_info_route(
 fn p2p_peers_dial_route(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("p2p" / "peers" / "dial")
+	warp::path!("v1" / "p2p" / "peers" / "dial")
 		.and(warp::post())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
@@ -29,7 +29,7 @@ fn p2p_peers_dial_route(
 fn p2p_peer_multiaddr_route(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("p2p" / "peers" / "get-multiaddress")
+	warp::path!("v1" / "p2p" / "peers" / "multiaddress")
 		.and(warp::post())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
