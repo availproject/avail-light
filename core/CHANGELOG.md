@@ -2,6 +2,7 @@
 
 ## 1.0.5
 
+- Enforce project name as its own distinct type
 - Update `avail-rust` to the latest version (WASM compatibility updates)
 
 ## 1.0.4

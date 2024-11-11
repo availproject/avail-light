@@ -27,7 +27,7 @@ pub struct Metrics {
 
 impl Metrics {
 	fn gauge_name(&self, name: &'static str) -> String {
-		format!("{project_name}.{name}", project_name = self.project_name.0)
+		format!("{project_name}.{name}", project_name = self.project_name)
 	}
 
 	fn map_attributes(&self, attributes: Vec<(String, String)>) -> Vec<KeyValue> {
@@ -214,7 +214,7 @@ fn init_counters(
 		let otel_counter_name = format!(
 			"{project}.{name}",
 			name = counter.name(),
-			project = project_name.0
+			project = project_name
 		);
 		// Keep the `static str as the local buffer map key, but change the OTel counter name`
 		(counter.name(), meter.u64_counter(otel_counter_name).init())

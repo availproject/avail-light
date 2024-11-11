@@ -624,6 +624,12 @@ impl ProjectName {
 	}
 }
 
+impl fmt::Display for ProjectName {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{}", self.0)
+	}
+}
+
 impl Default for ProjectName {
 	fn default() -> Self {
 		ProjectName::new("avail")
@@ -644,13 +650,12 @@ impl<'de> Deserialize<'de> for ProjectName {
 	where
 		D: Deserializer<'de>,
 	{
-		let s = String::deserialize(deserializer)?;
-		let snake_case_name = s.to_case(Case::Snake);
-		if snake_case_name
+		let formatted_name = String::deserialize(deserializer)?.to_case(Case::Snake);
+		if formatted_name
 			.chars()
 			.all(|c| c.is_alphanumeric() || c == '_')
 		{
-			Ok(ProjectName(snake_case_name))
+			Ok(ProjectName(formatted_name))
 		} else {
 			Err(serde::de::Error::custom(INVALID_PROJECT_NAME))
 		}
