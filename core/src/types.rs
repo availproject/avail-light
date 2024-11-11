@@ -651,9 +651,10 @@ impl<'de> Deserialize<'de> for ProjectName {
 		D: Deserializer<'de>,
 	{
 		let formatted_name = String::deserialize(deserializer)?.to_case(Case::Snake);
-		if formatted_name
-			.chars()
-			.all(|c| c.is_alphanumeric() || c == '_')
+		if formatted_name.contains(char::is_alphanumeric)
+			&& formatted_name
+				.chars()
+				.all(|c| c.is_alphanumeric() || c == '_')
 		{
 			Ok(ProjectName(formatted_name))
 		} else {
@@ -661,6 +662,7 @@ impl<'de> Deserialize<'de> for ProjectName {
 		}
 	}
 }
+
 const INVALID_PROJECT_NAME: &str = r#"
 Project name must only contain alphanumeric characters.
 "#;
@@ -672,17 +674,17 @@ mod tests {
 
 	#[test]
 	fn test_project_name_patterns() {
-		// Project name with spaces
+		// Project name with alphanumeric characters and spaces
 		let json_data = "\"Project 001\"";
 		let deserialized: ProjectName = serde_json::from_str(json_data).unwrap();
 		assert_eq!(deserialized.0, "project_001");
 
-		// Project name with caps and spaces
+		// Project name with caps characters and spaces
 		let json_data = "\"PROJECT 002\"";
 		let deserialized: ProjectName = serde_json::from_str(json_data).unwrap();
 		assert_eq!(deserialized.0, "project_002");
 
-		// Project name with special alphanumeric characters (disallowed)
+		// Project name with special non-alphanumeric characters (disallowed)
 		let json_data = "\"project_002#%\"";
 		let deserialized_res: Result<ProjectName, _> = serde_json::from_str(json_data);
 		match deserialized_res {
