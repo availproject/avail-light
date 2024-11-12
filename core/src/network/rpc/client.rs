@@ -23,7 +23,6 @@ use tracing::{error, info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
-	api::types::Base64,
 	data::{Database, RpcNodeKey, SignerNonceKey},
 	network::rpc::OutputEvent as RpcEvent,
 	shutdown::Controller,
