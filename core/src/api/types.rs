@@ -852,8 +852,15 @@ pub enum WsError {
 
 #[cfg(test)]
 mod tests {
-	use super::{BlockStatus, Header, HeaderMessage, PublishMessage};
+	use std::time::Duration;
+
+	use avail_rust::{
+		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, H256,
+	};
+	use tokio::sync::mpsc;
+
 	use crate::{
+		api::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, LatestHeaderKey,
 			LatestSyncKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
@@ -862,11 +869,6 @@ mod tests {
 		types::BlockRange,
 		utils::{spawn_in_span, OptionalExtension},
 	};
-	use avail_rust::{
-		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, sp_core::H256,
-	};
-	use std::time::Duration;
-	use tokio::sync::mpsc;
 
 	use super::{
 		block_status, Base64, ConfidenceMessage, DataField, DataMessage, DataTransaction, Digest,

@@ -1,9 +1,12 @@
-use crate::api::server::{handle_rejection, log_internal_server_error};
-use crate::network::p2p::Client;
 use warp::{Filter, Rejection, Reply};
 
 pub mod p2p;
 use p2p::{dial_external_peer, get_peer_info, get_peer_multiaddr};
+
+use crate::{
+	api::server::{handle_rejection, log_internal_server_error},
+	network::p2p::Client,
+};
 
 fn p2p_local_info_route(
 	p2p_client: Client,

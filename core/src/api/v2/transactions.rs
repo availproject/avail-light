@@ -2,8 +2,11 @@ use async_trait::async_trait;
 use avail_rust::{avail_core::AppId, Keypair};
 use color_eyre::Result;
 
-use crate::api::types::{SubmitResponse, Transaction};
-use crate::{data::Database, network::rpc};
+use crate::{
+	api::types::{SubmitResponse, Transaction},
+	data::Database,
+	network::rpc,
+};
 
 #[async_trait]
 pub trait Submit {

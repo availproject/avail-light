@@ -8,16 +8,18 @@
 //! * `/v1/confidence/{block_number}` - returns calculated confidence for a given block number
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
-use crate::api::types::{Error, ErrorCode, InternalServerError};
-use crate::api::{diagnostics, v2};
-use crate::data::Database;
-use crate::network::p2p;
-use crate::shutdown::Controller;
-use crate::types::IdentityConfig;
 use crate::{
-	api::v1,
-	network::rpc::{self},
+	api::{
+		diagnostics,
+		types::{Error, ErrorCode, InternalServerError},
+		v1, v2,
+	},
+	data::Database,
+	network::{p2p, rpc},
+	shutdown::Controller,
+	types::IdentityConfig,
 };
+
 use color_eyre::eyre::WrapErr;
 use futures::{Future, FutureExt};
 use hyper::StatusCode;

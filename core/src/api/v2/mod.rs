@@ -1,16 +1,18 @@
+use super::configuration::SharedConfig;
 use std::{convert::Infallible, fmt::Display, sync::Arc};
 use tokio::sync::broadcast;
 use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
 
-use crate::api::{
-	server::{handle_rejection, log_internal_server_error},
-	types::{DataQuery, PublishMessage, Topic, WsClients},
+use crate::{
+	api::{
+		server::{handle_rejection, log_internal_server_error},
+		types::{DataQuery, PublishMessage, Topic, WsClients},
+	},
+	data::Database,
+	network::rpc::Client,
+	types::IdentityConfig,
 };
-
-use crate::{data::Database, network::rpc::Client, types::IdentityConfig};
-
-use super::configuration::SharedConfig;
 
 mod handlers;
 mod transactions;

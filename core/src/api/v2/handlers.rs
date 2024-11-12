@@ -1,21 +1,22 @@
 use super::{transactions, ws};
-use crate::{
-	api::{
-		configuration::SharedConfig,
-		types::{
-			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse,
-			DataTransaction, Error, FieldsQueryParameter, Header, Status, SubmitResponse,
-			Subscription, SubscriptionId, Transaction, Version, WsClients,
-		},
-	},
-	data::{AppDataKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
-	utils::calculate_confidence,
-};
 use avail_rust::AvailHeader;
 use color_eyre::{eyre::eyre, Result};
 use std::{convert::Infallible, sync::Arc};
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
+
+use crate::{
+	api::{
+		configuration::SharedConfig,
+		types::{
+			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse,
+			DataTransaction, Error, FieldsQueryParameter, Header, Status,
+			SubmitResponse, Subscription, SubscriptionId, Transaction, Version, WsClients,
+		},
+	},
+	data::{AppDataKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
+	utils::calculate_confidence,
+};
 
 pub async fn subscriptions(
 	subscription: Subscription,
