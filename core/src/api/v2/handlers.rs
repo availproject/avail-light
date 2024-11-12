@@ -10,8 +10,8 @@ use crate::{
 		configuration::SharedConfig,
 		types::{
 			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse,
-			DataTransaction, Error, FieldsQueryParameter, Header, Status,
-			SubmitResponse, Subscription, SubscriptionId, Transaction, Version, WsClients,
+			DataTransaction, Error, FieldsQueryParameter, Header, Status, SubmitResponse,
+			Subscription, SubscriptionId, Transaction, Version, WsClients,
 		},
 	},
 	data::{AppDataKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
