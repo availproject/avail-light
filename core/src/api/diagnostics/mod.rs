@@ -32,8 +32,8 @@ fn p2p_peers_dial_route(
 fn p2p_peer_multiaddr_route(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v1" / "p2p" / "peers" / "multiaddress")
-		.and(warp::post())
+	warp::path!("v1" / "p2p" / "peers" / "get-multiaddress")
+		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
 		.then(get_peer_multiaddr)
