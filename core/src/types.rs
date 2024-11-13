@@ -19,7 +19,7 @@ use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
 use convert_case::{Case, Casing};
-use derive_more::{Display, FromStr};
+use derive_more::Display;
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
