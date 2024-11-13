@@ -211,11 +211,7 @@ fn init_counters(
 	.iter()
 	.filter(|counter| MetricCounter::is_allowed(counter, origin))
 	.map(|counter| {
-		let otel_counter_name = format!(
-			"{project}.{name}",
-			name = counter.name(),
-			project = project_name
-		);
+		let otel_counter_name = format!("{project_name}.{name}", name = counter.name());
 		// Keep the `static str as the local buffer map key, but change the OTel counter name`
 		(counter.name(), meter.u64_counter(otel_counter_name).init())
 	})

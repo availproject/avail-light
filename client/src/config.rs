@@ -16,7 +16,8 @@ use tracing::Level;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct RuntimeConfig {
-	/// Name of the project running the client. (default: "avail")
+	/// Name of the project running the client. (default: "avail"). Project names are automatically converted to snake_case.
+	/// Only alphanumeric characters and underscores are allowed.
 	pub project_name: ProjectName,
 	#[serde(flatten)]
 	pub api: APIConfig,

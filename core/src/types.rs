@@ -19,9 +19,10 @@ use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
 use convert_case::{Case, Casing};
+use derive_more::{Display, FromStr};
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Error, Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -615,18 +616,14 @@ impl From<Base64> for String {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display, Serialize, Deserialize)]
+#[display(fmt = "{}", _0)]
+#[serde(try_from = "String")]
 pub struct ProjectName(pub String);
 
 impl ProjectName {
 	pub fn new<S: Into<String>>(name: S) -> Self {
 		ProjectName(name.into().to_case(Case::Snake))
-	}
-}
-
-impl fmt::Display for ProjectName {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "{}", self.0)
 	}
 }
 
@@ -636,21 +633,11 @@ impl Default for ProjectName {
 	}
 }
 
-impl Serialize for ProjectName {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		serializer.serialize_str(&self.0)
-	}
-}
+impl TryFrom<String> for ProjectName {
+	type Error = &'static str;
 
-impl<'de> Deserialize<'de> for ProjectName {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'de>,
-	{
-		let formatted_name = String::deserialize(deserializer)?.to_case(Case::Snake);
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		let formatted_name = value.to_case(Case::Snake);
 		if formatted_name.contains(char::is_alphanumeric)
 			&& formatted_name
 				.chars()
@@ -658,7 +645,7 @@ impl<'de> Deserialize<'de> for ProjectName {
 		{
 			Ok(ProjectName(formatted_name))
 		} else {
-			Err(serde::de::Error::custom(INVALID_PROJECT_NAME))
+			Err(INVALID_PROJECT_NAME)
 		}
 	}
 }
