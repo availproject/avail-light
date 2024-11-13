@@ -89,7 +89,7 @@ Content-Type: application/json
 }
 ```
 
-## **GET** `/v1/p2p/peers/get-multiaddress`
+## **GET** `/v1/p2p/peers/multiaddress/{peer_id}`
 
 Returns a reachable multiaddress for a peer on the light client P2P network.
 If the request goes through, the endpoint sends a 200 OK response, the example JSON is stated below.
@@ -101,10 +101,7 @@ In case of an error the following response is received:
 Request:
 
 ```yaml
-POST /v1/p2p/peers/get-multiaddress HTTP/1.1
-{
-  "peer_id": "{target-peers-peer-id}"
-}
+GET /v1/p2p/peers/multiaddress/{target-peers-peer-id} HTTP/1.1
 ```
 
 Response:
@@ -115,7 +112,7 @@ Content-Type: application/json
 
 {
   "peer_id": {target-peers-peer-id},
-  "multiaddress": "{target-peers-multi-address}",
+  "multiaddresses": "{target-peers-multi-address}",
   
 }
 ```

@@ -1,3 +1,4 @@
+use libp2p::PeerId;
 use warp::{Filter, Rejection, Reply};
 
 pub mod p2p;
@@ -32,10 +33,9 @@ fn p2p_peers_dial_route(
 fn p2p_peer_multiaddr_route(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	warp::path!("v1" / "p2p" / "peers" / "get-multiaddress")
+	warp::path!("v1" / "p2p" / "peers" / "multiaddress" / PeerId)
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
-		.and(warp::body::json())
 		.then(get_peer_multiaddr)
 		.map(log_internal_server_error)
 }
