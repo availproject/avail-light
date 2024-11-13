@@ -2,6 +2,7 @@
 
 ## 1.0.5
 
+- Move p2p diagnostics APIs to its own module
 - Update `avail-rust` to the latest version (WASM compatibility updates)
 
 ## 1.0.4
