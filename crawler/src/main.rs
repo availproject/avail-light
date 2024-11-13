@@ -10,7 +10,7 @@ use avail_light_core::{
 		otlp::{self, Metrics},
 		MetricCounter, MetricValue,
 	},
-	types::BlockVerified,
+	types::{BlockVerified, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -85,7 +85,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		config.libp2p.clone(),
-		"avail".to_string(),
+		ProjectName::new("avail".to_string()),
 		p2p_keypair,
 		version,
 		&config.genesis_hash,
@@ -184,8 +184,12 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("operating_mode".to_string(), "client".to_string()),
 	];
 
-	let metrics = otlp::initialize("avail".to_string(), &config.origin, config.otel.clone())
-		.wrap_err("Unable to initialize OpenTelemetry service")?;
+	let metrics = otlp::initialize(
+		ProjectName::new("avail".to_string()),
+		&config.origin,
+		config.otel.clone(),
+	)
+	.wrap_err("Unable to initialize OpenTelemetry service")?;
 
 	let rpc_host = db
 		.get(RpcNodeKey)

@@ -2,10 +2,12 @@
 
 ## 1.0.5
 
+- Enforce project name as its own distinct type
 - Update `avail-rust` to the latest version (WASM compatibility updates)
 
 ## 1.0.4
 
+- Enforce alphanumeric and snake case constraints on otel initialization handler
 - Fix put record metric event in case of errors
 - Fix telemetry naming, put project name as prefix instead of suffix
 - Add timeouts to RPC subscriptions

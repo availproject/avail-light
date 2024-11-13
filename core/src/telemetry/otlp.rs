@@ -1,5 +1,8 @@
 use super::{MetricCounter, MetricValue, Value};
-use crate::{telemetry::MetricName, types::Origin};
+use crate::{
+	telemetry::MetricName,
+	types::{Origin, ProjectName},
+};
 use color_eyre::Result;
 use opentelemetry::{
 	global,
@@ -15,7 +18,7 @@ use std::{collections::HashMap, time::Duration};
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
-	project_name: String,
+	project_name: ProjectName,
 	origin: Origin,
 	counters: HashMap<&'static str, Counter<u64>>,
 	metric_buffer: Vec<Record>,
@@ -191,7 +194,7 @@ fn flatten_metrics(buffer: &[Record]) -> (HashMap<&'static str, u64>, HashMap<&'
 fn init_counters(
 	meter: Meter,
 	origin: &Origin,
-	project_name: String,
+	project_name: ProjectName,
 ) -> HashMap<&'static str, Counter<u64>> {
 	[
 		MetricCounter::Starts,
@@ -236,7 +239,11 @@ impl Default for OtelConfig {
 	}
 }
 
-pub fn initialize(project_name: String, origin: &Origin, ot_config: OtelConfig) -> Result<Metrics> {
+pub fn initialize(
+	project_name: ProjectName,
+	origin: &Origin,
+	ot_config: OtelConfig,
+) -> Result<Metrics> {
 	let export_config = ExportConfig {
 		endpoint: ot_config.ot_collector_endpoint,
 		timeout: Duration::from_secs(10),
