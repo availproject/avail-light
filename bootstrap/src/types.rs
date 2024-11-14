@@ -205,7 +205,7 @@ impl Default for RuntimeConfig {
 			autonat_throttle_clients_peer_max: 4,
 			autonat_throttle_clients_period: 1,
 			autonat_only_global_ips: true,
-			connection_idle_timeout: 30,
+			connection_idle_timeout: 10,
 			max_negotiating_inbound_streams: 20,
 			task_command_buffer_size: NonZero::new(30000).unwrap(),
 			per_connection_event_buffer_size: 10000,

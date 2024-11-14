@@ -140,8 +140,7 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
-	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
-	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
+	/// Sets the amount of time to keep connections alive when they're idle. (default: 10s).
 	#[serde(with = "duration_seconds_format")]
 	pub connection_idle_timeout: Duration,
 	pub max_negotiating_inbound_streams: usize,
@@ -164,7 +163,7 @@ impl Default for LibP2PConfig {
 			autonat: Default::default(),
 			kademlia: Default::default(),
 			relays: Default::default(),
-			connection_idle_timeout: Duration::from_secs(30),
+			connection_idle_timeout: Duration::from_secs(10),
 			max_negotiating_inbound_streams: 128,
 			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
 			per_connection_event_buffer_size: 7,
