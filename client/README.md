@@ -225,8 +225,7 @@ replication_interval = 10800
 # The replication factor determines to how many closest peers a record is replicated. (default: 5).
 replication_factor = 5
 # Sets the amount of time to keep connections alive when they're idle. (default: 30s).
-# NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
-connection_idle_timeout = 30
+connection_idle_timeout = 10
 # Sets the timeout for a single Kademlia query. (default: 10s).
 query_timeout = 10
 # Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).

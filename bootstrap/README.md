@@ -40,8 +40,8 @@ port = 39000
 identify_protocol = "/avail_kad/id/1.0.0"
 # Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 identify_agent = "avail-light-client/rust-client"
-# Sets the amount of time to keep Kademlia connections alive when they're idle. (default: 30s).
-kad_connection_idle_timeout = 30
+# Sets the amount of time to keep Kademlia connections alive when they're idle. (default: 10s).
+connection_idle_timeout = 10
 # Sets the timeout for a single Kademlia query. (default: 60s).
 kad_query_timeout = 60
 # OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
