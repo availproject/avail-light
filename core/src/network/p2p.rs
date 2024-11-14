@@ -48,7 +48,7 @@ pub type Store = kad_rocksdb_store::RocksDBStore;
 use crate::{
 	data::{Database, P2PKeypairKey},
 	shutdown::Controller,
-	types::SecretKey,
+	types::{ProjectName, SecretKey},
 };
 pub use client::Client;
 pub use event_loop::EventLoop;
@@ -132,7 +132,7 @@ impl FromStr for AgentVersion {
 }
 
 impl AgentVersion {
-	fn new(project_name: String, version: &str) -> Self {
+	fn new(project_name: ProjectName, version: &str) -> Self {
 		Self {
 			base_version: format!("{project_name}-{IDENTITY_AGENT_BASE}"),
 			role: IDENTITY_AGENT_ROLE.to_string(),
@@ -216,7 +216,7 @@ fn protocol_name(genesis_hash: &str) -> libp2p::StreamProtocol {
 #[allow(clippy::too_many_arguments)]
 pub async fn init(
 	cfg: LibP2PConfig,
-	project_name: String,
+	project_name: ProjectName,
 	id_keys: Keypair,
 	version: &str,
 	genesis_hash: &str,
@@ -252,7 +252,7 @@ pub async fn init(
 
 async fn build_swarm(
 	cfg: &LibP2PConfig,
-	project_name: String,
+	project_name: ProjectName,
 	version: &str,
 	genesis_hash: &str,
 	id_keys: &Keypair,

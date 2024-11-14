@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.1]
+
+- Decrease connection idle timeout to 10s
+
 ## [0.4.0](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.4.0) - 2024-11-05
 
 - Fix missing swarm config
