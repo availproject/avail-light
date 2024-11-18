@@ -1,5 +1,5 @@
 use crate::{
-	api::v2::types::Error,
+	api::types::Error,
 	network::p2p::{self, MultiAddressInfo},
 };
 use libp2p::{swarm::DialError, Multiaddr, PeerId};
@@ -99,11 +99,11 @@ pub async fn get_peer_info(p2p_client: p2p::Client) -> Result<PeerInfoResponse, 
 }
 
 pub async fn get_peer_multiaddr(
+	peer_id: PeerId,
 	p2p_client: p2p::Client,
-	query: PeerInfoQuery,
 ) -> Result<MultiAddressResponse, Error> {
 	let external_peer_info = p2p_client
-		.get_external_peer_info(query.peer_id)
+		.get_external_peer_info(peer_id)
 		.await
 		.map_err(Error::internal_server_error)?;
 

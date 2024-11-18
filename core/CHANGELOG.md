@@ -2,6 +2,7 @@
 
 ## 1.0.5
 
+- Move p2p diagnostics APIs to its own module
 - Decrease connection idle timeout to 10s
 - Enforce project name as its own distinct type
 - Update `avail-rust` to the latest version (WASM compatibility updates)

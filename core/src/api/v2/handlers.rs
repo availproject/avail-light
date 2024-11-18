@@ -1,28 +1,22 @@
-use super::{
-	transactions,
-	types::{
-		block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse, DataTransaction,
-		Error, FieldsQueryParameter, Header, Status, SubmitResponse, Subscription, SubscriptionId,
-		Transaction, Version, WsClients,
-	},
-	ws,
-};
+use super::{transactions, ws};
+use avail_rust::AvailHeader;
+use color_eyre::{eyre::eyre, Result};
+use std::{convert::Infallible, sync::Arc};
+use uuid::Uuid;
+use warp::{ws::Ws, Rejection, Reply};
+
 use crate::{
 	api::{
 		configuration::SharedConfig,
-		v2::types::{ErrorCode, InternalServerError},
+		types::{
+			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse,
+			DataTransaction, Error, FieldsQueryParameter, Header, Status, SubmitResponse,
+			Subscription, SubscriptionId, Transaction, Version, WsClients,
+		},
 	},
 	data::{AppDataKey, BlockHeaderKey, Database, RpcNodeKey, VerifiedCellCountKey},
 	utils::calculate_confidence,
 };
-use avail_rust::AvailHeader;
-use color_eyre::{eyre::eyre, Result};
-use hyper::StatusCode;
-use std::{convert::Infallible, sync::Arc};
-use tracing::error;
-use uuid::Uuid;
-use warp::{ws::Ws, Rejection, Reply};
-pub mod p2p;
 
 pub async fn subscriptions(
 	subscription: Subscription,
@@ -80,19 +74,6 @@ pub fn version(version: String, db: impl Database) -> impl Reply {
 
 pub fn status(config: SharedConfig, db: impl Database) -> impl Reply {
 	Status::new(&config, db)
-}
-
-pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {
-	if let Err(Error {
-		error_code: ErrorCode::InternalServerError,
-		cause: Some(error),
-		message,
-		..
-	}) = result.as_ref()
-	{
-		error!("{message}: {error:#}");
-	}
-	result
 }
 
 pub async fn block(
@@ -183,11 +164,4 @@ pub async fn block_data(
 		block_number,
 		data_transactions,
 	})
-}
-
-pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {
-	if error.find::<InternalServerError>().is_some() {
-		return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response());
-	}
-	Err(error)
 }

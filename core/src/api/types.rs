@@ -860,7 +860,7 @@ mod tests {
 	use tokio::sync::mpsc;
 
 	use crate::{
-		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
+		api::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, Database, LatestHeaderKey,
 			LatestSyncKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,

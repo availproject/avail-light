@@ -169,7 +169,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
-	let ws_clients = api::v2::types::WsClients::default();
+	let ws_clients = api::types::WsClients::default();
 
 	let server = api::server::Server {
 		db: db.clone(),
