@@ -5329,6 +5329,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "monitor-tests"
+version = "0.1.0"
+dependencies = [
+ "avail-light-core",
+ "clap",
+ "color-eyre",
+ "libp2p",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+]
+
+[[package]]
 name = "multer"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
