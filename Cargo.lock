@@ -5329,7 +5329,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "monitor-tests"
+name = "monitor-client"
 version = "0.1.0"
 dependencies = [
  "avail-light-core",

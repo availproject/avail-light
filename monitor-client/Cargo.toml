@@ -1,5 +1,5 @@
 [package]
-name = "monitor-tests"
+name = "monitor-client"
 version = "0.1.0"
 authors.workspace = true
 edition = "2021"

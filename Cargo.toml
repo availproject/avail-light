@@ -6,7 +6,7 @@ members = [
 	"core",
 	"crawler",
 	"fat", 
-	"monitor-tests",
+	"monitor-client",
 	"relay",
 ]
 default-members = ["client"]

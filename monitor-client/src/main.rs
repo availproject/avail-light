@@ -3,6 +3,7 @@ use avail_light_core::{
 	network::p2p::{self, configuration::LibP2PConfig},
 	shutdown::Controller,
 	types::ProjectName,
+	utils::spawn_in_span,
 };
 use clap::Parser;
 use color_eyre::{eyre::Context, Result};
@@ -36,12 +37,14 @@ async fn main() -> Result<()> {
 	)
 	.await?;
 
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+
 	let addrs = vec![config.libp2p.tcp_multiaddress()];
 
 	p2p_client
 		.start_listening(addrs)
 		.await
-		.wrap_err("Listening on TCP not to fail.")?;
+		.wrap_err("Error starting listener.")?;
 	info!("TCP listener started on port {}", config.libp2p.port);
 
 	Ok(())
