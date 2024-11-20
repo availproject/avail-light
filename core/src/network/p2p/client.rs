@@ -13,7 +13,7 @@ use futures::future::join_all;
 use libp2p::{
 	core::transport::ListenerId,
 	kad::{store::RecordStore, Mode, PeerRecord, Quorum, Record, RecordKey},
-	swarm::dial_opts::DialOpts,
+	swarm::dial_opts::{DialOpts, PeerCondition},
 	Multiaddr, PeerId,
 };
 use std::time::{Duration, Instant};
@@ -131,10 +131,15 @@ impl Client {
 		&self,
 		peer_id: PeerId,
 		peer_address: Vec<Multiaddr>,
+		dial_condition: PeerCondition,
 	) -> Result<ConnectionEstablishedInfo> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
-				let opts = DialOpts::peer_id(peer_id).addresses(peer_address).build();
+				let opts = DialOpts::peer_id(peer_id)
+					.addresses(peer_address)
+					.allocate_new_port()
+					.condition(dial_condition)
+					.build();
 				context.swarm.dial(opts)?;
 
 				context
@@ -163,9 +168,9 @@ impl Client {
 	// Bootstrap nodes are also used as autonat servers
 	pub async fn bootstrap_on_startup(&self, bootstraps: &[MultiaddrConfig]) -> Result<()> {
 		for (peer, addr) in bootstraps.iter().map(Into::into) {
-			self.dial_peer(peer, vec![addr.clone()])
+			self.dial_peer(peer, vec![addr.clone()], PeerCondition::Always)
 				.await
-				.wrap_err("Dialing Bootstrap peer failed.")?;
+				.map_err(|e| eyre!("Failed to dial bootstrap peer: {e}"))?;
 			self.add_address(peer, addr.clone()).await?;
 
 			self.add_autonat_server(peer, addr).await?;
