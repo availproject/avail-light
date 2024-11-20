@@ -2,6 +2,7 @@
 
 ## 1.0.5
 
+- Rename `MultiaddrConfig` type to `PeerAddress` for better clarity
 - Enable WASM compilation on proof mod
 - Enable WASM compilation on utils and shutdown mods
 - Allocate new port on each new dial attempt

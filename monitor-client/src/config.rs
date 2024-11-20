@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use avail_light_core::network::{p2p::configuration::LibP2PConfig, Network};
-use avail_light_core::types::{tracing_level_format, MultiaddrConfig, SecretKey};
+use avail_light_core::types::{tracing_level_format, PeerAddress, SecretKey};
 use clap::Parser;
 use color_eyre::{eyre::eyre, Result};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,9 @@ pub struct CliOpts {
 	/// Testnet or devnet selection.
 	#[arg(short, long, value_name = "network", default_value = "hex")]
 	pub network: Network,
+	/// Time interval for monitoring actions
+	#[arg(long, default_value = "10")]
+	pub interval: u64,
 	/// Seed string for libp2p keypair generation
 	#[arg(long)]
 	pub seed: Option<String>,
@@ -32,7 +35,7 @@ pub struct CliOpts {
 	/// RocksDB store location
 	#[arg(long, default_value = "./db")]
 	pub db_path: String,
-	#[arg(long, default_value = "10")]
+	#[arg(long, default_value = "5")]
 	pub connection_idle_timeout: Option<u64>,
 	#[arg(long, default_value = "10000")]
 	pub max_negotiating_inbound_streams: Option<usize>,
@@ -48,6 +51,8 @@ pub struct Config {
 	/// Genesis hash of the network to be connected to.
 	/// Set to "DEV" to connect to any network.
 	pub genesis_hash: String,
+	/// Time interval for monitoring actions.
+	pub interval: u64,
 	/// Log level.
 	#[serde(with = "tracing_level_format")]
 	pub log_level: Level,
@@ -67,6 +72,7 @@ impl Default for Config {
 			log_format_json: false,
 			db_path: "./db".to_string(),
 			libp2p: Default::default(),
+			interval: 10,
 		}
 	}
 }
@@ -81,7 +87,7 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 		opts.network.bootstrap_peer_id(),
 		opts.network.bootstrap_multiaddr(),
 	);
-	config.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+	config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 	config.genesis_hash = opts.network.genesis_hash().to_string();
 
 	if let Some(seed) = &opts.seed {
@@ -111,6 +117,7 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	}
 
 	config.db_path = opts.db_path.to_string();
+	config.interval = opts.interval;
 
 	if config.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("List of bootstraps must not be empty!"));

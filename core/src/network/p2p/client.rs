@@ -25,7 +25,7 @@ use super::{
 	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
 	MultiAddressInfo, OutputEvent, PeerInfo, QueryChannel,
 };
-use crate::types::MultiaddrConfig;
+use crate::types::PeerAddress;
 
 #[derive(Clone)]
 pub struct Client {
@@ -137,8 +137,8 @@ impl Client {
 			Box::new(move |context: &mut EventLoop| {
 				let opts = DialOpts::peer_id(peer_id)
 					.addresses(peer_address)
+					.condition(PeerCondition::Always)
 					.allocate_new_port()
-					.condition(dial_condition)
 					.build();
 				context.swarm.dial(opts)?;
 
@@ -166,7 +166,7 @@ impl Client {
 
 	// Bootstrap is triggered automatically on add_address call
 	// Bootstrap nodes are also used as autonat servers
-	pub async fn bootstrap_on_startup(&self, bootstraps: &[MultiaddrConfig]) -> Result<()> {
+	pub async fn bootstrap_on_startup(&self, bootstraps: &[PeerAddress]) -> Result<()> {
 		for (peer, addr) in bootstraps.iter().map(Into::into) {
 			self.dial_peer(peer, vec![addr.clone()], PeerCondition::Always)
 				.await

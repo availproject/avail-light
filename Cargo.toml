@@ -5,7 +5,7 @@ members = [
 	"compatibility-tests",
 	"core",
 	"crawler",
-	"fat", 
+	"fat",
 	"monitor-client",
 	"relay",
 ]
