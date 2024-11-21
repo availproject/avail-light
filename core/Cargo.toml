@@ -5,6 +5,8 @@ edition = "2021"
 description = "Avail Light core driving library"
 
 [dependencies]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Internal deps
 avail-rust = { workspace = true }
 dusk-plonk = { workspace = true }
@@ -63,7 +65,7 @@ opentelemetry_sdk = { workspace = true }
 strum = { version = "0.26.3", features = ["derive"] }
 tracing-subscriber = { workspace = true }
 
-[dev-dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 hex-literal = "0.4.0"
 proptest = "1.0.0"
 test-case = "3.2.1"
