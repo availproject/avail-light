@@ -2,7 +2,10 @@ use crate::{
 	api::types::Error,
 	network::p2p::{self, MultiAddressInfo},
 };
-use libp2p::{swarm::DialError, Multiaddr, PeerId};
+use libp2p::{
+	swarm::{dial_opts::PeerCondition, DialError},
+	Multiaddr, PeerId,
+};
 use serde::{Deserialize, Serialize};
 use warp::reply::Reply;
 
@@ -115,7 +118,11 @@ pub async fn dial_external_peer(
 	peer_address: ExternalPeerMultiaddress,
 ) -> Result<ExternalPeerDialResponse, Error> {
 	p2p_client
-		.dial_peer(peer_address.peer_id, vec![peer_address.multiaddress])
+		.dial_peer(
+			peer_address.peer_id,
+			vec![peer_address.multiaddress],
+			PeerCondition::NotDialing,
+		)
 		.await
 		.map(|connection_info| ExternalPeerDialResponse {
 			dial_success: Some(ExternalPeerDialSuccess {

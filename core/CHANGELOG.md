@@ -2,6 +2,8 @@
 
 ## 1.0.5
 
+- Allocate new port on each new dial attempt
+- Set different dial conditions for bootstrap process and diagnostics API
 - Move p2p diagnostics APIs to its own module
 - Decrease connection idle timeout to 10s
 - Enforce project name as its own distinct type
