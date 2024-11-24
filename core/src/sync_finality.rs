@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use avail_rust::{
-	sp_core::{blake2_256, ed25519, twox_128},
+	sp_core::{ed25519, twox_128},
 	subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32},
 	AvailHeader, H256,
 };
@@ -21,7 +21,7 @@ use crate::{
 	finality::{check_finality, ValidatorSet},
 	network::rpc::{self, WrappedProof},
 	shutdown::Controller,
-	utils::filter_auth_set_changes,
+	utils::{blake2_256, filter_auth_set_changes},
 };
 
 #[async_trait]

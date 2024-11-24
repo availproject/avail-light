@@ -1,9 +1,6 @@
 use avail_rust::{
 	primitives::block::grandpa::AuthorityId,
-	sp_core::{
-		blake2_256,
-		ed25519::{self, Public},
-	},
+	sp_core::ed25519::{self, Public},
 	AvailHeader,
 };
 use codec::Encode;
@@ -21,7 +18,7 @@ use crate::{
 	},
 	finality::{check_finality, ValidatorSet},
 	types::{BlockRange, GrandpaJustification},
-	utils::filter_auth_set_changes,
+	utils::{blake2_256, filter_auth_set_changes},
 };
 
 struct BlockData {

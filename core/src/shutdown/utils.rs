@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 /// This utility function returns a [`Future`] that completes upon
 /// receiving each of the default termination signals.
 ///

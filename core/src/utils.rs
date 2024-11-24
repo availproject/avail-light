@@ -18,10 +18,13 @@ use color_eyre::{
 	Result,
 };
 use futures::Future;
+use tokio::task::JoinHandle;
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias as tokio;
 use tracing::{error, Instrument, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
-pub fn spawn_in_span<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+pub fn spawn_in_span<F>(future: F) -> JoinHandle<F::Output>
 where
 	F: Future + Send + 'static,
 	F::Output: Send + 'static,
@@ -55,6 +58,8 @@ impl OptionalExtension for HeaderExtension {
 	}
 }
 
+// TODO: Remove attribute after enabling WASM on the light client
+#[allow(dead_code)]
 /// Extract fields from extension header
 pub(crate) fn extract_kate(extension: &HeaderExtension) -> Option<(u16, u16, H256, Vec<u8>)> {
 	match &extension.option()? {
@@ -69,6 +74,8 @@ pub(crate) fn extract_kate(extension: &HeaderExtension) -> Option<(u16, u16, H25
 	}
 }
 
+// TODO: Remove attribute after enabling WASM on the light client
+#[allow(dead_code)]
 pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> eyre::Result<Option<DataLookup>> {
 	let Some(extension) = extension.option() else {
 		return Ok(None);
@@ -154,4 +161,37 @@ pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn blake2<const N: usize>(data: &[u8]) -> [u8; N] {
+	blake2b_simd::Params::new()
+		.hash_length(N)
+		.hash(data)
+		.as_bytes()
+		.try_into()
+		.expect("slice is always the necessary length")
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn blake2_256(data: &[u8]) -> [u8; 32] {
+	blake2(data)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn blake2_256(data: &[u8]) -> [u8; 32] {
+	avail_rust::sp_core::blake2_256(data)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn rng() -> rand::rngs::ThreadRng {
+	rand::thread_rng()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn rng() -> rand::rngs::StdRng {
+	use rand::SeedableRng;
+	let mut seed = [0u8; 32];
+	getrandom::getrandom(&mut seed).expect("Failed to get random seed");
+	rand::rngs::StdRng::from_seed(seed)
 }

@@ -36,6 +36,7 @@ use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
 	types::TimeToLive,
+	utils,
 };
 
 // RelayState keeps track of all things relay related
@@ -59,7 +60,7 @@ impl RelayState {
 
 	fn select_random(&mut self) {
 		// choose relay by random
-		if let Some(relay) = self.nodes.choose(&mut rand::thread_rng()) {
+		if let Some(relay) = self.nodes.choose(&mut utils::rng()) {
 			let (id, addr) = relay.clone();
 			// appoint this relay as our chosen one
 			self.id = id;

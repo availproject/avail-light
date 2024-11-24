@@ -20,7 +20,6 @@ pub mod maintenance;
 pub mod network;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod proof;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod shutdown;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sync_client;
@@ -30,5 +29,4 @@ pub mod sync_finality;
 pub mod telemetry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod types;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod utils;
