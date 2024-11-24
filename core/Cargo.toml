@@ -22,7 +22,7 @@ codec = { package = "parity-scale-codec", version = "3", default-features = fals
 color-eyre = { workspace = true }
 confy = { workspace = true }
 convert_case = "0.6.0"
-derive_more = { version = "0.99.17", features = ["from"] }
+derive_more = { version = "1", features = ["from"] }
 futures = { workspace = true }
 hex = { workspace = true }
 hyper = { version = "0.14.23", features = ["full", "http1"] }

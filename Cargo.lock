@@ -1011,7 +1011,7 @@ dependencies = [
  "color-eyre",
  "confy 0.5.1",
  "convert_case 0.6.0",
- "derive_more 0.99.18",
+ "derive_more 1.0.0",
  "dusk-plonk",
  "futures",
  "hex",
