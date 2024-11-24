@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use avail_rust::{
 	sp_core::{
-		blake2_256,
 		ed25519::{self, Public},
 		Pair,
 	},
@@ -13,7 +12,10 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use crate::types::{GrandpaJustification, SignerMessage};
+use crate::{
+	types::{GrandpaJustification, SignerMessage},
+	utils::blake2_256,
+};
 use color_eyre::{eyre::eyre, Result};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

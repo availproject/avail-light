@@ -9,6 +9,7 @@ use std::{
 	sync::{Arc, Mutex},
 	task::Waker,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use utils::user_signal;
 
 mod completed;
@@ -162,6 +163,7 @@ impl<T: Clone> Controller<T> {
 		}
 	}
 
+	#[cfg(not(target_arch = "wasm32"))]
 	/// Triggers a shutdown when each of the default termination signals is received.
 	///
 	/// On Unix-based systems, these signals are Ctrl-C (SIGINT) or SIGTERM,
@@ -372,6 +374,7 @@ impl<T> std::fmt::Display for ShutdownHasCompleted<T> {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
 	use std::{

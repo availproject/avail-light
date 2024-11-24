@@ -15,7 +15,6 @@ use avail_rust::{
 		data::{self, Cell},
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
-	sp_core::blake2_256,
 	AvailHeader, H256,
 };
 use codec::Encode;
@@ -35,7 +34,7 @@ use crate::{
 	},
 	shutdown::Controller,
 	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
-	utils::extract_kate,
+	utils::{blake2_256, extract_kate},
 };
 
 #[async_trait]

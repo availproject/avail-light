@@ -4,7 +4,6 @@ use avail_rust::{
 	},
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{com::AppData, commitments},
-	sp_core::blake2_256,
 	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
 	AvailHeader, H256,
 };
@@ -36,7 +35,7 @@ use crate::{
 	},
 	network::rpc::OutputEvent as RpcEvent,
 	types::{self, Base64, BlockVerified},
-	utils::{decode_app_data, OptionalExtension},
+	utils::{blake2_256, decode_app_data, OptionalExtension},
 };
 
 #[derive(Debug)]

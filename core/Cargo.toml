@@ -4,11 +4,27 @@ version = "1.0.5"
 edition = "2021"
 description = "Avail Light core driving library"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+# Internal deps
+avail-rust = { workspace = true }
+
+# 3rd-party
+better-panic = "0.3.0"
+codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
+color-eyre = { workspace = true }
+derive_more = { version = "1", features = ["from"] }
+futures = { workspace = true }
+getrandom = { version = "0.2.15", features = ["js"] }
+strip-ansi-escapes = "0.2.0"
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Internal deps
-avail-rust = { workspace = true }
 dusk-plonk = { workspace = true }
 
 # 3rd-party
@@ -16,10 +32,7 @@ async-std = { workspace = true }
 async-stream = "0.3.5"
 async-trait = { workspace = true }
 base64 = "0.21.0"
-better-panic = "0.3.0"
 chrono = "0.4.19"
-codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
-color-eyre = { workspace = true }
 confy = { workspace = true }
 convert_case = "0.6.0"
 derive_more = { version = "1", features = ["from"] }
@@ -37,7 +50,7 @@ multihash = { workspace = true }
 num = "0.4.0"
 num_cpus = "1.13.0"
 pcap = "1.1.0"
-rand = "0.8.4"
+rand = { workspace = true, default-features = true }
 rand_chacha = "0.3"
 rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"], optional = true }
 semver = { workspace = true }
@@ -48,7 +61,6 @@ strip-ansi-escapes = "0.2.0"
 sysinfo = "0.30.12"
 thiserror = "1.0.64"
 threadpool = "1.8.1"
-tokio = { workspace = true }
 tokio-retry = "0.3"
 tokio-stream = { workspace = true }
 tokio-util = "0.7.10"
@@ -63,10 +75,14 @@ opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 strum = { version = "0.26.3", features = ["derive"] }
-tracing-subscriber = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+blake2b_simd = "1.0.2"
+rand = { workspace = true, features = ["std_rng"] }
+tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-hex-literal = "0.4.0"
+hex-literal = "0.4.1"
 proptest = "1.0.0"
 test-case = "3.2.1"
 

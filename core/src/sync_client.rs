@@ -25,13 +25,12 @@ use crate::{
 		rpc::{self, Client as RpcClient},
 	},
 	types::{BlockRange, BlockVerified, SyncClientConfig},
-	utils::{calculate_confidence, extract_kate},
+	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
 use async_trait::async_trait;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
-	sp_core::blake2_256,
 	AvailHeader, H256,
 };
 use codec::Encode;

@@ -1,13 +1,13 @@
 //! Shared light client structs and enums.
 use crate::network::rpc::OutputEvent;
-use crate::utils::{extract_app_lookup, extract_kate};
+use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_rust::{
 	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec,
 	avail_core::DataLookup,
 	kate_recovery::{commitments, matrix::Dimensions},
 	sp_core::{
 		crypto::{self, Ss58Codec},
-		{blake2_256, bytes, ed25519},
+		{bytes, ed25519},
 	},
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
