@@ -1,5 +1,6 @@
 use avail_light_core::{network::p2p::Client, types::PeerAddress};
 use color_eyre::Result;
+use libp2p::swarm::dial_opts::PeerCondition;
 use tokio::time::Interval;
 use tracing::{error, info};
 
@@ -24,7 +25,11 @@ impl BootstrapMonitor {
 			self.interval.tick().await;
 
 			for (peer, addr) in self.bootstraps.iter().map(Into::into) {
-				match self.p2p_client.dial_peer(peer, vec![addr.clone()]).await {
+				match self
+					.p2p_client
+					.dial_peer(peer, vec![addr.clone()], PeerCondition::Always)
+					.await
+				{
 					Ok(_) => {
 						info!("Bootstrap {peer} dialed successfully!");
 					},
