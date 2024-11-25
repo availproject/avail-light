@@ -1,24 +1,29 @@
-//! Parallelized proof verification
-
 use avail_rust::kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
-	proof,
 };
 use color_eyre::eyre;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
+use futures::future::join_all;
 use itertools::{Either, Itertools};
 use std::sync::Arc;
-use tokio::{task::JoinSet, time::Instant};
-use tracing::{debug, Instrument};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::Instant;
+use tracing::debug;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
+mod core;
+
+use crate::utils::spawn_in_span;
 
 async fn verify_proof(
 	public_parameters: Arc<PublicParameters>,
 	dimensions: Dimensions,
 	commitment: [u8; 48],
 	cell: Cell,
-) -> Result<(Position, bool), proof::Error> {
-	proof::verify(&public_parameters, dimensions, &commitment, &cell)
+) -> Result<(Position, bool), core::Error> {
+	core::verify(&public_parameters, dimensions, &commitment, &cell)
 		.map(|verified| (cell.position, verified))
 }
 
@@ -36,24 +41,24 @@ pub async fn verify(
 
 	let start_time = Instant::now();
 
-	let mut tasks = JoinSet::new();
-
-	for cell in cells {
-		tasks.spawn(
-			verify_proof(
+	let tasks = cells
+		.iter()
+		.map(|cell| {
+			spawn_in_span(verify_proof(
 				public_parameters.clone(),
 				dimensions,
 				commitments[cell.position.row as usize],
 				cell.clone(),
-			)
-			.in_current_span(),
-		);
-	}
+			))
+		})
+		.collect::<Vec<_>>();
 
-	let mut results = Vec::with_capacity(cells.len());
-	while let Some(result) = tasks.join_next().await {
-		results.push(result??)
-	}
+	let join_results: Vec<_> = join_all(tasks)
+		.await
+		.into_iter()
+		.collect::<Result<_, _>>()?;
+
+	let results: Vec<(Position, bool)> = join_results.into_iter().collect::<Result<_, _>>()?;
 
 	debug!(block_num, duration = ?start_time.elapsed(), "Proof verification completed");
 
