@@ -18,7 +18,6 @@ pub mod light_client;
 pub mod maintenance;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod network;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod proof;
 pub mod shutdown;
 #[cfg(not(target_arch = "wasm32"))]

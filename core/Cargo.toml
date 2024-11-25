@@ -10,24 +10,23 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Internal deps
 avail-rust = { workspace = true }
+dusk-plonk = { workspace = true }
 
 # 3rd-party
 better-panic = "0.3.0"
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 color-eyre = { workspace = true }
 derive_more = { version = "1", features = ["from"] }
+dusk-bytes = "0.1.7"
 futures = { workspace = true }
 getrandom = { version = "0.2.15", features = ["js"] }
+itertools = "0.10.5"
 strip-ansi-escapes = "0.2.0"
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Internal deps
-dusk-plonk = { workspace = true }
-
-# 3rd-party
 async-std = { workspace = true }
 async-stream = "0.3.5"
 async-trait = { workspace = true }
@@ -39,7 +38,6 @@ derive_more = { version = "1", features = ["from"] }
 futures = { workspace = true }
 hex = { workspace = true }
 hyper = { version = "0.14.23", features = ["full", "http1"] }
-itertools = "0.10.5"
 jsonrpsee-core = { version = "0.21.0", features = ["client"] }
 libc = "0.2.150"
 libp2p = { workspace = true }
@@ -79,7 +77,9 @@ strum = { version = "0.26.3", features = ["derive"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd = "1.0.2"
 rand = { workspace = true, features = ["std_rng"] }
+thiserror-no-std = "2.0.2"
 tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
+web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 hex-literal = "0.4.1"
