@@ -2,6 +2,7 @@
 
 ## 1.0.5
 
+- Enable WASM compilation on utils and shutdown mods
 - Allocate new port on each new dial attempt
 - Set different dial conditions for bootstrap process and diagnostics API
 - Move p2p diagnostics APIs to its own module
