@@ -1133,6 +1133,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "avail-light-web"
+version = "0.1.0"
+dependencies = [
+ "avail-light-core",
+ "avail-rust",
+ "clap",
+ "console_error_panic_hook",
+ "futures",
+ "libp2p",
+ "sp-io",
+ "tokio",
+ "tokio_with_wasm",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+ "tracing-wasm",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+]
+
+[[package]]
 name = "avail-rust"
 version = "0.1.0"
 source = "git+https://github.com/availproject/avail.git?rev=741aa316#741aa316e192614a52f2d1fed90edfcc458a2811"
@@ -1837,6 +1859,16 @@ dependencies = [
  "lazy_static",
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if 1.0.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -9300,6 +9332,17 @@ dependencies = [
  "tracing-core",
  "tracing-log 0.2.0",
  "tracing-serde",
+]
+
+[[package]]
+name = "tracing-wasm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4575c663a174420fa2d78f4108ff68f65bf2fbb7dd89f33749b6e826b3626e07"
+dependencies = [
+ "tracing",
+ "tracing-subscriber 0.3.18",
+ "wasm-bindgen",
 ]
 
 [[package]]
