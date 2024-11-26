@@ -1,0 +1,30 @@
+[package]
+name = "avail-light-web"
+version = "0.1.0"
+authors.workspace = true
+edition = "2021"
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+avail-light-core = { workspace = true }
+avail-rust = { workspace = true }
+clap = { workspace = true }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+futures = { workspace = true }
+libp2p = { workspace = true }
+sp-io = { version = "30", features = ["disable_allocator", "disable_panic_handler"], default-features = false }
+tokio = { version = "^1", default-features = false, features = ["sync", "macros", "io-util", "rt"] }
+tokio_with_wasm = { version = "0.7.1", features = ["sync", "macros", "rt"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-wasm = "0.2.1"
+wasm-bindgen = "0.2.93"
+wasm-bindgen-futures = "0.4.43"
+web-sys = { version = "0.3.70", features = ["console", "Window", "UrlSearchParams"] }
+web-time = "1.1.0"
