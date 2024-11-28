@@ -616,7 +616,7 @@ impl<D: Database> Client<D> {
 			}
 
 			let mut result = [0u8; 80];
-			result[..48].copy_from_slice(&scalar.to_big_endian());
+			result[48..].copy_from_slice(&scalar.to_big_endian());
 			result[..48].copy_from_slice(&proof);
 			Ok(result)
 		}
