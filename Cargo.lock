@@ -1097,6 +1097,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "avail-light-monitor"
+version = "0.1.0"
+dependencies = [
+ "avail-light-core",
+ "clap",
+ "color-eyre",
+ "libp2p",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+]
+
+[[package]]
 name = "avail-light-relay"
 version = "0.0.3"
 dependencies = [

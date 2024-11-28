@@ -11,7 +11,7 @@ use avail_light_core::{
 	telemetry::otlp::OtelConfig,
 	types::{
 		block_matrix_partition_format, option_duration_seconds_format, tracing_level_format,
-		MultiaddrConfig, SecretKey,
+		PeerAddress, SecretKey,
 	},
 };
 use avail_rust::kate_recovery::matrix::Partition;
@@ -121,7 +121,7 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	if let Some(network) = &opts.network {
 		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
 		config.rpc.full_node_ws = network.full_node_ws();
-		config.libp2p.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		config.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		config.genesis_hash = network.genesis_hash().to_string();
 	}

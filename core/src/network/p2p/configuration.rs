@@ -1,6 +1,6 @@
 use super::{protocol_name, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
-use crate::types::{duration_seconds_format, KademliaMode, MultiaddrConfig, SecretKey};
+use crate::types::{duration_seconds_format, KademliaMode, PeerAddress, SecretKey};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -139,7 +139,7 @@ pub struct LibP2PConfig {
 	#[serde(flatten)]
 	pub kademlia: KademliaConfig,
 	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<MultiaddrConfig>,
+	pub relays: Vec<PeerAddress>,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 10s).
 	#[serde(with = "duration_seconds_format")]
 	pub connection_idle_timeout: Duration,
@@ -148,7 +148,7 @@ pub struct LibP2PConfig {
 	pub per_connection_event_buffer_size: usize,
 	pub dial_concurrency_factor: NonZeroU8,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<MultiaddrConfig>,
+	pub bootstraps: Vec<PeerAddress>,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 	pub dht_parallelization_limit: usize,
 }

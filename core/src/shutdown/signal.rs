@@ -21,7 +21,6 @@ impl<T: Clone> Signal<T> {
 	/// If the shutdown initiates before the wrapped future completes, the resulting future yields
 	/// `Err(reason)` containing the shutdown reason. Upon successful completion of the wrapped future
 	/// before a shutdown, it yields `Ok(val)`.
-
 	pub fn with_cancel<F: Future>(&self, future: F) -> WithCancel<T, F> {
 		WithCancel {
 			signal: self.clone(),

@@ -333,16 +333,16 @@ impl TryFrom<String> for CompactMultiaddress {
 	untagged,
 	expecting = "Valid multiaddress/peer_id string or a tuple (peer_id, multiaddress) expected"
 )]
-pub enum MultiaddrConfig {
+pub enum PeerAddress {
 	Compact(CompactMultiaddress),
 	PeerIdAndMultiaddr((PeerId, Multiaddr)),
 }
 
-impl From<&MultiaddrConfig> for (PeerId, Multiaddr) {
-	fn from(value: &MultiaddrConfig) -> Self {
+impl From<&PeerAddress> for (PeerId, Multiaddr) {
+	fn from(value: &PeerAddress) -> Self {
 		match value {
-			MultiaddrConfig::Compact(CompactMultiaddress(value)) => value.clone(),
-			MultiaddrConfig::PeerIdAndMultiaddr(value) => value.clone(),
+			PeerAddress::Compact(CompactMultiaddress(value)) => value.clone(),
+			PeerAddress::PeerIdAndMultiaddr(value) => value.clone(),
 		}
 	}
 }
