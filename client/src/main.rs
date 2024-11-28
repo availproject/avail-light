@@ -59,7 +59,6 @@ mod cli;
 mod config;
 
 /// Light Client for Avail Blockchain
-
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
