@@ -597,7 +597,15 @@ impl<D: Database> Client<D> {
 					.map_err(|error| subxt::Error::Other(format!("{error}")))?;
 				Ok(rows
 					.iter()
-					.map(|row| row.iter().flat_map(|cell| cell.to_big_endian()).collect())
+					.map(|row| {
+						row.iter()
+							.flat_map(|cell| {
+								let mut bytes = [0u8; 32];
+								cell.to_big_endian(&mut bytes);
+								bytes.to_vec()
+							})
+							.collect()
+					})
 					.collect())
 			}
 		})
@@ -616,7 +624,7 @@ impl<D: Database> Client<D> {
 			}
 
 			let mut result = [0u8; 80];
-			result[48..].copy_from_slice(&scalar.to_big_endian());
+			scalar.to_big_endian(&mut result[48..]);
 			result[..48].copy_from_slice(&proof);
 			Ok(result)
 		}
