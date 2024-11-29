@@ -18,7 +18,7 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-rust = { git = "https://github.com/availproject/avail.git", branch = "main" }
+avail-rust = { git = "https://github.com/availproject/avail.git", rev = "741aa316" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 avail-light-core = { path = "./core" }
 
