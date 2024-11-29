@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.1]
+## [0.4.1](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.4.1) - 2024-11-29
 
 - Decrease connection idle timeout to 10s
 

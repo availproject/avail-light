@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.5
+## [1.0.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.0.5) - 2024-11-29
 
 - Rename `MultiaddrConfig` type to `PeerAddress` for better clarity
 - Enable WASM compilation on proof mod
