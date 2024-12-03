@@ -9,7 +9,12 @@ use opentelemetry::{
 	metrics::{Counter, Meter},
 	KeyValue,
 };
-use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
+use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
+use opentelemetry_sdk::{
+	metrics::{PeriodicReader, SdkMeterProvider},
+	runtime::Tokio,
+	Resource,
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 
@@ -39,21 +44,23 @@ impl Metrics {
 
 	fn record_u64(&self, name: &'static str, value: u64, attributes: Vec<KeyValue>) -> Result<()> {
 		let gauge_name = self.gauge_name(name);
-		let instrument = self.meter.u64_observable_gauge(gauge_name).try_init()?;
 		self.meter
-			.register_callback(&[instrument.as_any()], move |observer| {
-				observer.observe_u64(&instrument, value, &attributes)
-			})?;
+			.u64_observable_gauge(gauge_name)
+			.with_callback(move |observer| {
+				observer.observe(value, &attributes);
+			})
+			.build();
 		Ok(())
 	}
 
 	fn record_f64(&self, name: &'static str, value: f64, attributes: Vec<KeyValue>) -> Result<()> {
 		let gauge_name = self.gauge_name(name);
-		let instrument = self.meter.f64_observable_gauge(gauge_name).try_init()?;
 		self.meter
-			.register_callback(&[instrument.as_any()], move |observer| {
-				observer.observe_f64(&instrument, value, &attributes)
-			})?;
+			.f64_observable_gauge(gauge_name)
+			.with_callback(move |observer| {
+				observer.observe(value, &attributes);
+			})
+			.build();
 		Ok(())
 	}
 
@@ -213,7 +220,7 @@ fn init_counters(
 	.map(|counter| {
 		let otel_counter_name = format!("{project_name}.{name}", name = counter.name());
 		// Keep the `static str as the local buffer map key, but change the OTel counter name`
-		(counter.name(), meter.u64_counter(otel_counter_name).init())
+		(counter.name(), meter.u64_counter(otel_counter_name).build())
 	})
 	.collect()
 }
@@ -244,21 +251,25 @@ pub fn initialize(
 	origin: &Origin,
 	ot_config: OtelConfig,
 ) -> Result<Metrics> {
-	let export_config = ExportConfig {
-		endpoint: ot_config.ot_collector_endpoint,
-		timeout: Duration::from_secs(10),
-		protocol: Protocol::Grpc,
-	};
-	let provider = opentelemetry_otlp::new_pipeline()
-		.metrics(opentelemetry_sdk::runtime::Tokio)
-		.with_exporter(
-			opentelemetry_otlp::new_exporter()
-				.tonic()
-				.with_export_config(export_config),
-		)
-		.with_period(Duration::from_secs(ot_config.ot_export_period)) // Configures the intervening time between exports
-		.with_timeout(Duration::from_secs(ot_config.ot_export_timeout)) // Configures the time a OT waits for an export to complete before canceling it.
+	let exporter = MetricExporter::builder()
+		.with_tonic()
+		.with_endpoint(&ot_config.ot_collector_endpoint)
+		.with_protocol(Protocol::Grpc)
+		.with_timeout(Duration::from_secs(ot_config.ot_export_timeout))
 		.build()?;
+
+	let reader = PeriodicReader::builder(exporter, Tokio)
+		.with_interval(Duration::from_secs(ot_config.ot_export_period)) // Export interval
+		.with_timeout(Duration::from_secs(ot_config.ot_export_timeout)) // Timeout for each export
+		.build();
+
+	let provider = SdkMeterProvider::builder()
+		.with_reader(reader)
+		.with_resource(Resource::new(vec![KeyValue::new(
+			"service.name",
+			project_name.to_string(),
+		)]))
+		.build();
 
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
