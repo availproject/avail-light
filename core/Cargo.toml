@@ -78,12 +78,12 @@ color-eyre = { workspace = true }
 ed25519-compact = "2.1.1"
 # NOTE: This is used due bug explained at: https://github.com/tomaka/wasm-timer/pull/13
 fluvio-wasm-timer = "0.2.5"
+hyper = { version = "0.14.23", features = ["http1"] }
 libp2p = { workspace = true, features = ["wasm-bindgen"] }
 libp2p-webrtc-websys = { workspace = true }
 rand = { workspace = true, features = ["std_rng"] }
 thiserror-no-std = "2.0.2"
 tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
-wasm-bindgen = "0.2.90"
 web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
