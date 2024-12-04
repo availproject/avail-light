@@ -76,8 +76,6 @@ opentelemetry_sdk = { workspace = true }
 blake2b_simd = "1.0.2"
 color-eyre = { workspace = true }
 ed25519-compact = "2.1.1"
-# NOTE: This is used due bug explained at: https://github.com/tomaka/wasm-timer/pull/13
-fluvio-wasm-timer = "0.2.5"
 hyper = { version = "0.14.23", features = ["http1"] }
 libp2p = { workspace = true, features = ["wasm-bindgen"] }
 libp2p-webrtc-websys = { workspace = true }
