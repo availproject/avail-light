@@ -78,12 +78,12 @@ pub fn initialize(
 		.with_tonic()
 		.with_endpoint(&endpoint)
 		.with_protocol(Protocol::Grpc)
-		.with_timeout(Duration::from_secs(10))
+		.with_timeout(Duration::from_secs(30))
 		.build()?;
 
 	let reader = PeriodicReader::builder(exporter, Tokio)
-		.with_interval(Duration::from_secs(10)) // Export interval
-		.with_timeout(Duration::from_secs(10)) // Timeout for each export
+		.with_interval(Duration::from_secs(30))
+		.with_timeout(Duration::from_secs(30))
 		.build();
 
 	let provider = SdkMeterProvider::builder()
