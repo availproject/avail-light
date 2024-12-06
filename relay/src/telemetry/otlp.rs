@@ -104,7 +104,7 @@ pub fn initialize(
 		.build();
 
 	global::set_meter_provider(provider);
-	let meter = global::meter("avail_light_bootstrap");
+	let meter = global::meter("avail_light_relay");
 
 	Ok(Metrics {
 		meter,
