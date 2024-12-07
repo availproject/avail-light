@@ -1015,7 +1015,6 @@ dependencies = [
  "dusk-bytes",
  "dusk-plonk",
  "ed25519-compact",
- "fluvio-wasm-timer",
  "futures",
  "getrandom",
  "hex",
@@ -1062,7 +1061,6 @@ dependencies = [
  "uuid",
  "void",
  "warp",
- "wasm-bindgen",
  "web-time",
 ]
 
@@ -1132,6 +1130,28 @@ dependencies = [
  "tracing",
  "tracing-subscriber 0.3.18",
  "warp",
+]
+
+[[package]]
+name = "avail-light-web"
+version = "0.1.0"
+dependencies = [
+ "avail-light-core",
+ "avail-rust",
+ "clap",
+ "console_error_panic_hook",
+ "futures",
+ "libp2p",
+ "sp-io",
+ "tokio",
+ "tokio_with_wasm",
+ "tracing",
+ "tracing-subscriber 0.3.18",
+ "tracing-wasm",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]
@@ -1839,6 +1859,16 @@ dependencies = [
  "lazy_static",
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if 1.0.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2888,21 +2918,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fluvio-wasm-timer"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b768c170dc045fa587a8f948c91f9bcfb87f774930477c6215addf54317f137f"
-dependencies = [
- "futures",
- "js-sys",
- "parking_lot 0.11.2",
- "pin-utils",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3527,7 +3542,7 @@ dependencies = [
  "ipconfig",
  "lru-cache",
  "once_cell",
- "parking_lot 0.12.3",
+ "parking_lot",
  "rand",
  "resolv-conf",
  "smallvec",
@@ -4546,7 +4561,7 @@ dependencies = [
  "multihash 0.19.1",
  "multistream-select",
  "once_cell",
- "parking_lot 0.12.3",
+ "parking_lot",
  "pin-project",
  "quick-protobuf",
  "rand",
@@ -4592,7 +4607,7 @@ dependencies = [
  "hickory-resolver",
  "libp2p-core",
  "libp2p-identity",
- "parking_lot 0.12.3",
+ "parking_lot",
  "smallvec",
  "tracing",
 ]
@@ -4791,7 +4806,7 @@ dependencies = [
  "libp2p-core",
  "libp2p-identity",
  "libp2p-tls",
- "parking_lot 0.12.3",
+ "parking_lot",
  "quinn",
  "rand",
  "ring 0.17.8",
@@ -5011,7 +5026,7 @@ dependencies = [
  "futures-rustls",
  "libp2p-core",
  "libp2p-identity",
- "parking_lot 0.12.3",
+ "parking_lot",
  "pin-project-lite",
  "rw-stream-sink",
  "soketto 0.8.0",
@@ -5940,37 +5955,12 @@ checksum = "bb813b8af86854136c6922af0598d719255ecb2179515e6e7730d468f05c9cae"
 
 [[package]]
 name = "parking_lot"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d17b78036a60663b797adeaee46f5c9dfebb86948d1255007a1d6be0271ff99"
-dependencies = [
- "instant",
- "lock_api",
- "parking_lot_core 0.8.6",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
 dependencies = [
  "lock_api",
- "parking_lot_core 0.9.10",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.8.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60a2cfe6f0ad2bfc16aefa463b497d5c7a5ecd44a23efa72aa342d90177356dc"
-dependencies = [
- "cfg-if 1.0.0",
- "instant",
- "libc",
- "redox_syscall 0.2.16",
- "smallvec",
- "winapi",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -5981,7 +5971,7 @@ checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
- "redox_syscall 0.5.2",
+ "redox_syscall",
  "smallvec",
  "windows-targets 0.52.6",
 ]
@@ -6371,7 +6361,7 @@ checksum = "c1ca959da22a332509f2a73ae9e5f23f9dcfc31fd3a54d71f159495bd5909baa"
 dependencies = [
  "dtoa",
  "itoa",
- "parking_lot 0.12.3",
+ "parking_lot",
  "prometheus-client-derive-encode",
 ]
 
@@ -6615,15 +6605,6 @@ dependencies = [
  "tokio",
  "tracing",
  "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "redox_syscall"
-version = "0.2.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb5a58c1855b4b6819d59012155603f0b22ad30cad752600aadfcb695265519a"
-dependencies = [
- "bitflags 1.3.2",
 ]
 
 [[package]]
@@ -7701,7 +7682,7 @@ dependencies = [
  "log",
  "lru",
  "no-std-net",
- "parking_lot 0.12.3",
+ "parking_lot",
  "pin-project",
  "rand",
  "rand_chacha",
@@ -7884,7 +7865,7 @@ dependencies = [
  "log",
  "merlin",
  "parity-scale-codec",
- "parking_lot 0.12.3",
+ "parking_lot",
  "paste",
  "primitive-types 0.12.2",
  "rand",
@@ -8061,7 +8042,7 @@ version = "0.34.0"
 source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch-10#f5587b380ee596f90482d402844c49aa140781d8"
 dependencies = [
  "parity-scale-codec",
- "parking_lot 0.12.3",
+ "parking_lot",
  "sp-core",
  "sp-externalities 0.25.0 (git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch-10)",
  "thiserror",
@@ -8197,7 +8178,7 @@ dependencies = [
  "hash-db",
  "log",
  "parity-scale-codec",
- "parking_lot 0.12.3",
+ "parking_lot",
  "rand",
  "smallvec",
  "sp-core",
@@ -8279,7 +8260,7 @@ dependencies = [
  "memory-db",
  "nohash-hasher",
  "parity-scale-codec",
- "parking_lot 0.12.3",
+ "parking_lot",
  "rand",
  "scale-info",
  "schnellru",
@@ -9000,7 +8981,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot 0.12.3",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2 0.5.7",
@@ -9357,6 +9338,17 @@ dependencies = [
  "tracing-core",
  "tracing-log 0.2.0",
  "tracing-serde",
+]
+
+[[package]]
+name = "tracing-wasm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4575c663a174420fa2d78f4108ff68f65bf2fbb7dd89f33749b6e826b3626e07"
+dependencies = [
+ "tracing",
+ "tracing-subscriber 0.3.18",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -10693,7 +10685,7 @@ dependencies = [
  "futures",
  "log",
  "nohash-hasher",
- "parking_lot 0.12.3",
+ "parking_lot",
  "pin-project",
  "rand",
  "static_assertions",
@@ -10708,7 +10700,7 @@ dependencies = [
  "futures",
  "log",
  "nohash-hasher",
- "parking_lot 0.12.3",
+ "parking_lot",
  "pin-project",
  "rand",
  "static_assertions",

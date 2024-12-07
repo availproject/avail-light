@@ -1,6 +1,4 @@
 use color_eyre::{eyre::eyre, Result};
-#[cfg(target_arch = "wasm32")]
-use fluvio_wasm_timer::Interval;
 use futures::StreamExt;
 use libp2p::{
 	autonat::{self, NatStatus},
@@ -205,8 +203,9 @@ impl EventLoop {
 
 		#[cfg(not(target_arch = "wasm32"))]
 		let mut report_timer = interval(event_counter.report_interval);
+
 		#[cfg(target_arch = "wasm32")]
-		let mut report_timer = Interval::new(event_counter.report_interval);
+		let mut next_tick = Instant::now() + event_counter.report_interval;
 
 		loop {
 			#[cfg(not(target_arch = "wasm32"))]
@@ -238,6 +237,9 @@ impl EventLoop {
 			}
 
 			#[cfg(target_arch = "wasm32")]
+			let now = Instant::now();
+
+			#[cfg(target_arch = "wasm32")]
 			tokio::select! {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite")).await;
@@ -253,9 +255,10 @@ impl EventLoop {
 						break;
 					},
 				},
-				_ = report_timer.next() => {
+				_ = tokio::time::sleep(next_tick.checked_duration_since(now).unwrap_or_default()) => {
 					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
+					next_tick += event_counter.report_interval;
 				},
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
