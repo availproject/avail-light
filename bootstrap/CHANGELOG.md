@@ -2,6 +2,7 @@
 
 ## [0.4.1](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.4.1) - 2024-11-29
 
+- Update opentelemetry sdk version
 - Decrease connection idle timeout to 10s
 
 ## [0.4.0](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.4.0) - 2024-11-05

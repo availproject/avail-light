@@ -1,7 +1,12 @@
 use anyhow::{Error, Ok, Result};
 use async_trait::async_trait;
 use opentelemetry::{global, metrics::Meter, KeyValue};
-use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
+use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
+use opentelemetry_sdk::{
+	metrics::{PeriodicReader, SdkMeterProvider},
+	runtime::Tokio,
+	Resource,
+};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
@@ -27,12 +32,13 @@ impl Metrics {
 	}
 
 	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
-		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
 		let attributes = self.attributes().await;
 		self.meter
-			.register_callback(&[instrument.as_any()], move |observer| {
-				observer.observe_u64(&instrument, value, &attributes)
-			})?;
+			.u64_observable_gauge(name)
+			.with_callback(move |observer| {
+				observer.observe(value, &attributes);
+			})
+			.build();
 		Ok(())
 	}
 
@@ -68,21 +74,25 @@ pub fn initialize(
 	origin: String,
 	network: String,
 ) -> Result<Metrics, Error> {
-	let export_config = ExportConfig {
-		endpoint,
-		timeout: Duration::from_secs(10),
-		protocol: Protocol::Grpc,
-	};
-	let provider = opentelemetry_otlp::new_pipeline()
-		.metrics(opentelemetry_sdk::runtime::Tokio)
-		.with_exporter(
-			opentelemetry_otlp::new_exporter()
-				.tonic()
-				.with_export_config(export_config),
-		)
-		.with_period(Duration::from_secs(10))
-		.with_timeout(Duration::from_secs(15))
+	let exporter = MetricExporter::builder()
+		.with_tonic()
+		.with_endpoint(&endpoint)
+		.with_protocol(Protocol::Grpc)
+		.with_timeout(Duration::from_secs(30))
 		.build()?;
+
+	let reader = PeriodicReader::builder(exporter, Tokio)
+		.with_interval(Duration::from_secs(30))
+		.with_timeout(Duration::from_secs(30))
+		.build();
+
+	let provider = SdkMeterProvider::builder()
+		.with_reader(reader)
+		.with_resource(Resource::new(vec![KeyValue::new(
+			"service.name",
+			"bootstrap".to_string(),
+		)]))
+		.build();
 
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_bootstrap");
