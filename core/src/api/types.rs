@@ -98,6 +98,8 @@ pub struct Status {
 	pub genesis_hash: String,
 	pub network: String,
 	pub blocks: Blocks,
+	/// Wallet address of the user running the Light Client (LC)
+	pub wallet_address: Option<String>
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -153,6 +155,7 @@ impl Status {
 			genesis_hash: format!("{:?}", node.genesis_hash),
 			network: node.network(),
 			blocks,
+			wallet_address: config.wallet_address.clone()
 		}
 	}
 }

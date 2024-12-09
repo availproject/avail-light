@@ -20,3 +20,4 @@ query_proof_rpc_parallel_tasks = ${QUERY_PROOF_RPC_PARALLEL_TASKS}
 sync_start_block = 1
 genesis_hash = "DEVTST"
 avail_secret_key = "bottom drive obey lake curtain smoke basket hold race lonely fit walk//Alice"
+wallet_address = "Wallet address of the user running the Light Client (LC)"

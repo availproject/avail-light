@@ -23,6 +23,8 @@ pub struct SharedConfig {
 	pub app_id: Option<u32>,
 	pub confidence: f64,
 	pub sync_start_block: Option<u32>,
+	/// Wallet address of the user running the Light Client (LC)
+	pub wallet_address: Option<String>
 }
 
 impl Default for SharedConfig {
@@ -31,6 +33,7 @@ impl Default for SharedConfig {
 			app_id: Default::default(),
 			confidence: 99.9,
 			sync_start_block: Default::default(),
+			wallet_address: Some("0xDabc...ex455".to_string())
 		}
 	}
 }
