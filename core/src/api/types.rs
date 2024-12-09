@@ -8,19 +8,21 @@ use avail_rust::{
 	AvailHeader, H256,
 };
 use codec::Encode;
-use color_eyre::{
-	eyre::{eyre, WrapErr},
-	Report, Result,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use color_eyre::eyre::eyre;
+use color_eyre::{eyre::WrapErr, Report, Result};
 use derive_more::From;
-use hyper::{http, StatusCode};
+#[cfg(not(target_arch = "wasm32"))]
+use hyper::http;
+use hyper::StatusCode;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::{
-	collections::{HashMap, HashSet},
-	sync::Arc,
-};
+use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
+use std::{collections::HashMap, sync::Arc};
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
+#[cfg(not(target_arch = "wasm32"))]
 use warp::{
 	ws::{self, Message},
 	Reply,
@@ -41,6 +43,7 @@ use crate::{
 #[derive(Debug)]
 pub struct InternalServerError {}
 
+#[cfg(not(target_arch = "wasm32"))]
 impl warp::reject::Reject for InternalServerError {}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -49,6 +52,7 @@ pub struct Version {
 	pub network_version: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for Version {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -124,6 +128,7 @@ pub struct SubmitResponse {
 	pub index: u32,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for SubmitResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -174,6 +179,7 @@ impl From<&SharedConfig> for Vec<Mode> {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for Status {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -318,6 +324,7 @@ impl Block {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for Block {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -347,6 +354,7 @@ pub struct Header {
 	digest: Digest,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for Header {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -541,6 +549,7 @@ pub struct DataResponse {
 	pub data_transactions: Vec<DataTransaction>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for DataResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -612,6 +621,7 @@ pub enum PublishMessage {
 	DataVerified(DataMessage),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl PublishMessage {
 	fn apply_filter(&mut self, fields: &HashSet<DataField>) {
 		match self {
@@ -624,6 +634,7 @@ impl PublishMessage {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<PublishMessage> for Message {
 	type Error = Report;
 	fn try_from(value: PublishMessage) -> Result<Self, Self::Error> {
@@ -633,13 +644,16 @@ impl TryFrom<PublishMessage> for Message {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub type Sender = UnboundedSender<Result<ws::Message, warp::Error>>;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct WsClient {
 	pub subscription: Subscription,
 	pub sender: Option<Sender>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl WsClient {
 	pub fn new(subscription: Subscription) -> Self {
 		WsClient {
@@ -659,9 +673,11 @@ impl WsClient {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 pub struct WsClients(pub Arc<RwLock<HashMap<String, WsClient>>>);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl WsClients {
 	pub async fn set_sender(&self, subscription_id: &str, sender: Sender) -> Result<()> {
 		let mut clients = self.0.write().await;
@@ -701,6 +717,7 @@ impl WsClients {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for WsClients {
 	fn default() -> Self {
 		Self(Arc::new(RwLock::new(HashMap::new())))
@@ -712,6 +729,7 @@ pub struct SubscriptionId {
 	pub subscription_id: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for SubscriptionId {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
@@ -748,6 +766,7 @@ impl<T> Response<T> {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl TryFrom<ws::Message> for Request {
 	type Error = Report;
 
@@ -819,6 +838,7 @@ impl Error {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Reply for Error {
 	fn into_response(self) -> warp::reply::Response {
 		http::Response::builder()

@@ -8,6 +8,7 @@ members = [
 	"fat",
 	"monitor-client",
 	"relay",
+	"web",
 ]
 default-members = ["client"]
 resolver = "2"
