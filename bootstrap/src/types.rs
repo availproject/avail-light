@@ -112,6 +112,8 @@ pub struct RuntimeConfig {
 	pub origin: String,
 	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
 	pub genesis_hash: String,
+	/// Wallet address of the user running the Light Client (LC)
+	pub wallet_address: String,
 }
 
 pub struct LibP2PConfig {
@@ -217,6 +219,7 @@ impl Default for RuntimeConfig {
 			metrics_network_dump_interval: 15,
 			origin: "external".to_string(),
 			genesis_hash: "DEV".to_owned(),
+			wallet_address: "0xD44od....81755".to_string()
 		}
 	}
 }

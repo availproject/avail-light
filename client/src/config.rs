@@ -56,6 +56,8 @@ pub struct RuntimeConfig {
 	pub threshold: usize,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
+	/// Wallet address of the user running the Light Client (LC)
+	pub wallet_address: String,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -98,6 +100,7 @@ impl From<&RuntimeConfig> for SharedConfig {
 			app_id: value.app_id,
 			confidence: value.confidence,
 			sync_start_block: value.sync_start_block,
+			wallet_address: Some(value.wallet_address.clone())
 		}
 	}
 }
@@ -125,6 +128,7 @@ impl Default for RuntimeConfig {
 			threshold: 5000,
 			origin: Origin::External,
 			client_alias: None,
+			wallet_address: "0xD445...bh455".to_string()
 		}
 	}
 }
