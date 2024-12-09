@@ -2,8 +2,8 @@
 
 ## 1.1.0
 
-- Enable WASM compilation of the network, light_client and related mods
 - Update opentelemetry sdk version
+- Enable WASM compilation of the network, light_client and related mods
 
 ## [1.0.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.0.5) - 2024-11-29
 
