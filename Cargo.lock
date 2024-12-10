@@ -1400,11 +1400,12 @@ dependencies = [
  "console_error_panic_hook",
  "futures",
  "libp2p",
+ "serde_json",
  "sp-io 30.0.0",
  "tokio",
  "tokio_with_wasm",
  "tracing",
- "tracing-subscriber 0.3.18",
+ "tracing-subscriber 0.3.19",
  "tracing-wasm",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -15262,7 +15263,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4575c663a174420fa2d78f4108ff68f65bf2fbb7dd89f33749b6e826b3626e07"
 dependencies = [
  "tracing",
- "tracing-subscriber 0.3.18",
+ "tracing-subscriber 0.3.19",
  "wasm-bindgen",
 ]
 

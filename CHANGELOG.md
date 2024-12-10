@@ -9,3 +9,4 @@
 - [`client` CHANGELOG](client/CHANGELOG.md)
 - [`crawler` CHANGELOG](crawler/CHANGELOG.md)
 - [`fat` CHANGELOG](fat/CHANGELOG.md)
+- [`web` CHANGELOG](web/CHANGELOG.md)
