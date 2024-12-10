@@ -7,8 +7,19 @@
 </head>
 <body>
     <h1>Avail Light Client Web</h1>
+    <!-- <script type="module" src="./avail-light.js"></script> -->
     <script type="module">
       const worker = new Worker('./avail-light.js', { type: 'module' });
+      worker.onmessage = (event) => {
+	  console.log(event.data);
+	  let { message, topic } = JSON.parse(event.data);
+	  if (topic == "header-verified") {
+	      document.getElementById("text").innerHTML = message.block_number;
+	  };
+      };
+      window.worker = worker;
+      // worker.postMessage({"type":"version","request_id":"{uuid}"});
     </script>
+    <span id="text" />
 </body>
 </html>
