@@ -21,6 +21,7 @@ use thiserror::Error;
 #[cfg(target_arch = "wasm32")]
 use thiserror_no_std::Error;
 use tokio::sync::{broadcast::Sender, RwLock};
+use tokio::time::sleep;
 use tokio_retry::Retry;
 use tokio_stream::{Elapsed, StreamExt, StreamMap};
 use tracing::{error, info, warn};
@@ -423,19 +424,20 @@ impl<D: Database> Client<D> {
 			loop {
 				match self.with_retries(Self::create_rpc_subscriptions).await {
 					Ok(mut stream) => {
-						loop {
-							match stream.next().await {
-								Some(Ok(Ok(item))) => {
-									yield Ok(item);
-									continue;
-								},
-								Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
-								Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
-								None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
+						{
+							loop {
+								match stream.next().await {
+									Some(Ok(Ok(item))) => {
+										yield Ok(item);
+										continue;
+									},
+									Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+									Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+									None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
+								}
+								break;
 							}
-							break;
 						}
-
 					}
 					Err(err) => {
 						warn!(error = %err, "Failed to create RPC Subscription stream.");
@@ -443,6 +445,8 @@ impl<D: Database> Client<D> {
 						return;
 					}
 				}
+
+				sleep(Duration::from_millis(250)).await;
 			}
 		}
 	}
