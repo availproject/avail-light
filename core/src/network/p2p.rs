@@ -5,7 +5,9 @@ use color_eyre::{
 };
 use configuration::{kad_config, LibP2PConfig};
 use libp2p::{
-	autonat, dcutr, identify,
+	autonat,
+	connection_limits::{self, ConnectionLimits},
+	dcutr, identify,
 	identity::{self, ed25519, Keypair},
 	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
 	mdns, noise, ping, relay,
@@ -167,6 +169,7 @@ type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
 pub struct Behaviour {
+	connection_limits: connection_limits::Behaviour,
 	kademlia: kad::Behaviour<Store>,
 	identify: identify::Behaviour,
 	ping: ping::Behaviour,
@@ -280,8 +283,17 @@ async fn build_swarm(
 
 	let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
 
+	let connection_limits = ConnectionLimits::default()
+		.with_max_pending_incoming(Some(100))
+		.with_max_pending_outgoing(Some(100))
+		.with_max_established_incoming(Some(100))
+		.with_max_established_outgoing(Some(100))
+		.with_max_established_per_peer(Some(1))
+		.with_max_established(Some(1000));
+
 	let behaviour = |key: &identity::Keypair, relay_client| {
 		Ok(Behaviour {
+			connection_limits: connection_limits::Behaviour::new(connection_limits),
 			ping: ping::Behaviour::new(ping::Config::new()),
 			identify: identify::Behaviour::new(identify_cfg),
 			relay_client,
