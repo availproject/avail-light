@@ -202,6 +202,7 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	let mut kad_cfg = kad::Config::default();
 	kad_cfg
 		.set_publication_interval(Some(cfg.kademlia.publication_interval))
+		.set_protocol_names(vec![protocol_name(genesis_hash)])
 		.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
 		.set_replication_factor(cfg.kademlia.record_replication_factor)
 		.set_query_timeout(cfg.kademlia.query_timeout)
