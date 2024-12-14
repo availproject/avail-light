@@ -468,9 +468,9 @@ impl EventLoop {
 							})
 							.for_each(|(peer_id, multiaddr)| {
 								trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-								if self.swarm.dial(multiaddr).is_err() {
-									warn!("Unable to dial peer with ID: {peer_id:#?}");
-								}
+								// if self.swarm.dial(multiaddr).is_err() {
+								// 	warn!("Unable to dial peer with ID: {peer_id:#?}");
+								// }
 							});
 					},
 					mdns::Event::Expired(addrs_list) => {
