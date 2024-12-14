@@ -135,10 +135,10 @@ async fn run() -> Result<()> {
 
 	info!("TCP listener started on port {}.", cfg.port);
 
-	network_client
-		.start_listening(webrtc_multiaddress(cfg.webrtc_port))
-		.await
-		.context("Unable to create WebRTC P2P listener.")?;
+	// network_client
+	// 	.start_listening(webrtc_multiaddress(cfg.webrtc_port))
+	// 	.await
+	// 	.context("Unable to create WebRTC P2P listener.")?;
 
 	info!("WebRTC listening on port {}.", cfg.webrtc_port);
 

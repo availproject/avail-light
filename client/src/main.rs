@@ -96,7 +96,7 @@ async fn run(
 
 	let addrs = vec![
 		cfg.libp2p.tcp_multiaddress(),
-		cfg.libp2p.webrtc_multiaddress(),
+		//cfg.libp2p.webrtc_multiaddress(),
 	];
 
 	// Start the TCP and WebRTC listeners
