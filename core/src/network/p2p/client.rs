@@ -143,7 +143,6 @@ impl Client {
 				let opts = DialOpts::peer_id(peer_id)
 					.addresses(peer_address)
 					.condition(dial_condition)
-					.allocate_new_port()
 					.build();
 				context.swarm.dial(opts)?;
 

@@ -408,7 +408,6 @@ impl EventLoop {
 							protocols,
 							..
 						},
-					connection_id: _,
 				} => {
 					trace!(
 						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
@@ -446,20 +445,13 @@ impl EventLoop {
 						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 					}
 				},
-				identify::Event::Sent {
-					peer_id,
-					connection_id: _,
-				} => {
+				identify::Event::Sent { peer_id } => {
 					trace!("Identity Sent event to: {peer_id:?}");
 				},
 				identify::Event::Pushed { peer_id, .. } => {
 					trace!("Identify Pushed event. PeerId: {peer_id:?}");
 				},
-				identify::Event::Error {
-					peer_id,
-					error,
-					connection_id: _,
-				} => {
+				identify::Event::Error { peer_id, error } => {
 					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 				},
 			},

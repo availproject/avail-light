@@ -199,7 +199,7 @@ impl LibP2PConfig {
 
 pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	// create Kademlia Config
-	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
+	let mut kad_cfg = kad::Config::default();
 	kad_cfg
 		.set_publication_interval(Some(cfg.kademlia.publication_interval))
 		.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
@@ -210,8 +210,7 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 			max_peers: cfg.kademlia.caching_max_peers,
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
-		.set_record_filtering(kad::StoreInserts::FilterBoth)
-		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_period));
+		.set_record_filtering(kad::StoreInserts::FilterBoth);
 	kad_cfg
 }
 

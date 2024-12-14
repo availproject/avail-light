@@ -324,7 +324,6 @@ async fn build_swarm(
 			.build();
 	}
 
-	#[cfg(not(target_arch = "wasm32"))]
 	if cfg.ws_transport_enable {
 		swarm = tokio_swarm
 			.with_websocket(noise::Config::new, yamux::Config::default)
@@ -336,15 +335,10 @@ async fn build_swarm(
 	} else {
 		swarm = tokio_swarm
 			.with_tcp(
-				tcp::Config::default().nodelay(false),
+				tcp::Config::default().port_reuse(false).nodelay(false),
 				noise::Config::new,
 				yamux::Config::default,
 			)?
-			.with_other_transport(|keypair| {
-				use webrtc::tokio::{Certificate, Transport};
-				let certificate = Certificate::generate(&mut thread_rng());
-				Ok(Transport::new(keypair.clone(), certificate?))
-			})?
 			.with_dns()?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?
 			.with_behaviour(behaviour)?

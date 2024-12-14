@@ -8,9 +8,7 @@ use libp2p::{
 	swarm::NetworkBehaviour,
 	tcp, yamux, PeerId, SwarmBuilder,
 };
-use libp2p_webrtc as webrtc;
 use multihash::Hasher;
-use rand::thread_rng;
 use tokio::sync::mpsc;
 
 mod client;
@@ -72,10 +70,10 @@ pub async fn init(
 	// create new Kademlia Memory Store
 	let kad_store = MemoryStore::new(id_keys.public().to_peer_id());
 	// create Kademlia Config
-	let mut kad_cfg = kad::Config::new(cfg.kademlia.protocol_name.clone());
+	let mut kad_cfg = kad::Config::default();
 	kad_cfg
 		.set_query_timeout(cfg.kademlia.query_timeout)
-		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_interval));
+		.set_protocol_names(vec![cfg.kademlia.protocol_name.clone()]);
 	// build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
@@ -105,14 +103,8 @@ pub async fn init(
 				noise::Config::new,
 				yamux::Config::default,
 			)?
-			.with_other_transport(|keypair| {
-				use webrtc::tokio::{Certificate, Transport};
-				let certificate = Certificate::generate(&mut thread_rng());
-				Ok(Transport::new(keypair.clone(), certificate?))
-			})?
 			.with_dns()?
 			.with_behaviour(behaviour)?
-			.with_swarm_config(|c| generate_config(c, cfg))
 			.build()
 	}
 

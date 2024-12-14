@@ -101,7 +101,6 @@ impl EventLoop {
 						protocols,
 						..
 					},
-				connection_id: _,
 			})) => {
 				debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}.");
 				let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
