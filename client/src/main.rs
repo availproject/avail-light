@@ -714,11 +714,13 @@ pub async fn main() -> Result<()> {
 	let opts = CliOpts::parse();
 	let cfg = load_runtime_config(&opts)?;
 
-	if cfg.log_format_json {
-		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))?;
-	} else {
-		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
-	};
+	console_subscriber::init();
+
+	// if cfg.log_format_json {
+	// 	tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))?;
+	// } else {
+	// 	tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
+	// };
 
 	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
