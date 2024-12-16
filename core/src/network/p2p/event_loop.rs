@@ -31,6 +31,7 @@ use tokio::sync::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::{interval, Instant};
+use tokio::time::{interval_at, Interval};
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
 use tracing::{debug, error, info, trace, warn};
@@ -75,6 +76,15 @@ impl RelayState {
 			self.address = addr;
 		}
 	}
+}
+
+// BootstrapState keeps track of all things bootstrap related
+struct BootstrapState {
+	// referring to the initial bootstrap process,
+	// one that runs when the Light Client node starts up
+	is_startup_done: bool,
+	// timer that is responsible for firing periodic bootstraps
+	timer: Interval,
 }
 
 struct EventLoopConfig {
@@ -133,6 +143,7 @@ pub struct EventLoop {
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
 	pub pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
+	bootstrap: BootstrapState,
 	relay: RelayState,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
@@ -172,6 +183,7 @@ impl EventLoop {
 		event_sender: UnboundedSender<OutputEvent>,
 		shutdown: Controller<String>,
 	) -> Self {
+		let bootstrap_interval = cfg.kademlia.bootstrap_period;
 		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
 
 		Self {
@@ -190,6 +202,10 @@ impl EventLoop {
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
+			},
+			bootstrap: BootstrapState {
+				is_startup_done: false,
+				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -225,6 +241,7 @@ impl EventLoop {
 						break;
 					},
 				},
+				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				_ = report_timer.tick() => {
 					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
@@ -387,6 +404,7 @@ impl EventLoop {
 								debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
 									info!("Bootstrap completed.");
+									self.bootstrap.is_startup_done = true;
 								}
 							},
 							Err(err) => {
@@ -468,9 +486,9 @@ impl EventLoop {
 							})
 							.for_each(|(peer_id, multiaddr)| {
 								trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-								// if self.swarm.dial(multiaddr).is_err() {
-								// 	warn!("Unable to dial peer with ID: {peer_id:#?}");
-								// }
+								if self.swarm.dial(multiaddr).is_err() {
+									warn!("Unable to dial peer with ID: {peer_id:#?}");
+								}
 							});
 					},
 					mdns::Event::Expired(addrs_list) => {
@@ -643,6 +661,14 @@ impl EventLoop {
 					error!("Local node failed to listen on relay address. Error: {e:#?}");
 				},
 			}
+		}
+	}
+
+	fn handle_periodic_bootstraps(&mut self) {
+		// commence with periodic bootstraps,
+		// only when the initial startup bootstrap is done
+		if self.bootstrap.is_startup_done {
+			_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 		}
 	}
 

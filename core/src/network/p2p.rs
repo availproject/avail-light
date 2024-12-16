@@ -17,11 +17,7 @@ use libp2p::{
 #[cfg(not(target_arch = "wasm32"))]
 use libp2p::{mdns, tcp, upnp};
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p_webrtc as webrtc;
-#[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
-#[cfg(not(target_arch = "wasm32"))]
-use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
