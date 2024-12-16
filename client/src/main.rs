@@ -94,10 +94,7 @@ async fn run(
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let addrs = vec![
-		cfg.libp2p.tcp_multiaddress(),
-		//cfg.libp2p.webrtc_multiaddress(),
-	];
+	let addrs = vec![cfg.libp2p.tcp_multiaddress()];
 
 	// Start the TCP and WebRTC listeners
 	p2p_client
