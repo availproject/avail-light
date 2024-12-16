@@ -445,8 +445,6 @@ impl<D: Database> Client<D> {
 						return;
 					}
 				}
-
-				sleep(Duration::from_millis(250)).await;
 			}
 		}
 	}
