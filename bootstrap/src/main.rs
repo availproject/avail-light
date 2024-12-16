@@ -135,6 +135,13 @@ async fn run() -> Result<()> {
 
 	info!("TCP listener started on port {}.", cfg.port);
 
+	network_client
+		.start_listening(webrtc_multiaddress(cfg.webrtc_port))
+		.await
+		.context("Unable to create WebRTC P2P listener.")?;
+
+	info!("WebRTC listening on port {}.", cfg.webrtc_port);
+
 	info!("Bootstrap node starting ...");
 	// add bootstrap nodes, if provided
 	if !cfg.bootstraps.is_empty() {
@@ -170,4 +177,10 @@ fn construct_multiaddress(is_websocket: bool, port: u16) -> Multiaddr {
 	}
 
 	tcp_multiaddress
+}
+
+fn webrtc_multiaddress(webrtc_port: u16) -> Multiaddr {
+	Multiaddr::from(Ipv4Addr::UNSPECIFIED)
+		.with(Protocol::Udp(webrtc_port))
+		.with(Protocol::WebRTCDirect)
 }
