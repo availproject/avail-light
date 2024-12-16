@@ -21,7 +21,6 @@ use thiserror::Error;
 #[cfg(target_arch = "wasm32")]
 use thiserror_no_std::Error;
 use tokio::sync::{broadcast::Sender, RwLock};
-use tokio::time::sleep;
 use tokio_retry::Retry;
 use tokio_stream::{Elapsed, StreamExt, StreamMap};
 use tracing::{error, info, warn};
