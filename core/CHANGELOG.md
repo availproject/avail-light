@@ -2,7 +2,7 @@
 
 ## 1.1.0
 
-- Downgrade libp2p version to 0.53.3, removed webrtc support
+- Downgrade libp2p version to 0.53.3
 - Update opentelemetry sdk version to 0.27.1
 - Enable WASM compilation of the network, light_client and related mods
 
