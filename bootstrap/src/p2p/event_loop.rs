@@ -11,8 +11,12 @@ use libp2p::{
 use std::{
 	collections::{hash_map, HashMap},
 	str::FromStr,
+	time::Duration,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+	sync::{mpsc, oneshot},
+	time::{interval_at, Instant, Interval},
+};
 use tracing::{debug, info, trace};
 
 use crate::types::AgentVersion;
@@ -26,20 +30,34 @@ enum SwarmChannel {
 	Dial(oneshot::Sender<Result<()>>),
 }
 
+// BootstrapState keeps track of all things bootstrap related
+struct BootstrapState {
+	// timer that is responsible for firing periodic bootstraps
+	timer: Interval,
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_swarm_events: HashMap<PeerId, SwarmChannel>,
+	bootstrap: BootstrapState,
 }
 
 impl EventLoop {
-	pub fn new(swarm: Swarm<Behaviour>, command_receiver: mpsc::Receiver<Command>) -> Self {
+	pub fn new(
+		swarm: Swarm<Behaviour>,
+		command_receiver: mpsc::Receiver<Command>,
+		bootstrap_interval: Duration,
+	) -> Self {
 		Self {
 			swarm,
 			command_receiver,
 			pending_kad_routing: Default::default(),
 			pending_swarm_events: Default::default(),
+			bootstrap: BootstrapState {
+				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
+			},
 		}
 	}
 
@@ -53,6 +71,7 @@ impl EventLoop {
 					// shutting down whole network event loop
 					None => return,
 				},
+				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 			}
 		}
 	}
@@ -101,7 +120,6 @@ impl EventLoop {
 						protocols,
 						..
 					},
-				connection_id: _,
 			})) => {
 				debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}.");
 				let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
@@ -280,5 +298,10 @@ impl EventLoop {
 				});
 			},
 		}
+	}
+
+	fn handle_periodic_bootstraps(&mut self) {
+		debug!("Starting periodic Bootstrap.");
+		_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 	}
 }

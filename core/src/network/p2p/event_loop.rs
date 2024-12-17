@@ -31,6 +31,7 @@ use tokio::sync::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::{interval, Instant};
+use tokio::time::{interval_at, Interval};
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
 use tracing::{debug, error, info, trace, warn};
@@ -75,6 +76,12 @@ impl RelayState {
 			self.address = addr;
 		}
 	}
+}
+
+// BootstrapState keeps track of all things bootstrap related
+struct BootstrapState {
+	// timer that is responsible for firing periodic bootstraps
+	timer: Interval,
 }
 
 struct EventLoopConfig {
@@ -133,6 +140,7 @@ pub struct EventLoop {
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
 	pub pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
+	bootstrap: BootstrapState,
 	relay: RelayState,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
@@ -172,6 +180,7 @@ impl EventLoop {
 		event_sender: UnboundedSender<OutputEvent>,
 		shutdown: Controller<String>,
 	) -> Self {
+		let bootstrap_interval = cfg.kademlia.bootstrap_period;
 		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
 
 		Self {
@@ -190,6 +199,9 @@ impl EventLoop {
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
+			},
+			bootstrap: BootstrapState {
+				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -225,6 +237,7 @@ impl EventLoop {
 						break;
 					},
 				},
+				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 				_ = report_timer.tick() => {
 					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
@@ -408,7 +421,6 @@ impl EventLoop {
 							protocols,
 							..
 						},
-					connection_id: _,
 				} => {
 					trace!(
 						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
@@ -446,20 +458,13 @@ impl EventLoop {
 						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 					}
 				},
-				identify::Event::Sent {
-					peer_id,
-					connection_id: _,
-				} => {
+				identify::Event::Sent { peer_id } => {
 					trace!("Identity Sent event to: {peer_id:?}");
 				},
 				identify::Event::Pushed { peer_id, .. } => {
 					trace!("Identify Pushed event. PeerId: {peer_id:?}");
 				},
-				identify::Event::Error {
-					peer_id,
-					error,
-					connection_id: _,
-				} => {
+				identify::Event::Error { peer_id, error } => {
 					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 				},
 			},
@@ -652,6 +657,10 @@ impl EventLoop {
 				},
 			}
 		}
+	}
+
+	fn handle_periodic_bootstraps(&mut self) {
+		_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 	}
 
 	fn select_and_dial_relay(&mut self) {

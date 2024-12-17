@@ -435,7 +435,6 @@ impl<D: Database> Client<D> {
 							}
 							break;
 						}
-
 					}
 					Err(err) => {
 						warn!(error = %err, "Failed to create RPC Subscription stream.");

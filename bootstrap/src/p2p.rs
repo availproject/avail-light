@@ -24,7 +24,6 @@ pub use client::Client;
 use event_loop::EventLoop;
 use libp2p_allow_block_list as allow_block_list;
 use tracing::info;
-
 #[derive(NetworkBehaviour)]
 pub struct Behaviour {
 	kademlia: kad::Behaviour<MemoryStore>,
@@ -72,10 +71,10 @@ pub async fn init(
 	// create new Kademlia Memory Store
 	let kad_store = MemoryStore::new(id_keys.public().to_peer_id());
 	// create Kademlia Config
-	let mut kad_cfg = kad::Config::new(cfg.kademlia.protocol_name.clone());
+	let mut kad_cfg = kad::Config::default();
 	kad_cfg
 		.set_query_timeout(cfg.kademlia.query_timeout)
-		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_interval));
+		.set_protocol_names(vec![cfg.kademlia.protocol_name.clone()]);
 	// build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
@@ -124,7 +123,7 @@ pub async fn init(
 
 	Ok((
 		Client::new(command_sender),
-		EventLoop::new(swarm, command_receiver),
+		EventLoop::new(swarm, command_receiver, cfg.kademlia.bootstrap_interval),
 	))
 }
 
