@@ -80,9 +80,6 @@ impl RelayState {
 
 // BootstrapState keeps track of all things bootstrap related
 struct BootstrapState {
-	// referring to the initial bootstrap process,
-	// one that runs when the Light Client node starts up
-	is_startup_done: bool,
 	// timer that is responsible for firing periodic bootstraps
 	timer: Interval,
 }
@@ -204,7 +201,6 @@ impl EventLoop {
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 			},
 			bootstrap: BootstrapState {
-				is_startup_done: false,
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
@@ -404,7 +400,6 @@ impl EventLoop {
 								debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
 									info!("Bootstrap completed.");
-									self.bootstrap.is_startup_done = true;
 								}
 							},
 							Err(err) => {
@@ -665,11 +660,7 @@ impl EventLoop {
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {
-		// commence with periodic bootstraps,
-		// only when the initial startup bootstrap is done
-		if self.bootstrap.is_startup_done {
-			_ = self.swarm.behaviour_mut().kademlia.bootstrap();
-		}
+		_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 	}
 
 	fn select_and_dial_relay(&mut self) {

@@ -423,19 +423,17 @@ impl<D: Database> Client<D> {
 			loop {
 				match self.with_retries(Self::create_rpc_subscriptions).await {
 					Ok(mut stream) => {
-						{
-							loop {
-								match stream.next().await {
-									Some(Ok(Ok(item))) => {
-										yield Ok(item);
-										continue;
-									},
-									Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
-									Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
-									None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
-								}
-								break;
+						loop {
+							match stream.next().await {
+								Some(Ok(Ok(item))) => {
+									yield Ok(item);
+									continue;
+								},
+								Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+								Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
+								None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
 							}
+							break;
 						}
 					}
 					Err(err) => {

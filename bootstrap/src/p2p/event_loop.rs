@@ -32,9 +32,6 @@ enum SwarmChannel {
 
 // BootstrapState keeps track of all things bootstrap related
 struct BootstrapState {
-	// referring to this initial bootstrap process,
-	// one that runs when this node starts up
-	is_startup_done: bool,
 	// timer that is responsible for firing periodic bootstraps
 	timer: Interval,
 }
@@ -59,7 +56,6 @@ impl EventLoop {
 			pending_kad_routing: Default::default(),
 			pending_swarm_events: Default::default(),
 			bootstrap: BootstrapState {
-				is_startup_done: false,
 				timer: interval_at(Instant::now() + bootstrap_interval, bootstrap_interval),
 			},
 		}
@@ -106,7 +102,6 @@ impl EventLoop {
 						debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 						if num_remaining == 0 {
 							debug!("Bootstrap complete!");
-							self.bootstrap.is_startup_done = true;
 						}
 					},
 					Err(err) => {
@@ -306,10 +301,7 @@ impl EventLoop {
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {
-		// periodic bootstraps should only start after the initial one is done
-		if self.bootstrap.is_startup_done {
-			debug!("Starting periodic Bootstrap.");
-			_ = self.swarm.behaviour_mut().kademlia.bootstrap();
-		}
+		debug!("Starting periodic Bootstrap.");
+		_ = self.swarm.behaviour_mut().kademlia.bootstrap();
 	}
 }
