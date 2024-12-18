@@ -1,7 +1,8 @@
 # Changelog
 
-## 1.1.0
+## [1.1.0](https://github.com/availproject/avail-light/tree/avail-light-core-v1.1.0) - 2024-12-20
 
+- Temporary remove WebRTC support to reduce memory usage
 - Update opentelemetry sdk version to 0.27.1
 - Enable WASM compilation of the network, light_client and related mods
 
