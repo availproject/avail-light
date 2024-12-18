@@ -94,20 +94,14 @@ async fn run(
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let addrs = vec![
-		cfg.libp2p.tcp_multiaddress(),
-		cfg.libp2p.webrtc_multiaddress(),
-	];
+	let addrs = vec![cfg.libp2p.tcp_multiaddress()];
 
 	// Start the TCP and WebRTC listeners
 	p2p_client
 		.start_listening(addrs)
 		.await
 		.wrap_err("Error starting listener.")?;
-	info!(
-		"TCP listener started on port {}. WebRTC listening on port {}.",
-		cfg.libp2p.port, cfg.libp2p.webrtc_port
-	);
+	info!("TCP listener started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();

@@ -15,11 +15,7 @@ use libp2p::{
 #[cfg(not(target_arch = "wasm32"))]
 use libp2p::{mdns, tcp, upnp};
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p_webrtc as webrtc;
-#[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
-#[cfg(not(target_arch = "wasm32"))]
-use rand::thread_rng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
@@ -340,11 +336,6 @@ async fn build_swarm(
 				noise::Config::new,
 				yamux::Config::default,
 			)?
-			.with_other_transport(|keypair| {
-				use webrtc::tokio::{Certificate, Transport};
-				let certificate = Certificate::generate(&mut thread_rng());
-				Ok(Transport::new(keypair.clone(), certificate?))
-			})?
 			.with_dns()?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?
 			.with_behaviour(behaviour)?

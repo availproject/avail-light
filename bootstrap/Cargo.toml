@@ -14,12 +14,11 @@ confy = { workspace = true }
 hex = { workspace = true }
 libp2p = { workspace = true }
 libp2p-allow-block-list = { workspace = true }
-libp2p-webrtc = { workspace = true, features = ["tokio"] }
 multihash = { workspace = true }
 rand = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 void = { workspace = true }

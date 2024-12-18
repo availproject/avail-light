@@ -8,9 +8,7 @@ use libp2p::{
 	swarm::NetworkBehaviour,
 	tcp, yamux, PeerId, SwarmBuilder,
 };
-use libp2p_webrtc as webrtc;
 use multihash::Hasher;
-use rand::thread_rng;
 use tokio::sync::mpsc;
 
 mod client;
@@ -105,11 +103,6 @@ pub async fn init(
 				noise::Config::new,
 				yamux::Config::default,
 			)?
-			.with_other_transport(|keypair| {
-				use webrtc::tokio::{Certificate, Transport};
-				let certificate = Certificate::generate(&mut thread_rng());
-				Ok(Transport::new(keypair.clone(), certificate?))
-			})?
 			.with_dns()?
 			.with_behaviour(behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
