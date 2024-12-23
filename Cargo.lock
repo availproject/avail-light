@@ -1221,6 +1221,7 @@ dependencies = [
  "avail-light-core",
  "avail-rust",
  "better-panic",
+ "chrono",
  "clap",
  "color-eyre",
  "confy 0.4.0",
@@ -1230,6 +1231,7 @@ dependencies = [
  "libp2p",
  "proptest",
  "serde",
+ "serde_json",
  "strip-ansi-escapes",
  "test-case",
  "tikv-jemallocator",
@@ -2244,7 +2246,9 @@ checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "wasm-bindgen",
  "windows-targets 0.52.6",
 ]
 

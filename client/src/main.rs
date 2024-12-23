@@ -54,6 +54,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 mod cli;
 mod config;
+mod tracking;
 
 /// Light Client for Avail Blockchain
 async fn run(
