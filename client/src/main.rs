@@ -106,7 +106,7 @@ async fn run(
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
-		info!("Bootstraping the DHT with bootstrap nodes...");
+		info!("Bootstrapping the DHT with bootstrap nodes...");
 		if let Err(error) = p2p_clone
 			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
 			.await
