@@ -38,6 +38,7 @@ use tokio::{
 	sync::{
 		broadcast,
 		mpsc::{self, UnboundedReceiver},
+		Mutex,
 	},
 };
 use tracing::{error, info, span, trace, warn, Level};
@@ -337,6 +338,7 @@ async fn run(
 			.await;
 	}));
 
+	tracking::run(Duration::from_secs(2), &identity_cfg.avail_key_pair, state);
 	Ok(())
 }
 

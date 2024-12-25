@@ -1,12 +1,14 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use avail_rust::{self, Keypair};
 use chrono::Utc;
 use color_eyre::Result;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
-use tokio::time;
+use tokio::{sync::Mutex, time};
 use tracing::warn;
+
+use crate::ClientState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PingMessage {
@@ -25,15 +27,13 @@ pub struct SignedPingMessage {
 
 pub fn create_and_sign_ping_message(
 	keypair: &Keypair,
-	multiaddr: &Multiaddr,
-	peer_id: PeerId,
-	block_number: u64,
+	state: Arc<Mutex<ClientState>>,
 ) -> Result<(SignedPingMessage)> {
 	let ping_message = PingMessage {
 		timestamp: Utc::now().timestamp(),
-		multiaddr: multiaddr.to_string(),
-		peer_id: peer_id.to_string(),
-		block_number: block_number.to_string(),
+		multiaddr: "test-ma".to_string(),
+		peer_id: "peer_id".to_string(),
+		block_number: "1234".to_string(),
 	};
 
 	let message_bytes = serde_json::to_vec(&ping_message)?;
@@ -48,17 +48,11 @@ pub fn create_and_sign_ping_message(
 	Ok(signed_message)
 }
 
-async fn run(
-	interval: Duration,
-	keypair: &Keypair,
-	multiaddr: &Multiaddr,
-	peer_id: PeerId,
-	block_number: u64,
-) {
+pub async fn run(interval: Duration, keypair: &Keypair, state: Arc<Mutex<ClientState>>) {
 	let mut interval = time::interval(interval);
 	loop {
 		interval.tick().await;
-		match create_and_sign_ping_message(keypair, multiaddr, peer_id, block_number) {
+		match create_and_sign_ping_message(keypair, state.clone()) {
 			Ok(_) => {},
 			Err(e) => {
 				warn!("Error sending signed ping message: {}", e);
