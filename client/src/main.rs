@@ -337,11 +337,10 @@ async fn run(
 			)
 			.await;
 	}));
-
 	spawn_in_span(shutdown.with_cancel(tracking::run(
 		Duration::from_secs(2),
 		identity_cfg.avail_key_pair,
-		state,
+		Arc::clone(&state.lock().await.tracking_state),
 	)));
 	Ok(())
 }
@@ -449,10 +448,15 @@ impl BlockStat {
 	}
 }
 
+struct TrackingState {
+	multiaddress: Multiaddr,
+	peer_id: PeerId,
+	latest_block: u32,
+}
+
 struct ClientState {
 	metrics: Metrics,
 	active_blocks: HashMap<u32, BlockStat>,
-	latest_block: u32,
 }
 
 impl ClientState {
@@ -626,7 +630,7 @@ impl ClientState {
 						},
 						LcEvent::RecordBlockHeight(block_num) => {
 							self.metrics.record(MetricValue::BlockHeight(block_num));
-							self.latest_block = block_num;
+							self.tracking_state.lock().await.latest_block = block_num;
 						},
 						LcEvent::RecordDHTStats {
 							fetched, fetched_percentage, fetch_duration
