@@ -61,7 +61,7 @@ pub async fn run(
 			Ok(signed_ping_message) => {
 				let client = reqwest::Client::new();
 				match client
-					.post(tracker_address.clone())
+					.post(format!("{}/ping", tracker_address.clone()))
 					.json(&signed_ping_message)
 					.timeout(tracking_interval)
 					.send()
