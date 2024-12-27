@@ -414,7 +414,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	if let Some(tracking_service_ping_interval) = opts.tracking_service_ping_interval {
-		cfg.tracking_service_ping_interval = tracking_service_ping_interval.clone()
+		cfg.tracking_service_ping_interval = tracking_service_ping_interval
 	}
 
 	Ok(cfg)

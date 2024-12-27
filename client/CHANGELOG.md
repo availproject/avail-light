@@ -15,6 +15,7 @@
 
 ## [1.12.4](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.4) - 2024-12-20
 
+- Add support for the Light Client Tracking Service
 - Update `avail-light-core` to 1.1.0
 
 ## [1.12.3](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.3) - 2024-11-29
