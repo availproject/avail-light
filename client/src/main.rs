@@ -337,11 +337,15 @@ async fn run(
 			)
 			.await;
 	}));
-	spawn_in_span(shutdown.with_cancel(tracking::run(
-		Duration::from_secs(2),
-		identity_cfg.avail_key_pair,
-		Arc::clone(&state.lock().await.tracking_state),
-	)));
+
+	if cfg.tracking_service_enable {
+		spawn_in_span(shutdown.with_cancel(tracking::run(
+			Duration::from_secs(cfg.tracking_service_ping_interval),
+			identity_cfg.avail_key_pair,
+			Arc::clone(&state.lock().await.tracking_state),
+			cfg.tracking_service_address,
+		)));
+	}
 	Ok(())
 }
 
@@ -399,6 +403,18 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if cfg.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
+	}
+
+	if let Some(tracking_service_enable) = opts.tracking_service_enable {
+		cfg.tracking_service_enable = tracking_service_enable
+	}
+
+	if let Some(tracking_service_address) = &opts.tracking_service_address {
+		cfg.tracking_service_address = tracking_service_address.clone()
+	}
+
+	if let Some(tracking_service_ping_interval) = opts.tracking_service_ping_interval {
+		cfg.tracking_service_ping_interval = tracking_service_ping_interval.clone()
 	}
 
 	Ok(cfg)

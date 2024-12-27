@@ -5,7 +5,7 @@ use chrono::Utc;
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::Mutex, time};
-use tracing::{error, info, warn};
+use tracing::{trace, warn};
 
 use crate::TrackingState;
 
@@ -48,26 +48,31 @@ pub async fn create_and_sign_ping_message(
 	Ok(signed_message)
 }
 
-pub async fn run(interval: Duration, keypair: Keypair, tracking_state: Arc<Mutex<TrackingState>>) {
-	let mut interval = time::interval(interval);
+pub async fn run(
+	tracking_interval: Duration,
+	keypair: Keypair,
+	tracking_state: Arc<Mutex<TrackingState>>,
+	tracker_address: String,
+) {
+	let mut interval = time::interval(tracking_interval);
 	loop {
 		interval.tick().await;
 		match create_and_sign_ping_message(keypair.clone(), tracking_state.clone()).await {
 			Ok(signed_ping_message) => {
 				let client = reqwest::Client::new();
 				match client
-					.post("http://127.0.0.1:8989/ping")
+					.post(tracker_address.clone())
 					.json(&signed_ping_message)
-					.timeout(Duration::from_secs(10))
+					.timeout(tracking_interval)
 					.send()
 					.await
 				{
-					Ok(res) => info!("Succesful send. Response: {:?}", res),
-					Err(e) => error!("Unsuccesful send. Error: {}", e),
+					Ok(res) => trace!("Signed ping message sent. Response: {:?}", res),
+					Err(e) => warn!("Error sending signed ping message: {}", e),
 				}
 			},
 			Err(e) => {
-				warn!("Error sending signed ping message: {}", e);
+				warn!("Error creating signed ping message: {}", e);
 			},
 		}
 	}
