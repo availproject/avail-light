@@ -26,37 +26,67 @@ pub const APP_STATE_CF: &str = "app_state_cf";
 /// Column family for Kademlia store
 pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
 
-/// Type of the database key which we can get from the custom key.
+/// Defines the interface for database record keys.
+/// Each key type must implement this trait to be used with the Database trait.
+///
+/// Type parameters:
+/// - Type: The type of value associated with this key
 pub trait RecordKey {
 	type Type: Serialize + for<'a> Deserialize<'a> + Encode + Decode;
 
+	/// Returns the column family (space) for this key type
 	fn space(&self) -> Option<&'static str>;
 
-	/// Returns key space (if any) and key
+	/// Returns the full string key representation
 	fn key(&self) -> String;
 }
 
+/// Core database interface for storing and retrieving typed key-value pairs
 pub trait Database {
-	/// Puts value for given key into database.
-	/// Key is serialized into database key, value is serialized into type supported by database.
+	/// Stores a value in the database for the given key
+	/// 
+	/// # Arguments
+	/// * `key` - The key to store the value under
+	/// * `value` - The value to store
 	fn put<T: RecordKey>(&self, key: T, value: T::Type);
 
-	/// Gets value for given key.
-	/// Key is serialized into database key, value is deserialized into the given type.
+	/// Retrieves a value from the database for the given key
+	///
+	/// # Arguments
+	/// * `key` - The key to look up
+	///
+	/// # Returns
+	/// * `Option<T::Type>` - The stored value if found, None otherwise
 	fn get<T: RecordKey>(&self, key: T) -> Option<T::Type>;
 
-	/// Deletes value from the database for the given key.
+	/// Removes a value from the database for the given key
+	///
+	/// # Arguments
+	/// * `key` - The key to remove
 	fn delete<T: RecordKey>(&self, key: T);
 }
 
+/// Represents a finality sync checkpoint with validator set information
 #[derive(Serialize, Deserialize, Debug, Decode, Encode)]
 pub struct FinalitySyncCheckpoint {
+	/// Block number of the checkpoint
 	pub number: u32,
+	/// Validator set identifier
 	pub set_id: u64,
+	/// List of validator public keys
 	pub validator_set: Vec<ed25519::Public>,
 }
 
+/// Key for storing application-specific data
+/// Contains app_id and block number
 pub struct AppDataKey(pub u32, pub u32);
+
+/// Key for storing block headers indexed by block number
+pub struct BlockHeaderKey(pub u32);
+
+/// Key for tracking verified cell counts
+pub struct VerifiedCellCountKey(pub u32);
+
 impl RecordKey for AppDataKey {
 	type Type = Vec<Vec<u8>>;
 
@@ -70,8 +100,6 @@ impl RecordKey for AppDataKey {
 	}
 }
 
-pub struct BlockHeaderKey(pub u32);
-
 impl RecordKey for BlockHeaderKey {
 	type Type = AvailHeader;
 
@@ -84,8 +112,6 @@ impl RecordKey for BlockHeaderKey {
 		format!("{BLOCK_HEADER_KEY_PREFIX}:{block_num}")
 	}
 }
-
-pub struct VerifiedCellCountKey(pub u32);
 
 impl RecordKey for VerifiedCellCountKey {
 	type Type = u32;
