@@ -133,8 +133,8 @@ async fn run(
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
-	let nonce = client.api.tx().account_nonce(&account_id).await?;
-	db.put(SignerNonceKey, nonce.try_into()?);
+	// let nonce = client.tx.account_nonce(&account_id).await?; TODO
+	db.put(SignerNonceKey, 0);
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_event_sender.subscribe();
