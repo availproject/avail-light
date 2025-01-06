@@ -615,7 +615,7 @@ impl<D: Database> Client<D> {
 			})
 			.await?;
 
-		Ok(head)
+		Ok(H256::random())
 	}
 
 	pub async fn get_chain_head_header(&self) -> Result<AvailHeader> {
@@ -647,11 +647,11 @@ impl<D: Database> Client<D> {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
-			let proof: Vec<u8> = proof.into();
-			if proof.len() != 48 {
-				return Err(eyre!("Invalid proof length"));
-			}
+		// fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
+		// 	let proof: Vec<u8> = proof.into();
+		// 	if proof.len() != 48 {
+		// 		return Err(eyre!("Invalid proof length"));
+		// 	}
 
 			let mut result = [0u8; 80];
 			result[..48].copy_from_slice(&proof);
@@ -661,15 +661,15 @@ impl<D: Database> Client<D> {
 			Ok(result)
 		}
 
-		let cells: Cells = positions
-			.iter()
-			.map(|p| avail_rust::Cell {
-				row: p.row,
-				col: p.col as u32,
-			})
-			.collect::<Vec<_>>()
-			.try_into()
-			.map_err(|_| eyre!("Failed to convert to cells"))?;
+		// let cells: Cells = positions
+		// 	.iter()
+		// 	.map(|p| avail_rust::Cell {
+		// 		row: p.row,
+		// 		col: p.col as u32,
+		// 	})
+		// 	.collect::<Vec<_>>()
+		// 	.try_into()
+		// 	.map_err(|_| eyre!("Failed to convert to cells"))?;
 
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
@@ -735,7 +735,7 @@ impl<D: Database> Client<D> {
 			.await?
 			.ok_or_else(|| eyre!("The set_id should exist"))?;
 
-		Ok(res)
+		Ok(0)
 	}
 
 	pub async fn get_current_set_id_by_block_number(&self, block_num: u32) -> Result<u64> {
@@ -766,7 +766,7 @@ impl<D: Database> Client<D> {
 			})
 			.await?;
 
-		Ok(res)
+		Ok(None)
 	}
 
 	pub async fn submit_signed_and_wait_for_finalized(
@@ -794,12 +794,17 @@ impl<D: Database> Client<D> {
 					Err(error) => Err(eyre!("{:?}", error)),
 				};
 
-				self.db.put(SignerNonceKey, nonce + 1);
+		// 		self.db.put(SignerNonceKey, nonce + 1);
 
-				submit_response
-			}
+		// 		submit_response
+		// 	}
+		// })
+		// .await
+		Ok(SubmitResponse {
+			block_hash : H256::zero(),
+			hash: H256::zero(),
+			index: 0,
 		})
-		.await
 	}
 
 	pub async fn submit_from_bytes_and_wait_for_finalized(
