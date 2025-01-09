@@ -451,6 +451,7 @@ struct ClientState {
 	rpc_host: String,
 	metric_attributes: Vec<(String, String)>,
 	active_blocks: HashMap<u32, BlockStat>,
+	latest_block_height: u32,
 }
 
 impl ClientState {
@@ -468,11 +469,16 @@ impl ClientState {
 			rpc_host,
 			metric_attributes,
 			active_blocks: Default::default(),
+			latest_block_height: Default::default(),
 		}
 	}
 
 	fn update_multiaddress(&mut self, value: Multiaddr) {
 		self.multiaddress = value;
+	}
+
+	fn update_block_height(&mut self, block_num: u32) {
+		self.latest_block_height = block_num;
 	}
 
 	fn update_operating_mode(&mut self, value: Mode) {
@@ -488,6 +494,7 @@ impl ClientState {
 			("operating_mode".to_string(), self.kad_mode.to_string()),
 			("multiaddress".to_string(), self.multiaddress.to_string()),
 			("rpc_host".to_string(), self.rpc_host.to_string()),
+			("latest_block_height".to_string(), self.latest_block_height.to_string()),
 		];
 
 		attrs.extend(self.metric_attributes.clone());
