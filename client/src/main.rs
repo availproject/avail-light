@@ -494,7 +494,10 @@ impl ClientState {
 			("operating_mode".to_string(), self.kad_mode.to_string()),
 			("multiaddress".to_string(), self.multiaddress.to_string()),
 			("rpc_host".to_string(), self.rpc_host.to_string()),
-			("latest_block_height".to_string(), self.latest_block_height.to_string()),
+			(
+				"latest_block_height".to_string(),
+				self.latest_block_height.to_string(),
+			),
 		];
 
 		attrs.extend(self.metric_attributes.clone());
