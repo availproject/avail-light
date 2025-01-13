@@ -10,7 +10,6 @@ use crate::{
 };
 
 pub enum OutputEvent {
-	FlushMetrics(u32),
 	RecordStats {
 		connected_peers: usize,
 		block_confidence_treshold: f64,
@@ -32,11 +31,6 @@ pub async fn process_block(
 			Ok(pruned) => info!(block_number, pruned, "Pruning finished"),
 			Err(error) => error!(block_number, "Pruning failed: {error:#}"),
 		}
-	}
-
-	if block_number % maintenance_config.telemetry_flush_interval == 0 {
-		info!(block_number, "Flushing metrics...");
-		event_sender.send(OutputEvent::FlushMetrics(block_number))?;
 	}
 
 	p2p_client

@@ -416,7 +416,6 @@ pub struct MaintenanceConfig {
 	pub replication_factor: u16,
 	pub query_timeout: Duration,
 	pub pruning_interval: u32,
-	pub telemetry_flush_interval: u32,
 	pub automatic_server_mode: bool,
 	pub total_memory_gb_threshold: f64,
 	pub num_cpus_threshold: usize,
@@ -638,6 +637,10 @@ pub struct ProjectName(pub String);
 impl ProjectName {
 	pub fn new<S: Into<String>>(name: S) -> Self {
 		ProjectName(name.into().to_case(Case::Snake))
+	}
+
+	pub fn gauge_name(&self, name: &'static str) -> String {
+		format!("{self}.{name}")
 	}
 }
 

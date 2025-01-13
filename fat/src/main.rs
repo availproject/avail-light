@@ -158,7 +158,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
-		config.otel.ot_flush_block_interval,
 		block_rx,
 		shutdown.clone(),
 		maintenance_sender,
@@ -196,19 +195,20 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	)));
 
 	let metric_attributes = vec![
-		("role".to_string(), "fat".to_string()),
-		("origin".to_string(), Origin::FatClient.to_string()),
-		("version".to_string(), version.to_string()),
-		("peerID".to_string(), p2p_peer_id.to_string()),
-		("partition_size".to_string(), partition_size),
-		("network".to_string(), Network::name(&config.genesis_hash)),
-		("operating_mode".to_string(), "client".to_string()),
+		("role", "fat".to_string()),
+		("origin", Origin::FatClient.to_string()),
+		("version", version.to_string()),
+		("peerID", p2p_peer_id.to_string()),
+		("partition_size", partition_size),
+		("network", Network::name(&config.genesis_hash)),
+		("operating_mode", "client".to_string()),
 	];
 
 	let metrics = telemetry::otlp::initialize(
 		ProjectName::new("avail".to_string()),
 		&Origin::FatClient,
 		config.otel.clone(),
+		metric_attributes,
 	)
 	.wrap_err("Unable to initialize OpenTelemetry service")?;
 
@@ -217,7 +217,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		.map(|node| node.host)
 		.ok_or_else(|| eyre!("No connected host found"))?;
 
-	let mut state = FatState::new(metrics, String::default(), rpc_host, metric_attributes);
+	let mut state = FatState::new(metrics, String::default(), rpc_host);
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
@@ -280,44 +280,26 @@ impl BlockStat {
 
 struct FatState {
 	metrics: Metrics,
-	multiaddress: String,
-	rpc_host: String,
-	metric_attributes: Vec<(String, String)>,
 	active_blocks: HashMap<u32, BlockStat>,
 }
 
 impl FatState {
-	fn new(
-		metrics: Metrics,
-		multiaddress: String,
-		rpc_host: String,
-		metric_attributes: Vec<(String, String)>,
-	) -> Self {
-		FatState {
+	fn new(metrics: Metrics, multiaddress: String, rpc_host: String) -> Self {
+		let mut state = FatState {
 			metrics,
-			multiaddress,
-			rpc_host,
-			metric_attributes,
 			active_blocks: Default::default(),
-		}
+		};
+		state.update_rpc_host(rpc_host);
+		state.update_multiaddress(multiaddress);
+		state
 	}
 
 	fn update_multiaddress(&mut self, value: String) {
-		self.multiaddress = value;
+		self.metrics.set_attribute("multiaddress", value);
 	}
 
 	fn update_rpc_host(&mut self, value: String) {
-		self.rpc_host = value;
-	}
-
-	fn attributes(&self) -> Vec<(String, String)> {
-		let mut attrs = vec![
-			("multiaddress".to_string(), self.multiaddress.clone()),
-			("rpc_host".to_string(), self.rpc_host.to_string()),
-		];
-
-		attrs.extend(self.metric_attributes.clone());
-		attrs
+		self.metrics.set_attribute("rpc_host", value);
 	}
 
 	fn get_block_stat(&mut self, block_num: u32) -> Result<&mut BlockStat> {
@@ -402,38 +384,38 @@ impl FatState {
 		mut fat_receiver: UnboundedReceiver<FatEvent>,
 		mut rpc_receiver: broadcast::Receiver<RpcEvent>,
 	) {
-		self.metrics.count(MetricCounter::Starts, self.attributes());
+		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
 				Some(p2p_event) = p2p_receiver.recv() => {
 					match p2p_event {
 						P2pEvent::Count => {
-							self.metrics.count(MetricCounter::EventLoopEvent, self.attributes());
+							self.metrics.count(MetricCounter::EventLoopEvent)
 						},
 						P2pEvent::IncomingGetRecord => {
-							self.metrics.count(MetricCounter::IncomingGetRecord, self.attributes());
+							self.metrics.count(MetricCounter::IncomingGetRecord)
 						},
 						P2pEvent::IncomingPutRecord => {
-							self.metrics.count(MetricCounter::IncomingPutRecord, self.attributes());
+							self.metrics.count(MetricCounter::IncomingPutRecord)
 						},
 						P2pEvent::Ping(rtt) => {
 							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
 								;
 						},
 						P2pEvent::IncomingConnection => {
-							self.metrics.count(MetricCounter::IncomingConnections, self.attributes());
+							self.metrics.count(MetricCounter::IncomingConnections)
 						},
 						P2pEvent::IncomingConnectionError => {
-							self.metrics.count(MetricCounter::IncomingConnectionErrors, self.attributes());
+							self.metrics.count(MetricCounter::IncomingConnectionErrors)
 						},
 						P2pEvent::MultiaddressUpdate(address) => {
 							self.update_multiaddress(address.to_string());
 						},
 						P2pEvent::EstablishedConnection => {
-							self.metrics.count(MetricCounter::EstablishedConnections, self.attributes());
+							self.metrics.count(MetricCounter::EstablishedConnections)
 						},
 						P2pEvent::OutgoingConnectionError => {
-							self.metrics.count(MetricCounter::OutgoingConnectionErrors, self.attributes());
+							self.metrics.count(MetricCounter::OutgoingConnectionErrors)
 						},
 						P2pEvent::PutRecord { block_num, records } => {
 							self.handle_new_put_record(block_num, records);
@@ -460,25 +442,15 @@ impl FatState {
 				}
 				Some(maintenance_event) = maintenance_receiver.recv() => {
 					match maintenance_event {
-						MaintenanceEvent::FlushMetrics(block_num) => {
-							if let Err(error) = self.metrics.flush(self.attributes()) {
-								error!(
-									block_num,
-									"Could not handle Flush Maintenance event properly: {error}"
-								);
-							} else {
-								info!(block_num, "Flushing metrics finished");
-							};
-						},
 						MaintenanceEvent::CountUps => {
-							self.metrics.count(MetricCounter::Up, self.attributes());
+							self.metrics.count(MetricCounter::Up);
 						},
 					}
 				}
 				Some(fat_event) = fat_receiver.recv() => {
 					match fat_event {
 						FatEvent::CountSessionBlocks => {
-							self.metrics.count(MetricCounter::SessionBlocks, self.attributes());
+							self.metrics.count(MetricCounter::SessionBlocks);
 						},
 						FatEvent::RecordBlockHeight(block_num) => {
 							self.metrics.record(MetricValue::BlockHeight(block_num));
@@ -511,12 +483,10 @@ mod maintenance {
 	use tracing::{error, info};
 
 	pub enum OutputEvent {
-		FlushMetrics(u32),
 		CountUps,
 	}
 
 	pub async fn run(
-		ot_flush_block_interval: u32,
 		mut block_receiver: broadcast::Receiver<BlockVerified>,
 		shutdown: Controller<String>,
 		event_sender: UnboundedSender<OutputEvent>,
@@ -525,19 +495,7 @@ mod maintenance {
 
 		loop {
 			match block_receiver.recv().await.map_err(Report::from) {
-				Ok(block) => {
-					let block_num = block.block_num;
-					if block_num % ot_flush_block_interval == 0 {
-						info!(block_num, "Flushing metrics...");
-						if let Err(error) = event_sender.send(OutputEvent::FlushMetrics(block_num))
-						{
-							let error_msg =
-								format!("Failed to send FlushMetrics event: {:#}", error);
-							error!("{error_msg}");
-							_ = shutdown.trigger_shutdown(error_msg);
-							break;
-						}
-					};
+				Ok(_) => {
 					if let Err(error) = event_sender.send(OutputEvent::CountUps) {
 						let error_msg = format!("Failed to send CountUps event: {:#}", error);
 						error!("{error_msg}");

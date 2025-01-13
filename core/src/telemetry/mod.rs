@@ -43,12 +43,19 @@ impl MetricName for MetricCounter {
 }
 
 impl MetricCounter {
-	fn is_buffered(&self) -> bool {
-		!matches!(self, MetricCounter::Starts)
-	}
-
-	fn as_last(&self) -> bool {
-		matches!(self, MetricCounter::Up)
+	pub fn default_values() -> Vec<MetricCounter> {
+		vec![
+			MetricCounter::Starts,
+			MetricCounter::Up,
+			MetricCounter::SessionBlocks,
+			MetricCounter::OutgoingConnectionErrors,
+			MetricCounter::IncomingConnectionErrors,
+			MetricCounter::IncomingConnections,
+			MetricCounter::EstablishedConnections,
+			MetricCounter::IncomingPutRecord,
+			MetricCounter::IncomingGetRecord,
+			MetricCounter::EventLoopEvent,
+		]
 	}
 
 	fn is_allowed(&self, origin: &Origin) -> bool {
@@ -83,6 +90,29 @@ pub enum MetricValue {
 	RPCFetched(f64),
 	RPCFetchDuration(f64),
 	RPCCallDuration(f64),
+}
+
+impl MetricValue {
+	pub fn default_values() -> Vec<MetricValue> {
+		vec![
+			MetricValue::BlockHeight(0),
+			MetricValue::BlockConfidence(0.0),
+			MetricValue::BlockConfidenceThreshold(0.0),
+			MetricValue::BlockProcessingDelay(0.0),
+			MetricValue::DHTReplicationFactor(0),
+			MetricValue::DHTFetched(0.0),
+			MetricValue::DHTFetchedPercentage(0.0),
+			MetricValue::DHTFetchDuration(0.0),
+			MetricValue::DHTPutDuration(0.0),
+			MetricValue::DHTPutSuccess(0.0),
+			MetricValue::DHTConnectedPeers(0),
+			MetricValue::DHTQueryTimeout(0),
+			MetricValue::DHTPingLatency(0.0),
+			MetricValue::RPCFetched(0.0),
+			MetricValue::RPCFetchDuration(0.0),
+			MetricValue::RPCCallDuration(0.0),
+		]
+	}
 }
 
 impl MetricName for MetricValue {

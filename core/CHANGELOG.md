@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- Fix issue with multiple telemetry gauge callbacks
+
 ## [1.1.0](https://github.com/availproject/avail-light/tree/avail-light-core-v1.1.0) - 2024-12-20
 
 - Temporary remove WebRTC support to reduce memory usage
