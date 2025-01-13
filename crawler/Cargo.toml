@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-crawler"
-version = "0.1.1"
+version = "0.2.0"
 authors.workspace = true
 build = "../build.rs"
 edition = "2021"

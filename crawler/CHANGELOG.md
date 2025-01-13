@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- Update `avail-light-core` to 1.2.0
+- Remove `ot_flush_block_interval` from configuration
+
 ## 0.1.1
 
 - Update `avail-light-core` to 1.0.4

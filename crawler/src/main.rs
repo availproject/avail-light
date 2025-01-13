@@ -8,7 +8,7 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{
 		otlp::{self, Metrics},
-		MetricCounter, MetricValue,
+		MetricCounter, MetricValue, ATTRIBUTE_MULTIADDRESS, ATTRIBUTE_RPC_HOST,
 	},
 	types::{BlockVerified, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -28,7 +28,7 @@ use tokio::{
 		mpsc::{self, UnboundedReceiver},
 	},
 };
-use tracing::{error, info, span, warn, Level};
+use tracing::{info, span, warn, Level};
 
 mod config;
 
@@ -156,7 +156,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
-		config.otel.ot_flush_block_interval,
 		block_rx,
 		shutdown.clone(),
 		maintenance_sender,
@@ -173,30 +172,33 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		crawler_sender,
 	)));
 
+	let rpc_host = db
+		.get(RpcNodeKey)
+		.map(|node| node.host)
+		.ok_or_else(|| eyre!("No connected host found"))?;
+
 	let metric_attributes = vec![
-		("role".to_string(), "crawler".to_string()),
-		("origin".to_string(), config.origin.to_string()),
-		("version".to_string(), version.to_string()),
-		("peerID".to_string(), p2p_peer_id.to_string()),
-		("partition_size".to_string(), partition_size),
-		("network".to_string(), Network::name(&config.genesis_hash)),
-		("client_alias".to_string(), config.client_alias),
-		("operating_mode".to_string(), "client".to_string()),
+		("role", "crawler".to_string()),
+		("origin", config.origin.to_string()),
+		("version", version.to_string()),
+		("peerID", p2p_peer_id.to_string()),
+		("partition_size", partition_size),
+		("network", Network::name(&config.genesis_hash)),
+		("client_alias", config.client_alias),
+		("operating_mode", "client".to_string()),
+		(ATTRIBUTE_MULTIADDRESS, String::default()),
+		(ATTRIBUTE_RPC_HOST, rpc_host.clone()),
 	];
 
 	let metrics = otlp::initialize(
 		ProjectName::new("avail".to_string()),
 		&config.origin,
 		config.otel.clone(),
+		metric_attributes,
 	)
 	.wrap_err("Unable to initialize OpenTelemetry service")?;
 
-	let rpc_host = db
-		.get(RpcNodeKey)
-		.map(|node| node.host)
-		.ok_or_else(|| eyre!("No connected host found"))?;
-
-	let mut state = CrawlerState::new(metrics, String::default(), rpc_host, metric_attributes);
+	let mut state = CrawlerState::new(metrics);
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
@@ -210,38 +212,11 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 struct CrawlerState {
 	metrics: Metrics,
-	multiaddress: String,
-	rpc_host: String,
-	metric_attributes: Vec<(String, String)>,
 }
 
 impl CrawlerState {
-	fn new(
-		metrics: Metrics,
-		multiaddress: String,
-		rpc_host: String,
-		metric_attributes: Vec<(String, String)>,
-	) -> Self {
-		CrawlerState {
-			metrics,
-			multiaddress,
-			rpc_host,
-			metric_attributes,
-		}
-	}
-
-	fn update_multiaddress(&mut self, value: String) {
-		self.multiaddress = value;
-	}
-
-	fn attributes(&self) -> Vec<(String, String)> {
-		let mut attrs = vec![
-			("multiaddress".to_string(), self.multiaddress.clone()),
-			("rpc_host".to_string(), self.rpc_host.to_string()),
-		];
-
-		attrs.extend(self.metric_attributes.clone());
-		attrs
+	fn new(metrics: Metrics) -> Self {
+		CrawlerState { metrics }
 	}
 
 	async fn handle_events(
@@ -250,32 +225,31 @@ impl CrawlerState {
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut crawler_receiver: UnboundedReceiver<CrawlerEvent>,
 	) {
-		self.metrics.count(MetricCounter::Starts, self.attributes());
+		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
 				Some(p2p_event) = p2p_receiver.recv() => {
 					match p2p_event {
 						P2pEvent::Count => {
-							self.metrics.count(MetricCounter::EventLoopEvent, self.attributes());
+							self.metrics.count(MetricCounter::EventLoopEvent);
 						},
 						P2pEvent::Ping(rtt) => {
-							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64))
-								;
+							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
 						},
 						P2pEvent::IncomingConnection => {
-							self.metrics.count(MetricCounter::IncomingConnections, self.attributes());
+							self.metrics.count(MetricCounter::IncomingConnections)
 						},
 						P2pEvent::IncomingConnectionError => {
-							self.metrics.count(MetricCounter::IncomingConnectionErrors, self.attributes());
+							self.metrics.count(MetricCounter::IncomingConnectionErrors)
 						},
 						P2pEvent::MultiaddressUpdate(address) => {
-							self.update_multiaddress(address.to_string());
+							self.metrics.set_attribute(ATTRIBUTE_MULTIADDRESS, address.to_string())
 						},
 						P2pEvent::EstablishedConnection => {
-							self.metrics.count(MetricCounter::EstablishedConnections, self.attributes());
+							self.metrics.count(MetricCounter::EstablishedConnections)
 						},
 						P2pEvent::OutgoingConnectionError => {
-							self.metrics.count(MetricCounter::OutgoingConnectionErrors, self.attributes());
+							self.metrics.count(MetricCounter::OutgoingConnectionErrors);
 						},
 						// Crawler doesn't need to handle all P2P events and KAD mode changes
 						_ => {}
@@ -283,18 +257,8 @@ impl CrawlerState {
 				}
 				Some(maintenance_event) = maintenance_receiver.recv() => {
 					match maintenance_event {
-						MaintenanceEvent::FlushMetrics(block_num) => {
-							if let Err(error) = self.metrics.flush(self.attributes()) {
-								error!(
-									block_num,
-									"Could not handle Flush Maintenance event properly: {error}"
-								);
-							} else {
-								info!(block_num, "Flushing metrics finished");
-							};
-						},
 						MaintenanceEvent::CountUps => {
-							self.metrics.count(MetricCounter::Up, self.attributes());
+							self.metrics.count(MetricCounter::Up);
 						},
 					}
 				}
@@ -326,12 +290,10 @@ mod maintenance {
 	use tracing::{error, info};
 
 	pub enum OutputEvent {
-		FlushMetrics(u32),
 		CountUps,
 	}
 
 	pub async fn run(
-		ot_flush_block_interval: u32,
 		mut block_receiver: broadcast::Receiver<BlockVerified>,
 		shutdown: Controller<String>,
 		event_sender: UnboundedSender<OutputEvent>,
@@ -340,19 +302,7 @@ mod maintenance {
 
 		loop {
 			match block_receiver.recv().await.map_err(Report::from) {
-				Ok(block) => {
-					let block_num = block.block_num;
-					if block_num % ot_flush_block_interval == 0 {
-						info!(block_num, "Flushing metrics...");
-						if let Err(error) = event_sender.send(OutputEvent::FlushMetrics(block_num))
-						{
-							let error_msg =
-								format!("Failed to send FlushMetrics event: {:#}", error);
-							error!("{error_msg}");
-							_ = shutdown.trigger_shutdown(error_msg);
-							break;
-						}
-					};
+				Ok(_) => {
 					if let Err(error) = event_sender.send(OutputEvent::CountUps) {
 						let error_msg = format!("Failed to send CountUps event: {:#}", error);
 						error!("{error_msg}");
