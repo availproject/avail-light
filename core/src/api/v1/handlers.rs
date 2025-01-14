@@ -40,7 +40,7 @@ pub fn confidence(
 	cfg: SharedConfig,
 ) -> ClientResponse<ConfidenceResponse> {
 	fn is_synced(block_num: u32, db: impl Database) -> bool {
-		get_achived_confidence(&db).map_or(false, |range| block_num <= range.last)
+		get_achived_confidence(&db).is_some_and(|range| block_num <= range.last)
 	}
 
 	info!("Got request for confidence for block {block_num}");

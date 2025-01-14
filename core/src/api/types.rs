@@ -247,7 +247,7 @@ pub fn block_status(
 	if block_number < first_block {
 		let has_verified_sync_data = db
 			.get(VerifiedSyncDataKey)
-			.map_or(false, |range| range.contains(block_number));
+			.is_some_and(|range| range.contains(block_number));
 
 		if has_verified_sync_data {
 			return Some(BlockStatus::Finished);
@@ -255,7 +255,7 @@ pub fn block_status(
 
 		let has_achieved_sync_confidence = db
 			.get(AchievedSyncConfidenceKey)
-			.map_or(false, |range| range.contains(block_number));
+			.is_some_and(|range| range.contains(block_number));
 
 		if has_achieved_sync_confidence {
 			return Some(BlockStatus::VerifyingData);
@@ -263,7 +263,7 @@ pub fn block_status(
 
 		let has_verified_sync_header = db
 			.get(VerifiedSyncHeaderKey)
-			.map_or(false, |range| range.contains(block_number));
+			.is_some_and(|range| range.contains(block_number));
 
 		if has_verified_sync_header {
 			return Some(BlockStatus::VerifyingConfidence);
@@ -277,7 +277,7 @@ pub fn block_status(
 	} else {
 		let has_verified_data = db
 			.get(VerifiedDataKey)
-			.map_or(false, |range| range.contains(block_number));
+			.is_some_and(|range| range.contains(block_number));
 
 		if has_verified_data {
 			return Some(BlockStatus::Finished);
@@ -285,7 +285,7 @@ pub fn block_status(
 
 		let has_achieved_confidence = db
 			.get(AchievedConfidenceKey)
-			.map_or(false, |range| range.contains(block_number));
+			.is_some_and(|range| range.contains(block_number));
 
 		if has_achieved_confidence {
 			return Some(BlockStatus::VerifyingData);
@@ -293,7 +293,7 @@ pub fn block_status(
 
 		let has_verified_header = db
 			.get(VerifiedHeaderKey)
-			.map_or(false, |range| range.contains(block_number));
+			.is_some_and(|range| range.contains(block_number));
 
 		if has_verified_header {
 			return Some(BlockStatus::VerifyingConfidence);
