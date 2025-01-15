@@ -42,8 +42,10 @@ use tokio::{
 		broadcast,
 		mpsc::{self, UnboundedReceiver},
 	},
+	time::sleep,
 };
 use tracing::{error, info, span, trace, warn, Level};
+use reqwest::Client as HttpClient;
 
 #[cfg(feature = "network-analysis")]
 use avail_light_core::network::p2p::analyzer;
@@ -702,11 +704,85 @@ impl ClientState {
 	}
 }
 
+#[derive(serde::Serialize)]
+struct CheckNFTRequest {
+	address: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CheckNFTResponse {
+	status: String,
+	message: String,
+}
+
+async fn check_nft(endpoint: String, address: String) -> Result<bool> {
+	let client = HttpClient::new();
+	let request_body = CheckNFTRequest { address };
+	
+	let response = client
+		.post(&endpoint)
+		.json(&request_body)
+		.send()
+		.await
+		.wrap_err("Failed to connect to monitoring server")?;
+	
+	let nft_status = response
+		.json::<CheckNFTResponse>()
+		.await
+		.wrap_err("Failed to parse response")?;
+
+	Ok(nft_status.status.to_lowercase() == "success")
+}
+
+async fn run_check_nft(
+	endpoint: String,
+	address: String,
+	interval: Duration,
+	shutdown: Controller<String>
+) {
+	loop {
+		info!("Checking NFT exists for the user address: {}", address);
+		match check_nft(endpoint.clone(), address.clone()).await {
+			Ok(true) => {
+				info!("NFT check passed successfully for address: {}", address);
+				sleep(interval).await;
+			},
+			Ok(false) => {
+				error!("NFT check failed - No valid NFT found for address: {}", address);
+				shutdown.trigger_shutdown("Invalid NFT detected".to_string());
+				break;
+			},
+			Err(e) => {
+				error!("NFT verification error for address {}: {}", address, e);
+				// Continue checking after interval
+				shutdown.trigger_shutdown("Invalid NFT detected".to_string());
+				break;
+			}
+		}
+	}
+}
+
 #[tokio::main]
 pub async fn main() -> Result<()> {
 	let shutdown = Controller::new();
 	let opts = CliOpts::parse();
 	let cfg = load_runtime_config(&opts)?;
+
+	// Get the address from identity config early
+	let suri = match opts.avail_suri {
+		None => load_or_init_suri(&opts.identity)?,
+		Some(suri) => suri,
+	};
+	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
+	let avail_evm_address = cfg.avail_evm_address.clone();
+
+	// Start NFT verification before any other initialization
+	let nft_handle = spawn_in_span(shutdown.with_cancel(run_check_nft(
+		cfg.check_nft_endpoint.clone(),
+		avail_evm_address,
+		Duration::from_secs(cfg.check_nft_interval),
+		shutdown.clone(),
+	)));
 
 	if cfg.log_format_json {
 		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))?;
@@ -716,12 +792,6 @@ pub async fn main() -> Result<()> {
 
 	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
-
-	let suri = match opts.avail_suri {
-		None => load_or_init_suri(&opts.identity)?,
-		Some(suri) => suri,
-	};
-	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
 
 	if opts.clean && Path::new(&cfg.avail_path).exists() {
 		info!("Cleaning up local state directory");

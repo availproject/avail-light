@@ -5,7 +5,7 @@ use avail_light_core::{
 	network::{p2p::configuration::LibP2PConfig, rpc::configuration::RPCConfig},
 	telemetry::otlp::OtelConfig,
 	types::{
-		option_duration_seconds_format, tracing_level_format, AppClientConfig, MaintenanceConfig,
+		option_duration_seconds_format, tracing_level_format, AppClientConfig, NFTCheckConfig, MaintenanceConfig,
 		Origin, ProjectName, SyncClientConfig,
 	},
 };
@@ -56,6 +56,12 @@ pub struct RuntimeConfig {
 	pub threshold: usize,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
+	/// NFT verification endpoint
+	pub check_nft_endpoint: String,
+	/// NFT check interval in seconds
+	pub check_nft_interval: u64,
+	/// Avail evm address
+	pub avail_evm_address: String,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -73,6 +79,16 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		AppClientConfig {
 			disable_rpc: val.disable_rpc,
 			threshold: val.threshold,
+		}
+	}
+}
+
+impl From<&RuntimeConfig> for NFTCheckConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		NFTCheckConfig {
+			check_nft_endpoint: val.check_nft_endpoint.clone(),
+			check_nft_interval: val.check_nft_interval,
+			avail_evm_address: val.avail_evm_address.clone(),
 		}
 	}
 }
@@ -125,6 +141,9 @@ impl Default for RuntimeConfig {
 			threshold: 5000,
 			origin: Origin::External,
 			client_alias: None,
+			check_nft_endpoint: "".to_string(),
+			check_nft_interval: 5000,
+			avail_evm_address: "".to_string(),
 		}
 	}
 }

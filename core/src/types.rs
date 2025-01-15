@@ -410,6 +410,23 @@ impl Default for AppClientConfig {
 	}
 }
 
+// NFT check config
+pub struct NFTCheckConfig {
+	pub check_nft_endpoint: String,
+	pub check_nft_interval: u64,
+	pub avail_evm_address: String
+}
+
+impl Default for NFTCheckConfig {
+	fn default() -> Self {
+		Self {
+			check_nft_endpoint: "".to_string(),
+			check_nft_interval: 5000,
+			avail_evm_address: "".to_string(),
+		}
+	}
+}
+
 #[derive(Clone, Copy)]
 pub struct MaintenanceConfig {
 	pub block_confidence_treshold: f64,
