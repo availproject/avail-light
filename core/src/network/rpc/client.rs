@@ -552,7 +552,7 @@ impl<D: Database> Client<D> {
 			let storage_query = avail::storage().timestamp().now();
 			let storage = client.api.storage().at(block_hash);
 			storage
-				.fetch(&storage_query) // Clone the value for each use
+				.fetch(&storage_query)
 				.await?
 				.ok_or_else(|| {
 					subxt::Error::Other(format!("Block Header with hash: {block_hash:?} not found"))
