@@ -217,8 +217,9 @@ mod tests {
 		},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-			Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB, RpcNodeKey,
-			VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey, VerifiedSyncDataKey,
+			BlockTimestampKey, Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB,
+			RpcNodeKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey,
+			VerifiedSyncDataKey,
 		},
 		network::rpc::Node,
 		types::BlockRange,
@@ -235,7 +236,13 @@ mod tests {
 		AvailHeader, H256,
 	};
 	use hyper::StatusCode;
-	use std::{collections::HashSet, str::FromStr, sync::Arc};
+	use std::{
+		collections::HashSet,
+		str::FromStr,
+		sync::Arc,
+		time::{SystemTime, UNIX_EPOCH},
+	};
+
 	use test_case::test_case;
 	use uuid::Uuid;
 
@@ -405,6 +412,13 @@ mod tests {
 		db.put(VerifiedHeaderKey, BlockRange::init(9));
 		db.put(LatestSyncKey, 5);
 		db.put(BlockHeaderKey(block_number), header());
+		db.put(
+			BlockTimestampKey(block_number),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.unwrap()
+				.as_secs(),
+		);
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")

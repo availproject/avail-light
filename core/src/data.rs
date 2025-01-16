@@ -317,7 +317,7 @@ impl RecordKey for BlockTimestampKey {
 	type Type = u64;
 
 	fn space(&self) -> Option<&'static str> {
-		Some(&BLOCK_TIMESTAMP_KEY)
+		Some(APP_STATE_CF)
 	}
 
 	fn key(&self) -> String {
