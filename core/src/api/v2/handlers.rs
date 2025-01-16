@@ -113,8 +113,7 @@ pub async fn block_header(
 
 	let block_timestamp = db
 		.get(BlockTimestampKey(block_number))
-		.map(|timestamp| timestamp)
-		.ok_or_else(|| Error::not_found())?;
+		.ok_or_else(Error::not_found)?;
 
 	if matches!(
 		block_status,

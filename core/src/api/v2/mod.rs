@@ -487,6 +487,7 @@ mod tests {
 		db.put(LatestHeaderKey, 1);
 		db.put(VerifiedHeaderKey, BlockRange::init(1));
 		db.put(BlockHeaderKey(1), header());
+		db.put(BlockTimestampKey(1), 1737039274);
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -495,7 +496,7 @@ mod tests {
 			.await;
 		assert_eq!(
 			response.body(),
-			r#"{"hash":"0xadf25a1a5d969bb9c9bb9b2e95fe74b0093f0a49ac61e96a1cf41783127f9d1b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":1,"index":[]}},"digest":{"logs":[]}}"#
+			r#"{"hash":"0xadf25a1a5d969bb9c9bb9b2e95fe74b0093f0a49ac61e96a1cf41783127f9d1b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":1,"index":[]}},"digest":{"logs":[]},"timestamp":1737039274}"#
 		);
 	}
 
