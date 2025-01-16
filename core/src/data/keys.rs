@@ -35,3 +35,5 @@ pub const CLIENT_ID_KEY: &str = "client_id";
 pub const P2P_KEYPAIR_KEY: &str = "p2p_keypair";
 /// Key for storing signer nonce
 pub const SIGNER_NONCE: &str = "signer_nonce";
+/// Key for storing block timestamp
+pub const BLOCK_TIMESTAMP_KEY: &str = "block_timestamp";

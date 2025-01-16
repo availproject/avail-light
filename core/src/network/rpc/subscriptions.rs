@@ -16,8 +16,8 @@ use web_time::Instant;
 use super::{Client, OutputEvent, Subscription};
 use crate::{
 	data::{
-		Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey, IsFinalitySyncedKey,
-		LatestHeaderKey, VerifiedHeaderKey,
+		BlockTimestampKey, Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey,
+		IsFinalitySyncedKey, LatestHeaderKey, VerifiedHeaderKey,
 	},
 	finality::{check_finality, ValidatorSet},
 	types::{BlockRange, GrandpaJustification},
@@ -100,6 +100,15 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				let received_at = Instant::now();
 				self.db.put(LatestHeaderKey, header.clone().number);
 				info!("Header no.: {}", header.number);
+
+				let block_hash = self.rpc_client.get_block_hash(header.number).await.unwrap();
+				let block_timestamp = self
+					.rpc_client
+					.get_block_timestamp(block_hash)
+					.await
+					.unwrap();
+				self.db
+					.put(BlockTimestampKey(header.number), block_timestamp);
 
 				// if new validator set becomes active, replace the current one
 				if self.block_data.next_valset.is_some() {

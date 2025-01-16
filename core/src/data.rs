@@ -310,3 +310,18 @@ impl RecordKey for SignerNonceKey {
 		SIGNER_NONCE.into()
 	}
 }
+
+pub struct BlockTimestampKey(pub u32);
+
+impl RecordKey for BlockTimestampKey {
+	type Type = u64;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(&BLOCK_TIMESTAMP_KEY)
+	}
+
+	fn key(&self) -> String {
+		let BlockTimestampKey(block_num) = self;
+		format!("{BLOCK_TIMESTAMP_KEY}:{block_num}")
+	}
+}

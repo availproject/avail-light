@@ -547,6 +547,25 @@ impl<D: Database> Client<D> {
 		))
 	}
 
+	pub async fn get_block_timestamp(&self, block_hash: H256) -> Result<u64> {
+		self.with_retries(|client| async move {
+			let storage_query = avail::storage().timestamp().now();
+			let storage = client.api.storage().at(block_hash);
+			storage
+				.fetch(&storage_query) // Clone the value for each use
+				.await?
+				.ok_or_else(|| {
+					subxt::Error::Other(format!("Block Header with hash: {block_hash:?} not found"))
+				})
+				.map_err(Into::into)
+		})
+		.await
+		.wrap_err(format!(
+			"Timestamp for Block Header with hash: {:?} not found",
+			block_hash
+		))
+	}
+
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
 		let res = self
 			.with_retries(|client| async move {

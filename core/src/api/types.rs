@@ -345,6 +345,7 @@ pub struct Header {
 	extrinsics_root: H256,
 	extension: Extension,
 	digest: Digest,
+	timestamp: Option<u64>,
 }
 
 impl Reply for Header {
@@ -401,6 +402,24 @@ struct Extension {
 	app_lookup: CompactDataLookup,
 }
 
+impl Header {
+	pub fn from_avail_header_and_timestamp(
+		header: AvailHeader,
+		timestamp: Option<u64>,
+	) -> Result<Self, Report> {
+		Ok(Header {
+			hash: Encode::using_encoded(&header, blake2_256).into(),
+			parent_hash: header.parent_hash,
+			number: header.number,
+			state_root: header.state_root,
+			extrinsics_root: header.extrinsics_root,
+			extension: header.extension.try_into()?,
+			digest: header.digest.try_into()?,
+			timestamp,
+		})
+	}
+}
+
 impl TryFrom<AvailHeader> for Header {
 	type Error = Report;
 
@@ -413,6 +432,7 @@ impl TryFrom<AvailHeader> for Header {
 			extrinsics_root: header.extrinsics_root,
 			extension: header.extension.try_into()?,
 			digest: header.digest.try_into()?,
+			timestamp: None,
 		})
 	}
 }
@@ -851,7 +871,7 @@ pub enum WsError {
 
 #[cfg(test)]
 mod tests {
-	use std::time::Duration;
+	use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 	use avail_rust::{
 		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, H256,
@@ -903,6 +923,12 @@ mod tests {
 				digest: Digest {
 					logs: vec![DigestItem::RuntimeEnvironmentUpdated],
 				},
+				timestamp: Some(
+					SystemTime::now()
+						.duration_since(UNIX_EPOCH)
+						.unwrap()
+						.as_secs(),
+				),
 			},
 		}))
 	}
