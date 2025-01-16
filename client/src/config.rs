@@ -62,6 +62,8 @@ pub struct RuntimeConfig {
 	pub check_nft_interval: u64,
 	/// Avail evm address
 	pub avail_evm_address: String,
+	/// Token id
+	pub token_id: String,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -89,6 +91,7 @@ impl From<&RuntimeConfig> for NFTCheckConfig {
 			check_nft_endpoint: val.check_nft_endpoint.clone(),
 			check_nft_interval: val.check_nft_interval,
 			avail_evm_address: val.avail_evm_address.clone(),
+			token_id: val.token_id.clone(),
 		}
 	}
 }
@@ -144,6 +147,7 @@ impl Default for RuntimeConfig {
 			check_nft_endpoint: "".to_string(),
 			check_nft_interval: 5000,
 			avail_evm_address: "".to_string(),
+			token_id: "0".to_string(),
 		}
 	}
 }

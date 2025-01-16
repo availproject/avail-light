@@ -707,6 +707,7 @@ impl ClientState {
 #[derive(serde::Serialize)]
 struct CheckNFTRequest {
 	address: String,
+	token_id: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -715,9 +716,9 @@ struct CheckNFTResponse {
 	message: String,
 }
 
-async fn check_nft(endpoint: String, address: String) -> Result<bool> {
+async fn check_nft(endpoint: String, address: String, token_id: String) -> Result<bool> {
 	let client = HttpClient::new();
-	let request_body = CheckNFTRequest { address };
+	let request_body = CheckNFTRequest { address, token_id };
 	
 	let response = client
 		.post(&endpoint)
@@ -731,18 +732,23 @@ async fn check_nft(endpoint: String, address: String) -> Result<bool> {
 		.await
 		.wrap_err("Failed to parse response")?;
 
+	if nft_status.status.to_lowercase() == "success" {
+		info!("{}", nft_status.message);
+	} else if nft_status.status.to_lowercase() == "error" {
+		error!("{}", nft_status.message);
+	}
 	Ok(nft_status.status.to_lowercase() == "success")
 }
 
 async fn run_check_nft(
 	endpoint: String,
 	address: String,
+	token_id: String,
 	interval: Duration,
 	shutdown: Controller<String>
 ) {
 	loop {
-		info!("Checking NFT exists for the user address: {}", address);
-		match check_nft(endpoint.clone(), address.clone()).await {
+		match check_nft(endpoint.clone(), address.clone(), token_id.clone()).await {
 			Ok(true) => {
 				info!("NFT check passed successfully for address: {}", address);
 				sleep(interval).await;
@@ -775,11 +781,13 @@ pub async fn main() -> Result<()> {
 	};
 	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
 	let avail_evm_address = cfg.avail_evm_address.clone();
+	let token_id = cfg.token_id.clone();
 
 	// Start NFT verification before any other initialization
 	let nft_handle = spawn_in_span(shutdown.with_cancel(run_check_nft(
 		cfg.check_nft_endpoint.clone(),
 		avail_evm_address,
+		token_id,
 		Duration::from_secs(cfg.check_nft_interval),
 		shutdown.clone(),
 	)));

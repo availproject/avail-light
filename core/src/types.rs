@@ -414,7 +414,8 @@ impl Default for AppClientConfig {
 pub struct NFTCheckConfig {
 	pub check_nft_endpoint: String,
 	pub check_nft_interval: u64,
-	pub avail_evm_address: String
+	pub avail_evm_address: String,
+	pub token_id: String,
 }
 
 impl Default for NFTCheckConfig {
@@ -423,6 +424,7 @@ impl Default for NFTCheckConfig {
 			check_nft_endpoint: "".to_string(),
 			check_nft_interval: 5000,
 			avail_evm_address: "".to_string(),
+			token_id: "0".to_string(),
 		}
 	}
 }
