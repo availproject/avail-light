@@ -6,7 +6,7 @@ use avail_rust::{
 use codec::Encode;
 use color_eyre::{eyre::eyre, Result};
 #[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 use tracing::{debug, info, trace};
@@ -98,17 +98,16 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
+				let current_system_time = SystemTime::now()
+					.duration_since(UNIX_EPOCH)
+					.expect("Time went backwards");
 				self.db.put(LatestHeaderKey, header.clone().number);
 				info!("Header no.: {}", header.number);
 
-				let block_hash = self.rpc_client.get_block_hash(header.number).await.unwrap();
-				let block_timestamp = self
-					.rpc_client
-					.get_block_timestamp(block_hash)
-					.await
-					.unwrap();
-				self.db
-					.put(BlockTimestampKey(header.number), block_timestamp);
+				self.db.put(
+					BlockTimestampKey(header.number),
+					current_system_time.as_secs(),
+				);
 
 				// if new validator set becomes active, replace the current one
 				if self.block_data.next_valset.is_some() {
