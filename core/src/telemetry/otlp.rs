@@ -11,7 +11,7 @@ use opentelemetry::{
 };
 use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
 use opentelemetry_sdk::{
-	metrics::{PeriodicReader, SdkMeterProvider},
+	metrics::{PeriodicReader, SdkMeterProvider, Temporality},
 	runtime::Tokio,
 	Resource,
 };
@@ -231,6 +231,7 @@ pub fn initialize(
 		.with_endpoint(&ot_config.ot_collector_endpoint)
 		.with_protocol(Protocol::Grpc)
 		.with_timeout(Duration::from_secs(ot_config.ot_export_timeout))
+        .with_temporality(Temporality::Delta)
 		.build()?;
 
 	let reader = PeriodicReader::builder(exporter, Tokio)
