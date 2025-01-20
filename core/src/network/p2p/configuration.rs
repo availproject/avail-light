@@ -113,7 +113,7 @@ impl Default for KademliaConfig {
 			caching_max_peers: 1,
 			disjoint_query_paths: false,
 			max_kad_record_number: 2400000,
-			max_kad_record_size: 8192,
+			max_kad_record_size: 8192 * 2, // Maximum for 512 columns
 			max_kad_provided_keys: 1024,
 			operation_mode: KademliaMode::Client,
 			automatic_server_mode: true,
