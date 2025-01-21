@@ -311,9 +311,9 @@ impl RecordKey for SignerNonceKey {
 	}
 }
 
-pub struct BlockTimestampKey(pub u32);
+pub struct BlockHeaderReceivedAtKey(pub u32);
 
-impl RecordKey for BlockTimestampKey {
+impl RecordKey for BlockHeaderReceivedAtKey {
 	type Type = u64;
 
 	fn space(&self) -> Option<&'static str> {
@@ -321,7 +321,7 @@ impl RecordKey for BlockTimestampKey {
 	}
 
 	fn key(&self) -> String {
-		let BlockTimestampKey(block_num) = self;
-		format!("{BLOCK_TIMESTAMP_KEY}:{block_num}")
+		let BlockHeaderReceivedAtKey(block_num) = self;
+		format!("{BLOCK_HEADER_RECEIVED_AT}:{block_num}")
 	}
 }
