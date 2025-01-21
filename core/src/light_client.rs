@@ -209,6 +209,7 @@ pub async fn run(
 				RpcEvent::HeaderUpdate {
 					header,
 					received_at,
+					..
 				} => (header, received_at),
 				// skip ConnectedHost event
 				RpcEvent::ConnectedHost(_) => continue,

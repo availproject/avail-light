@@ -324,11 +324,11 @@ impl Reply for Block {
 	}
 }
 
-impl TryFrom<AvailHeader> for HeaderMessage {
+impl TryFrom<(AvailHeader, u64)> for HeaderMessage {
 	type Error = Report;
 
-	fn try_from(header: AvailHeader) -> Result<Self, Self::Error> {
-		let header: Header = header.try_into()?;
+	fn try_from((header, received_at): (AvailHeader, u64)) -> Result<Self, Self::Error> {
+		let header: Header = (header, received_at).try_into()?;
 		Ok(Self {
 			block_number: header.number,
 			header,
@@ -345,6 +345,7 @@ pub struct Header {
 	extrinsics_root: H256,
 	extension: Extension,
 	digest: Digest,
+	received_at: u64,
 }
 
 impl Reply for Header {
@@ -401,10 +402,10 @@ struct Extension {
 	app_lookup: CompactDataLookup,
 }
 
-impl TryFrom<AvailHeader> for Header {
+impl TryFrom<(AvailHeader, u64)> for Header {
 	type Error = Report;
 
-	fn try_from(header: AvailHeader) -> Result<Self> {
+	fn try_from((header, received_at): (AvailHeader, u64)) -> Result<Self> {
 		Ok(Header {
 			hash: Encode::using_encoded(&header, blake2_256).into(),
 			parent_hash: header.parent_hash,
@@ -413,6 +414,7 @@ impl TryFrom<AvailHeader> for Header {
 			extrinsics_root: header.extrinsics_root,
 			extension: header.extension.try_into()?,
 			digest: header.digest.try_into()?,
+			received_at,
 		})
 	}
 }
@@ -483,7 +485,11 @@ impl TryFrom<RpcEvent> for Option<PublishMessage> {
 
 	fn try_from(value: RpcEvent) -> Result<Self, Self::Error> {
 		match value {
-			RpcEvent::HeaderUpdate { header, .. } => header
+			RpcEvent::HeaderUpdate {
+				header,
+				received_at: _,
+				received_at_timestamp,
+			} => (header, received_at_timestamp)
 				.try_into()
 				.map(Box::new)
 				.map(PublishMessage::HeaderVerified)
@@ -903,6 +909,7 @@ mod tests {
 				digest: Digest {
 					logs: vec![DigestItem::RuntimeEnvironmentUpdated],
 				},
+				received_at: 0,
 			},
 		}))
 	}

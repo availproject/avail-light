@@ -310,3 +310,18 @@ impl RecordKey for SignerNonceKey {
 		SIGNER_NONCE.into()
 	}
 }
+
+pub struct BlockHeaderReceivedAtKey(pub u32);
+
+impl RecordKey for BlockHeaderReceivedAtKey {
+	type Type = u64;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		let BlockHeaderReceivedAtKey(block_num) = self;
+		format!("{BLOCK_HEADER_RECEIVED_AT}:{block_num}")
+	}
+}

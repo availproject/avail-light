@@ -2,6 +2,7 @@
 
 ## 1.2.0
 
+- Add timestamp to v2 header API
 - Increase maximum kademlia record size to allow row with 512 cells
 - Fix issue with multiple telemetry gauge callbacks
 

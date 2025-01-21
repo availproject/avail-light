@@ -168,6 +168,7 @@ Content-Type: application/json
       "{log}", ...
     ]
   },
+  "received_at": "{received-at-timestamp}"
 }
 ```
 
@@ -595,6 +596,7 @@ When header verification is finished, the message is pushed to the light client 
           ]
         }
       }
+      "received_at": "{received-at-timestamp}",
     }
   }
 }

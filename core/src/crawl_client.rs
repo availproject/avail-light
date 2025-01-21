@@ -79,6 +79,7 @@ pub async fn run(
 	while let Ok(rpc::OutputEvent::HeaderUpdate {
 		header,
 		received_at,
+		..
 	}) = message_rx.recv().await
 	{
 		let block = match types::BlockVerified::try_from((header, None)) {

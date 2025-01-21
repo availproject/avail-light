@@ -46,6 +46,7 @@ pub enum OutputEvent {
 	HeaderUpdate {
 		header: AvailHeader,
 		received_at: Instant,
+		received_at_timestamp: u64,
 	},
 }
 
