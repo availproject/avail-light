@@ -345,7 +345,7 @@ pub struct Header {
 	extrinsics_root: H256,
 	extension: Extension,
 	digest: Digest,
-	timestamp: Option<u64>,
+	received_at: Option<u64>,
 }
 
 impl Reply for Header {
@@ -415,7 +415,7 @@ impl Header {
 			extrinsics_root: header.extrinsics_root,
 			extension: header.extension.try_into()?,
 			digest: header.digest.try_into()?,
-			timestamp,
+			received_at: timestamp,
 		})
 	}
 }
@@ -432,7 +432,7 @@ impl TryFrom<AvailHeader> for Header {
 			extrinsics_root: header.extrinsics_root,
 			extension: header.extension.try_into()?,
 			digest: header.digest.try_into()?,
-			timestamp: None,
+			received_at: None,
 		})
 	}
 }
@@ -923,7 +923,7 @@ mod tests {
 				digest: Digest {
 					logs: vec![DigestItem::RuntimeEnvironmentUpdated],
 				},
-				timestamp: Some(
+				received_at: Some(
 					SystemTime::now()
 						.duration_since(UNIX_EPOCH)
 						.unwrap()
