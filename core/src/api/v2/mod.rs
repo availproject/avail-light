@@ -217,8 +217,8 @@ mod tests {
 		},
 		data::{
 			self, AchievedConfidenceKey, AchievedSyncConfidenceKey, AppDataKey, BlockHeaderKey,
-			BlockTimestampKey, Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey, MemoryDB,
-			RpcNodeKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey,
+			BlockHeaderReceivedAtKey, Database, IsSyncedKey, LatestHeaderKey, LatestSyncKey,
+			MemoryDB, RpcNodeKey, VerifiedCellCountKey, VerifiedDataKey, VerifiedHeaderKey,
 			VerifiedSyncDataKey,
 		},
 		network::rpc::Node,
@@ -236,12 +236,7 @@ mod tests {
 		AvailHeader, H256,
 	};
 	use hyper::StatusCode;
-	use std::{
-		collections::HashSet,
-		str::FromStr,
-		sync::Arc,
-		time::{SystemTime, UNIX_EPOCH},
-	};
+	use std::{collections::HashSet, str::FromStr, sync::Arc};
 
 	use test_case::test_case;
 	use uuid::Uuid;
@@ -412,13 +407,7 @@ mod tests {
 		db.put(VerifiedHeaderKey, BlockRange::init(9));
 		db.put(LatestSyncKey, 5);
 		db.put(BlockHeaderKey(block_number), header());
-		db.put(
-			BlockTimestampKey(block_number),
-			SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.unwrap()
-				.as_secs(),
-		);
+		db.put(BlockHeaderReceivedAtKey(block_number), 1737039274);
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -487,7 +476,7 @@ mod tests {
 		db.put(LatestHeaderKey, 1);
 		db.put(VerifiedHeaderKey, BlockRange::init(1));
 		db.put(BlockHeaderKey(1), header());
-		db.put(BlockTimestampKey(1), 1737039274);
+		db.put(BlockHeaderReceivedAtKey(1), 1737039274);
 		let route = super::block_header_route(config, db);
 		let response = warp::test::request()
 			.method("GET")
@@ -496,7 +485,7 @@ mod tests {
 			.await;
 		assert_eq!(
 			response.body(),
-			r#"{"hash":"0xadf25a1a5d969bb9c9bb9b2e95fe74b0093f0a49ac61e96a1cf41783127f9d1b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":1,"index":[]}},"digest":{"logs":[]},"timestamp":1737039274}"#
+			r#"{"hash":"0xadf25a1a5d969bb9c9bb9b2e95fe74b0093f0a49ac61e96a1cf41783127f9d1b","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":"0x0000000000000000000000000000000000000000000000000000000000000000","commitments":[],"app_lookup":{"size":1,"index":[]}},"digest":{"logs":[]},"received_at":1737039274}"#
 		);
 	}
 

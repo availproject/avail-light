@@ -16,7 +16,7 @@ use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use super::{Client, OutputEvent, Subscription};
 use crate::{
 	data::{
-		BlockTimestampKey, Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey,
+		BlockHeaderReceivedAtKey, Database, FinalitySyncCheckpoint, FinalitySyncCheckpointKey,
 		IsFinalitySyncedKey, LatestHeaderKey, VerifiedHeaderKey,
 	},
 	finality::{check_finality, ValidatorSet},
@@ -98,15 +98,16 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
-				let current_system_time = SystemTime::now()
+				let received_at_timestamp = SystemTime::now()
 					.duration_since(UNIX_EPOCH)
-					.expect("Time went backwards");
+					.expect("Time went backwards")
+					.as_secs();
 				self.db.put(LatestHeaderKey, header.clone().number);
 				info!("Header no.: {}", header.number);
 
 				self.db.put(
-					BlockTimestampKey(header.number),
-					current_system_time.as_secs(),
+					BlockHeaderReceivedAtKey(header.number),
+					received_at_timestamp,
 				);
 
 				// if new validator set becomes active, replace the current one
@@ -171,6 +172,11 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				let (header, received_at, valset) =
 					self.block_data.unverified_headers.swap_remove(pos);
 
+				let received_at_timestamp = self
+					.db
+					.get(BlockHeaderReceivedAtKey(header.number))
+					.expect("Block header timestamp is in the database");
+
 				let is_final = check_finality(&valset, &justification);
 
 				is_final.expect("Finality check failed");
@@ -224,6 +230,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 							.send(OutputEvent::HeaderUpdate {
 								header,
 								received_at,
+								received_at_timestamp,
 							})
 							.unwrap();
 					}
@@ -248,6 +255,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 					.send(OutputEvent::HeaderUpdate {
 						header,
 						received_at,
+						received_at_timestamp,
 					})
 					.unwrap();
 			} else {

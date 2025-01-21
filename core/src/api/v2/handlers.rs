@@ -15,7 +15,8 @@ use crate::{
 		},
 	},
 	data::{
-		AppDataKey, BlockHeaderKey, BlockTimestampKey, Database, RpcNodeKey, VerifiedCellCountKey,
+		AppDataKey, BlockHeaderKey, BlockHeaderReceivedAtKey, Database, RpcNodeKey,
+		VerifiedCellCountKey,
 	},
 	utils::calculate_confidence,
 };
@@ -111,8 +112,8 @@ pub async fn block_header(
 		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
 		.ok_or(Error::not_found())?;
 
-	let block_timestamp = db
-		.get(BlockTimestampKey(block_number))
+	let received_at = db
+		.get(BlockHeaderReceivedAtKey(block_number))
 		.ok_or_else(Error::not_found)?;
 
 	if matches!(
@@ -124,7 +125,7 @@ pub async fn block_header(
 
 	db.get(BlockHeaderKey(block_number))
 		.ok_or_else(|| eyre!("Header not found"))
-		.and_then(|header| Header::from_avail_header_and_timestamp(header, Some(block_timestamp)))
+		.and_then(|header| (header, received_at).try_into())
 		.map_err(Error::internal_server_error)
 }
 
