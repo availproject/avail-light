@@ -2,7 +2,8 @@
 
 ## 1.2.0
 
-- Add block timestamp to v2 header API
+- Add timestamp to v2 header API
+- Increase maximum kademlia record size to allow row with 512 cells
 - Fix issue with multiple telemetry gauge callbacks
 
 ## [1.1.0](https://github.com/availproject/avail-light/tree/avail-light-core-v1.1.0) - 2024-12-20
