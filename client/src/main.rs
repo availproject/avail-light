@@ -19,8 +19,8 @@ use avail_light_core::{
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{
-		self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_MULTIADDRESS,
-		ATTRIBUTE_OPERATING_MODE, ATTRIBUTE_RPC_HOST,
+		self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE,
+		ATTRIBUTE_RPC_HOST,
 	},
 	types::{
 		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey, Uuid,
@@ -34,10 +34,7 @@ use color_eyre::{
 	Result,
 };
 use config::RuntimeConfig;
-use libp2p::{
-	kad::{Mode, QueryStats, RecordKey},
-	Multiaddr,
-};
+use libp2p::kad::{Mode, QueryStats, RecordKey};
 use std::{collections::HashMap, fs, path::Path, sync::Arc, time::Duration};
 use tokio::{
 	select,
@@ -317,7 +314,6 @@ async fn run(
 			"client_alias",
 			cfg.client_alias.clone().unwrap_or("".to_string()),
 		),
-		(ATTRIBUTE_MULTIADDRESS, Multiaddr::empty().to_string()),
 		(ATTRIBUTE_OPERATING_MODE, operating_mode.to_string()),
 		(ATTRIBUTE_RPC_HOST, rpc_host),
 	];
@@ -569,9 +565,6 @@ impl ClientState {
 							},
 							P2pEvent::IncomingConnectionError => {
 								self.metrics.count(MetricCounter::IncomingConnectionErrors);
-							},
-							P2pEvent::MultiaddressUpdate(address) => {
-								self.metrics.set_attribute(ATTRIBUTE_MULTIADDRESS, address.to_string());
 							},
 							P2pEvent::EstablishedConnection => {
 								self.metrics.count(MetricCounter::EstablishedConnections);

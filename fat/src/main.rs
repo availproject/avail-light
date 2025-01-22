@@ -8,9 +8,7 @@ use avail_light_core::{
 		Network,
 	},
 	shutdown::Controller,
-	telemetry::{
-		self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_MULTIADDRESS, ATTRIBUTE_RPC_HOST,
-	},
+	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_RPC_HOST},
 	types::{BlockVerified, ClientChannels, IdentityConfig, Origin, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -209,7 +207,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
 		("operating_mode", "client".to_string()),
-		(ATTRIBUTE_MULTIADDRESS, String::default()),
 		(ATTRIBUTE_RPC_HOST, rpc_host),
 	];
 
@@ -399,9 +396,6 @@ impl FatState {
 						},
 						P2pEvent::IncomingConnectionError => {
 							self.metrics.count(MetricCounter::IncomingConnectionErrors)
-						},
-						P2pEvent::MultiaddressUpdate(address) => {
-							self.metrics.set_attribute(ATTRIBUTE_MULTIADDRESS, address.to_string())
 						},
 						P2pEvent::EstablishedConnection => {
 							self.metrics.count(MetricCounter::EstablishedConnections)

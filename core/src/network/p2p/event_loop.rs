@@ -570,10 +570,6 @@ impl EventLoop {
 								address.to_string()
 							);
 						};
-
-						_ = self
-							.event_sender
-							.send(OutputEvent::MultiaddressUpdate(address));
 					},
 					SwarmEvent::ConnectionEstablished {
 						peer_id,
