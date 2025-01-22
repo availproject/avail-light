@@ -8,7 +8,7 @@ use avail_light_core::{
 		Network,
 	},
 	shutdown::Controller,
-	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue},
+	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{BlockVerified, ClientChannels, IdentityConfig, Origin, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -194,23 +194,24 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		shutdown.clone(),
 	)));
 
-	let metric_attributes = vec![
+	let resource_attributes = vec![
 		("role", "fat".to_string()),
 		("origin", Origin::FatClient.to_string()),
 		("version", version.to_string()),
 		("peerID", p2p_peer_id.to_string()),
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
-		("operating_mode", "client".to_string()),
 	];
 
-	let metrics = telemetry::otlp::initialize(
+	let mut metrics = telemetry::otlp::initialize(
 		ProjectName::new("avail".to_string()),
 		&Origin::FatClient,
 		config.otel.clone(),
-		metric_attributes,
+		resource_attributes,
 	)
 	.wrap_err("Unable to initialize OpenTelemetry service")?;
+
+	metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, "client".to_string());
 
 	let mut state = FatState::new(metrics);
 

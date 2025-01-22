@@ -294,7 +294,7 @@ async fn run(
 	let operating_mode: Mode = cfg.libp2p.kademlia.operation_mode.into();
 
 	// construct Metric Attributes and initialize Metrics
-	let metric_attributes = vec![
+	let resource_attributes = vec![
 		("version", version.to_string()),
 		("role", "lightnode".to_string()),
 		("origin", cfg.origin.to_string()),
@@ -302,21 +302,22 @@ async fn run(
 		("avail_address", identity_cfg.avail_public_key),
 		("network", Network::name(&cfg.genesis_hash)),
 		("client_id", client_id.to_string()),
-		("execution_id", execution_id.to_string()),
 		(
 			"client_alias",
 			cfg.client_alias.clone().unwrap_or("".to_string()),
 		),
-		(ATTRIBUTE_OPERATING_MODE, operating_mode.to_string()),
 	];
 
-	let metrics = telemetry::otlp::initialize(
+	let mut metrics = telemetry::otlp::initialize(
 		cfg.project_name.clone(),
 		&cfg.origin,
 		cfg.otel.clone(),
-		metric_attributes,
+		resource_attributes,
 	)
 	.wrap_err("Unable to initialize OpenTelemetry service")?;
+
+	metrics.set_attribute("execution_id", execution_id.to_string());
+	metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, operating_mode.to_string());
 
 	let mut state = ClientState::new(metrics);
 

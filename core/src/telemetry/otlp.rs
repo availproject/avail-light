@@ -223,9 +223,8 @@ pub fn initialize(
 	project_name: ProjectName,
 	origin: &Origin,
 	ot_config: OtelConfig,
-	attributes: Vec<(&'static str, String)>,
+	resource_attributes: Vec<(&'static str, String)>,
 ) -> Result<Metrics> {
-	let attributes: Attributes = attributes.into_iter().collect();
 	let exporter = MetricExporter::builder()
 		.with_tonic()
 		.with_endpoint(&ot_config.ot_collector_endpoint)
@@ -238,12 +237,18 @@ pub fn initialize(
 		.with_timeout(Duration::from_secs(ot_config.ot_export_timeout)) // Timeout for each export
 		.build();
 
+	let service_name = KeyValue::new("service.name", project_name.to_string());
+
+	let mut resource = resource_attributes
+		.iter()
+		.map(|(k, v)| KeyValue::new(*k, v.clone()))
+		.collect::<Vec<_>>();
+
+	resource.push(service_name);
+
 	let provider = SdkMeterProvider::builder()
 		.with_reader(reader)
-		.with_resource(Resource::new(vec![KeyValue::new(
-			"service.name",
-			project_name.to_string(),
-		)]))
+		.with_resource(Resource::new(resource))
 		.build();
 
 	global::set_meter_provider(provider);
@@ -257,6 +262,6 @@ pub fn initialize(
 		counters,
 		u64_gauges,
 		f64_gauges,
-		attributes: Arc::new(Mutex::new(attributes)),
+		attributes: Default::default(),
 	})
 }

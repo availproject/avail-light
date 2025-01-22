@@ -8,7 +8,7 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{
 		otlp::{self, Metrics},
-		MetricCounter, MetricValue,
+		MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE,
 	},
 	types::{BlockVerified, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -172,7 +172,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		crawler_sender,
 	)));
 
-	let metric_attributes = vec![
+	let resource_attributes = vec![
 		("role", "crawler".to_string()),
 		("origin", config.origin.to_string()),
 		("version", version.to_string()),
@@ -180,16 +180,17 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
 		("client_alias", config.client_alias),
-		("operating_mode", "client".to_string()),
 	];
 
-	let metrics = otlp::initialize(
+	let mut metrics = otlp::initialize(
 		ProjectName::new("avail".to_string()),
 		&config.origin,
 		config.otel.clone(),
-		metric_attributes,
+		resource_attributes,
 	)
 	.wrap_err("Unable to initialize OpenTelemetry service")?;
+
+	metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, "client".to_string());
 
 	let mut state = CrawlerState::new(metrics);
 
