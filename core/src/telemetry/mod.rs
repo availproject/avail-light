@@ -2,7 +2,6 @@ pub mod otlp;
 
 use crate::types::Origin;
 
-pub const ATTRIBUTE_MULTIADDRESS: &str = "multiaddress";
 pub const ATTRIBUTE_OPERATING_MODE: &str = "operating_mode";
 pub const ATTRIBUTE_RPC_HOST: &str = "rpc_host";
 

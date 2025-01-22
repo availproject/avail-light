@@ -8,7 +8,7 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{
 		otlp::{self, Metrics},
-		MetricCounter, MetricValue, ATTRIBUTE_MULTIADDRESS, ATTRIBUTE_RPC_HOST,
+		MetricCounter, MetricValue, ATTRIBUTE_RPC_HOST,
 	},
 	types::{BlockVerified, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -186,7 +186,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("network", Network::name(&config.genesis_hash)),
 		("client_alias", config.client_alias),
 		("operating_mode", "client".to_string()),
-		(ATTRIBUTE_MULTIADDRESS, String::default()),
 		(ATTRIBUTE_RPC_HOST, rpc_host.clone()),
 	];
 
@@ -241,9 +240,6 @@ impl CrawlerState {
 						},
 						P2pEvent::IncomingConnectionError => {
 							self.metrics.count(MetricCounter::IncomingConnectionErrors)
-						},
-						P2pEvent::MultiaddressUpdate(address) => {
-							self.metrics.set_attribute(ATTRIBUTE_MULTIADDRESS, address.to_string())
 						},
 						P2pEvent::EstablishedConnection => {
 							self.metrics.count(MetricCounter::EstablishedConnections)
