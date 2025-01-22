@@ -1,6 +1,6 @@
 use avail_light_core::{
 	crawl_client::{self, CrawlMetricValue, OutputEvent as CrawlerEvent},
-	data::{Database, LatestHeaderKey, RpcNodeKey, DB},
+	data::{Database, LatestHeaderKey, DB},
 	network::{
 		p2p::{self, OutputEvent as P2pEvent},
 		rpc, Network,
@@ -8,7 +8,7 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{
 		otlp::{self, Metrics},
-		MetricCounter, MetricValue, ATTRIBUTE_RPC_HOST,
+		MetricCounter, MetricValue,
 	},
 	types::{BlockVerified, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -172,11 +172,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		crawler_sender,
 	)));
 
-	let rpc_host = db
-		.get(RpcNodeKey)
-		.map(|node| node.host)
-		.ok_or_else(|| eyre!("No connected host found"))?;
-
 	let metric_attributes = vec![
 		("role", "crawler".to_string()),
 		("origin", config.origin.to_string()),
@@ -186,7 +181,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("network", Network::name(&config.genesis_hash)),
 		("client_alias", config.client_alias),
 		("operating_mode", "client".to_string()),
-		(ATTRIBUTE_RPC_HOST, rpc_host.clone()),
 	];
 
 	let metrics = otlp::initialize(

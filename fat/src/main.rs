@@ -1,6 +1,6 @@
 use avail_light_core::{
 	api::{self, configuration::SharedConfig},
-	data::{Database, LatestHeaderKey, RpcNodeKey, DB},
+	data::{Database, LatestHeaderKey, DB},
 	fat_client::{self, OutputEvent as FatEvent},
 	network::{
 		p2p::{self, extract_block_num, OutputEvent as P2pEvent},
@@ -8,7 +8,7 @@ use avail_light_core::{
 		Network,
 	},
 	shutdown::Controller,
-	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_RPC_HOST},
+	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue},
 	types::{BlockVerified, ClientChannels, IdentityConfig, Origin, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
@@ -194,11 +194,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		shutdown.clone(),
 	)));
 
-	let rpc_host = db
-		.get(RpcNodeKey)
-		.map(|node| node.host)
-		.ok_or_else(|| eyre!("No connected host found"))?;
-
 	let metric_attributes = vec![
 		("role", "fat".to_string()),
 		("origin", Origin::FatClient.to_string()),
@@ -207,7 +202,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
 		("operating_mode", "client".to_string()),
-		(ATTRIBUTE_RPC_HOST, rpc_host),
 	];
 
 	let metrics = telemetry::otlp::initialize(
@@ -450,11 +444,7 @@ impl FatState {
 					}
 				}
 
-				Ok(rpc_event) = rpc_receiver.recv() => {
-					if let RpcEvent::ConnectedHost(host) = rpc_event {
-						self.metrics.set_attribute(ATTRIBUTE_RPC_HOST, host);
-					}
-				}
+				Ok(_) = rpc_receiver.recv() => continue,
 				// break the loop if all channels are closed
 				else => break,
 			}

@@ -4,7 +4,7 @@ use crate::cli::CliOpts;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
-		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, RpcNodeKey,
+		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
 		SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
@@ -18,10 +18,7 @@ use avail_light_core::{
 	shutdown::Controller,
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
-	telemetry::{
-		self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE,
-		ATTRIBUTE_RPC_HOST,
-	},
+	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
 		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey, Uuid,
 	},
@@ -294,10 +291,6 @@ async fn run(
 		lc_sender,
 	)));
 
-	let rpc_host = db
-		.get(RpcNodeKey)
-		.map(|node| node.host)
-		.ok_or_else(|| eyre!("No connected host found"))?;
 	let operating_mode: Mode = cfg.libp2p.kademlia.operation_mode.into();
 
 	// construct Metric Attributes and initialize Metrics
@@ -315,7 +308,6 @@ async fn run(
 			cfg.client_alias.clone().unwrap_or("".to_string()),
 		),
 		(ATTRIBUTE_OPERATING_MODE, operating_mode.to_string()),
-		(ATTRIBUTE_RPC_HOST, rpc_host),
 	];
 
 	let metrics = telemetry::otlp::initialize(
@@ -641,11 +633,7 @@ impl ClientState {
 					}
 				}
 
-				Ok(rpc_event) = rpc_receiver.recv() => {
-					if let RpcEvent::ConnectedHost(host) = rpc_event {
-						self.metrics.set_attribute(ATTRIBUTE_RPC_HOST, host);
-					}
-				}
+				Ok(_) = rpc_receiver.recv() => continue,
 				// break the loop if all channels are closed
 				else => break,
 			}
