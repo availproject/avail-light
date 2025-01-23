@@ -259,10 +259,6 @@ impl EventLoop {
 				}
 				_ = response_sender.send(total_peers);
 			},
-			Command::GetMultiaddress { response_sender } => {
-				let last_address = self.swarm.external_addresses().last();
-				_ = response_sender.send(last_address.cloned());
-			},
 			Command::GetLocalPeerInfo { response_sender } => {
 				let local_listeners: Vec<String> =
 					self.swarm.listeners().map(ToString::to_string).collect();

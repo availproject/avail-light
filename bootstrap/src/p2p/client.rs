@@ -84,15 +84,6 @@ impl Client {
 		response_receiver.await.context("Sender not to be dropped.")
 	}
 
-	pub async fn get_multiaddress(&self) -> Result<Option<Multiaddr>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetMultiaddress { response_sender })
-			.await
-			.context("Command receiver not to be dropped.")?;
-		response_receiver.await.context("Sender not to be dropped.")
-	}
-
 	pub async fn get_local_peer_info(&self) -> Result<PeerInfo> {
 		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
@@ -121,9 +112,6 @@ pub enum Command {
 	},
 	CountDHTPeers {
 		response_sender: oneshot::Sender<usize>,
-	},
-	GetMultiaddress {
-		response_sender: oneshot::Sender<Option<Multiaddr>>,
 	},
 	GetLocalPeerInfo {
 		response_sender: oneshot::Sender<PeerInfo>,
