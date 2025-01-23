@@ -1,10 +1,11 @@
 #![doc = include_str!("../README.md")]
 
-use crate::{
-	telemetry::{MetricValue, Metrics},
-	types::{network_name, LibP2PConfig},
-};
+use crate::types::{network_name, LibP2PConfig};
 use anyhow::{Context, Result};
+use avail_light_core::{
+	telemetry::{self, MetricCounter, MetricValue},
+	types::{Origin, ProjectName},
+};
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use std::{net::Ipv4Addr, time::Duration};
@@ -18,7 +19,6 @@ use types::RuntimeConfig;
 
 mod p2p;
 mod server;
-mod telemetry;
 mod types;
 
 const CLIENT_ROLE: &str = "bootnode";
@@ -88,14 +88,22 @@ async fn run() -> Result<()> {
 
 	tokio::spawn(server::run((&cfg).into(), network_client.clone()));
 
-	let ot_metrics = telemetry::otlp::initialize(
-		cfg.ot_collector_endpoint,
-		peer_id,
-		CLIENT_ROLE.into(),
-		cfg.origin,
-		network_name(&cfg.genesis_hash),
+	let resource_attributes = vec![
+		("version", version.to_string()),
+		("role", CLIENT_ROLE.to_string()),
+		("peerID", peer_id.to_string()),
+		("origin", cfg.origin.clone()),
+		("network", network_name(&cfg.genesis_hash)),
+	];
+
+	let mut ot_metrics = telemetry::otlp::initialize(
+		ProjectName::new("avail".to_string()),
+		&Origin::Other(cfg.origin),
+		cfg.otel,
+		resource_attributes,
 	)
-	.context("Cannot initialize OpenTelemetry service.")?;
+	.map_err(anyhow::Error::msg)
+	.context("Unable to initialize OpenTelemetry service")?;
 
 	// Spawn the network task
 	let loop_handle = tokio::spawn(network_event_loop.run());
@@ -109,20 +117,11 @@ async fn run() -> Result<()> {
 		loop {
 			interval.tick().await;
 			// try and read current multiaddress
-			if let Ok(Some(addr)) = m_network_client.get_multiaddress().await {
-				// set Multiaddress
-				_ = ot_metrics.set_multiaddress(addr.to_string()).await;
-			}
 			if let Ok(counted_peers) = m_network_client.count_dht_entries().await {
 				debug!("Number of peers in the routing table: {}", counted_peers);
-				if let Err(err) = ot_metrics
-					.record(MetricValue::KadRoutingPeerNum(counted_peers))
-					.await
-				{
-					error!("Error recording network stats metric: {err}");
-				}
+				ot_metrics.record(MetricValue::DHTConnectedPeers(counted_peers));
 			};
-			_ = ot_metrics.record(MetricValue::HealthCheck()).await;
+			ot_metrics.count(MetricCounter::Up);
 		}
 	});
 

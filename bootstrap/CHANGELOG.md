@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- Use telemetry from the avail-light-core 1.2.0
+
 ## [0.4.2](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.4.2) - 2024-12-20
 
 - Temporary remove WebRTC support to reduce memory usage
