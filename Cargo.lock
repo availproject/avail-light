@@ -1262,7 +1262,7 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "avail-core"
 version = "0.6.2"
-source = "git+https://github.com/availproject/avail-core?tag=core-node-6#cfceb72adff58967de2f04b5b0827c716fa721e1"
+source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "binary-merkle-tree",
  "bounded-collections",
@@ -1508,7 +1508,7 @@ dependencies = [
 [[package]]
 name = "avail-light-web"
 version = "0.1.0"
-source = "git+https://github.com/availproject/avail-rust.git?rev=08f75f28#08f75f289a874598a58057b1fb6464d9bb261ac7"
+source = "git+https://github.com/availproject/avail-rust.git?rev=a12ceb5bd#a12ceb5bd81837c88ea50aa2c112854efb87f266"
 dependencies = [
  "avail-core",
  "base58",
@@ -6160,7 +6160,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
-source = "git+https://github.com/availproject/avail-core?tag=core-node-6#cfceb72adff58967de2f04b5b0827c716fa721e1"
+source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",

@@ -26,7 +26,11 @@ use avail_light_core::{
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
+<<<<<<< HEAD
 use avail_rust::{account, avail_core::AppId};
+=======
+use avail_rust::{account, avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
+>>>>>>> 97de53dd (point to mmp version of avail-rust)
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -149,6 +153,7 @@ async fn run(
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 	let account_address = account_id.to_string();
 	let nonce = account::nonce_node(&client.client, &account_address)
@@ -159,6 +164,13 @@ async fn run(
 	// let nonce = client.tx.account_nonce(&account_id).await?; TODO
 	db.put(SignerNonceKey, 0);
 >>>>>>> 2aa1a027 (update avail-rust deps)
+=======
+
+	let account_address = account_id.to_string();
+	let nonce = account::fetch_nonce_node(&client.rpc_client, &account_address).await
+		.map_err(|error| eyre!("{:?}", error))?;
+	db.put(SignerNonceKey, nonce);
+>>>>>>> 97de53dd (point to mmp version of avail-rust)
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_event_sender.subscribe();
