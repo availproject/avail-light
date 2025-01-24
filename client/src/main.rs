@@ -167,7 +167,8 @@ async fn run(
 =======
 
 	let account_address = account_id.to_string();
-	let nonce = account::fetch_nonce_node(&client.rpc_client, &account_address).await
+	let nonce = account::fetch_nonce_node(&client.rpc_client, &account_address)
+		.await
 		.map_err(|error| eyre!("{:?}", error))?;
 	db.put(SignerNonceKey, nonce);
 >>>>>>> 97de53dd (point to mmp version of avail-rust)
