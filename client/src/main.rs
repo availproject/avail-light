@@ -24,7 +24,7 @@ use avail_light_core::{
 	},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::{avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
+use avail_rust::{account, avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -133,8 +133,11 @@ async fn run(
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
-	// let nonce = client.tx.account_nonce(&account_id).await?; TODO
-	db.put(SignerNonceKey, 0);
+
+	let account_address = account_id.to_string();
+	let nonce = account::fetch_nonce_node(&client.rpc_client, &account_address).await
+		.map_err(|error| eyre!("{:?}", error))?;
+	db.put(SignerNonceKey, nonce);
 
 	// Subscribing to RPC events before first event is published
 	let publish_rpc_event_receiver = rpc_event_sender.subscribe();
