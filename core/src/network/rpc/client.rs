@@ -2,20 +2,30 @@ use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail_core::AppId,
 	kate_recovery::{data::Cell, matrix::Position},
+	prelude::WebSocket,
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
+	rpc::{
+		chain::{get_block_hash, get_finalized_head},
+		kate::{query_proof, query_rows},
+		state::get_runtime_version,
+		system::version,
+	},
 	sp_core::{bytes::from_hex, crypto, ed25519::Public},
 	subxt::{
-		self, backend::legacy::rpc_methods::StorageKey, client::RuntimeVersion, rpc_params,
-		tx::SubmittableExtrinsic, utils::AccountId32,
+		self,
+		backend::legacy::rpc_methods::{RuntimeVersion, StorageKey},
+		rpc_params,
+		tx::SubmittableExtrinsic,
+		utils::AccountId32,
 	},
-	AvailHeader, Keypair, Nonce, Options, WaitFor, H256, SDK, U256,
+	AvailHeader, Keypair, Nonce, Options, H256, SDK, U256,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
 use futures::{Stream, TryStreamExt};
-use std::{iter::Iterator, ops::Sub, pin::Pin, sync::Arc, time::Duration};
+use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use thiserror::Error;
 #[cfg(target_arch = "wasm32")]
@@ -291,7 +301,7 @@ impl<D: Database> Client<D> {
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
 		let client = SDK::new(host)
 			.await
-			.unwrap();
+			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{:?}", e))))?;
 
 		// Verify genesis hash
 		let genesis_hash = client.online_client.genesis_hash();
@@ -308,14 +318,9 @@ impl<D: Database> Client<D> {
 		}
 
 		// Fetch system and runtime information
-		let system_version = String::new();
-		
-		// TODO
-		// client
-		// 	.online_client
-		// 	.version()
-		// 	.await
-		// 	.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(e.into())))?;
+		let system_version = version(&client.rpc_client)
+			.await
+			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
 
 		let runtime_version = client.online_client.runtime_version();
 
@@ -516,16 +521,13 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-		// self.with_retries(|client| async move {
-		// 	client
-		// 		.rpc_client
-		// 		.get_block_hash(block_number.into())
-		// 		.await
-		// 		.map_err(Into::into)
-		// })
-		// .await TODO
-
-		Ok(H256::random())
+		self.with_retries(|client| async move {
+			get_block_hash(&client.rpc_client, Some(block_number))
+				.await
+				.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
+				.map_err(Into::into)
+		})
+		.await
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
@@ -569,18 +571,16 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
-		// let head = self
-		// 	.with_retries(|client| async move {
-		// 		client
-		// 			.rpc
-		// 			.chain
-		// 			.get_finalized_head()
-		// 			.await
-		// 			.map_err(Into::into)
-		// 	})
-		// 	.await?; TODO
+		let head = self
+			.with_retries(|client| async move {
+				get_finalized_head(&client.rpc_client)
+					.await
+					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
+					.map_err(Into::into)
+			})
+			.await?;
 
-		Ok(H256::random())
+		Ok(head)
 	}
 
 	pub async fn get_chain_head_header(&self) -> Result<AvailHeader> {
@@ -593,33 +593,24 @@ impl<D: Database> Client<D> {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Vec<u8>>> {
-		// let rows = Rows::try_from(rows).unwrap();
-		// self.with_retries(|client| {
-		// 	let rows = rows.clone();
-		// 	async move {
-		// 		let rows = client
-		// 			.rpc_client
-		// 			.kate
-		// 			.query_rows(rows.to_vec(), Some(block_hash))
-		// 			.await
-		// 			.map_err(|error| subxt::Error::Other(format!("{error}")))?;
-		// 		Ok(rows
-		// 			.iter()
-		// 			.map(|row| {
-		// 				row.iter()
-		// 					.flat_map(|cell| {
-		// 						let mut bytes = [0u8; 32];
-		// 						cell.to_big_endian(&mut bytes);
-		// 						bytes.to_vec()
-		// 					})
-		// 					.collect()
-		// 			})
-		// 			.collect())
-		// 	}
-		// })
-		// .await
-
-		Ok(vec![vec![]])
+		let rows = Rows::try_from(rows).unwrap();
+		self.with_retries(|client| {
+			let rows = rows.clone();
+			async move {
+				let rows = query_rows(&client.rpc_client, rows.to_vec(), Some(block_hash))
+					.await
+					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))?;
+				Ok(rows
+					.iter()
+					.map(|row| {
+						row.iter()
+							.flat_map(|cell| cell.to_big_endian().to_vec())
+							.collect()
+					})
+					.collect())
+			}
+		})
+		.await
 	}
 
 	pub async fn request_kate_proof(
@@ -627,70 +618,76 @@ impl<D: Database> Client<D> {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		// fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
-		// 	let proof: Vec<u8> = proof.into();
-		// 	if proof.len() != 48 {
-		// 		return Err(eyre!("Invalid proof length"));
-		// 	}
+		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
+			let proof: Vec<u8> = proof.into();
+			if proof.len() != 48 {
+				return Err(eyre!("Invalid proof length"));
+			}
 
-		// 	let mut result = [0u8; 80];
-		// 	scalar.to_big_endian(&mut result[48..]);
-		// 	result[..48].copy_from_slice(&proof);
-		// 	Ok(result)
-		// }
+			let mut result = [0u8; 80];
+			scalar.to_big_endian(); 
+			result[..48].copy_from_slice(&proof);
+			Ok(result)
+		}
 
-		// let cells: Cells = positions
-		// 	.iter()
-		// 	.map(|p| avail_rust::Cell {
-		// 		row: p.row,
-		// 		col: p.col as u32,
-		// 	})
-		// 	.collect::<Vec<_>>()
-		// 	.try_into()
-		// 	.map_err(|_| eyre!("Failed to convert to cells"))?;
+		let cells: Cells = positions
+			.iter()
+			.map(|p| avail_rust::Cell {
+				row: p.row,
+				col: p.col as u32,
+			})
+			.collect::<Vec<_>>()
+			.try_into()
+			.map_err(|_| eyre!("Failed to convert to cells"))?;
 
-		// let proofs: Vec<(GRawScalar, GProof)> = self
-		// 	.with_retries(|client| {
-		// 		let cells = cells.clone();
-		// 		async move {
-		// 			client
-		// 				.rpc
-		// 				.kate
-		// 				.query_proof(cells.to_vec(), Some(block_hash))
-		// 				.await
-		// 				.map_err(|error| subxt::Error::Other(format!("{error}")))
-		// 				.map_err(Into::into)
-		// 		}
-		// 	})
-		// 	.await
-		// 	.map_err(Report::from)?;
+		let proofs: Vec<(GRawScalar, GProof)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move {
+					query_proof(&client.rpc_client, cells.to_vec(), Some(block_hash))
+						.await
+						.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
+						.map_err(Into::into)
+				}
+			})
+			.await
+			.map_err(Report::from)?;
 
-		// let contents = proofs
-		// 	.into_iter()
-		// 	.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
+		let contents = proofs
+			.into_iter()
+			.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
 
-		// Ok(positions
-		// 	.iter()
-		// 	.zip(contents)
-		// 	.map(|(&position, content)| Cell { position, content })
-		// 	.collect::<Vec<_>>()) TODO
-
-		Ok(Vec::new())
+		Ok(positions
+			.iter()
+			.zip(contents)
+			.map(|(&position, content)| Cell { position, content })
+			.collect::<Vec<_>>())
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
-		// let res = self
-		// 	.with_retries(
-		// 		|client| async move { client.rpc.system.version().await.map_err(Into::into) },
-		// 	)
-		// 	.await?; TODO
+		let ver = self
+			.with_retries(|client| async move {
+				version(&client.rpc_client)
+					.await
+					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
+					.map_err(Into::into)
+			})
+			.await?;
 
-		Ok(String::new())
+		Ok(ver)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
-		self.with_retries(|client| async move { Ok(client.online_client.runtime_version()) })
-			.await
+		let ver = self
+			.with_retries(|client| async move {
+				get_runtime_version(&client.rpc_client, None)
+					.await
+					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
+					.map_err(Into::into)
+			})
+			.await?;
+
+		Ok(ver)
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {
@@ -699,23 +696,23 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
-		// let res = self
-		// 	.with_retries(|client| {
-		// 		let set_id_key = avail::storage().grandpa().current_set_id();
-		// 		async move {
-		// 			client
-		// 				.api
-		// 				.storage()
-		// 				.at(block_hash)
-		// 				.fetch(&set_id_key)
-		// 				.await
-		// 				.map_err(Into::into)
-		// 		}
-		// 	})
-		// 	.await?
-		// 	.ok_or_else(|| eyre!("The set_id should exist"))?;
+		let res = self
+			.with_retries(|client| {
+				let set_id_key = avail::storage().grandpa().current_set_id();
+				async move {
+					client
+						.online_client
+						.storage()
+						.at(block_hash)
+						.fetch(&set_id_key)
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await?
+			.ok_or_else(|| eyre!("The set_id should exist"))?;
 
-		Ok(0)
+		Ok(res)
 	}
 
 	pub async fn get_current_set_id_by_block_number(&self, block_num: u32) -> Result<u64> {
@@ -731,23 +728,23 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
-		// let res = self
-		// 	.with_retries(|client| {
-		// 		let validators_key = avail::storage().session().validators();
-		// 		async move {
-		// 			client
-		// 				.api
-		// 				.storage()
-		// 				.at(block_hash)
-		// 				.fetch(&validators_key)
-		// 				.await
-		// 				.map_err(Into::into)
-		// 		}
-		// 	})
-		// 	.await
-		// 	.map_err(Report::from)?;
+		let res = self
+			.with_retries(|client| {
+				let validators_key = avail::storage().session().validators();
+				async move {
+					client
+						.online_client
+						.storage()
+						.at(block_hash)
+						.fetch(&validators_key)
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await
+			.map_err(Report::from)?;
 
-		Ok(None)
+		Ok(res)
 	}
 
 	pub async fn submit_signed_and_wait_for_finalized(
@@ -757,38 +754,30 @@ impl<D: Database> Client<D> {
 		app_id: AppId,
 	) -> Result<SubmitResponse> {
 		let data = Arc::new(data);
-		// self.with_retries(|client| {
-		// 	let data = Data { 0: data.0.clone() };
-		// 	async move {
-		// 		let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
+		self.with_retries(|client| {
+			let data = data.0.clone();
+			async move {
+				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
+				let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
+				let tx = client.tx.data_availability.submit_data(data);
 
-		// 		let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
+				let data_submission = tx.execute_and_watch_inclusion(signer, Some(options)).await;
 
-		// 		let data_submission = client
-		// 			.tx
-		// 			.data_availability
-		// 			.submit_data(data);
+				let submit_response = match data_submission {
+					Ok(success) => Ok(SubmitResponse {
+						block_hash: success.block_hash,
+						hash: success.tx_hash,
+						index: success.tx_index,
+					}),
+					Err(error) => Err(eyre!("{:?}", error)),
+				};
 
-		// 		let submit_response = match data_submission {
-		// 			Ok(success) => Ok(SubmitResponse {
-		// 				block_hash: success.block_hash,
-		// 				hash: success.tx_hash,
-		// 				index: success.tx_index,
-		// 			}),
-		// 			Err(error) => Err(eyre!("{error}")),
-		// 		};
+				self.db.put(SignerNonceKey, nonce + 1);
 
-		// 		self.db.put(SignerNonceKey, nonce + 1);
-
-		// 		submit_response
-		// 	}
-		// })
-		// .await
-		Ok(SubmitResponse {
-			block_hash : H256::zero(),
-			hash: H256::zero(),
-			index: 0,
+				submit_response
+			}
 		})
+		.await
 	}
 
 	pub async fn submit_from_bytes_and_wait_for_finalized(
@@ -796,7 +785,8 @@ impl<D: Database> Client<D> {
 		tx_bytes: Vec<u8>,
 	) -> Result<SubmitResponse> {
 		self.with_retries(|client| {
-			let extrinsic = SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
+			let extrinsic =
+				SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
