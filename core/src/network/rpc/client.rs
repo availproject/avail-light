@@ -6,7 +6,7 @@ use avail_rust::{
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
-		kate::{query_proof, query_rows},
+		kate::{query_multi_proof, query_rows},
 		state::get_runtime_version,
 		system::version,
 	},
@@ -618,15 +618,19 @@ impl<D: Database> Client<D> {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
-			let proof: Vec<u8> = proof.into();
-			if proof.len() != 48 {
-				return Err(eyre!("Invalid proof length"));
+		fn concat_content(scalars: Vec<U256>, proof: GProof) -> Result<Vec<[u8; 80]>> {
+			let mut result = vec![[0u8; 80]; scalars.len()];
+
+			for (idx, scalar) in scalars.into_iter().enumerate() {
+				let proof: Vec<u8> = proof.into();
+				if proof.len() != 48 {
+					return Err(eyre!("Invalid proof length"));
+				}
+
+				scalar.to_big_endian();
+				result[idx][..48].copy_from_slice(&proof);
 			}
 
-			let mut result = [0u8; 80];
-			scalar.to_big_endian();
-			result[..48].copy_from_slice(&proof);
 			Ok(result)
 		}
 
@@ -640,11 +644,11 @@ impl<D: Database> Client<D> {
 			.try_into()
 			.map_err(|_| eyre!("Failed to convert to cells"))?;
 
-		let proofs: Vec<(GRawScalar, GProof)> = self
+		let proofs: Vec<(Vec<GRawScalar>, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
 				async move {
-					query_proof(&client.rpc_client, cells.to_vec(), Some(block_hash))
+					query_multi_proof(&client.rpc_client, cells.to_vec(), Some(block_hash))
 						.await
 						.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 						.map_err(Into::into)
@@ -657,11 +661,23 @@ impl<D: Database> Client<D> {
 			.into_iter()
 			.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
 
-		Ok(positions
-			.iter()
-			.zip(contents)
-			.map(|(&position, content)| Cell { position, content })
-			.collect::<Vec<_>>())
+		let positions = positions.iter().zip(contents);
+
+		let mut cells = Vec::new();
+
+		for (_idx, (position, contents)) in positions.enumerate() {
+			for (content_idx, content) in contents.iter().enumerate() {
+				cells.push(Cell {
+					position: Position {
+						row: position.row,
+						col: content_idx as u16,
+					},
+					content: *content,
+				})
+			}
+		}
+
+		Ok(cells)
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
