@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Error};
+use avail_light_core::telemetry::otlp::OtelConfig;
 use libp2p::{Multiaddr, PeerId, StreamProtocol};
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -99,8 +100,8 @@ pub struct RuntimeConfig {
 	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300s)
 	pub bootstrap_period: u64,
-	/// OpenTelemetry Collector endpoint (default: http://127.0.0.1:4317)
-	pub ot_collector_endpoint: String,
+	#[serde(flatten)]
+	pub otel: OtelConfig,
 	/// Defines a period of time in which periodic metric network dump events will be repeated. (default: 15s)
 	pub metrics_network_dump_interval: u64,
 	/// Secret key used to generate keypair. Can be either set to `seed` or to `key`. (default: seed="1")
@@ -213,7 +214,7 @@ impl Default for RuntimeConfig {
 			kad_query_timeout: 60,
 			bootstraps: vec![],
 			bootstrap_period: 300,
-			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
+			otel: Default::default(),
 			metrics_network_dump_interval: 15,
 			origin: "external".to_string(),
 			genesis_hash: "DEV".to_owned(),
