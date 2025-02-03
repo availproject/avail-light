@@ -707,8 +707,7 @@ impl ClientState {
 #[derive(serde::Serialize)]
 struct CheckNFTRequest {
 	address: String,
-	owner: String,
-	token_id: String,
+	commission_rate: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -717,9 +716,9 @@ struct CheckNFTResponse {
 	message: String,
 }
 
-async fn check_nft(endpoint: String, address: String, nft_owner_address: String, token_id: String) -> Result<bool> {
+async fn check_nft(endpoint: String, address: String, commission_rate: String) -> Result<bool> {
 	let client = HttpClient::new();
-	let request_body = CheckNFTRequest { address, owner: nft_owner_address, token_id };
+	let request_body = CheckNFTRequest { address, commission_rate };
 	
 	let response = client
 		.post(&endpoint)
@@ -744,13 +743,12 @@ async fn check_nft(endpoint: String, address: String, nft_owner_address: String,
 async fn run_check_nft(
 	endpoint: String,
 	address: String,
-	nft_owner_address: String,
-	token_id: String,
+	commission_rate: String,
 	interval: Duration,
 	shutdown: Controller<String>
 ) {
 	loop {
-		match check_nft(endpoint.clone(), address.clone(), nft_owner_address.clone(), token_id.clone()).await {
+		match check_nft(endpoint.clone(), address.clone(), commission_rate.clone()).await {
 			Ok(true) => {
 				info!("NFT check passed successfully for address: {}", address);
 				sleep(interval).await;
@@ -783,15 +781,13 @@ pub async fn main() -> Result<()> {
 	};
 	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
 	let avail_evm_address = cfg.avail_evm_address.clone();
-	let nft_owner_address = cfg.nft_owner_address.clone();
-	let token_id = cfg.token_id.clone();
+	let commission_rate = cfg.commission_rate.clone();
 
 	// Start NFT verification before any other initialization
 	let nft_handle = spawn_in_span(shutdown.with_cancel(run_check_nft(
 		cfg.check_nft_endpoint.clone(),
 		avail_evm_address,
-		nft_owner_address,
-		token_id,
+		commission_rate,
 		Duration::from_secs(cfg.check_nft_interval),
 		shutdown.clone(),
 	)));
