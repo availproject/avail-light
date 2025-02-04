@@ -12,7 +12,7 @@ use crate::{
 pub enum OutputEvent {
 	RecordStats {
 		connected_peers: usize,
-		block_confidence_treshold: f64,
+		block_confidence_threshold: f64,
 		replication_factor: u16,
 		query_timeout: u32,
 	},
@@ -62,7 +62,7 @@ pub async fn process_block(
 
 	event_sender.send(OutputEvent::RecordStats {
 		connected_peers: peers_num,
-		block_confidence_treshold: maintenance_config.block_confidence_treshold,
+		block_confidence_threshold: maintenance_config.block_confidence_threshold,
 		replication_factor: maintenance_config.replication_factor,
 		query_timeout: maintenance_config.query_timeout.as_secs() as u32,
 	})?;
