@@ -590,12 +590,12 @@ impl ClientState {
 					match maintenance_event {
 						MaintenanceEvent::RecordStats {
 							connected_peers,
-							block_confidence_treshold,
+							block_confidence_threshold,
 							replication_factor,
 							query_timeout,
 						} => {
 							self.metrics.record(MetricValue::DHTConnectedPeers(connected_peers));
-							self.metrics.record(MetricValue::BlockConfidenceThreshold(block_confidence_treshold));
+							self.metrics.record(MetricValue::BlockConfidenceThreshold(block_confidence_threshold));
 							self.metrics.record(MetricValue::DHTReplicationFactor(replication_factor));
 							self.metrics.record(MetricValue::DHTQueryTimeout(query_timeout));
 						},
