@@ -80,7 +80,7 @@ impl From<&RuntimeConfig> for AppClientConfig {
 impl From<&RuntimeConfig> for MaintenanceConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		MaintenanceConfig {
-			block_confidence_treshold: val.confidence,
+			block_confidence_threshold: val.confidence,
 			replication_factor: val.libp2p.kademlia.record_replication_factor.get() as u16,
 			query_timeout: val.libp2p.kademlia.query_timeout,
 			pruning_interval: val.libp2p.kademlia.store_pruning_interval,
