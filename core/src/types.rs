@@ -412,7 +412,7 @@ impl Default for AppClientConfig {
 
 #[derive(Clone, Copy)]
 pub struct MaintenanceConfig {
-	pub block_confidence_treshold: f64,
+	pub block_confidence_threshold: f64,
 	pub replication_factor: u16,
 	pub query_timeout: Duration,
 	pub pruning_interval: u32,
