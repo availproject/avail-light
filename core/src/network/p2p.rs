@@ -13,7 +13,7 @@ use libp2p::{
 	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p::{mdns, tcp, upnp};
+use libp2p::{mdns, tcp};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
 use semver::Version;
@@ -182,8 +182,6 @@ pub struct Behaviour {
 	auto_nat: autonat::Behaviour,
 	relay_client: relay::client::Behaviour,
 	dcutr: dcutr::Behaviour,
-	#[cfg(not(target_arch = "wasm32"))]
-	upnp: upnp::tokio::Behaviour,
 	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
 }
 
@@ -303,8 +301,6 @@ async fn build_swarm(
 			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
 			#[cfg(not(target_arch = "wasm32"))]
 			mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
-			#[cfg(not(target_arch = "wasm32"))]
-			upnp: upnp::tokio::Behaviour::default(),
 			blocked_peers: allow_block_list::Behaviour::default(),
 		})
 	};
