@@ -1,20 +1,19 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
+use avail_light_core::data::{BlockHeaderKey, Database, MultiAddressKey, PeerIDKey};
 use avail_rust::{self, Keypair};
 use chrono::Utc;
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
-use tokio::{sync::Mutex, time};
-use tracing::{trace, warn};
-
-use crate::TrackingState;
+use tokio::time;
+use tracing::{info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PingMessage {
 	pub timestamp: i64,
-	pub multiaddr: String,
-	pub peer_id: String,
-	pub block_number: String,
+	pub multiaddr: Option<String>,
+	pub peer_id: Option<String>,
+	pub block_number: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,16 +25,18 @@ pub struct SignedPingMessage {
 
 pub async fn create_and_sign_ping_message(
 	keypair: Keypair,
-	tracking_state: Arc<Mutex<TrackingState>>,
+	db: impl Database + Clone,
 ) -> Result<SignedPingMessage> {
-	let state = tracking_state.lock().await;
+	let multiaddr = db.get(MultiAddressKey);
+	let peer_id = db.get(PeerIDKey);
+	let block_number: u32 = 0;
+	db.get(BlockHeaderKey(block_number));
 	let ping_message = PingMessage {
 		timestamp: Utc::now().timestamp(),
-		multiaddr: state.multiaddress.to_string(),
-		peer_id: state.peer_id.to_string(),
-		block_number: state.latest_block.to_string(),
+		multiaddr,
+		peer_id,
+		block_number,
 	};
-	drop(state);
 	let message_bytes = serde_json::to_vec(&ping_message)?;
 
 	let signature = keypair.sign(&message_bytes);
@@ -51,13 +52,14 @@ pub async fn create_and_sign_ping_message(
 pub async fn run(
 	tracking_interval: Duration,
 	keypair: Keypair,
-	tracking_state: Arc<Mutex<TrackingState>>,
+	db: impl Database + Clone,
 	tracker_address: String,
 ) {
+	info!("Tracking service started...");
 	let mut interval = time::interval(tracking_interval);
 	loop {
 		interval.tick().await;
-		match create_and_sign_ping_message(keypair.clone(), tracking_state.clone()).await {
+		match create_and_sign_ping_message(keypair.clone(), db.clone()).await {
 			Ok(signed_ping_message) => {
 				let client = reqwest::Client::new();
 				match client

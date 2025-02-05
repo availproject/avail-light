@@ -325,3 +325,31 @@ impl RecordKey for BlockHeaderReceivedAtKey {
 		format!("{BLOCK_HEADER_RECEIVED_AT}:{block_num}")
 	}
 }
+
+pub struct PeerIDKey;
+
+impl RecordKey for PeerIDKey {
+	type Type = String;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		PEER_ID_KEY.into()
+	}
+}
+
+pub struct MultiAddressKey;
+
+impl RecordKey for MultiAddressKey {
+	type Type = String;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		MULTI_ADDRESS_KEY.into()
+	}
+}

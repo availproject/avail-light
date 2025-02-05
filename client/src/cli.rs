@@ -61,7 +61,7 @@ pub struct CliOpts {
 	pub client_alias: Option<String>,
 	/// Enable or disable light client tracking service
 	#[arg(long, action = ArgAction::SetTrue)]
-	pub tracking_service_enable: Option<bool>,
+	pub tracking_service_enable: bool,
 	/// Tracking service address
 	#[arg(long)]
 	pub tracking_service_address: Option<String>,
