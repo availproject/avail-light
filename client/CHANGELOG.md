@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.5
+## [1.12.5](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.5) - 2025-01-23
 
 - Update `avail-light-core` to 1.2.0
 - Remove `ot_flush_block_interval` from configuration

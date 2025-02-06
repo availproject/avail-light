@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.4
+## [1.12.4](https://github.com/availproject/avail-light/releases/tag/avail-light-fat-v1.12.4) - 2025-01-23
 
 - Update `avail-light-core` to 1.2.0
 - Remove `ot_flush_block_interval` from configuration
