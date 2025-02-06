@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Batch rows RPC requests
+- Remove UPNP behaviour
+
 ## [1.2.0](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.0) - 2025-02-06
 
 - Remove multiaddress metric attribute

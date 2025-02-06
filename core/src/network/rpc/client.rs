@@ -586,12 +586,7 @@ impl<D: Database> Client<D> {
 		self.get_header_by_hash(finalized_hash).await
 	}
 
-	pub async fn request_kate_rows(
-		&self,
-		rows: Vec<u32>,
-		block_hash: H256,
-	) -> Result<Vec<Vec<u8>>> {
-		let rows = Rows::try_from(rows).unwrap();
+	pub async fn request_kate_rows(&self, rows: Rows, block_hash: H256) -> Result<Vec<Vec<u8>>> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
