@@ -26,6 +26,8 @@ use avail_rust::{
 		data::{Cell, DataCell},
 		matrix::{Dimensions, Position},
 	},
+	primitives::kate::{MaxRows, Rows},
+	sp_core::Get,
 	H256,
 };
 use color_eyre::{
@@ -200,14 +202,19 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		dimensions: Dimensions,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		let rows = rows
-			.clone()
-			.into_iter()
-			.zip(self.rpc_client.request_kate_rows(rows, block_hash).await?);
+		let max_rows = <MaxRows as Get<u32>>::get() as usize;
+		let expect_message = format!("Rows count is less or equal to {max_rows}");
+
 		let mut result = vec![None; dimensions.extended_rows() as usize];
-		for (i, row) in rows {
-			result[i as usize] = Some(row);
+		for chunk in rows.chunks(max_rows) {
+			let rows = Rows::try_from(chunk.to_vec()).expect(&expect_message);
+			debug!("Requesting rows: {chunk:?}");
+			let rpc_result = self.rpc_client.request_kate_rows(rows, block_hash).await?;
+			for (&i, row) in chunk.iter().zip(rpc_result) {
+				result[i as usize] = Some(row);
+			}
 		}
+
 		Ok(result)
 	}
 }
