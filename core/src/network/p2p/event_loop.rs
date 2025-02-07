@@ -2,6 +2,8 @@ use color_eyre::{eyre::eyre, Result};
 #[cfg(target_arch = "wasm32")]
 use fluvio_wasm_timer::Interval;
 use futures::StreamExt;
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::mdns;
 use libp2p::{
 	autonat::{self, NatStatus},
 	core::ConnectedPoint,
@@ -19,8 +21,6 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use libp2p::{mdns, upnp};
 use rand::seq::SliceRandom;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -523,21 +523,6 @@ impl EventLoop {
 				if let Ok(rtt) = result {
 					_ = self.event_sender.send(OutputEvent::Ping(rtt));
 				}
-			},
-			#[cfg(not(target_arch = "wasm32"))]
-			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
-				upnp::Event::NewExternalAddr(addr) => {
-					trace!("[UPnP] New external address: {addr}");
-				},
-				upnp::Event::GatewayNotFound => {
-					trace!("[UPnP] Gateway does not support UPnP");
-				},
-				upnp::Event::NonRoutableGateway => {
-					trace!("[UPnP] Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
-				},
-				upnp::Event::ExpiredExternalAddr(addr) => {
-					trace!("[UPnP] Gateway address expired: {addr}");
-				},
 			},
 			swarm_event => {
 				match swarm_event {
