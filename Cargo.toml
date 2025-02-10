@@ -37,7 +37,7 @@ libp2p-webrtc-websys = { git = "https://github.com/libp2p/rust-libp2p", rev = "a
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.42", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
+tokio = { version = "1.35", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }
