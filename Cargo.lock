@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-bootstrap"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "async-std",
@@ -1216,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "1.12.6"
+version = "1.12.7"
 dependencies = [
  "avail-light-core",
  "avail-rust",
@@ -1338,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-fat"
-version = "1.12.4"
+version = "1.12.5"
 dependencies = [
  "avail-light-core",
  "avail-rust",

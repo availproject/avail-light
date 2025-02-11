@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Update `avail-light-core` to 1.2.2
+
 ## [0.5.0](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.0) - 2025-01-23
 
 - Use telemetry from the avail-light-core 1.2.0
