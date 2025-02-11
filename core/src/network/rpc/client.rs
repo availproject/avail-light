@@ -801,19 +801,13 @@ impl<D: Database> Client<D> {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		fn concat_content(scalars: Vec<U256>, proof: GProof) -> Result<Vec<[u8; 80]>> {
-			let mut result = vec![[0u8; 80]; scalars.len()];
-
-			for (idx, scalar) in scalars.into_iter().enumerate() {
-				let proof: Vec<u8> = proof.into();
-				if proof.len() != 48 {
-					return Err(eyre!("Invalid proof length"));
-				}
-
-				scalar.to_big_endian();
-				result[idx][..48].copy_from_slice(&proof);
+		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
+			let proof: Vec<u8> = proof.into();
+			if proof.len() != 48 {
+				return Err(eyre!("Invalid proof length"));
 			}
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -822,6 +816,13 @@ impl<D: Database> Client<D> {
 			result[..48].copy_from_slice(&proof);
 =======
 >>>>>>> b303aab9 (push pmp api on LC)
+=======
+			let mut result = [0u8; 80];
+			result[..48].copy_from_slice(&proof);
+
+			let scalar_bytes = scalar.to_big_endian();
+			result[48..].copy_from_slice(&scalar_bytes);
+>>>>>>> 75b002df (fix: update concat content)
 			Ok(result)
 		}
 =======
