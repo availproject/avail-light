@@ -54,9 +54,6 @@ enum RetryError {
 
 #[derive(Debug, Error)]
 enum ClientCreationError {
-	#[error("SDK failed to provide new RPC client: {0}")]
-	SdkFailure(Report),
-
 	#[error("Failed to create RPC client for host {host}: {error}")]
 	ConnectionFailed { host: String, error: Report },
 
@@ -300,7 +297,7 @@ impl<D: Database> Client<D> {
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
 		let client = SDK::new(host)
 			.await
-			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{:?}", e))))?;
+			.map_err(|e| Report::msg(e.to_string()))?;
 
 		// Verify genesis hash
 		let genesis_hash = client.client.online_client.genesis_hash();
@@ -595,9 +592,7 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = query_rows(&client.client, rows.to_vec(), Some(block_hash))
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))?;
+				let rows = query_rows(&client.client, rows.to_vec(), Some(block_hash)).await?;
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -643,15 +638,10 @@ impl<D: Database> Client<D> {
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
-				async move {
-					query_proof(&client.client, cells.to_vec(), Some(block_hash))
-						.await
-						.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-						.map_err(Into::into)
-				}
+				async move { Ok(query_proof(&client.client, cells.to_vec(), Some(block_hash)).await) }
 			})
 			.await
-			.map_err(Report::from)?;
+			.map_err(Report::from)??;
 
 		let contents = proofs
 			.into_iter()
@@ -666,26 +656,18 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let ver = self
-			.with_retries(|client| async move {
-				version(&client.client)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
+			.with_retries(|client| async move { Ok(version(&client.client).await) })
+			.await??;
 
 		Ok(ver)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let ver = self
-			.with_retries(|client| async move {
-				get_runtime_version(&client.client, None)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
+			.with_retries(
+				|client| async move { Ok(get_runtime_version(&client.client, None).await) },
+			)
+			.await??;
 
 		Ok(ver)
 	}
