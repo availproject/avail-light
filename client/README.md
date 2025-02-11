@@ -259,7 +259,7 @@ API usage and examples can be found on the [Avail Docs](https://docs.availprojec
 
 ### API Version 2
 
-API V2 reference can be found in the [V2 README file](src/api/v2/README.md).
+API V2 reference can be found in the [V2 README file](/core/src/api/v2/README.md).
 
 ### API Version 1 (deprecated)
 
