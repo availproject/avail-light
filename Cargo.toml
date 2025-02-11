@@ -18,8 +18,8 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-rust = { git = "https://github.com/availproject/avail-rust.git", default-features = false }
-dusk-plonk = { git = "https://github.com/availproject/plonk.git", default-features = false, features = ["alloc"], tag = "v0.12.0-polygon-2" }
+avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.0", default-features = false }
+dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 avail-light-core = { path = "./core" }
 
 anyhow = "1.0.71"
@@ -41,7 +41,7 @@ tokio = { version = "1.35", default-features = false, features = ["sync", "macro
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }
-uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics", "serde", "js"] }
+uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
 void = "1.0.2"
 warp = "0.3.6"
 futures = { version = "0.3.15", default-features = false, features = ["std", "async-await"] }

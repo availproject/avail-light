@@ -1391,7 +1391,7 @@ dependencies = [
 [[package]]
 name = "avail-rust"
 version = "0.1.0"
-source = "git+https://github.com/availproject/avail-rust.git#4512eb01b213a72d405effd56aab81e9b43d452b"
+source = "git+https://github.com/availproject/avail-rust.git?tag=v0.1.0#4512eb01b213a72d405effd56aab81e9b43d452b"
 dependencies = [
  "avail-core",
  "base58",
