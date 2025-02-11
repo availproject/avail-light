@@ -3,12 +3,21 @@ use avail_rust::{
 	avail_core::AppId,
 	kate_recovery::{data::Cell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
+	rpc::{
+		chain::{get_block_hash, get_finalized_head},
+		kate::{query_proof, query_rows},
+		state::get_runtime_version,
+		system::version,
+	},
 	sp_core::{bytes::from_hex, crypto, ed25519::Public},
 	subxt::{
-		self, backend::legacy::rpc_methods::StorageKey, client::RuntimeVersion, rpc_params,
-		tx::SubmittableExtrinsic, utils::AccountId32,
+		self,
+		backend::legacy::rpc_methods::{RuntimeVersion, StorageKey},
+		rpc_params,
+		tx::SubmittableExtrinsic,
+		utils::AccountId32,
 	},
-	AvailHeader, Data, Keypair, Nonce, Options, WaitFor, H256, SDK, U256,
+	AvailHeader, Keypair, Options, H256, SDK, U256,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -45,9 +54,6 @@ enum RetryError {
 
 #[derive(Debug, Error)]
 enum ClientCreationError {
-	#[error("SDK failed to provide new RPC client: {0}")]
-	SdkFailure(Report),
-
 	#[error("Failed to create RPC client for host {host}: {error}")]
 	ConnectionFailed { host: String, error: Report },
 
@@ -289,12 +295,12 @@ impl<D: Database> Client<D> {
 
 	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
-		let client = SDK::new_insecure(host)
+		let client = SDK::new(host)
 			.await
-			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{e}"))))?;
+			.map_err(|e| Report::msg(e.to_string()))?;
 
 		// Verify genesis hash
-		let genesis_hash = client.api.genesis_hash();
+		let genesis_hash = client.client.online_client.genesis_hash();
 		info!("Genesis hash for {}: {:?}", host, genesis_hash);
 
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
@@ -308,14 +314,11 @@ impl<D: Database> Client<D> {
 		}
 
 		// Fetch system and runtime information
-		let system_version = client
-			.rpc
-			.system
-			.version()
+		let system_version = version(&client.client)
 			.await
-			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(e.into())))?;
+			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
 
-		let runtime_version = client.api.runtime_version();
+		let runtime_version = client.client.online_client.runtime_version();
 
 		// Create Node variant
 		let node = Node::new(
@@ -457,7 +460,8 @@ impl<D: Database> Client<D> {
 		// Create fused Avail Header subscription
 		let headers: SubscriptionStream = Box::pin(
 			client
-				.api
+				.client
+				.online_client
 				.backend()
 				.stream_finalized_block_headers()
 				.await?
@@ -471,8 +475,8 @@ impl<D: Database> Client<D> {
 		// Create fused GrandpaJustification subscription
 		let justifications: SubscriptionStream = Box::pin(
 			client
-				.rpc
 				.client
+				.rpc_client
 				.subscribe(
 					"grandpa_subscribeJustifications",
 					rpc_params![],
@@ -516,11 +520,9 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
 		self.with_retries(|client| async move {
-			client
-				.rpc
-				.chain
-				.get_block_hash(block_number.into())
+			get_block_hash(&client.client, Some(block_number))
 				.await
+				.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 				.map_err(Into::into)
 		})
 		.await
@@ -529,7 +531,8 @@ impl<D: Database> Client<D> {
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.with_retries(|client| async move {
 			client
-				.api
+				.client
+				.online_client
 				.backend()
 				.block_header(block_hash)
 				.await?
@@ -551,7 +554,8 @@ impl<D: Database> Client<D> {
 		let res = self
 			.with_retries(|client| async move {
 				client
-					.api
+					.client
+					.online_client
 					.runtime_api()
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
@@ -569,11 +573,9 @@ impl<D: Database> Client<D> {
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
 			.with_retries(|client| async move {
-				client
-					.rpc
-					.chain
-					.get_finalized_head()
+				get_finalized_head(&client.client)
 					.await
+					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 					.map_err(Into::into)
 			})
 			.await?;
@@ -590,21 +592,12 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = client
-					.rpc
-					.kate
-					.query_rows(rows.to_vec(), Some(block_hash))
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{error}")))?;
+				let rows = query_rows(&client.client, rows.to_vec(), Some(block_hash)).await?;
 				Ok(rows
 					.iter()
 					.map(|row| {
 						row.iter()
-							.flat_map(|cell| {
-								let mut bytes = [0u8; 32];
-								cell.to_big_endian(&mut bytes);
-								bytes.to_vec()
-							})
+							.flat_map(|cell| cell.to_big_endian().to_vec())
 							.collect()
 					})
 					.collect())
@@ -625,8 +618,10 @@ impl<D: Database> Client<D> {
 			}
 
 			let mut result = [0u8; 80];
-			scalar.to_big_endian(&mut result[48..]);
 			result[..48].copy_from_slice(&proof);
+
+			let scalar_bytes = scalar.to_big_endian();
+			result[48..].copy_from_slice(&scalar_bytes);
 			Ok(result)
 		}
 
@@ -643,18 +638,10 @@ impl<D: Database> Client<D> {
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
-				async move {
-					client
-						.rpc
-						.kate
-						.query_proof(cells.to_vec(), Some(block_hash))
-						.await
-						.map_err(|error| subxt::Error::Other(format!("{error}")))
-						.map_err(Into::into)
-				}
+				async move { Ok(query_proof(&client.client, cells.to_vec(), Some(block_hash)).await) }
 			})
 			.await
-			.map_err(Report::from)?;
+			.map_err(Report::from)??;
 
 		let contents = proofs
 			.into_iter()
@@ -668,18 +655,21 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
-		let res = self
-			.with_retries(
-				|client| async move { client.rpc.system.version().await.map_err(Into::into) },
-			)
-			.await?;
+		let ver = self
+			.with_retries(|client| async move { Ok(version(&client.client).await) })
+			.await??;
 
-		Ok(res)
+		Ok(ver)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
-		self.with_retries(|client| async move { Ok(client.api.runtime_version()) })
-			.await
+		let ver = self
+			.with_retries(
+				|client| async move { Ok(get_runtime_version(&client.client, None).await) },
+			)
+			.await??;
+
+		Ok(ver)
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {
@@ -693,7 +683,7 @@ impl<D: Database> Client<D> {
 				let set_id_key = avail::storage().grandpa().current_set_id();
 				async move {
 					client
-						.api
+						.client
 						.storage()
 						.at(block_hash)
 						.fetch(&set_id_key)
@@ -725,7 +715,7 @@ impl<D: Database> Client<D> {
 				let validators_key = avail::storage().session().validators();
 				async move {
 					client
-						.api
+						.client
 						.storage()
 						.at(block_hash)
 						.fetch(&validators_key)
@@ -747,17 +737,13 @@ impl<D: Database> Client<D> {
 	) -> Result<SubmitResponse> {
 		let data = Arc::new(data);
 		self.with_retries(|client| {
-			let data = Data { 0: data.0.clone() };
+			let data = data.0.clone();
 			async move {
 				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
+				let options = Options::new().nonce(nonce).app_id(app_id.0);
+				let tx = client.tx.data_availability.submit_data(data);
 
-				let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
-
-				let data_submission = client
-					.tx
-					.data_availability
-					.submit_data(data, WaitFor::BlockInclusion, signer, Some(options))
-					.await;
+				let data_submission = tx.execute_and_watch_inclusion(signer, options).await;
 
 				let submit_response = match data_submission {
 					Ok(success) => Ok(SubmitResponse {
@@ -765,7 +751,7 @@ impl<D: Database> Client<D> {
 						hash: success.tx_hash,
 						index: success.tx_index,
 					}),
-					Err(error) => Err(eyre!("{error}")),
+					Err(error) => Err(eyre!("{:?}", error)),
 				};
 
 				self.db.put(SignerNonceKey, nonce + 1);
@@ -781,7 +767,8 @@ impl<D: Database> Client<D> {
 		tx_bytes: Vec<u8>,
 	) -> Result<SubmitResponse> {
 		self.with_retries(|client| {
-			let extrinsic = SubmittableExtrinsic::from_bytes(client.api.clone(), tx_bytes.clone());
+			let extrinsic =
+				SubmittableExtrinsic::from_bytes(client.client.online_client, tx_bytes.clone());
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
@@ -811,7 +798,7 @@ impl<D: Database> Client<D> {
 	) -> Result<Vec<StorageKey>> {
 		let key = &key;
 		self.with_retries(|client| async move {
-			let storage = client.api.storage().at(hash);
+			let storage = client.client.storage().at(hash);
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
 			raw_keys
 				.take(count)
@@ -835,7 +822,7 @@ impl<D: Database> Client<D> {
 					.key_owner(KeyTypeId(crypto::key_types::GRANDPA.0), public_key.0);
 				async move {
 					client
-						.api
+						.client
 						.storage()
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
@@ -856,7 +843,12 @@ impl<D: Database> Client<D> {
 		let params = params.as_ref().map(String::as_bytes);
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
-				let api = client.api.runtime_api().at_latest().await?;
+				let api = client
+					.client
+					.online_client
+					.runtime_api()
+					.at_latest()
+					.await?;
 				api.call_raw("grandpa_proveFinality", params)
 					.await
 					.map_err(Into::into)
@@ -868,7 +860,12 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
-		let gen_hash = self.current_client().await.api.genesis_hash();
+		let gen_hash = self
+			.current_client()
+			.await
+			.client
+			.online_client
+			.genesis_hash();
 
 		Ok(gen_hash)
 	}

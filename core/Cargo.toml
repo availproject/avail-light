@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-core"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -9,7 +9,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
-avail-rust = { workspace = true }
 dusk-plonk = { workspace = true }
 
 # 3rd-party
@@ -39,9 +38,9 @@ tokio-retry = "0.3"
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-uuid = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+avail-rust = { workspace = true, default-features = true }
 async-std = { workspace = true }
 color-eyre = { workspace = true, default-features = true }
 confy = { workspace = true }
@@ -63,6 +62,7 @@ tokio = { workspace = true, features = ["signal"] }
 tokio-util = "0.7.10"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
 void = { workspace = true }
 warp = { workspace = true }
 
@@ -72,6 +72,7 @@ opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+avail-rust = { workspace = true, default-features = false, features = ["wasm"] }
 blake2b_simd = "1.0.2"
 color-eyre = { workspace = true }
 ed25519-compact = "2.1.1"
@@ -83,10 +84,12 @@ rand = { workspace = true, features = ["std_rng"] }
 thiserror-no-std = "2.0.2"
 tokio = { workspace = true }
 tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
+uuid = { workspace = true, features = ["js"] }
 wasm-bindgen = "0.2.90"
 web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+avail-rust = { workspace = true, default-features = true }
 hex-literal = "0.4.1"
 proptest = "1.0.0"
 test-case = "3.2.1"

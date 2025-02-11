@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.2]
+
+- Update avail-rust dependency to v0.1.0
+
 ## [1.2.1](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.1) - 2025-02-10
 
 - Batch rows RPC requests
