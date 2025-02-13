@@ -37,3 +37,7 @@ pub const P2P_KEYPAIR_KEY: &str = "p2p_keypair";
 pub const SIGNER_NONCE: &str = "signer_nonce";
 /// Key for storing block header received at timestamp
 pub const BLOCK_HEADER_RECEIVED_AT: &str = "block_header_received_at";
+/// PeerID
+pub const PEER_ID_KEY: &str = "peer_id";
+/// Multi-address
+pub const MULTI_ADDRESS_KEY: &str = "multi_address";

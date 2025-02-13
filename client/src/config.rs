@@ -56,6 +56,12 @@ pub struct RuntimeConfig {
 	pub threshold: usize,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
+	/// Enable or disable light client tracking service (default: off)
+	pub tracking_service_enable: bool,
+	/// Tracking service address (default: `http://127.0.0.1:8989`)
+	pub tracking_service_address: String,
+	/// Tracking service ping interval in seconds (default: 10)
+	pub tracking_service_ping_interval: u64,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -124,6 +130,9 @@ impl Default for RuntimeConfig {
 			threshold: 5000,
 			origin: Origin::External,
 			client_alias: None,
+			tracking_service_enable: false,
+			tracking_service_address: "http://127.0.0.1:8989".to_string(),
+			tracking_service_ping_interval: 10,
 		}
 	}
 }

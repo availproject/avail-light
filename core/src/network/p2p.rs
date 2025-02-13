@@ -83,6 +83,7 @@ pub enum OutputEvent {
 	Ping(Duration),
 	IncomingConnection,
 	IncomingConnectionError,
+	ExternalMultiaddressUpdate(Multiaddr),
 	EstablishedConnection,
 	OutgoingConnectionError,
 	Count,
