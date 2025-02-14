@@ -25,7 +25,8 @@ jobs:
             rust_target: aarch64-unknown-linux-gnu
             output_name: avail-light-linux-arm64
             extra_setup: |
-              sudo apt-get install -y libssl-dev
+              sudo apt-get update
+              sudo apt-get install -y libssl-dev:arm64
               sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
               rustup target add aarch64-unknown-linux-gnu
               export BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu'
