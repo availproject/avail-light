@@ -34,6 +34,8 @@ jobs:
               export PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu 
               export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
               export OPENSSL_DIR=/usr/aarch64-linux-gnu
+              sudo ln -s /usr/include/x86_64-linux-gnu/openssl/opensslconf.h /usr/include/openssl/opensslconf.h
+              sudo ln -s /usr/include/x86_64-linux-gnu/openssl/configuration.h /usr/include/openssl/configuration.h
 
           - os: macos-14
             workspace: avail-light-client
