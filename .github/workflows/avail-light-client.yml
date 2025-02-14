@@ -13,14 +13,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             workspace: avail-light-client
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
             extra_setup: |
               rustup target add x86_64-unknown-linux-gnu
 
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             workspace: avail-light-client
             rust_target: aarch64-unknown-linux-gnu
             output_name: avail-light-linux-arm64
@@ -95,7 +95,7 @@ jobs:
 
   binary_publish:
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -115,7 +115,7 @@ jobs:
 
   trigger_deploy_workflow:
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Trigger repository_dispatch for release
         shell: bash
@@ -130,7 +130,7 @@ jobs:
   # build avail image and publish to dockerhub
   docker_build_push:
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
