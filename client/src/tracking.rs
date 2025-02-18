@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use avail_light_core::data::{BlockHeaderKey, Database, MultiAddressKey, PeerIDKey};
+use avail_light_core::data::{Database, LatestHeaderKey, MultiAddressKey, PeerIDKey};
 use avail_rust::{self, Keypair};
 use chrono::Utc;
 use color_eyre::Result;
@@ -13,7 +13,7 @@ pub struct PingMessage {
 	pub timestamp: i64,
 	pub multiaddr: Option<String>,
 	pub peer_id: Option<String>,
-	pub block_number: u32,
+	pub latest_block: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,13 +29,13 @@ pub async fn create_and_sign_ping_message(
 ) -> Result<SignedPingMessage> {
 	let multiaddr = db.get(MultiAddressKey);
 	let peer_id = db.get(PeerIDKey);
-	let block_number: u32 = 0;
-	db.get(BlockHeaderKey(block_number));
+
+	let latest_block = db.get(LatestHeaderKey);
 	let ping_message = PingMessage {
 		timestamp: Utc::now().timestamp(),
 		multiaddr,
 		peer_id,
-		block_number,
+		latest_block,
 	};
 	let message_bytes = serde_json::to_vec(&ping_message)?;
 
