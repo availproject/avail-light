@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             workspace: avail-light-bootstrap
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-bootstrap-linux-amd64
@@ -45,7 +45,7 @@ jobs:
 
   binary_publish:
     needs: [build]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -65,7 +65,7 @@ jobs:
 
   trigger_deploy_workflow:
     needs: [binary_publish]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Trigger repository_dispatch for release
         shell: bash
