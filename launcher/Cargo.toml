@@ -1,0 +1,19 @@
+[package]
+name = "avail-light-launcher"
+version = "0.1.0"
+authors.workspace = true
+edition = "2021"
+repository.workspace = true
+
+[dependencies]
+color-eyre.workspace = true
+reqwest = { version = "0.12.12", features = ["json"] }
+semver.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["process", "rt-multi-thread"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[[bin]]
+name = "avail-light-launcher"
+path = "main.rs"

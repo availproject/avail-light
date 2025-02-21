@@ -6,6 +6,7 @@ members = [
 	"core",
 	"crawler",
 	"fat",
+	"launcher",
 	"monitor-client",
 	"relay",
 	"web",
