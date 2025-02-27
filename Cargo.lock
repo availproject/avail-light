@@ -1367,6 +1367,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "avail-light-launcher"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "reqwest",
+ "semver 1.0.25",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
 name = "avail-light-monitor"
 version = "0.1.0"
 dependencies = [
