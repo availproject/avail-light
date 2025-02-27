@@ -2,7 +2,7 @@
 
 ## 1.12.5
 
-- Update `avail-light-core` to 1.2.2
+- Update `avail-light-core` to 1.2.3
 
 ## [1.12.4](https://github.com/availproject/avail-light/releases/tag/avail-light-fat-v1.12.4) - 2025-01-23
 

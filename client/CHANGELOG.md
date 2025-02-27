@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.8
+
+- Update `avail-light-core` to 1.2.3
+
 ## [1.12.7](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.7) - 2025-02-20
 
 - Add support for the Light Client Tracking Service
