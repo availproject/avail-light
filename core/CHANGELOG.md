@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.3
+
+- Update `rust-libp2p` and related libraries to `0.55`
+
 ## [1.2.2](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.2) - 2025-02-20
 
 - Support v2 API in WASM

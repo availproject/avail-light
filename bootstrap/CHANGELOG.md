@@ -2,7 +2,7 @@
 
 ## 0.5.1
 
-- Update `avail-light-core` to 1.2.2
+- Update `avail-light-core` to 1.2.3
 
 ## [0.5.0](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.0) - 2025-01-23
 
