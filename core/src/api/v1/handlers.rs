@@ -26,7 +26,7 @@ fn get_achived_confidence(db: &impl Database) -> Option<BlockRange> {
 fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block as u64)?;
 	let factor_big: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64)?;
-	let shifted: BigUint = block_big << 32 | factor_big;
+	let shifted: BigUint = (block_big << 32) | factor_big;
 	Some(shifted.to_str_radix(10))
 }
 

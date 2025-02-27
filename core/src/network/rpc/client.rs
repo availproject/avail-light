@@ -661,8 +661,7 @@ impl<D: Database> Client<D> {
 				let cells = cells.clone();
 				async move { Ok(query_proof(&client.client, cells.to_vec(), Some(block_hash)).await) }
 			})
-			.await
-			.map_err(Report::from)??;
+			.await??;
 
 		let contents = proofs
 			.into_iter()
@@ -744,8 +743,7 @@ impl<D: Database> Client<D> {
 						.map_err(Into::into)
 				}
 			})
-			.await
-			.map_err(Report::from)?;
+			.await?;
 
 		Ok(res)
 	}
@@ -828,7 +826,6 @@ impl<D: Database> Client<D> {
 				.map_err(Into::into)
 		})
 		.await
-		.map_err(Report::from)
 	}
 
 	pub async fn get_session_key_owner_at(
@@ -851,8 +848,7 @@ impl<D: Database> Client<D> {
 						.map_err(Into::into)
 				}
 			})
-			.await
-			.map_err(Report::from)?;
+			.await?;
 
 		Ok(res)
 	}
