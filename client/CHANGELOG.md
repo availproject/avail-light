@@ -1,6 +1,19 @@
 # Changelog
 
-## 1.12.5
+## 1.12.8
+
+- Update `avail-light-core` to 1.2.3
+
+## [1.12.7](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.7) - 2025-02-20
+
+- Add support for the Light Client Tracking Service
+- Update `avail-light-core` to 1.2.2
+
+## [1.12.6](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.6) - 2025-02-10
+
+- Update `avail-light-core` to 1.2.1
+
+## [1.12.5](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.5) - 2025-01-23
 
 - Update `avail-light-core` to 1.2.0
 - Remove `ot_flush_block_interval` from configuration

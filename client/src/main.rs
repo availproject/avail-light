@@ -5,7 +5,7 @@ use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
 		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
-		SignerNonceKey, DB,
+		MultiAddressKey, PeerIDKey, SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
 	maintenance::{self, OutputEvent as MaintenanceEvent},
@@ -54,6 +54,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 mod cli;
 mod config;
+mod tracking;
 
 /// Light Client for Avail Blockchain
 async fn run(
@@ -100,6 +101,8 @@ async fn run(
 		.wrap_err("Error starting listener.")?;
 	info!("TCP listener started on port {}", cfg.libp2p.port);
 
+	db.put(PeerIDKey, peer_id.to_string());
+
 	let p2p_clone = p2p_client.to_owned();
 	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
@@ -135,7 +138,7 @@ async fn run(
 	let client = rpc_client.current_client().await;
 
 	let account_address = account_id.to_string();
-	let nonce = account::fetch_nonce_node(&client.rpc_client, &account_address)
+	let nonce = account::nonce_node(&client.client, &account_address)
 		.await
 		.map_err(|error| eyre!("{:?}", error))?;
 	db.put(SignerNonceKey, nonce);
@@ -325,6 +328,7 @@ async fn run(
 
 	let mut state = ClientState::new(metrics);
 
+	let db_clone = db.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
 			.handle_events(
@@ -332,10 +336,19 @@ async fn run(
 				maintenance_receiver,
 				lc_receiver,
 				rpc_event_receiver,
+				db_clone,
 			)
 			.await;
 	}));
 
+	if cfg.tracking_service_enable {
+		spawn_in_span(shutdown.with_cancel(tracking::run(
+			Duration::from_secs(cfg.tracking_service_ping_interval),
+			identity_cfg.avail_key_pair,
+			db.clone(),
+			cfg.tracking_service_address,
+		)));
+	}
 	Ok(())
 }
 
@@ -394,6 +407,16 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	if cfg.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
 	}
+
+	if let Some(tracking_service_address) = &opts.tracking_service_address {
+		cfg.tracking_service_address = tracking_service_address.clone()
+	}
+
+	if let Some(tracking_service_ping_interval) = opts.tracking_service_ping_interval {
+		cfg.tracking_service_ping_interval = tracking_service_ping_interval
+	}
+
+	cfg.tracking_service_enable = opts.tracking_service_enable;
 
 	Ok(cfg)
 }
@@ -536,6 +559,7 @@ impl ClientState {
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut lc_receiver: UnboundedReceiver<LcEvent>,
 		mut rpc_receiver: broadcast::Receiver<RpcEvent>,
+		db: impl Database + Clone,
 	) {
 		self.metrics.count(MetricCounter::Starts);
 		loop {
@@ -562,6 +586,9 @@ impl ClientState {
 							},
 							P2pEvent::IncomingConnectionError => {
 								self.metrics.count(MetricCounter::IncomingConnectionErrors);
+							},
+							P2pEvent::ExternalMultiaddressUpdate(multi_addr) => {
+								db.put(MultiAddressKey, multi_addr.to_string());
 							},
 							P2pEvent::EstablishedConnection => {
 								self.metrics.count(MetricCounter::EstablishedConnections);

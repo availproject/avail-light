@@ -13,22 +13,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             workspace: avail-light-client
             rust_target: x86_64-unknown-linux-gnu
             output_name: avail-light-linux-amd64
             extra_setup: |
               rustup target add x86_64-unknown-linux-gnu
-
-          - os: ubuntu-20.04
-            workspace: avail-light-client
-            rust_target: aarch64-unknown-linux-gnu
-            output_name: avail-light-linux-arm64
-            extra_setup: |
-              sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-              rustup target add aarch64-unknown-linux-gnu
-              export BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu'
-              export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc
 
           - os: macos-14
             workspace: avail-light-client
@@ -60,7 +50,7 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          sudo apt-get update && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
+          sudo apt-get update && sudo dpkg --add-architecture arm64 && sudo apt-get install -y librust-openssl-dev build-essential protobuf-compiler musl-tools clang libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
           curl https://sh.rustup.rs -sSf | sh -s -- -y
           source "$HOME/.cargo/env"
 
@@ -91,7 +81,7 @@ jobs:
 
   binary_publish:
     needs: [build]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -111,7 +101,7 @@ jobs:
 
   trigger_deploy_workflow:
     needs: [build]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Trigger repository_dispatch for release
         shell: bash
@@ -126,7 +116,7 @@ jobs:
   # build avail image and publish to dockerhub
   docker_build_push:
     needs: [build]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4

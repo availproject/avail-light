@@ -1,5 +1,5 @@
 use avail_light_core::network::Network;
-use clap::{command, Parser};
+use clap::{command, ArgAction, Parser};
 use tracing::Level;
 
 #[derive(Parser)]
@@ -59,4 +59,13 @@ pub struct CliOpts {
 	/// Set client alias for use in logs and metrics
 	#[arg(long)]
 	pub client_alias: Option<String>,
+	/// Enable or disable light client tracking service
+	#[arg(long, action = ArgAction::SetTrue)]
+	pub tracking_service_enable: bool,
+	/// Tracking service address
+	#[arg(long)]
+	pub tracking_service_address: Option<String>,
+	/// Tracking service ping interval in seconds
+	#[arg(long)]
+	pub tracking_service_ping_interval: Option<u64>,
 }

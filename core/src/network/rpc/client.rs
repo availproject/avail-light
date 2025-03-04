@@ -6,7 +6,7 @@ use avail_rust::{
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
-		kate::{query_multi_proof, query_rows},
+		kate::{query_proof, query_rows},
 		state::get_runtime_version,
 		system::version,
 	},
@@ -18,21 +18,25 @@ use avail_rust::{
 		tx::SubmittableExtrinsic,
 		utils::AccountId32,
 	},
-	AvailHeader, Keypair, Nonce, Options, H256, SDK, U256,
+	AvailHeader, Keypair, Options, H256, SDK, U256,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
 use futures::{Stream, TryStreamExt};
-use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+use std::{iter::Iterator, pin::Pin, sync::Arc};
 #[cfg(not(target_arch = "wasm32"))]
 use thiserror::Error;
 #[cfg(target_arch = "wasm32")]
 use thiserror_no_std::Error;
 use tokio::sync::{broadcast::Sender, RwLock};
 use tokio_retry::Retry;
-use tokio_stream::{Elapsed, StreamExt, StreamMap};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio_stream::Elapsed;
+use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
@@ -55,9 +59,6 @@ enum RetryError {
 
 #[derive(Debug, Error)]
 enum ClientCreationError {
-	#[error("SDK failed to provide new RPC client: {0}")]
-	SdkFailure(Report),
-
 	#[error("Failed to create RPC client for host {host}: {error}")]
 	ConnectionFailed { host: String, error: Report },
 
@@ -127,8 +128,13 @@ impl GenesisHash {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 type SubscriptionStream =
 	Pin<Box<dyn Stream<Item = Result<Result<Subscription, subxt::error::Error>, Elapsed>> + Send>>;
+
+#[cfg(target_arch = "wasm32")]
+type SubscriptionStream =
+	Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>;
 
 #[derive(Clone)]
 pub struct Client<T: Database> {
@@ -301,10 +307,10 @@ impl<D: Database> Client<D> {
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
 		let client = SDK::new(host)
 			.await
-			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{:?}", e))))?;
+			.map_err(|e| Report::msg(e.to_string()))?;
 
 		// Verify genesis hash
-		let genesis_hash = client.online_client.genesis_hash();
+		let genesis_hash = client.client.online_client.genesis_hash();
 		info!("Genesis hash for {}: {:?}", host, genesis_hash);
 
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
@@ -318,11 +324,11 @@ impl<D: Database> Client<D> {
 		}
 
 		// Fetch system and runtime information
-		let system_version = version(&client.rpc_client)
+		let system_version = version(&client.client)
 			.await
 			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
 
-		let runtime_version = client.online_client.runtime_version();
+		let runtime_version = client.client.online_client.runtime_version();
 
 		// Create Node variant
 		let node = Node::new(
@@ -432,10 +438,17 @@ impl<D: Database> Client<D> {
 					Ok(mut stream) => {
 						loop {
 							match stream.next().await {
+								#[cfg(not(target_arch = "wasm32"))]
 								Some(Ok(Ok(item))) => {
+									 yield Ok(item);
+									 continue;
+								},
+								#[cfg(target_arch = "wasm32")]
+								Some(Ok(item)) => {
 									yield Ok(item);
 									continue;
 								},
+								#[cfg(not(target_arch = "wasm32"))]
 								Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
 								Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
 								None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
@@ -459,38 +472,45 @@ impl<D: Database> Client<D> {
 	}
 
 	async fn create_rpc_subscriptions(client: SDK) -> Result<SubscriptionStream> {
+		// NOTE: current tokio stream implementation doesn't support timeouts on web
+		#[cfg(not(target_arch = "wasm32"))]
 		let timeout_in = Duration::from_secs(30);
 
-		// Create fused Avail Header subscription
-		let headers: SubscriptionStream = Box::pin(
-			client
-				.online_client
-				.backend()
-				.stream_finalized_block_headers()
-				.await?
-				.map_ok(|(header, _)| Subscription::Header(header))
-				.inspect_ok(|_| info!("Received header on the stream"))
-				.inspect_err(|error| warn!(%error, "Received error on headers stream"))
-				.timeout(timeout_in)
-				.fuse(),
-		);
+		let headers_stream = client
+			.client
+			.online_client
+			.backend()
+			.stream_finalized_block_headers()
+			.await?
+			.map_ok(|(header, _)| Subscription::Header(header))
+			.inspect_ok(|_| info!("Received header on the stream"))
+			.inspect_err(|error| warn!(%error, "Received error on headers stream"));
 
+		// Create fused Avail Header subscription
+		#[cfg(not(target_arch = "wasm32"))]
+		let headers: SubscriptionStream = Box::pin(headers_stream.timeout(timeout_in).fuse());
+		#[cfg(target_arch = "wasm32")]
+		let headers: SubscriptionStream = Box::pin(headers_stream.fuse());
+
+		let justifications_stream = client
+			.client
+			.rpc_client
+			.subscribe(
+				"grandpa_subscribeJustifications",
+				rpc_params![],
+				"grandpa_unsubscribeJustifications",
+			)
+			.await?
+			.map_ok(Subscription::Justification)
+			.inspect_ok(|_| info!("Received justification on the stream"))
+			.inspect_err(|error| warn!(%error, "Received error on justifications stream"));
+
+		#[cfg(not(target_arch = "wasm32"))]
 		// Create fused GrandpaJustification subscription
-		let justifications: SubscriptionStream = Box::pin(
-			client
-				.rpc_client
-				.subscribe(
-					"grandpa_subscribeJustifications",
-					rpc_params![],
-					"grandpa_unsubscribeJustifications",
-				)
-				.await?
-				.map_ok(Subscription::Justification)
-				.inspect_ok(|_| info!("Received justification on the stream"))
-				.inspect_err(|error| warn!(%error, "Received error on justifications stream"))
-				.timeout(timeout_in)
-				.fuse(),
-		);
+		let justifications: SubscriptionStream =
+			Box::pin(justifications_stream.timeout(timeout_in).fuse());
+		#[cfg(target_arch = "wasm32")]
+		let justifications: SubscriptionStream = Box::pin(justifications_stream.fuse());
 
 		let mut last_stream = 0;
 		let mut per_stream_count = 0;
@@ -522,7 +542,7 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
 		self.with_retries(|client| async move {
-			get_block_hash(&client.rpc_client, Some(block_number))
+			get_block_hash(&client.client, Some(block_number))
 				.await
 				.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 				.map_err(Into::into)
@@ -533,6 +553,7 @@ impl<D: Database> Client<D> {
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.with_retries(|client| async move {
 			client
+				.client
 				.online_client
 				.backend()
 				.block_header(block_hash)
@@ -555,6 +576,7 @@ impl<D: Database> Client<D> {
 		let res = self
 			.with_retries(|client| async move {
 				client
+					.client
 					.online_client
 					.runtime_api()
 					.at(block_hash)
@@ -573,7 +595,7 @@ impl<D: Database> Client<D> {
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
 			.with_retries(|client| async move {
-				get_finalized_head(&client.rpc_client)
+				get_finalized_head(&client.client)
 					.await
 					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 					.map_err(Into::into)
@@ -588,18 +610,11 @@ impl<D: Database> Client<D> {
 		self.get_header_by_hash(finalized_hash).await
 	}
 
-	pub async fn request_kate_rows(
-		&self,
-		rows: Vec<u32>,
-		block_hash: H256,
-	) -> Result<Vec<Vec<u8>>> {
-		let rows = Rows::try_from(rows).unwrap();
+	pub async fn request_kate_rows(&self, rows: Rows, block_hash: H256) -> Result<Vec<Vec<u8>>> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = query_rows(&client.rpc_client, rows.to_vec(), Some(block_hash))
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))?;
+				let rows = query_rows(&client.client, rows.to_vec(), Some(block_hash)).await?;
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -645,15 +660,9 @@ impl<D: Database> Client<D> {
 		let proofs: Vec<(Vec<GRawScalar>, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
-				async move {
-					query_multi_proof(&client.rpc_client, cells.to_vec(), Some(block_hash))
-						.await
-						.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-						.map_err(Into::into)
-				}
+				async move { Ok(query_proof(&client.client, cells.to_vec(), Some(block_hash)).await) }
 			})
-			.await
-			.map_err(Report::from)?;
+			.await??;
 
 		let contents = proofs
 			.into_iter()
@@ -680,26 +689,18 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let ver = self
-			.with_retries(|client| async move {
-				version(&client.rpc_client)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
+			.with_retries(|client| async move { Ok(version(&client.client).await) })
+			.await??;
 
 		Ok(ver)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let ver = self
-			.with_retries(|client| async move {
-				get_runtime_version(&client.rpc_client, None)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
+			.with_retries(
+				|client| async move { Ok(get_runtime_version(&client.client, None).await) },
+			)
+			.await??;
 
 		Ok(ver)
 	}
@@ -715,7 +716,7 @@ impl<D: Database> Client<D> {
 				let set_id_key = avail::storage().grandpa().current_set_id();
 				async move {
 					client
-						.online_client
+						.client
 						.storage()
 						.at(block_hash)
 						.fetch(&set_id_key)
@@ -747,7 +748,7 @@ impl<D: Database> Client<D> {
 				let validators_key = avail::storage().session().validators();
 				async move {
 					client
-						.online_client
+						.client
 						.storage()
 						.at(block_hash)
 						.fetch(&validators_key)
@@ -755,8 +756,7 @@ impl<D: Database> Client<D> {
 						.map_err(Into::into)
 				}
 			})
-			.await
-			.map_err(Report::from)?;
+			.await?;
 
 		Ok(res)
 	}
@@ -772,10 +772,10 @@ impl<D: Database> Client<D> {
 			let data = data.0.clone();
 			async move {
 				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
-				let options = Options::new().nonce(Nonce::Custom(nonce)).app_id(app_id.0);
+				let options = Options::new().nonce(nonce).app_id(app_id.0);
 				let tx = client.tx.data_availability.submit_data(data);
 
-				let data_submission = tx.execute_and_watch_inclusion(signer, Some(options)).await;
+				let data_submission = tx.execute_and_watch_inclusion(signer, options).await;
 
 				let submit_response = match data_submission {
 					Ok(success) => Ok(SubmitResponse {
@@ -800,7 +800,7 @@ impl<D: Database> Client<D> {
 	) -> Result<SubmitResponse> {
 		self.with_retries(|client| {
 			let extrinsic =
-				SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
+				SubmittableExtrinsic::from_bytes(client.client.online_client, tx_bytes.clone());
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
@@ -830,7 +830,7 @@ impl<D: Database> Client<D> {
 	) -> Result<Vec<StorageKey>> {
 		let key = &key;
 		self.with_retries(|client| async move {
-			let storage = client.online_client.storage().at(hash);
+			let storage = client.client.storage().at(hash);
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
 			raw_keys
 				.take(count)
@@ -839,7 +839,6 @@ impl<D: Database> Client<D> {
 				.map_err(Into::into)
 		})
 		.await
-		.map_err(Report::from)
 	}
 
 	pub async fn get_session_key_owner_at(
@@ -854,7 +853,7 @@ impl<D: Database> Client<D> {
 					.key_owner(KeyTypeId(crypto::key_types::GRANDPA.0), public_key.0);
 				async move {
 					client
-						.online_client
+						.client
 						.storage()
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
@@ -862,8 +861,7 @@ impl<D: Database> Client<D> {
 						.map_err(Into::into)
 				}
 			})
-			.await
-			.map_err(Report::from)?;
+			.await?;
 
 		Ok(res)
 	}
@@ -875,7 +873,12 @@ impl<D: Database> Client<D> {
 		let params = params.as_ref().map(String::as_bytes);
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
-				let api = client.online_client.runtime_api().at_latest().await?;
+				let api = client
+					.client
+					.online_client
+					.runtime_api()
+					.at_latest()
+					.await?;
 				api.call_raw("grandpa_proveFinality", params)
 					.await
 					.map_err(Into::into)
@@ -887,7 +890,12 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
-		let gen_hash = self.current_client().await.online_client.genesis_hash();
+		let gen_hash = self
+			.current_client()
+			.await
+			.client
+			.online_client
+			.genesis_hash();
 
 		Ok(gen_hash)
 	}

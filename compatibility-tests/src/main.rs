@@ -6,7 +6,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 };
-use avail_rust::kate_recovery::matrix::Position;
+use avail_rust::{kate_recovery::matrix::Position, primitives::kate::Rows};
 use clap::Parser;
 use color_eyre::Result;
 use std::time::Duration;
@@ -111,7 +111,9 @@ async fn main() -> Result<()> {
 	res_helper(&res, &mut correct);
 
 	print!("Testing get_kate_row for row 0... ");
-	let res = rpc_client.request_kate_rows(vec![0], hash).await;
+	let res = rpc_client
+		.request_kate_rows(Rows::try_from(vec![0]).unwrap(), hash)
+		.await;
 	res_helper(&res, &mut correct);
 
 	println!("Done");

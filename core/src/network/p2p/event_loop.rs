@@ -1,7 +1,7 @@
 use color_eyre::{eyre::eyre, Result};
-#[cfg(target_arch = "wasm32")]
-use fluvio_wasm_timer::Interval;
 use futures::StreamExt;
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::mdns;
 use libp2p::{
 	autonat::{self, NatStatus},
 	core::ConnectedPoint,
@@ -19,8 +19,6 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use libp2p::{mdns, upnp};
 use rand::seq::SliceRandom;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -205,8 +203,9 @@ impl EventLoop {
 
 		#[cfg(not(target_arch = "wasm32"))]
 		let mut report_timer = interval(event_counter.report_interval);
+
 		#[cfg(target_arch = "wasm32")]
-		let mut report_timer = Interval::new(event_counter.report_interval);
+		let mut next_tick = Instant::now() + event_counter.report_interval;
 
 		loop {
 			#[cfg(not(target_arch = "wasm32"))]
@@ -238,6 +237,9 @@ impl EventLoop {
 			}
 
 			#[cfg(target_arch = "wasm32")]
+			let now = Instant::now();
+
+			#[cfg(target_arch = "wasm32")]
 			tokio::select! {
 				event = self.swarm.next() => {
 					self.handle_event(event.expect("Swarm stream should be infinite")).await;
@@ -253,9 +255,10 @@ impl EventLoop {
 						break;
 					},
 				},
-				_ = report_timer.next() => {
+				_ = tokio::time::sleep(next_tick.checked_duration_since(now).unwrap_or_default()) => {
 					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
 					event_counter.reset_counter();
+					next_tick += event_counter.report_interval;
 				},
 				// if the shutdown was triggered,
 				// break the loop immediately, proceed to the cleanup phase
@@ -524,21 +527,6 @@ impl EventLoop {
 					_ = self.event_sender.send(OutputEvent::Ping(rtt));
 				}
 			},
-			#[cfg(not(target_arch = "wasm32"))]
-			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
-				upnp::Event::NewExternalAddr(addr) => {
-					trace!("[UPnP] New external address: {addr}");
-				},
-				upnp::Event::GatewayNotFound => {
-					trace!("[UPnP] Gateway does not support UPnP");
-				},
-				upnp::Event::NonRoutableGateway => {
-					trace!("[UPnP] Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
-				},
-				upnp::Event::ExpiredExternalAddr(addr) => {
-					trace!("[UPnP] Gateway address expired: {addr}");
-				},
-			},
 			swarm_event => {
 				match swarm_event {
 					SwarmEvent::NewListenAddr { address, .. } => {
@@ -570,6 +558,10 @@ impl EventLoop {
 								address.to_string()
 							);
 						};
+
+						_ = self
+							.event_sender
+							.send(OutputEvent::ExternalMultiaddressUpdate(address));
 					},
 					SwarmEvent::ConnectionEstablished {
 						peer_id,
