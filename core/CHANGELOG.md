@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.3
+## [1.2.3](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.3) - 2025-03-06
 
 - Update `rust-libp2p` and related libraries to `0.55`
 
