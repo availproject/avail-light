@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "1.12.8"
+version = "1.12.9"
 dependencies = [
  "avail-light-core",
  "avail-rust",
@@ -1267,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-core"
-version = "1.2.3"
+version = "1.2.4"
 dependencies = [
  "async-std",
  "async-stream",
@@ -1276,6 +1276,7 @@ dependencies = [
  "base64 0.21.7",
  "better-panic",
  "blake2b_simd",
+ "chrono",
  "clap",
  "color-eyre",
  "confy 0.5.1",
@@ -1299,6 +1300,7 @@ dependencies = [
  "multihash 0.14.0",
  "num",
  "num_cpus",
+ "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -1307,6 +1309,8 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "regex",
+ "reqwest",
  "rocksdb",
  "semver 1.0.25",
  "serde",
