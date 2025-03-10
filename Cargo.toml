@@ -26,11 +26,13 @@ avail-light-core = { path = "./core" }
 anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-trait = "0.1.73"
+chrono = "0.4"
 clap = { version = "4.4.4", features = ["derive", "cargo"] }
 color-eyre = { version = "0.6.2", default-features = false }
 confy = "0.5.1"
 hex = "0.4.3"
 rand = { version = "0.8.5", default-features = false }
+reqwest = { version = "0.12" }
 libp2p = { version = "0.55.0", features = ["kad", "identify", "ping", "mdns", "autonat", "relay", "dcutr", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
 libp2p-allow-block-list = "0.5.0"
 libp2p-webrtc-websys = "0.4.0"
