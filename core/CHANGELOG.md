@@ -2,6 +2,7 @@
 
 ## 1.2.4
 
+- Update avail-rust dependency to v0.1.5
 - Check for avail light client updates on github
 
 ## [1.2.3](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.3) - 2025-03-06
