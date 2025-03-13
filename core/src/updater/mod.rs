@@ -64,6 +64,12 @@ pub async fn run(
 ) -> Result<()> {
 	info!("Starting updater...");
 
+	// Check for new releases every 180 blocks (1 hour)
+	const CHECK_INTERVAL: u64 = 180;
+
+	// Use randomized delays_sec to pospone check interval and distribute the GitHub API requests
+	let delay_blocks = (delay_sec % CHECK_INTERVAL) as u32;
+
 	let version = Version::parse(version).expect("Version is valid");
 
 	let client = Client::builder()
@@ -94,8 +100,11 @@ pub async fn run(
 			return Ok(());
 		}
 
-		// Check for new releases every 15 blocks (5 minutes)
-		if restart_scheduled || block_num % 15 != 0 {
+		if restart_scheduled {
+			continue;
+		}
+
+		if block_num % CHECK_INTERVAL as u32 != delay_blocks {
 			continue;
 		}
 
