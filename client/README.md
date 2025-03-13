@@ -138,7 +138,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 
 - `--version`: Light Client version
 - `--clean`: Remove previous state dir set in `avail_path` config parameter
-- `--finality_sync_enable`: Enable finality sync
+- `--finality-sync-enable`: Enable finality sync
 
 ## Identity
 
