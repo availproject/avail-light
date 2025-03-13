@@ -21,6 +21,7 @@ repository = "https://github.com/availproject/avail-light"
 # Internal deps
 avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.0", default-features = false }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
+poly-multiproof = { git = "https://github.com/availproject/poly-multiproof", default-features = false, branch = "toufeeq/blst-0.3.11" }
 avail-light-core = { path = "./core" }
 
 anyhow = "1.0.71"

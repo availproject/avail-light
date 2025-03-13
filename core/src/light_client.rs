@@ -23,6 +23,7 @@ use avail_rust::{
 };
 use codec::Encode;
 use color_eyre::Result;
+use poly_multiproof::{m1_blst::Bls12_381, traits::AsBytes, Commitment};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
@@ -114,6 +115,26 @@ pub async fn process_block(
 				"Random cells generated: {}",
 				positions.len()
 			);
+
+			// Since we no longer store the extended commitments in the header, we should do commitment extension here
+			let original_commitments: Vec<Commitment<Bls12_381>> = commitments
+				.iter()
+				.map(Commitment::from_bytes)
+				.collect::<Result<Vec<_>, _>>()
+				.expect("Failed to deserialize commitments. Ensure the input bytes are correctly serialized.");
+
+			// Maybe we can add a check to ensure the number of rows are in powers of 2 before attempting to extending
+			let extended_commitments: Vec<Commitment<Bls12_381>> =
+				Commitment::<Bls12_381>::extend_commitments(
+					&original_commitments,
+					original_commitments.len() * 2,
+				)
+				.expect("Failed to extend commitments. Ensure the input commitments are valid for extension.");
+
+			let mut commitments: Vec<[u8; 48]> = Vec::with_capacity(extended_commitments.len());
+			for commitment in extended_commitments {
+				commitments.push(commitment.to_bytes().unwrap());
+			}
 
 			let (fetched, unfetched, fetch_stats) = network_client
 				.fetch_verified(

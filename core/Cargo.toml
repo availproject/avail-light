@@ -38,6 +38,7 @@ tokio-retry = "0.3"
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+poly-multiproof = { workspace = true, features = ["blst"]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 avail-rust = { workspace = true, default-features = true }
