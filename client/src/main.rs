@@ -22,6 +22,7 @@ use avail_light_core::{
 	types::{
 		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey, Uuid,
 	},
+	updater,
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use avail_rust::{account, avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
@@ -270,6 +271,14 @@ async fn run(
 		// set the flag in the db, signaling across that we don't need to sync
 		db.put(IsFinalitySyncedKey, true);
 	}
+
+	let delay_sec = updater::delay_sec();
+	spawn_in_span(shutdown.with_cancel(updater::run(
+		version,
+		delay_sec,
+		shutdown.clone(),
+		block_tx.subscribe(),
+	)));
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();

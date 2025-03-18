@@ -1,6 +1,11 @@
 # Changelog
 
-## 1.2.3
+## [1.2.4](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.4) - 2025-03-17
+
+- Update avail-rust dependency to v0.1.5
+- Check for avail light client updates on github
+
+## [1.2.3](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.3) - 2025-03-06
 
 - Update `rust-libp2p` and related libraries to `0.55`
 
