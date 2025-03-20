@@ -156,7 +156,7 @@ async fn run(
 <<<<<<< HEAD
 
 	let account_address = account_id.to_string();
-	let nonce = account::fetch_nonce_node(&client.rpc_client, &account_address)
+	let nonce = account::nonce(&client.tx.balances.client, &account_address)
 		.await
 		.map_err(|error| eyre!("{:?}", error))?;
 	db.put(SignerNonceKey, nonce);
