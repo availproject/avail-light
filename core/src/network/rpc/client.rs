@@ -476,7 +476,10 @@ impl<D: Database> Client<D> {
 		let timeout_in = Duration::from_secs(30);
 
 		let headers_stream = client
-			.tx.balances.client.online_client
+			.tx
+			.balances
+			.client
+			.online_client
 			.backend()
 			.stream_finalized_block_headers()
 			.await?
@@ -491,8 +494,11 @@ impl<D: Database> Client<D> {
 		let headers: SubscriptionStream = Box::pin(headers_stream.fuse());
 
 		let justifications_stream = client
-			.tx.balances.client
-			.rpc_client.subscribe(
+			.tx
+			.balances
+			.client
+			.rpc_client
+			.subscribe(
 				"grandpa_subscribeJustifications",
 				rpc_params![],
 				"grandpa_unsubscribeJustifications",
@@ -550,7 +556,10 @@ impl<D: Database> Client<D> {
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.with_retries(|client| async move {
 			client
-				.tx.balances.client.online_client
+				.tx
+				.balances
+				.client
+				.online_client
 				.backend()
 				.block_header(block_hash)
 				.await?
@@ -571,8 +580,11 @@ impl<D: Database> Client<D> {
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
 		let res = self
 			.with_retries(|client| async move {
-				client.
-					tx.balances.client.online_client
+				client
+					.tx
+					.balances
+					.client
+					.online_client
 					.runtime_api()
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
@@ -609,9 +621,13 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = query_rows(&client.tx.balances.client.rpc_client, rows.to_vec(), Some(block_hash))
-					.await
-					.unwrap();
+				let rows = query_rows(
+					&client.tx.balances.client.rpc_client,
+					rows.to_vec(),
+					Some(block_hash),
+				)
+				.await
+				.unwrap();
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -716,7 +732,10 @@ impl<D: Database> Client<D> {
 				let set_id_key = avail::storage().grandpa().current_set_id();
 				async move {
 					client
-						.tx.balances.client.online_client
+						.tx
+						.balances
+						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&set_id_key)
@@ -748,7 +767,10 @@ impl<D: Database> Client<D> {
 				let validators_key = avail::storage().session().validators();
 				async move {
 					client
-						.tx.balances.client.online_client
+						.tx
+						.balances
+						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&validators_key)
@@ -799,8 +821,10 @@ impl<D: Database> Client<D> {
 		tx_bytes: Vec<u8>,
 	) -> Result<SubmitResponse> {
 		self.with_retries(|client| {
-			let extrinsic: SubmittableExtrinsic<_, _> =
-				SubmittableExtrinsic::from_bytes(client.tx.balances.client.online_client, tx_bytes.clone());
+			let extrinsic: SubmittableExtrinsic<_, _> = SubmittableExtrinsic::from_bytes(
+				client.tx.balances.client.online_client,
+				tx_bytes.clone(),
+			);
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
@@ -853,7 +877,10 @@ impl<D: Database> Client<D> {
 					.key_owner(KeyTypeId(crypto::key_types::GRANDPA.0), public_key.0);
 				async move {
 					client
-						.tx.balances.client.online_client
+						.tx
+						.balances
+						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
@@ -873,7 +900,14 @@ impl<D: Database> Client<D> {
 		let params = params.as_ref().map(String::as_bytes);
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
-				let api = client.tx.balances.client.online_client.runtime_api().at_latest().await?;
+				let api = client
+					.tx
+					.balances
+					.client
+					.online_client
+					.runtime_api()
+					.at_latest()
+					.await?;
 				api.call_raw("grandpa_proveFinality", params)
 					.await
 					.map_err(Into::into)
@@ -885,7 +919,14 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
-		let gen_hash = self.current_client().await.tx.balances.client.online_client.genesis_hash();
+		let gen_hash = self
+			.current_client()
+			.await
+			.tx
+			.balances
+			.client
+			.online_client
+			.genesis_hash();
 
 		Ok(gen_hash)
 	}
