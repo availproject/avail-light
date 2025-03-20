@@ -15,7 +15,7 @@ use avail_rust::{
 		data::{self, Cell},
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
-	AvailHeader, H256,
+	AvailHeader, H256, SDK,
 };
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
@@ -126,7 +126,7 @@ pub async fn process_block(
 	let block_delay = received_at.elapsed().as_secs();
 	info!(block_number, block_delay, "Processing finalized block",);
 
-	let Some((rows, cols, _, _)) = extract_kate(&header.extension) else {
+	let Some((rows, cols, _, commitments_from_header)) = extract_kate(&header.extension) else {
 		info!(block_number, "Skipping block without header extension");
 		return Ok(());
 	};
@@ -138,9 +138,33 @@ pub async fn process_block(
 		return Ok(());
 	};
 
-	if dimensions.cols().get() <= 2 {
-		error!(block_number, "More than 2 columns are required");
-		return Ok(());
+	// if dimensions.cols().get() <= 2 {
+	// 	error!(block_number, "More than 2 columns are required");
+	// 	return Ok(());
+	// }
+
+	let sdk = SDK::new("ws://127.0.0.1:9944").await.unwrap();
+	let (proofs, commitments) = avail_rust::rpc::kate::query_multi_proof(
+		&sdk.client,
+		Some(header_hash),
+		Partition {
+			number: 1,
+			fraction: 10,
+		},
+	)
+	.await
+	.unwrap();
+
+	if commitments != commitments_from_header {
+		panic!("commitments dont match");
+	}
+
+	let verify = avail_rust::rpc::kate::verify_multi_proof(proofs, commitments)
+		.await
+		.unwrap();
+
+	if verify == false {
+		panic!("verification failed");
 	}
 
 	// push latest mined block's header into column family specified

@@ -19,7 +19,7 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.5", default-features = false }
+avail-rust = { git = "https://github.com/availproject/avail-rust.git", branch = "mmp-integration", default-features = false }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 avail-light-core = { path = "./core" }
 
@@ -39,7 +39,7 @@ libp2p-webrtc-websys = "0.4.0"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.35", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
+tokio = { version = "1.42", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }
@@ -69,4 +69,4 @@ codegen-units = 1
 # Patching sp-io since some dependencies references patched and some non-patched versions,
 # and we need to specify `disable-allocator` feature to enable wasm compilation.
 # Patch needs to match patched tag of dependencies, for feature toggle to be applied.
-sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-10" }
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12" }
