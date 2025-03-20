@@ -19,7 +19,7 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.5", default-features = false }
+avail-rust = { git = "https://github.com/availproject/avail-rust.git", branch = "mmp-integration", default-features = false }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 avail-light-core = { path = "./core" }
 
@@ -69,4 +69,4 @@ codegen-units = 1
 # Patching sp-io since some dependencies references patched and some non-patched versions,
 # and we need to specify `disable-allocator` feature to enable wasm compilation.
 # Patch needs to match patched tag of dependencies, for feature toggle to be applied.
-sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-10" }
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12" }
