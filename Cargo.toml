@@ -20,10 +20,14 @@ repository = "https://github.com/availproject/avail-light"
 [workspace.dependencies]
 # Internal deps
 <<<<<<< HEAD
+<<<<<<< HEAD
 avail-rust = { git = "https://github.com/availproject/avail.git", rev = "741aa316" }
 =======
 avail-rust = { git = "https://github.com/availproject/avail-rust.git", rev = "a12ceb5bd" }
 >>>>>>> 97de53dd (point to mmp version of avail-rust)
+=======
+avail-rust = { git = "https://github.com/availproject/avail-rust.git", branch = "mmp-integration", default-features = false }
+>>>>>>> cf577def (update avail rust changes)
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 avail-light-core = { path = "./core" }
 
