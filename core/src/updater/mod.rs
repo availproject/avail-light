@@ -86,8 +86,8 @@ pub async fn run(
 		let block_num = match block_receiver.recv().await {
 			Ok(block) => block.block_num,
 			Err(error) => {
-				error!("Error receiving block: {error}");
-				continue;
+				error!("Cannot receive message: {error}");
+				return Ok(());
 			},
 		};
 
