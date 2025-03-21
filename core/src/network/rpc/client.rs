@@ -659,13 +659,17 @@ impl<D: Database> Client<D> {
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
-				async move { Ok(query_proof(&client.client, cells.to_vec(), Some(block_hash)).await) }
+				async move {
+					query_proof(&client.client, cells.to_vec(), Some(block_hash))
+						.await
+						.map_err(Into::into)
+				}
 			})
-			.await??;
+			.await?;
 
 		let contents = proofs
 			.into_iter()
-			.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
+			.map(|(scalar, proof)| concat_content(scalar, proof).expect("Contents concated"));
 
 		Ok(positions
 			.iter()
@@ -676,18 +680,20 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let ver = self
-			.with_retries(|client| async move { Ok(version(&client.client).await) })
-			.await??;
+			.with_retries(|client| async move { version(&client.client).await.map_err(Into::into) })
+			.await?;
 
 		Ok(ver)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let ver = self
-			.with_retries(
-				|client| async move { Ok(get_runtime_version(&client.client, None).await) },
-			)
-			.await??;
+			.with_retries(|client| async move {
+				get_runtime_version(&client.client, None)
+					.await
+					.map_err(Into::into)
+			})
+			.await?;
 
 		Ok(ver)
 	}
