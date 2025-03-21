@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.5
+## [1.2.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.5) - 2025-03-21
 
 - Return correct result on some RPC functions
 
