@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.10
+
+- Update `avail-light-core` to 1.2.5
+
 ## [1.12.9](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.9) - 2025-03-17
 
 - Stop light client if update is available

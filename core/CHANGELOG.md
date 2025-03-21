@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.5
+
+- Return correct result on some RPC functions
+
 ## [1.2.4](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.4) - 2025-03-17
 
 - Update avail-rust dependency to v0.1.5
