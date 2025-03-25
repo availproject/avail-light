@@ -202,3 +202,25 @@ pub fn rng() -> rand::rngs::StdRng {
 	getrandom::getrandom(&mut seed).expect("Failed to get random seed");
 	rand::rngs::StdRng::from_seed(seed)
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn restart() {
+	let current_exe = std::env::current_exe().unwrap();
+
+	#[cfg(unix)]
+	{
+		use std::os::unix::process::CommandExt;
+		_ = std::process::Command::new(current_exe)
+			.args(std::env::args().skip(1))
+			.exec();
+	}
+
+	#[cfg(windows)]
+	{
+		std::process::Command::Command::new(current_exe)
+			.args(std::env::args().skip(1))
+			.spawn()
+			.expect("Failed to restart");
+		std::process::exit(0);
+	}
+}

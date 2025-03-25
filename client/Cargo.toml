@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-client"
-version = "1.12.10"
+version = "1.12.11"
 build = "../build.rs"
 edition = "2021"
 description = "Avail network p2p Light Client"
@@ -19,6 +19,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 libp2p = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
+self_update = "0.42.0"
 serde = { workspace = true }
 serde_json = "1.0"
 strip-ansi-escapes = "0.2.0"
