@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-core"
-version = "1.2.5"
+version = "1.2.6"
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -38,10 +38,18 @@ smallvec = "1.6.1"
 strip-ansi-escapes = "0.2.0"
 strum = { version = "0.26.3", features = ["derive"] }
 sysinfo = "0.30.12"
+tempfile = "3.19.1"
 tokio-retry = "0.3"
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+zip = "2.5.0"
+
+[target.'cfg(unix)'.dependencies]
+flate2 = "1.1"
+tar = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 avail-rust = { workspace = true, default-features = true }
@@ -59,6 +67,7 @@ pcap = "1.1.0"
 rand = { workspace = true, default-features = true }
 rand_chacha = "0.3"
 rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"], optional = true }
+self_update = "0.42.0"
 strip-ansi-escapes = "0.2.0"
 thiserror = "1.0.64"
 threadpool = "1.8.1"

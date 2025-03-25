@@ -1,4 +1,4 @@
-use super::{Channel, Release, Releases};
+use super::{Asset, Channel, Release, Releases, Target};
 use color_eyre::{
 	eyre::{bail, Context},
 	Result,
@@ -14,12 +14,31 @@ static STABLE: Lazy<Regex> =
 static VERSION: Lazy<Regex> =
 	Lazy::new(|| Regex::new(r"^avail-light-client-v(\d+\.\d+\.\d+)").unwrap());
 
+#[derive(Deserialize, Debug)]
+struct GithubAsset {
+	name: String,
+	browser_download_url: String,
+}
+
+impl GithubAsset {
+	fn target(&self) -> Option<Target> {
+		match self.name.as_str() {
+			"avail-light-apple-arm64.tar.gz" => Some(Target::AppleArm64),
+			"avail-light-apple-x86_64.tar.gz" => Some(Target::AppleX86_64),
+			"avail-light-linux-amd64.tar.gz" => Some(Target::LinuxAmd64),
+			"avail-light-x86_64-pc-windows-msvc.exe.zip" => Some(Target::WindowsX86_64),
+			_ => None,
+		}
+	}
+}
+
 // Tag name represents release version and it is in format v{major}.{minor}.{patch}
 // Additional labels for release candidate is available as extensions of the tag name.
 #[derive(Deserialize, Debug)]
 struct GithubRelease {
 	tag_name: String,
 	published_at: String,
+	assets: Vec<GithubAsset>,
 }
 
 impl GithubRelease {
@@ -60,10 +79,23 @@ impl TryFrom<GithubRelease> for Release {
 			.context("Failed to parse release date")?
 			.into();
 
+		let assets = release
+			.assets
+			.into_iter()
+			.filter_map(|asset| {
+				asset.target().map(|target| Asset {
+					target,
+					archive_name: asset.name,
+					url: asset.browser_download_url,
+				})
+			})
+			.collect();
+
 		Ok(Self {
 			channel,
 			version,
 			published_at,
+			assets,
 		})
 	}
 }
