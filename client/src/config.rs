@@ -62,6 +62,8 @@ pub struct RuntimeConfig {
 	pub tracking_service_address: String,
 	/// Tracking service ping interval in seconds (default: 10)
 	pub tracking_service_ping_interval: u64,
+	/// Don't update light client if update is available (default: false)
+	pub no_update: bool,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -133,6 +135,7 @@ impl Default for RuntimeConfig {
 			tracking_service_enable: false,
 			tracking_service_address: "http://127.0.0.1:8989".to_string(),
 			tracking_service_ping_interval: 10,
+			no_update: false,
 		}
 	}
 }

@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-core"
-version = "1.2.5"
+version = "1.2.6"
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -22,6 +22,7 @@ codec = { package = "parity-scale-codec", version = "3", default-features = fals
 convert_case = "0.6.0"
 derive_more = { version = "1", features = ["from", "display"] }
 dusk-bytes = "0.1.7"
+flate2 = "1.1.0"
 futures = { workspace = true }
 getrandom = { version = "0.2.15", features = ["js"] }
 hex = { workspace = true }
@@ -38,6 +39,8 @@ smallvec = "1.6.1"
 strip-ansi-escapes = "0.2.0"
 strum = { version = "0.26.3", features = ["derive"] }
 sysinfo = "0.30.12"
+tar = "0.4.44"
+tempfile = "3.19.1"
 tokio-retry = "0.3"
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
@@ -59,6 +62,7 @@ pcap = "1.1.0"
 rand = { workspace = true, default-features = true }
 rand_chacha = "0.3"
 rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"], optional = true }
+self_update = "0.42.0"
 strip-ansi-escapes = "0.2.0"
 thiserror = "1.0.64"
 threadpool = "1.8.1"

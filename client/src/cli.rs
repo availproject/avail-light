@@ -68,4 +68,6 @@ pub struct CliOpts {
 	/// Tracking service ping interval in seconds
 	#[arg(long)]
 	pub tracking_service_ping_interval: Option<u64>,
+	#[arg(long, default_value = "false")]
+	pub no_update: bool,
 }
