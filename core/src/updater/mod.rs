@@ -114,7 +114,7 @@ impl FromIterator<Release> for Releases {
 pub fn delay_sec() -> u64 {
 	// Random delay in seconds in the one day range
 	let mut rng = utils::rng();
-	rng.gen_range(0..60 * 60 * 24)
+	rng.gen_range(0..60 * 60 * 12)
 }
 
 fn format_duration(duration: Duration) -> String {
