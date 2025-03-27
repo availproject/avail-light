@@ -551,7 +551,9 @@ pub struct DataQuery {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DataResponse {
 	pub block_number: u32,
-	pub data_transactions: Vec<DataTransaction>,
+	pub da_size: u64,
+	pub is_da: bool,
+	pub confidence_factor: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]

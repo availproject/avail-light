@@ -353,3 +353,33 @@ impl RecordKey for MultiAddressKey {
 		MULTI_ADDRESS_KEY.into()
 	}
 }
+
+pub struct ConfidenceKey(pub u32);
+
+impl RecordKey for ConfidenceKey {
+	type Type = String;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		let ConfidenceKey(block_num) = self;
+		format!("{RECORD_CONFIDENCE_KEY}:{block_num}")
+	}
+}
+
+pub struct DataCellSizeKey(pub u32);
+
+impl RecordKey for DataCellSizeKey {
+	type Type = u64;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		let DataCellSizeKey(block_num) = self;
+		format!("{RECORD_DB_SIZE_KEY}:{block_num}")
+	}
+}

@@ -38,6 +38,7 @@ pub trait Client {
 		commitments: &[[u8; COMMITMENT_SIZE]],
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)>;
+	async fn fetch_da_stats(&self, block_hash: H256) -> Result<(u64, bool)>;
 }
 
 pub struct FetchStats {
@@ -163,6 +164,11 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 
 #[async_trait]
 impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
+	async fn fetch_da_stats(&self, block_hash: H256) -> Result<(u64, bool)> {
+		let stats = self.rpc_client.get_da_stats(block_hash).await?;
+		Ok(stats)
+	}
+
 	async fn fetch_verified(
 		&self,
 		block_number: u32,

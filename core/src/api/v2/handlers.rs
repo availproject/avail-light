@@ -15,8 +15,8 @@ use crate::{
 		},
 	},
 	data::{
-		AppDataKey, BlockHeaderKey, BlockHeaderReceivedAtKey, Database, RpcNodeKey,
-		VerifiedCellCountKey,
+		AppDataKey, BlockHeaderKey, BlockHeaderReceivedAtKey, ConfidenceKey, DataCellSizeKey,
+		Database, RpcNodeKey, VerifiedCellCountKey,
 	},
 	utils::calculate_confidence,
 };
@@ -131,44 +131,19 @@ pub async fn block_header(
 
 pub async fn block_data(
 	block_number: u32,
-	query: DataQuery,
-	config: SharedConfig,
+	_query: DataQuery,
+	_config: SharedConfig,
 	db: impl Database + Clone,
 ) -> Result<DataResponse, Error> {
-	let app_id = config.app_id.ok_or(Error::not_found())?;
-	let sync_start_block = &config.sync_start_block;
-
-	let block_status = db
-		.get(BlockHeaderKey(block_number))
-		.map(|AvailHeader { extension, .. }| extension)
-		.and_then(|extension| block_status(sync_start_block, db.clone(), block_number, extension))
-		.ok_or(Error::not_found())?;
-
-	if block_status != BlockStatus::Finished && block_status != BlockStatus::Incomplete {
-		return Err(Error::bad_request_unknown("Block data is not available"));
-	};
-
-	let data = db.get(AppDataKey(app_id, block_number));
-
-	let Some(data) = data else {
-		return Ok(DataResponse {
-			block_number,
-			data_transactions: vec![],
-		});
-	};
-
-	let mut data_transactions: Vec<DataTransaction> = data
-		.into_iter()
-		.map(DataTransaction::try_from)
-		.collect::<Result<_>>()
-		.map_err(Error::internal_server_error)?;
-
-	if let Some(FieldsQueryParameter(fields)) = &query.fields {
-		filter_fields(&mut data_transactions, fields);
-	}
-
-	Ok(DataResponse {
+	let confidence = db
+		.get(ConfidenceKey(block_number))
+		.unwrap_or("0.0".to_string());
+	let da_size = db.get(DataCellSizeKey(block_number)).unwrap_or(0);
+	let is_da = da_size > 0;
+	return Ok(DataResponse {
 		block_number,
-		data_transactions,
-	})
+		da_size,
+		is_da,
+		confidence_factor: confidence,
+	});
 }

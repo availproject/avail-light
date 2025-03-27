@@ -23,6 +23,10 @@ pub const LATEST_SYNC_KEY: &str = "latest_sync";
 pub const VERIFIED_DATA_KEY: &str = "verified_data";
 /// Key for storing Achieved Confidence
 pub const ACHIEVED_CONFIDENCE_KEY: &str = "achieved_confidence";
+/// Key for storing block Confidence
+pub const RECORD_CONFIDENCE_KEY: &str = "block_confidence";
+/// Key for storing block da size
+pub const RECORD_DB_SIZE_KEY: &str = "da_size";
 /// Key for storing Verified Header
 pub const VERIFIED_HEADER_KEY: &str = "verified_header";
 /// Key for storing Latest Header number

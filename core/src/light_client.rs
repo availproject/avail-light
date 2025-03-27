@@ -23,6 +23,7 @@ use avail_rust::{
 };
 use codec::Encode;
 use color_eyre::Result;
+use jsonrpsee_core::tracing::client;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
@@ -33,7 +34,10 @@ use tracing::{error, info};
 use web_time::Instant;
 
 use crate::{
-	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
+	data::{
+		AchievedConfidenceKey, BlockHeaderKey, ConfidenceKey, DataCellSizeKey, Database,
+		VerifiedCellCountKey,
+	},
 	network::{
 		self,
 		rpc::{self, OutputEvent as RpcEvent},
@@ -88,7 +92,7 @@ pub async fn process_block(
 			achieved_confidence.last = block_number;
 			db.put(AchievedConfidenceKey, achieved_confidence);
 			db.put(BlockHeaderKey(block_number), header);
-
+			db.put(DataCellSizeKey(block_number), 0_64);
 			return Ok(None);
 		},
 		Some((rows, cols, _, commitment)) => {
@@ -97,14 +101,18 @@ pub async fn process_block(
 					block_number,
 					"Skipping block with invalid dimensions {rows}x{cols}",
 				);
+				db.put(DataCellSizeKey(block_number), 0_64);
 				return Ok(None);
 			};
 
 			if dimensions.cols().get() <= 2 {
+				db.put(DataCellSizeKey(block_number), 0_64);
 				error!(block_number, "more than 2 columns is required");
 				return Ok(None);
 			}
 
+			let (da_size, _) = network_client.fetch_da_stats(header_hash).await?;
+			db.put(DataCellSizeKey(block_number), da_size);
 			let commitments = commitments::from_slice(&commitment)?;
 			let cell_count = rpc::cell_count_for_confidence(confidence);
 			let positions = rpc::generate_random_cells(dimensions, cell_count);
@@ -166,6 +174,7 @@ pub async fn process_block(
 		"Confidence factor: {}",
 		confidence
 	);
+	db.put(ConfidenceKey(block_number), format!("{:?}", confidence));
 	event_sender.send(OutputEvent::RecordBlockConfidence(confidence))?;
 
 	// push latest mined block's header into column family specified

@@ -1,6 +1,7 @@
 use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail_core::AppId,
+	block::Block,
 	kate_recovery::{data::Cell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
@@ -17,7 +18,7 @@ use avail_rust::{
 		tx::SubmittableExtrinsic,
 		utils::AccountId32,
 	},
-	AvailHeader, Keypair, Options, H256, SDK, U256,
+	AvailHeader, Filter, Keypair, Options, H256, SDK, U256,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -696,6 +697,27 @@ impl<D: Database> Client<D> {
 			.await?;
 
 		Ok(ver)
+	}
+
+	pub async fn get_da_stats(&self, block_hash: H256) -> Result<(u64, bool)> {
+		let (data_size, is_da) = self
+			.with_retries(|client| async move {
+				let mut data_size: i32 = 0;
+				let element_size = size_of::<u8>();
+				let block = Block::new(&client.client, block_hash)
+					.await
+					.expect("Failed to fetch block");
+				let da_submission = block.data_submissions(Filter::new());
+				for sub in da_submission.iter() {
+					data_size += (sub.data.len() * element_size) as i32;
+				}
+				let is_da = data_size > 0;
+				Ok((data_size as u64, is_da))
+			})
+			.await
+			.context("Could not fetch block via retries")?;
+
+		Ok((data_size, is_da))
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {
