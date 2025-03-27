@@ -69,4 +69,4 @@ codegen-units = 1
 # Patching sp-io since some dependencies references patched and some non-patched versions,
 # and we need to specify `disable-allocator` feature to enable wasm compilation.
 # Patch needs to match patched tag of dependencies, for feature toggle to be applied.
-sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-10" }
+sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12" }
