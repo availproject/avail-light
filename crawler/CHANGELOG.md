@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Update `avail-light-core` to 1.2.6
+
 ## 0.2.0
 
 - Update `avail-light-core` to 1.2.5
