@@ -1,7 +1,5 @@
 use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
-#[cfg(not(target_arch = "wasm32"))]
-use libp2p::mdns;
 use libp2p::{
 	autonat::{self, NatStatus},
 	core::ConnectedPoint,
@@ -465,29 +463,6 @@ impl EventLoop {
 				} => {
 					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 				},
-			},
-			#[cfg(not(target_arch = "wasm32"))]
-			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
-				match event {
-					mdns::Event::Discovered(addrs_list) => {
-						addrs_list
-							.into_iter()
-							.filter(|(peer_id, multiaddr)| {
-								multiaddr
-									.to_string()
-									.contains(Protocol::P2p(*peer_id).tag())
-							})
-							.for_each(|(peer_id, multiaddr)| {
-								trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-								if self.swarm.dial(multiaddr).is_err() {
-									warn!("Unable to dial peer with ID: {peer_id:#?}");
-								}
-							});
-					},
-					mdns::Event::Expired(addrs_list) => {
-						trace!("MDNS got expired peers: {:?}", addrs_list);
-					},
-				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {
