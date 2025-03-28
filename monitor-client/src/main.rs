@@ -118,11 +118,7 @@ async fn main() -> Result<()> {
 	}));
 
 	// peer monitor
-	let peer_monitor = PeerMonitor::new(
-		peer_monitor_interval,
-		p2p_client.clone(),
-		server_list.clone(),
-	);
+	let peer_monitor = PeerMonitor::new(p2p_client.clone(), peer_monitor_interval, server_list);
 	info!("Starting monitor part");
 	_ = spawn_in_span(shutdown.with_cancel(async move {
 		if let Err(e) = peer_monitor.start_monitoring().await {
