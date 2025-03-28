@@ -624,6 +624,9 @@ impl ClientState {
 									error!("Could not handle Failed PUT Record event properly: {error}");
 								};
 							},
+							P2pEvent::DiscoveredPeers { .. } => {
+
+							}
 						}
 					}
 				Some(maintenance_event) = maintenance_receiver.recv() => {
