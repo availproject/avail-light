@@ -18,12 +18,14 @@
 //! In case RPC is disabled, RPC calls will be skipped.
 
 use avail_rust::{
-	kate_recovery::{commitments, matrix::Dimensions},
+	kate_recovery::{
+		commitments,
+		matrix::{Dimensions, Partition, Position},
+	},
 	AvailHeader, H256,
 };
 use codec::Encode;
 use color_eyre::Result;
-use jsonrpsee_core::tracing::client;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
@@ -111,11 +113,16 @@ pub async fn process_block(
 				return Ok(None);
 			}
 
-			let (da_size, _) = network_client.fetch_da_stats(header_hash).await?;
-			db.put(DataCellSizeKey(block_number), da_size);
 			let commitments = commitments::from_slice(&commitment)?;
-			let cell_count = rpc::cell_count_for_confidence(confidence);
-			let positions = rpc::generate_random_cells(dimensions, cell_count);
+			// let cell_count = rpc::cell_count_for_confidence(confidence);
+			// let positions = rpc::generate_random_cells(dimensions, cell_count);
+			let positions: Vec<Position> = dimensions
+				.iter_extended_partition_positions(&Partition {
+					number: 1,
+					fraction: 10,
+				})
+				.collect();
+
 			info!(
 				block_number,
 				"cells_requested" = positions.len(),
@@ -149,6 +156,8 @@ pub async fn process_block(
 			(positions.len(), fetched.len(), unfetched.len())
 		},
 	};
+
+	db.put(DataCellSizeKey(block_number), verified.try_into().unwrap());
 
 	if required > verified {
 		error!(block_number, "Failed to fetch {} cells", unverified);
