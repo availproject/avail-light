@@ -16,6 +16,7 @@ use libp2p::{
 	swarm::dial_opts::{DialOpts, PeerCondition},
 	Multiaddr, PeerId,
 };
+use std::num::NonZeroUsize;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 use sysinfo::System;
@@ -357,6 +358,26 @@ impl Client {
 					.map_err(|e| {
 						eyre!("Encountered error while sending Local Peer Info response: {e:?}")
 					})?;
+				Ok(())
+			})
+		})
+		.await
+	}
+
+	pub async fn get_closest_peers(&self, peer_id: PeerId) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(move |context: &mut EventLoop| {
+				// N = 20 because that's the Kademlia max limit
+				context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.get_n_closest_peers(peer_id, NonZeroUsize::new(20).unwrap());
+
+				response_sender
+					.send(Ok(()))
+					.map_err(|e| eyre!("Failed to send response for closest peers: {e:?}"))?;
+
 				Ok(())
 			})
 		})
