@@ -7,7 +7,7 @@ use color_eyre::Result;
 use libp2p::{swarm::dial_opts::PeerCondition, PeerId};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::Mutex, time::Interval};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use avail_light_core::network::p2p::Client;
 
@@ -105,17 +105,40 @@ async fn check_peer_connectivity(
 		.await
 	{
 		Ok(_) => {
-			debug!("✅ Successfully dialed peer {}", peer_id);
-			info.success_counter += 1;
+			trace!("✅ Successfully dialed peer {}", peer_id);
+
+			let mut black_list = server_black_list.lock().await;
+			// If server is blacklisted and returns a successful dial:
+			// 1. Increase the success counter by 1
+			// 2. Reset the fail counter
+			// If the success counter goes over the threshold, remove the peer from the blacklist
+			if let Some(black_list_info) = black_list.get_mut(peer_id) {
+				black_list_info.success_counter += 1;
+				black_list_info.failed_counter = 0;
+
+				// TODO: Parametarize
+				if black_list_info.success_counter == 3 {
+					black_list.remove(peer_id);
+					debug!(
+						"Peer {} removed from blacklist after 3 successful dials",
+						peer_id
+					);
+				}
+			}
+
+			// Every successful dial resets the fail counter
+			// TODO: Bounded counter might be a better approach here
+			info.success_counter = info.success_counter.saturating_add(1);
 			info.failed_counter = 0;
-			// TODO: If blacklisted and starts being reachable, remove from the blacklist after a threshold of succesful dials
 		},
 		Err(e) => {
 			debug!("❌ Failed to dial peer {}: {}", peer_id, e);
-			info.failed_counter += 1;
+			// On every fail success counter is reset
+			info.failed_counter = info.failed_counter.saturating_add(1);
+			info.success_counter = 0;
 			// TODO: Parametarize failed counter threshold
-			if info.failed_counter >= 3 {
-				warn!(
+			if info.failed_counter == 3 {
+				debug!(
 					"⚠️ Peer {} has been unreachable for 3 consecutive attempts!",
 					peer_id
 				);
