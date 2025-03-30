@@ -1656,8 +1656,12 @@ dependencies = [
 [[package]]
 name = "avail-rust"
 version = "0.1.7"
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#a93bf5690ed74d4511662ae1e62f13fb395a373e"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#40e29c4719cd467684de0257d606cb6b5670942e"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "avail-core",
  "base58",
@@ -1668,6 +1672,9 @@ dependencies = [
 =======
  "env_logger 0.11.7",
  "hex",
+ "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
  "jsonrpsee",
  "kate",
 >>>>>>> cf577def (update avail rust changes)
@@ -17467,10 +17474,14 @@ dependencies = [
 name = "sp-crypto-ec-utils"
 version = "0.10.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -17597,6 +17608,7 @@ dependencies = [
 name = "sp-debug-derive"
 version = "14.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 dependencies = [
  "proc-macro2",
@@ -17604,6 +17616,9 @@ dependencies = [
  "syn 2.0.101",
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -17626,10 +17641,14 @@ dependencies = [
 name = "sp-externalities"
 version = "0.25.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -17990,10 +18009,14 @@ dependencies = [
 name = "sp-runtime-interface"
 version = "24.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -18050,10 +18073,14 @@ dependencies = [
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "Inflector",
  "expander",
@@ -18233,10 +18260,14 @@ source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.
 name = "sp-std"
 version = "14.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 
 [[package]]
 name = "sp-storage"
@@ -18255,10 +18286,14 @@ dependencies = [
 name = "sp-storage"
 version = "19.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -18309,10 +18344,14 @@ dependencies = [
 name = "sp-tracing"
 version = "16.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -18502,10 +18541,14 @@ dependencies = [
 name = "sp-wasm-interface"
 version = "20.0.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81f6eaaa112ddc14658"
+>>>>>>> 00ba578d (feat: update fat_client WIP)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -20186,7 +20229,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if 0.1.10",
  "digest 0.10.7",
  "rand 0.8.5",
  "static_assertions",
