@@ -11,10 +11,12 @@
 
 use async_trait::async_trait;
 use avail_rust::{
+	error::ClientError,
 	kate_recovery::{
 		data::{self, Cell},
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
+	primitives::kate::Cells,
 	AvailHeader, H256, SDK,
 };
 use codec::Encode;
@@ -126,7 +128,7 @@ pub async fn process_block(
 	let block_delay = received_at.elapsed().as_secs();
 	info!(block_number, block_delay, "Processing finalized block",);
 
-	let Some((rows, cols, _, commitments_from_header)) = extract_kate(&header.extension) else {
+	let Some((rows, cols, _, commitments)) = extract_kate(&header.extension) else {
 		info!(block_number, "Skipping block without header extension");
 		return Ok(());
 	};
@@ -138,28 +140,50 @@ pub async fn process_block(
 		return Ok(());
 	};
 
+	let sdk = SDK::new("ws://127.0.0.1:9944").await.unwrap();
+
 	// if dimensions.cols().get() <= 2 {
-	// 	error!(block_number, "More than 2 columns are required");
-	// 	return Ok(());
+	// 	error!("More than 2 columns are required");
+	// 	return Ok((vec![], commitments));
 	// }
 
-	let sdk = SDK::new("ws://127.0.0.1:9944").await.unwrap();
-	let (proofs, commitments) = avail_rust::rpc::kate::query_multi_proof(
-		&sdk.client,
-		Some(header_hash),
-		Partition {
-			number: 1,
-			fraction: 10,
-		},
-	)
-	.await
-	.unwrap();
+	// let target_dims = Dimensions::new_from(16, 64).unwrap(); // we can keep this fixed
+	// let dimensions = multiproof_dims(dimensions, target_dims).unwrap();
+	// let positions: Vec<Position> = dimensions
+	// 	.iter_extended_partition_positions(&block_matrix_partition)
+	// 	.collect();
 
-	if commitments != commitments_from_header {
-		panic!("commitments dont match");
+	// async fn create_cell(positions: Vec<Position>) -> Result<Cells, ClientError> {
+	// 	let cells: Cells = positions
+	// 		.iter()
+	// 		.map(|p| Cell {
+	// 			row: p.row,
+	// 			col: p.col as u32,
+	// 		})
+	// 		.collect::<Vec<_>>()
+	// 		.try_into()
+	// 		.map_err(|_| ClientError::Custom("Failed to convert to cells".to_string()))?;
+
+	// 	Ok(cells)
+	// }
+	let create_cell = |positions: &&[Position]| create_cell((*positions).to_vec());
+	let rpc_batches = positions.chunks(30).collect::<Vec<_>>();
+	let parallel_batches = rpc_batches
+		.chunks(8)
+		.map(|batch| join_all(batch.iter().map(create_cell)));
+
+	let mut cells = vec![];
+	for batch in parallel_batches {
+		for (_, result) in batch.await.into_iter().enumerate() {
+			cells.append(&mut result.unwrap().to_vec());
+		}
 	}
+	let (proofs, commitments) =
+		avail_rust::rpc::kate::query_multi_proof(&sdk.client, Some(header_hash), cells)
+			.await
+			.unwrap();
 
-	let verify = avail_rust::rpc::kate::verify_multi_proof(proofs, commitments)
+	let verify = avail_rust::rpc::kate::verify_multi_proof(proofs, commitments, cols as usize)
 		.await
 		.unwrap();
 
