@@ -3,7 +3,7 @@
 //! # Flow
 //!
 //! * Fetches assigned block partition when finalized header is available and
-//! * inserts data rows and cells to to DHT for remote fetch.
+//! * inserts data rows and cells to DHT for remote fetch.
 //!
 //! # Notes
 //!

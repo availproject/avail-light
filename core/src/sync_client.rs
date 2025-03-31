@@ -9,7 +9,7 @@
 //! * Retrieve cell proofs from a) DHT and/or b) via RPC call from the node, in that order
 //! * Verify proof using the received cells
 //! * Calculate block confidence and store it in RocksDB
-//! * Insert cells to to DHT for remote fetch
+//! * Insert cells to DHT for remote fetch
 //!
 //! # Notes
 //!

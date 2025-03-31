@@ -199,7 +199,7 @@ Content-Type: application/json
 ```
 
 If **block_status** is **incomplete**, data will be empty.
-If **block_status** is not **“finished”**, or **app** mode is not enabled, data is not available and the response is:
+If **block_status** is not **"finished"**, or **app** mode is not enabled, data is not available and the response is:
 
 ```yaml
 HTTP/1.1 400 Bad Request
@@ -210,7 +210,7 @@ HTTP/1.1 400 Bad Request
 Submits application data to the avail network.\
 In case of `data` transaction, data transaction is created, signed and submitted.\
 In case of `extrinsic`, externally created and signed transaction is submitted. Only one field is allowed per request.\
-Both `data` and `extrinsic` has to be encoded using base64 encoding.
+Both `data` and `extrinsic` have to be encoded using base64 encoding.
 
 Request:
 
@@ -286,7 +286,7 @@ Content-Type: application/json
 
 ## **POST** `/v2/p2p/peers/dial`
 
-Dials a peer on the light client P2P network and waits for it's response.
+Dials a peer on the light client P2P network and waits for its response.
 If the dial goes through, a 200 OK response, the example JSON is stated below.
 
 If an error occurs on the dial 3 types of responses can be returned:

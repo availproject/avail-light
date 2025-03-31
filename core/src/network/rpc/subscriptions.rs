@@ -199,7 +199,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 					finality_synced = self.db.get(IsFinalitySyncedKey).unwrap_or(false)
 				}
 
-				// try and get get all the skipped blocks, if they exist
+				// try and get all the skipped blocks, if they exist
 				if let Some(last_header) = self.block_data.last_finalized_block_header.as_ref() {
 					for bl_num in (last_header.number + 1)..header.number {
 						info!("Sending skipped block {bl_num}");

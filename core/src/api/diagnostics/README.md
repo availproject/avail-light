@@ -38,7 +38,7 @@ Content-Type: application/json
 
 ## **POST** `/v1/p2p/peers/dial`
 
-Dials a peer on the light client P2P network and waits for it's response.
+Dials a peer on the light client P2P network and waits for its response.
 If the dial goes through, a 200 OK response, the example JSON is stated below.
 
 If an error occurs on the dial 3 types of responses can be returned:
