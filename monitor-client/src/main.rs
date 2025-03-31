@@ -3,7 +3,7 @@ use avail_light_core::{
 	network::p2p::{self, is_multiaddr_global, OutputEvent},
 	shutdown::Controller,
 	types::{PeerAddress, ProjectName},
-	utils::{default_subscriber, json_subscriber, spawn_in_span},
+	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use bootstrap_monitor::BootstrapMonitor;
 use clap::Parser;
@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
 	let db = data::DB::open(&config.db_path)?;
 
 	let shutdown = Controller::new();
+	install_panic_hooks(shutdown.clone())?;
 
 	let (p2p_keypair, _) = p2p::identity(&config.libp2p, db.clone())?;
 
@@ -149,9 +150,8 @@ async fn main() -> Result<()> {
 		if let Err(e) = peer_monitor.start_monitoring().await {
 			error!("Peer monitor error: {e}");
 		};
-	}));
-
-	tokio::signal::ctrl_c().await?;
+	}))
+	.await;
 	Ok(())
 }
 
@@ -197,12 +197,12 @@ pub async fn handle_events(
 
 								match servers.get_mut(&peer_id) {
 									Some(info) => {
-										info.multiaddr = addresses;
+										info.multiaddr = globally_reachable_addresses;
 										// We don't reset counters here because even though the addresses might be new, servers can still continue to fail (if they started failing previously)
 									},
 									None => {
 										let server_info = ServerInfo {
-											multiaddr: addresses,
+											multiaddr: globally_reachable_addresses,
 											failed_counter: 0,
 											success_counter: 0
 										};

@@ -100,8 +100,9 @@ async fn check_peer_connectivity(
 	peer_id: &PeerId,
 	info: &mut ServerInfo,
 ) -> Result<()> {
+	// NOTE: `PeerCondition::NotDialing` might not be the best suitable dial condition for our approach
 	match p2p_client
-		.dial_peer(*peer_id, info.multiaddr.clone(), PeerCondition::Always)
+		.dial_peer(*peer_id, info.multiaddr.clone(), PeerCondition::NotDialing)
 		.await
 	{
 		Ok(_) => {
