@@ -8,8 +8,8 @@ use libp2p::{
 	dcutr,
 	identify::{self, Info},
 	kad::{
-		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, Mode, PutRecordOk,
-		QueryId, QueryResult, RecordKey,
+		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
+		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult, RecordKey,
 	},
 	multiaddr::Protocol,
 	ping,
@@ -352,6 +352,29 @@ impl EventLoop {
 							},
 							_ => (),
 						},
+						QueryResult::GetClosestPeers(result) => match result {
+							Ok(GetClosestPeersOk { peers, .. }) => {
+								let peer_addresses = collect_peer_addresses(peers);
+
+								if !peer_addresses.is_empty() {
+									let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
+										peers: peer_addresses,
+									});
+								}
+							},
+							Err(err) => {
+								// There will be peers even though the request timed out
+								let GetClosestPeersError::Timeout { key: _, peers } = err;
+
+								let peer_addresses = collect_peer_addresses(peers);
+
+								if !peer_addresses.is_empty() {
+									let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
+										peers: peer_addresses,
+									});
+								}
+							},
+						},
 						QueryResult::PutRecord(Err(error)) => {
 							match error {
 								kad::PutRecordError::QuorumFailed { key, .. }
@@ -668,6 +691,18 @@ impl EventLoop {
 			},
 		}
 	}
+}
+
+fn collect_peer_addresses(peers: Vec<kad::PeerInfo>) -> Vec<(PeerId, Vec<Multiaddr>)> {
+	peers
+		.iter()
+		.filter(|peer_info| !peer_info.addrs.is_empty())
+		.map(|peer_info| {
+			let peer_id = peer_info.peer_id;
+			let addresses = peer_info.addrs.clone();
+			(peer_id, addresses)
+		})
+		.collect()
 }
 
 #[cfg(test)]

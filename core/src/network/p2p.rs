@@ -7,7 +7,7 @@ use configuration::{kad_config, LibP2PConfig};
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
-	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
+	kad::{self, GetClosestPeersResult, Mode, PeerRecord, QueryStats, Record, RecordKey},
 	noise, ping, relay,
 	swarm::NetworkBehaviour,
 	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -99,6 +99,9 @@ pub enum OutputEvent {
 		record_key: RecordKey,
 		query_stats: QueryStats,
 	},
+	DiscoveredPeers {
+		peers: Vec<(PeerId, Vec<Multiaddr>)>,
+	},
 }
 
 #[derive(Clone)]
@@ -167,6 +170,7 @@ impl AgentVersion {
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
+	GetClosestPeer(oneshot::Sender<Result<GetClosestPeersResult>>),
 }
 
 type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
