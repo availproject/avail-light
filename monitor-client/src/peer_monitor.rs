@@ -5,32 +5,33 @@
 //! TODO: Expose map via REST API
 use color_eyre::Result;
 use libp2p::{swarm::dial_opts::PeerCondition, PeerId};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 use tokio::{sync::Mutex, time::Interval};
 use tracing::{debug, info, trace, warn};
 
 use avail_light_core::network::p2p::Client;
 
-use crate::ServerInfo;
-
+use crate::{config::Config, ServerInfo};
 pub struct PeerMonitor {
 	interval: Interval,
 	p2p_client: Client,
 	server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
+	config: Config,
 }
-
 impl PeerMonitor {
 	pub fn new(
 		p2p_client: Client,
 		interval: Interval,
 		server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
+		config: Config,
 	) -> Self {
 		Self {
 			interval,
 			p2p_client,
 			server_monitor_list,
 			server_black_list: Default::default(),
+			config,
 		}
 	}
 
@@ -60,6 +61,7 @@ impl PeerMonitor {
 			let p2p_client = self.p2p_client.clone();
 			let server_black_list = self.server_black_list.clone();
 			let server_monitor_list = self.server_monitor_list.clone();
+			let config = self.config.clone();
 
 			tokio::spawn(async move {
 				let mut cloned_info = {
@@ -74,6 +76,7 @@ impl PeerMonitor {
 
 				// TODO: Handle the result
 				_ = check_peer_connectivity(
+					&config,
 					p2p_client,
 					server_black_list,
 					&peer_id,
@@ -95,6 +98,7 @@ impl PeerMonitor {
 // Blacklisted peers remain in the server monitor list
 // TODO: decide if this is the proper approach
 async fn check_peer_connectivity(
+	config: &Config,
 	p2p_client: Client,
 	server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	peer_id: &PeerId,
@@ -117,8 +121,7 @@ async fn check_peer_connectivity(
 				black_list_info.success_counter += 1;
 				black_list_info.failed_counter = 0;
 
-				// TODO: Parametarize
-				if black_list_info.success_counter == 3 {
+				if black_list_info.success_counter == config.success_threshold {
 					black_list.remove(peer_id);
 					debug!(
 						"Peer {} removed from blacklist after 3 successful dials",
@@ -131,14 +134,14 @@ async fn check_peer_connectivity(
 			// TODO: Bounded counter might be a better approach here
 			info.success_counter = info.success_counter.saturating_add(1);
 			info.failed_counter = 0;
+			info.last_successful_dial = Some(SystemTime::now())
 		},
 		Err(e) => {
 			debug!("❌ Failed to dial peer {}: {}", peer_id, e);
 			// On every fail success counter is reset
 			info.failed_counter = info.failed_counter.saturating_add(1);
 			info.success_counter = 0;
-			// TODO: Parametarize failed counter threshold
-			if info.failed_counter == 3 {
+			if info.failed_counter == config.fail_threshold {
 				debug!(
 					"⚠️ Peer {} has been unreachable for 3 consecutive attempts!",
 					peer_id

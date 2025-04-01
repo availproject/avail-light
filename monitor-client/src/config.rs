@@ -51,9 +51,13 @@ pub struct CliOpts {
 	pub per_connection_event_buffer_size: Option<usize>,
 	#[arg(long, default_value = "10")]
 	pub query_timeout: Option<u64>,
+	#[arg(long, default_value = "3")]
+	pub fail_threshold: usize,
+	#[arg(long, default_value = "3")]
+	pub success_threshold: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
 	/// Genesis hash of the network to be connected to.
@@ -74,6 +78,8 @@ pub struct Config {
 	pub db_path: String,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
+	pub fail_threshold: usize,
+	pub success_threshold: usize,
 }
 
 impl Default for Config {
@@ -87,6 +93,8 @@ impl Default for Config {
 			bootstrap_interval: 10,
 			peer_discovery_interval: 10,
 			peer_monitor_interval: 30,
+			fail_threshold: 3,
+			success_threshold: 3,
 		}
 	}
 }
@@ -135,6 +143,9 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	config.bootstrap_interval = opts.bootstrap_interval;
 	config.peer_discovery_interval = opts.peer_discovery_interval;
 	config.peer_monitor_interval = opts.peer_monitor_interval;
+
+	config.fail_threshold = opts.fail_threshold;
+	config.success_threshold = opts.success_threshold;
 
 	if config.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("List of bootstraps must not be empty!"));
