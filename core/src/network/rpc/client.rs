@@ -670,42 +670,32 @@ impl<D: Database> Client<D> {
 			.try_into()
 			.map_err(|_| eyre!("Failed to convert to cells"))?;
 
-		// let proofs: Vec<(Vec<GRawScalar>, GProof)> = self
-		// 	.with_retries(|client| {
-		// 		let cells: avail_rust::sp_core::bounded::BoundedVec<avail_rust::Cell, avail_rust::sp_core::ConstU32<64>> = cells.clone();
-		// 		async move { Ok(query_proof(&client.tx.balances.client.rpc_client, cells.to_vec(), Some(block_hash)).await) }
-		// 	})
-		// 	.await??;
-		let proofs = vec![];
+		let proofs: Vec<(GRawScalar, GProof)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move {
+					query_proof(&client.client, cells.to_vec(), Some(block_hash))
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await?;
 
 		let contents = proofs
 			.into_iter()
-			.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
+			.map(|(scalar, proof)| concat_content(scalar, proof).expect("Contents concated"));
 
-		let positions = positions.iter().zip(contents);
-
-		let mut cells = Vec::new();
-
-		for (_idx, (position, contents)) in positions.enumerate() {
-			for (content_idx, content) in contents.iter().enumerate() {
-				cells.push(Cell {
-					position: Position {
-						row: position.row,
-						col: content_idx as u16,
-					},
-					content: [0u8; 80],
-				})
-			}
-		}
-
-		Ok(cells)
+		Ok(positions
+			.iter()
+			.zip(contents)
+			.map(|(&position, content)| Cell { position, content })
+			.collect::<Vec<_>>())
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
 		let ver = self
-			.with_retries(|client| async move { Ok(version(&client.tx.balances.client).await) })
-			.await?
-			.unwrap();
+			.with_retries(|client| async move { version(&client.client).await.map_err(Into::into) })
+			.await?;
 
 		Ok(ver)
 	}
@@ -713,10 +703,11 @@ impl<D: Database> Client<D> {
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let ver = self
 			.with_retries(|client| async move {
-				Ok(get_runtime_version(&client.tx.balances.client, None).await)
+				get_runtime_version(&client.client, None)
+					.await
+					.map_err(Into::into)
 			})
-			.await?
-			.unwrap();
+			.await?;
 
 		Ok(ver)
 	}
