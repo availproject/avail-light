@@ -932,6 +932,7 @@ impl<D: Database> Client<D> {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let proofs: Vec<(GRawScalar, GProof)> = self
@@ -978,28 +979,28 @@ impl<D: Database> Client<D> {
 		// 	.await??;
 		let proofs = vec![];
 >>>>>>> 078599ad (update rpc client)
+=======
+		let proofs: Vec<(GRawScalar, GProof)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move {
+					query_proof(&client.client, cells.to_vec(), Some(block_hash))
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await?;
+>>>>>>> 099a8410 (bring changes from main)
 
 		let contents = proofs
 			.into_iter()
-			.map(|(scalar, proof)| concat_content(scalar, proof).expect("TODO"));
+			.map(|(scalar, proof)| concat_content(scalar, proof).expect("Contents concated"));
 
-		let positions = positions.iter().zip(contents);
-
-		let mut cells = Vec::new();
-
-		for (_idx, (position, contents)) in positions.enumerate() {
-			for (content_idx, content) in contents.iter().enumerate() {
-				cells.push(Cell {
-					position: Position {
-						row: position.row,
-						col: content_idx as u16,
-					},
-					content: [0u8; 80],
-				})
-			}
-		}
-
-		Ok(cells)
+		Ok(positions
+			.iter()
+			.zip(contents)
+			.map(|(&position, content)| Cell { position, content })
+			.collect::<Vec<_>>())
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
@@ -1008,6 +1009,7 @@ impl<D: Database> Client<D> {
 =======
 >>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let ver = self
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 			.with_retries(|client| async move {
@@ -1026,6 +1028,10 @@ impl<D: Database> Client<D> {
 			.await?
 			.unwrap();
 >>>>>>> 078599ad (update rpc client)
+=======
+			.with_retries(|client| async move { version(&client.client).await.map_err(Into::into) })
+			.await?;
+>>>>>>> 099a8410 (bring changes from main)
 
 		Ok(ver)
 		Ok(ver)
@@ -1034,6 +1040,7 @@ impl<D: Database> Client<D> {
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let ver = self
 			.with_retries(|client| async move {
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 				get_runtime_version(&client.rpc_client, None)
@@ -1051,6 +1058,13 @@ impl<D: Database> Client<D> {
 			.await?
 			.unwrap();
 >>>>>>> 078599ad (update rpc client)
+=======
+				get_runtime_version(&client.client, None)
+					.await
+					.map_err(Into::into)
+			})
+			.await?;
+>>>>>>> 099a8410 (bring changes from main)
 
 		Ok(ver)
 =======
