@@ -19,6 +19,12 @@ use avail_rust::{
 	},
 	AvailHeader, Keypair, Options, H256, SDK, U256,
 };
+#[cfg(feature = "multiproof")]
+use avail_rust::{
+	kate_recovery::data::MCell,
+	primitives::kate::{GCellBlock, GMultiProof},
+	rpc::kate::query_multi_proof,
+};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
@@ -639,6 +645,63 @@ impl<D: Database> Client<D> {
 			}
 		})
 		.await
+	}
+
+	#[cfg(feature = "multiproof")]
+	pub async fn request_kate_multi_proof(
+		&self,
+		block_hash: H256,
+		positions: &[Position],
+	) -> Result<Vec<MCell>> {
+		fn concat_content(proof: GMultiProof) -> Result<Vec<u8>> {
+			let (scalars, multiproof) = proof;
+			let proof: Vec<u8> = multiproof.into();
+			if proof.len() != 48 {
+				return Err(eyre!("Invalid multiproof length"));
+			}
+
+			let mut content = Vec::new();
+			content[..48].copy_from_slice(&proof);
+
+			for scalar in scalars {
+				let scalar_bytes = scalar.to_big_endian();
+				content.extend_from_slice(&scalar_bytes);
+			}
+
+			Ok(content)
+		}
+
+		let cells: Cells = positions
+			.iter()
+			.map(|p| avail_rust::Cell {
+				row: p.row,
+				col: p.col as u32,
+			})
+			.collect::<Vec<_>>()
+			.try_into()
+			.map_err(|_| eyre!("Failed to convert to cells"))?;
+
+		let proofs: Vec<(GMultiProof, GCellBlock)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move {
+					query_multi_proof(&client.client, Some(block_hash), cells.to_vec())
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await?
+			.0;
+
+		let contents = proofs
+			.into_iter()
+			.map(|(gmultiproof, _)| concat_content(gmultiproof).expect("Contents concated"));
+
+		Ok(positions
+			.iter()
+			.zip(contents)
+			.map(|(&position, content)| MCell { position, content })
+			.collect::<Vec<_>>())
 	}
 
 	pub async fn request_kate_proof(

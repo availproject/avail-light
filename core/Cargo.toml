@@ -101,4 +101,6 @@ test-case = "3.2.1"
 network-analysis = []
 rocksdb = ["dep:rocksdb"]
 crawl = []
+multiproof = []
 default = []
+
