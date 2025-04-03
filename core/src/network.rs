@@ -2,8 +2,12 @@ use async_trait::async_trait;
 use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
+<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::Cell,
+=======
+		data::{Cell, CellVariant},
+>>>>>>> 0f719b80 (multiproofs: Part I)
 		matrix::{Dimensions, Position},
 	},
 	H256,
@@ -209,6 +213,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			)
 			.await?;
 
+<<<<<<< HEAD
 		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
 		if self.network_mode == NetworkMode::Both && self.insert_into_dht {
 			if let Some(p2p_client) = &self.p2p_client {
@@ -219,6 +224,21 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 					debug!("Error inserting cells into DHT: {error}");
 				}
 			}
+=======
+		if let Err(error) = self
+			.p2p_client
+			.insert_cells_into_dht(
+				block_number,
+				rpc_fetched
+					.clone()
+					.into_iter()
+					.map(Into::into)
+					.collect::<Vec<CellVariant>>(),
+			)
+			.await
+		{
+			debug!("Error inserting cells into DHT: {error}");
+>>>>>>> 0f719b80 (multiproofs: Part I)
 		}
 
 		let stats = FetchStats::new(

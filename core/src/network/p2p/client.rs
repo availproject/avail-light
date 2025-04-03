@@ -1,7 +1,11 @@
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
 	kate_recovery::{
+<<<<<<< HEAD
 		data::{Cell, SingleCell},
+=======
+		data::{Cell, CellVariant},
+>>>>>>> 0f719b80 (multiproofs: Part I)
 		matrix::{Dimensions, Position, RowIndex},
 	},
 };
@@ -42,7 +46,7 @@ pub struct Client {
 	ttl: Duration,
 }
 
-struct DHTCell(Cell);
+struct DHTCell(CellVariant);
 
 impl DHTCell {
 	fn reference(&self, block: u32) -> String {
@@ -52,7 +56,11 @@ impl DHTCell {
 	fn dht_record(&self, block: u32, ttl: Duration) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
+<<<<<<< HEAD
 			value: self.0.to_bytes(),
+=======
+			value: self.0.data().to_vec(),
+>>>>>>> 0f719b80 (multiproofs: Part I)
 			publisher: None,
 			expires: Instant::now().checked_add(ttl),
 		}
@@ -607,7 +615,7 @@ impl Client {
 	///
 	/// * `block` - Block number
 	/// * `cells` - Matrix cells to store into DHT
-	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
+	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellVariant>) -> Result<()> {
 		let records: Vec<_> = cells
 			.into_iter()
 			.map(DHTCell)

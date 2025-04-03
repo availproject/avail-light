@@ -689,6 +689,8 @@ const INVALID_PROJECT_NAME: &str = r#"
 Project name must only contain alphanumeric characters.
 "#;
 
+pub const MULTI_PROOF_CELL_DIMS: (u16, u16) = (16, 64);
+
 #[cfg(test)]
 mod tests {
 	use super::*;
