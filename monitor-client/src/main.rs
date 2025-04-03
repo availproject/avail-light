@@ -11,7 +11,11 @@ use color_eyre::{eyre::Context, Result};
 use config::CliOpts;
 use libp2p::{Multiaddr, PeerId};
 use peer_monitor::PeerMonitor;
-use std::{collections::HashMap, collections::HashSet, sync::Arc, time::Duration};
+use std::{
+	collections::{HashMap, HashSet},
+	sync::Arc,
+	time::{Duration, SystemTime},
+};
 use tokio::{
 	select,
 	sync::{mpsc::UnboundedReceiver, Mutex},
@@ -31,7 +35,8 @@ pub struct ServerInfo {
 	multiaddr: Vec<Multiaddr>,
 	failed_counter: usize,
 	success_counter: usize,
-	// TODO: Add `last_seen`` timestamp
+	last_successful_dial: Option<SystemTime>,
+	last_discovered: Option<SystemTime>,
 }
 
 #[tokio::main]
@@ -124,7 +129,7 @@ async fn main() -> Result<()> {
 
 	// 1. Test bootstrap availability
 	let mut bootstrap_monitor = BootstrapMonitor::new(
-		config.libp2p.bootstraps,
+		config.libp2p.bootstraps.clone(),
 		bootstrap_interval,
 		p2p_client.clone(),
 	);
@@ -144,7 +149,12 @@ async fn main() -> Result<()> {
 	}));
 
 	// peer monitor
-	let peer_monitor = PeerMonitor::new(p2p_client.clone(), peer_monitor_interval, server_list);
+	let peer_monitor = PeerMonitor::new(
+		p2p_client.clone(),
+		peer_monitor_interval,
+		server_list,
+		config,
+	);
 	info!("Starting monitor part");
 	_ = spawn_in_span(shutdown.with_cancel(async move {
 		if let Err(e) = peer_monitor.start_monitoring().await {
@@ -198,13 +208,16 @@ pub async fn handle_events(
 								match servers.get_mut(&peer_id) {
 									Some(info) => {
 										info.multiaddr = globally_reachable_addresses;
+										info.last_discovered = Some(SystemTime::now());
 										// We don't reset counters here because even though the addresses might be new, servers can still continue to fail (if they started failing previously)
 									},
 									None => {
 										let server_info = ServerInfo {
 											multiaddr: globally_reachable_addresses,
 											failed_counter: 0,
-											success_counter: 0
+											success_counter: 0,
+											last_discovered: Some(SystemTime::now()),
+											last_successful_dial: None,
 										};
 										servers.insert(peer_id, server_info);
 									}
