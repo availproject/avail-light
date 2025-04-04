@@ -14,6 +14,7 @@ pub struct PingMessage {
 	pub multiaddr: Option<String>,
 	pub peer_id: Option<String>,
 	pub latest_block: Option<u32>,
+	pub operator_address: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,6 +27,7 @@ pub struct SignedPingMessage {
 pub async fn create_and_sign_ping_message(
 	keypair: Keypair,
 	db: impl Database + Clone,
+	operator_address: Option<String>,
 ) -> Result<SignedPingMessage> {
 	let multiaddr = db.get(MultiAddressKey);
 	let peer_id = db.get(PeerIDKey);
@@ -36,6 +38,7 @@ pub async fn create_and_sign_ping_message(
 		multiaddr,
 		peer_id,
 		latest_block,
+		operator_address,
 	};
 	let message_bytes = serde_json::to_vec(&ping_message)?;
 
@@ -54,12 +57,15 @@ pub async fn run(
 	keypair: Keypair,
 	db: impl Database + Clone,
 	tracker_address: String,
+	operator_address: Option<String>,
 ) {
 	info!("Tracking service started...");
 	let mut interval = time::interval(tracking_interval);
 	loop {
 		interval.tick().await;
-		match create_and_sign_ping_message(keypair.clone(), db.clone()).await {
+		match create_and_sign_ping_message(keypair.clone(), db.clone(), operator_address.clone())
+			.await
+		{
 			Ok(signed_ping_message) => {
 				let client = reqwest::Client::new();
 				match client

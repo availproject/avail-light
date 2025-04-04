@@ -365,6 +365,7 @@ async fn run(
 			identity_cfg.avail_key_pair,
 			db.clone(),
 			cfg.tracking_service_address,
+			cfg.operator_address,
 		)));
 	}
 
@@ -438,6 +439,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	cfg.no_update = opts.no_update;
 
 	cfg.tracking_service_enable = opts.tracking_service_enable;
+	cfg.operator_address = opts.operator_address.clone();
 
 	Ok(cfg)
 }
