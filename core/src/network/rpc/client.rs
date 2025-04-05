@@ -21,8 +21,8 @@ use avail_rust::{
 };
 #[cfg(feature = "multiproof")]
 use avail_rust::{
-	kate_recovery::data::MCell,
-	primitives::kate::{GCellBlock, GMultiProof},
+	kate_recovery::data::{GCellBlock, MCell},
+	primitives::kate::GMultiProof,
 	rpc::kate::query_multi_proof,
 };
 use color_eyre::{
@@ -653,24 +653,6 @@ impl<D: Database> Client<D> {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<MCell>> {
-		fn concat_content(proof: GMultiProof) -> Result<Vec<u8>> {
-			let (scalars, multiproof) = proof;
-			let proof: Vec<u8> = multiproof.into();
-			if proof.len() != 48 {
-				return Err(eyre!("Invalid multiproof length"));
-			}
-
-			let mut content = Vec::new();
-			content[..48].copy_from_slice(&proof);
-
-			for scalar in scalars {
-				let scalar_bytes = scalar.to_big_endian();
-				content.extend_from_slice(&scalar_bytes);
-			}
-
-			Ok(content)
-		}
-
 		let cells: Cells = positions
 			.iter()
 			.map(|p| avail_rust::Cell {
@@ -693,15 +675,24 @@ impl<D: Database> Client<D> {
 			.await?
 			.0;
 
-		let contents = proofs
-			.into_iter()
-			.map(|(gmultiproof, _)| concat_content(gmultiproof).expect("Contents concated"));
-
-		Ok(positions
+		let cells = positions
 			.iter()
-			.zip(contents)
-			.map(|(&position, content)| MCell { position, content })
-			.collect::<Vec<_>>())
+			.zip(proofs.into_iter())
+			.map(|(&position, (proof, gcell_block))| {
+				let (scalars, proof) = proof;
+				let proof_bytes: [u8; 48] = proof.0;
+				let raw_scalars: Vec<[u64; 4]> = scalars.into_iter().map(|u| u.0).collect();
+
+				MCell {
+					position,
+					scalars: raw_scalars,
+					proof: proof_bytes,
+					gcell_block,
+				}
+			})
+			.collect::<Vec<_>>();
+
+		Ok(cells)
 	}
 
 	pub async fn request_kate_proof(

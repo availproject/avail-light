@@ -23,7 +23,7 @@ use avail_rust::{
 			AppData, Percent,
 		},
 		commitments,
-		data::{Cell, DataCell},
+		data::{Cell, CellVariant, DataCell},
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -139,6 +139,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		)
 		.await?;
 
+		let missing_fetched: Vec<Cell> = missing_fetched
+			.into_iter()
+			.filter_map(|v| Cell::try_from(v).ok())
+			.collect(); // TODO
+
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
 		debug!(
@@ -159,8 +164,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			reconstructed_cells.len()
 		);
 
-		let mut data_cells: Vec<DataCell> = fetched.into_iter().map(Into::into).collect::<Vec<_>>();
-
+		let mut data_cells: Vec<DataCell> = vec![];
 		data_cells.append(&mut reconstructed_cells);
 
 		data_cells.sort_by(|a, b| {
@@ -269,17 +273,17 @@ async fn fetch_verified(
 	dimensions: Dimensions,
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
-) -> Result<(Vec<Cell>, Vec<Position>)> {
+) -> Result<(Vec<CellVariant>, Vec<Position>)> {
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
 	let (verified, mut unverified) =
-		proof::verify(block_number, dimensions, &fetched, commitments, pp)
+		proof::verify(block_number, dimensions, &fetched, &commitments, pp)
 			.await
 			.wrap_err("Failed to verify fetched cells")?;
 
-	fetched.retain(|cell| verified.contains(&cell.position));
+	fetched.retain(|cell| verified.contains(&cell.position()));
 	unfetched.append(&mut unverified);
 
 	Ok((fetched, unfetched))

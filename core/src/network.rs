@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
-		data::{Cell, CellVariant},
+		data::CellVariant,
 		matrix::{Dimensions, Position},
 	},
 	H256,
@@ -37,7 +37,7 @@ pub trait Client {
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)>;
+	) -> Result<(Vec<CellVariant>, Vec<Position>, FetchStats)>;
 }
 
 pub struct FetchStats {
@@ -83,7 +83,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<CellVariant>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
 		let (mut dht_fetched, mut unfetched) = self
@@ -92,7 +92,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			.await;
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, mut unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -113,7 +112,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from DHT"
 		);
 
-		dht_fetched.retain(|cell| verified.contains(&cell.position));
+		dht_fetched.retain(|cell| verified.contains(&cell.position()));
 		unfetched.append(&mut unverified);
 
 		Ok((dht_fetched, unfetched, fetch_elapsed))
@@ -126,16 +125,32 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<CellVariant>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.rpc_client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<CellVariant> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.rpc_client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(CellVariant::Cell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.rpc_client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(CellVariant::MCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -156,7 +171,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -170,7 +185,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
+	) -> Result<(Vec<CellVariant>, Vec<Position>, FetchStats)> {
 		let (dht_fetched, unfetched, dht_fetch_duration) = self
 			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
 			.await?;

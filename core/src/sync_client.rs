@@ -267,7 +267,10 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::Cell, matrix::Position},
+		kate_recovery::{
+			data::{Cell, CellVariant},
+			matrix::Position,
+		},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -380,6 +383,8 @@ mod tests {
 					Duration::from_secs(0),
 					None,
 				);
+				let fetched: Vec<CellVariant> =
+					fetched.into_iter().map(CellVariant::Cell).collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -468,7 +473,11 @@ mod tests {
 					Duration::from_secs(0),
 					Some((rpc_fetched.len(), Duration::from_secs(1))),
 				);
-				let fetched = [&dht_fetched[..], &rpc_fetched[..]].concat();
+				let fetched: Vec<CellVariant> = dht_fetched
+					.into_iter()
+					.chain(rpc_fetched.into_iter())
+					.map(CellVariant::Cell)
+					.collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 

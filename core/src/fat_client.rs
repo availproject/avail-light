@@ -185,7 +185,7 @@ pub async fn process_block(
 				return Ok(());
 			};
 
-			let Ok(multiproof_grid_dims) = generate_multiproof_grid_dims(target_dims, dimensions)
+			let Some(multiproof_grid_dims) = generate_multiproof_grid_dims(target_dims, dimensions)
 			else {
 				info!(
 					block_number,
