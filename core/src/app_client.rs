@@ -23,8 +23,12 @@ use avail_rust::{
 			AppData, Percent,
 		},
 		commitments,
+<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::{Cell, DataCell, SingleCell},
+=======
+		data::{Cell, CellVariant, DataCell},
+>>>>>>> b2cc124a (multiproofs: Part II)
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -143,11 +147,18 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		)
 		.await?;
 
+<<<<<<< HEAD
 		let missing_fetched: Vec<SingleCell> = missing_fetched
 			.into_iter()
 			.map(SingleCell::try_from)
 			.map(|res| res.map_err(|e| eyre!(e)))
 			.collect::<Result<_, _>>()?;
+=======
+		let missing_fetched: Vec<Cell> = missing_fetched
+			.into_iter()
+			.filter_map(|v| Cell::try_from(v).ok())
+			.collect(); // TODO
+>>>>>>> b2cc124a (multiproofs: Part II)
 
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
@@ -169,8 +180,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			reconstructed_cells.len()
 		);
 
-		let mut data_cells: Vec<DataCell> = fetched.into_iter().map(Into::into).collect::<Vec<_>>();
-
+		let mut data_cells: Vec<DataCell> = vec![];
 		data_cells.append(&mut reconstructed_cells);
 
 		data_cells.sort_by(|a, b| {
@@ -284,18 +294,22 @@ async fn fetch_verified(
 	dimensions: Dimensions,
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
+<<<<<<< HEAD
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	// If P2P client is not available, return empty fetched and all positions as unfetched
 	let Some(p2p_client) = p2p_client else {
 		return Ok((vec![], positions.to_vec()));
 	};
 
+=======
+) -> Result<(Vec<CellVariant>, Vec<Position>)> {
+>>>>>>> b2cc124a (multiproofs: Part II)
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
 	let (verified, mut unverified) =
-		proof::verify(block_number, dimensions, &fetched, commitments, pp)
+		proof::verify(block_number, dimensions, &fetched, &commitments, pp)
 			.await
 			.wrap_err("Failed to verify fetched cells")?;
 

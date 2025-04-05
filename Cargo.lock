@@ -1354,6 +1354,7 @@ name = "avail-core"
 version = "0.6.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "binary-merkle-tree",
@@ -1366,6 +1367,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#33f8a9df780efec5ef0dcff1dd4f6bfc30100865"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5610f761cfd4aeabe5755d6ff4e821229ad6aa49"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -1662,6 +1666,7 @@ name = "avail-rust"
 version = "0.1.7"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#a93bf5690ed74d4511662ae1e62f13fb395a373e"
 >>>>>>> cf577def (update avail rust changes)
 =======
@@ -1670,6 +1675,9 @@ source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integrat
 =======
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#1355b04fa7f067bb16783e9aa050585bb696aaab"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#aa3e5900ba19d047fb1de5c4f9711862b92601d9"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "avail-core",
  "base58",
@@ -2600,6 +2608,7 @@ dependencies = [
 name = "cc"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74b6a57f98764a267ff415d50a25e6e166f3831a5071af4995296ea97d210490"
@@ -2613,6 +2622,11 @@ version = "1.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fcb57c740ae1daf453ae85f16e37396f672b039e00d9d866e07ddb24e328e3a"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "1.2.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525046617d8376e3db1deffb079e91cef90a89fc3ca5c185bbf8c9ecdd15cd5c"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "jobserver",
  "libc",
@@ -3974,9 +3988,9 @@ dependencies = [
 
 [[package]]
 name = "deranged"
-version = "0.4.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28cfac68e08048ae1883171632c2aef3ebc555621ae56fbccce1cbf22dd7f058"
+checksum = "9c9e6a11ca8224451684bc0d7d5a7adbf8f2fd6887261a1cfc3c0432f9d4068e"
 dependencies = [
  "powerfmt",
 ]
@@ -4638,6 +4652,7 @@ dependencies = [
 [[package]]
 name = "errno"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
@@ -4646,6 +4661,11 @@ version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
@@ -5824,10 +5844,14 @@ dependencies = [
  "futures-util",
  "http 0.2.12",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "indexmap 2.9.0",
 =======
  "indexmap 2.8.0",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "indexmap 2.9.0",
+>>>>>>> b2cc124a (multiproofs: Part II)
  "slab",
  "tokio",
  "tokio-util",
@@ -5853,10 +5877,14 @@ dependencies = [
  "futures-sink",
  "http 1.3.1",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "indexmap 2.9.0",
 =======
  "indexmap 2.8.0",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "indexmap 2.9.0",
+>>>>>>> b2cc124a (multiproofs: Part II)
  "slab",
  "tokio",
  "tokio-util",
@@ -6787,6 +6815,7 @@ dependencies = [
 [[package]]
 name = "indexmap"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
@@ -6795,8 +6824,11 @@ dependencies = [
  "hashbrown 0.15.3",
 =======
 version = "2.8.0"
+=======
+version = "2.9.0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3954d50fe15b02142bf25d3b8bdadb634ec3948f103d04ffe3031bc8fe9d7058"
+checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
@@ -7435,7 +7467,7 @@ dependencies = [
 [[package]]
 name = "kate"
 version = "0.9.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#33f8a9df780efec5ef0dcff1dd4f6bfc30100865"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5610f761cfd4aeabe5755d6ff4e821229ad6aa49"
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -7455,6 +7487,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-arithmetic 23.0.0",
+ "sp-std 14.0.0 (git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch-12)",
  "static_assertions",
  "thiserror-no-std",
 ]
@@ -7462,6 +7495,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
@@ -7473,6 +7507,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#33f8a9df780efec5ef0dcff1dd4f6bfc30100865"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5610f761cfd4aeabe5755d6ff4e821229ad6aa49"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -9227,6 +9264,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 [[package]]
 name = "openssl"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.10.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fedfea7d58a1f73118430a55da6a286e7b044961736ce96a16a17068ea25e5da"
@@ -9235,6 +9273,11 @@ version = "0.10.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e14130c6a98cd258fdcb0fb6d744152343ff729cbfcb28c656a9d12b999fbcd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.10.72"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fedfea7d58a1f73118430a55da6a286e7b044961736ce96a16a17068ea25e5da"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "bitflags 2.9.0",
  "cfg-if 1.0.0",
@@ -9269,6 +9312,7 @@ checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 [[package]]
 name = "openssl-sys"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.9.108"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e145e1651e858e820e4860f7b9c5e169bc1d8ce1c86043be79fa7b7634821847"
@@ -9277,6 +9321,11 @@ version = "0.9.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb61ea9811cc39e3c2069f40b8b8e2e70d8569b361f879786cc7ed48b777cdd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.9.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8288979acd84749c744a9014b4382d42b8f7b2592847b5afb2ed29e5d16ede07"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "cc",
  "libc",
@@ -12996,9 +13045,9 @@ dependencies = [
 
 [[package]]
 name = "pallet-staking-reward-fn"
-version = "22.0.0"
+version = "22.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "988a7ebeacc84d4bdb0b12409681e956ffe35438447d8f8bc78db547cffb6ebc"
+checksum = "4b982dbfe9fbc548dc7f9a3078214989ed58cabf521a8313ae1767d6b4b53b9b"
 dependencies = [
  "log",
  "sp-arithmetic 26.1.0",
@@ -14524,6 +14573,7 @@ dependencies = [
 [[package]]
 name = "prettyplease"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
@@ -14532,8 +14582,11 @@ dependencies = [
  "syn 2.0.101",
 =======
 version = "0.2.31"
+=======
+version = "0.2.32"
+>>>>>>> b2cc124a (multiproofs: Part II)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5316f57387668042f561aae71480de936257848f9c43ce528e311d89a07cadeb"
+checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
 dependencies = [
  "proc-macro2",
  "syn 2.0.100",
@@ -15058,9 +15111,9 @@ dependencies = [
  "wasm-bindgen-futures",
 =======
 name = "redox_syscall"
-version = "0.5.10"
+version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b8c0c260b63a8219631167be35e6a988e9554dbd323f8bd08439c8ed1302bd1"
+checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
 dependencies = [
  "bitflags 2.9.0",
 >>>>>>> cf577def (update avail rust changes)
@@ -15522,10 +15575,14 @@ checksum = "305efbd14fde4139eb501df5f136994bb520b033fa9fbdce287507dc23b8c7ed"
 dependencies = [
  "bitflags 1.3.2",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "errno 0.3.11",
 =======
  "errno 0.3.10",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "errno 0.3.11",
+>>>>>>> b2cc124a (multiproofs: Part II)
  "io-lifetimes",
  "libc",
  "linux-raw-sys 0.1.4",
@@ -15540,10 +15597,14 @@ checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
  "bitflags 2.9.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "errno 0.3.11",
 =======
  "errno 0.3.10",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "errno 0.3.11",
+>>>>>>> b2cc124a (multiproofs: Part II)
  "libc",
  "linux-raw-sys 0.4.15",
  "windows-sys 0.59.0",
@@ -15597,7 +15658,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d97817398dd4bb2e6da002002db259209759911da105da92bec29ccb12cf58bf"
 dependencies = [
  "bitflags 2.9.0",
- "errno 0.3.10",
+ "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.9.3",
  "windows-sys 0.59.0",
@@ -16721,6 +16782,7 @@ dependencies = [
 [[package]]
 name = "smallvec"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
@@ -16729,6 +16791,11 @@ version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcf8323ef1faaee30a44a340193b1ac6814fd9b7b4e88e9d4519a3e4abe1cfd"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
+>>>>>>> b2cc124a (multiproofs: Part II)
 
 [[package]]
 name = "smol"
@@ -17691,6 +17758,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -17701,6 +17769,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -17829,6 +17900,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 dependencies = [
  "proc-macro2",
@@ -17842,6 +17914,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -17866,6 +17941,7 @@ version = "0.25.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -17876,6 +17952,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -18244,6 +18323,7 @@ version = "24.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18254,6 +18334,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -18312,6 +18395,7 @@ version = "17.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18322,6 +18406,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "Inflector",
  "expander",
@@ -18503,6 +18590,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18513,6 +18601,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 
 [[package]]
 name = "sp-storage"
@@ -18533,6 +18624,7 @@ version = "19.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18543,6 +18635,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -18595,6 +18690,7 @@ version = "16.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18605,6 +18701,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -18796,6 +18895,7 @@ version = "20.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18806,6 +18906,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f1d1d9c5c8d0effe4c60b81
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a09aecb9ba1bce42e6e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -19972,6 +20075,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 [[package]]
 name = "tokio"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22cfb5bee7a6a52939ca9224d6ac897bb669134078daa8735560897f69de4d33"
@@ -19980,6 +20084,11 @@ version = "1.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f382da615b842244d4b8738c82ed1275e6c5dd90c459a30941cd07080b06c91a"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "1.44.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
+>>>>>>> b2cc124a (multiproofs: Part II)
 dependencies = [
  "backtrace",
  "bytes",
@@ -20211,7 +20320,7 @@ version = "0.22.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17b4795ff5edd201c7cd6dca065ae59972ce77d1b80fa0a84d94950ece7d1474"
 dependencies = [
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "serde",
  "serde_spanned",
  "toml_datetime",

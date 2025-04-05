@@ -3,11 +3,15 @@ use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
 <<<<<<< HEAD
+<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::Cell,
 =======
 		data::{Cell, CellVariant},
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+		data::CellVariant,
+>>>>>>> b2cc124a (multiproofs: Part II)
 		matrix::{Dimensions, Position},
 	},
 	H256,
@@ -43,7 +47,7 @@ pub trait Client {
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)>;
+	) -> Result<(Vec<CellVariant>, Vec<Position>, FetchStats)>;
 }
 
 pub struct FetchStats {
@@ -90,7 +94,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<CellVariant>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
 		// If p2p_client is not available, return empty cells and all positions as unfetched
@@ -108,7 +112,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			.await;
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, mut unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -142,16 +145,32 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<CellVariant>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.rpc_client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<CellVariant> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.rpc_client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(CellVariant::Cell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.rpc_client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(CellVariant::MCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -186,6 +205,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
+<<<<<<< HEAD
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
 		// Skip P2P retrieval in RPC-only mode
 		let (dht_fetched, unfetched, dht_fetch_duration) = match self.network_mode {
@@ -195,6 +215,12 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 					.await?
 			},
 		};
+=======
+	) -> Result<(Vec<CellVariant>, Vec<Position>, FetchStats)> {
+		let (dht_fetched, unfetched, dht_fetch_duration) = self
+			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
+			.await?;
+>>>>>>> b2cc124a (multiproofs: Part II)
 
 		// Skip RPC retrieval in P2P-only mode
 		if self.network_mode == NetworkMode::P2POnly {
