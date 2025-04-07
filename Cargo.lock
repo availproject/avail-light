@@ -352,7 +352,10 @@ dependencies = [
  "derive_more 0.99.20",
 =======
  "derive_more 0.99.19",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "hex-literal 0.4.1",
  "itoa",
  "proptest",
@@ -385,10 +388,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn-solidity",
  "tiny-keccak",
 ]
@@ -482,6 +489,7 @@ dependencies = [
 [[package]]
 name = "anyhow"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
@@ -490,6 +498,11 @@ version = "1.0.97"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "1.0.97"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "approx"
@@ -512,7 +525,11 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -950,9 +967,12 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
  "synstructure 0.13.2",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
  "synstructure 0.13.1",
 >>>>>>> cf577def (update avail rust changes)
@@ -967,10 +987,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -1188,10 +1212,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -1259,10 +1287,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -1280,10 +1312,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -1340,7 +1376,10 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -1352,6 +1391,7 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "avail-core"
 version = "0.6.2"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -1370,6 +1410,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5610f761cfd4aeabe5755d6ff4e821229ad6aa49"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#bb1d4011a91f1b955979d0de78f2b7cb301b12b2"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -1526,8 +1569,11 @@ dependencies = [
  "rocksdb",
 <<<<<<< HEAD
  "self_update",
+<<<<<<< HEAD
 =======
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "semver 1.0.26",
  "serde",
  "serde_json",
@@ -1667,6 +1713,7 @@ version = "0.1.7"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#a93bf5690ed74d4511662ae1e62f13fb395a373e"
 >>>>>>> cf577def (update avail rust changes)
 =======
@@ -1678,11 +1725,15 @@ source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integrat
 =======
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#aa3e5900ba19d047fb1de5c4f9711862b92601d9"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#aa3e5900ba19d047fb1de5c4f9711862b92601d9"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "avail-core",
  "base58",
  "bounded-collections",
  "derive_more 1.0.0",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  "hex",
@@ -1692,12 +1743,19 @@ dependencies = [
  "env_logger 0.11.8",
 >>>>>>> 0f719b80 (multiproofs: Part I)
  "hex",
+=======
+ "env_logger 0.11.8",
+ "hex",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http-body-util",
  "hyper 1.6.0",
  "hyper-util",
  "jsonrpsee",
  "kate",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "kate-recovery",
  "log",
  "parity-scale-codec",
@@ -1904,7 +1962,11 @@ dependencies = [
  "rustc-hash 1.1.0",
  "shlex",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -1922,6 +1984,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.1",
  "shlex",
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
@@ -1943,6 +2006,8 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.1",
  "shlex",
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
 ]
 
@@ -2136,6 +2201,7 @@ dependencies = [
 name = "bounded-collections"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64ad8a0bed7827f0b07a5d23cec2e58cc02038a99e4ca81616cb2bb2025f804d"
@@ -2149,6 +2215,11 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64ad8a0bed7827f0b07a5d23cec2e58cc02038a99e4ca81616cb2bb2025f804d"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64ad8a0bed7827f0b07a5d23cec2e58cc02038a99e4ca81616cb2bb2025f804d"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "log",
  "parity-scale-codec",
@@ -2412,11 +2483,15 @@ dependencies = [
  "sp-keyring",
  "sp-runtime 39.0.5",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-tracing 17.0.1",
 >>>>>>> cf577def (update avail rust changes)
 =======
  "sp-tracing 17.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-tracing 17.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "staging-xcm",
  "staging-xcm-builder",
  "staging-xcm-executor",
@@ -2514,6 +2589,7 @@ checksum = "7575182f7272186991736b70173b0ea045398f984bf5ebbb3804736ce1330c9d"
 [[package]]
 name = "bytemuck"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9134a6ef01ce4b366b50689c94f82c14bc72bc5d0386829828a2e2752ef7958c"
@@ -2522,6 +2598,11 @@ version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6b1fc10dbac614ebc03540c9dbd60e83887fda27794998c6528f1782047d540"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "1.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6b1fc10dbac614ebc03540c9dbd60e83887fda27794998c6528f1782047d540"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "byteorder"
@@ -2609,6 +2690,7 @@ name = "cc"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74b6a57f98764a267ff415d50a25e6e166f3831a5071af4995296ea97d210490"
@@ -2627,6 +2709,11 @@ version = "1.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "525046617d8376e3db1deffb079e91cef90a89fc3ca5c185bbf8c9ecdd15cd5c"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+version = "1.2.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525046617d8376e3db1deffb079e91cef90a89fc3ca5c185bbf8c9ecdd15cd5c"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "jobserver",
  "libc",
@@ -2702,6 +2789,7 @@ dependencies = [
 [[package]]
 name = "chrono"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
@@ -2710,6 +2798,11 @@ version = "0.4.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.4.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -2745,6 +2838,7 @@ dependencies = [
 name = "clap"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
@@ -2758,6 +2852,11 @@ version = "4.5.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8aa86934b44c19c50f87cc2790e19f54f7a67aedb64101c2e1a2e5ecfb73944"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "4.5.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8aa86934b44c19c50f87cc2790e19f54f7a67aedb64101c2e1a2e5ecfb73944"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2765,6 +2864,7 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "4.5.37"
@@ -2780,6 +2880,11 @@ version = "4.5.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2414dbb2dd0695280da6ea9261e327479e9d37b0630f6b53ba2a11c60c679fd9"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "4.5.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2414dbb2dd0695280da6ea9261e327479e9d37b0630f6b53ba2a11c60c679fd9"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "anstream",
  "anstyle",
@@ -2797,10 +2902,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -2813,6 +2922,9 @@ checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 name = "codespan-reporting"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe6d2e5af09e8c8ad56c969f2157a3d4238cebc7c55f0a517728c38f7b200f81"
@@ -2820,6 +2932,7 @@ dependencies = [
  "serde",
  "termcolor",
  "unicode-width",
+<<<<<<< HEAD
 =======
 version = "0.11.1"
 =======
@@ -2836,6 +2949,8 @@ dependencies = [
 =======
  "unicode-width",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -2949,6 +3064,7 @@ dependencies = [
  "once_cell",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "unicode-width",
 =======
  "unicode-width 0.2.0",
@@ -2956,6 +3072,9 @@ dependencies = [
 =======
  "unicode-width",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "unicode-width",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "windows-sys 0.59.0",
 ]
 
@@ -3488,10 +3607,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -3547,6 +3670,7 @@ dependencies = [
 [[package]]
 name = "cumulus-pallet-xcmp-queue"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4f4b7dec3206640120013d2ce6b476cbac8be9b93335f66b40255711db81301"
@@ -3555,6 +3679,11 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "105767016b8136031f14cca439edf28c8493e3556e6781847758511bfef2477a"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "105767016b8136031f14cca439edf28c8493e3556e6781847758511bfef2477a"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bounded-collections",
  "bp-xcm-bridge-hub-router",
@@ -3744,16 +3873,25 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
 ]
 
 [[package]]
 name = "cxx"
+<<<<<<< HEAD
 version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b4ab2681454aacfe7ce296ebc6df86791009f237f8020b0c752e8b245ba7c1d"
+=======
+version = "1.0.155"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76751bca18309cbce06f9821698d6c05b3af5c3fde8af5caf57f11611729397b"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "cc",
  "cxxbridge-cmd",
@@ -3765,9 +3903,15 @@ dependencies = [
 
 [[package]]
 name = "cxx-build"
+<<<<<<< HEAD
 version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e431f7ba795550f2b11c32509b3b35927d899f0ad13a1d1e030a317a08facbe"
+=======
+version = "1.0.155"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab3309df6a3cbbfc900c1b7665f4a4109da2b90ce5fd9b0c9f51e3687f51c970"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "cc",
  "codespan-reporting",
@@ -3779,9 +3923,15 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-cmd"
+<<<<<<< HEAD
 version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cbc41933767955d04c2a90151806029b93df5fd8b682ba22a967433347480a9"
+=======
+version = "1.0.155"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78ce717e582fc3b56bd2f1eb3cda9916e9b4629721e4c2ce637ac5e7d4beef11"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "clap",
  "codespan-reporting",
@@ -3792,6 +3942,7 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-flags"
+<<<<<<< HEAD
 version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9133547634329a5b76e5f58d1e53c16d627699bbcd421b9007796311165f9667"
@@ -3801,16 +3952,31 @@ name = "cxxbridge-macro"
 version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53e89d77ad5fd6066a3d42d94de3f72a2f23f95006da808177624429b5183596"
+=======
+version = "1.0.155"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa7fdd4b264a3335a8b21221092bd2fbfba35c3606bd50feb28d22ba3fb0a6e5"
+
+[[package]]
+name = "cxxbridge-macro"
+version = "1.0.155"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c36a0a2b78ff9232a3dc584340471d4fa1751a81026cf62f3661a06d5a8bae17"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
  "syn 2.0.100",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "darling"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3820,6 +3986,11 @@ version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.20.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "darling_core 0.14.4",
  "darling_macro 0.14.4",
@@ -3838,6 +4009,7 @@ dependencies = [
 [[package]]
 name = "darling_core"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "109c1ca6e6b7f82cc233a97004ea8ed7ca123a9af07a8230878fcfda9b158bf0"
@@ -3846,6 +4018,11 @@ version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.20.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "fnv",
  "ident_case",
@@ -3875,11 +4052,15 @@ dependencies = [
 =======
  "strsim",
  "syn 2.0.100",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "darling_macro"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3898,19 +4079,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.20.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
  "darling_core",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "data-encoding"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3932,6 +4122,17 @@ version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f9724adfcf41f45bf652b3995837669d73c4d49a1b5ac1ff82905ac7d9b5558"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "2.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
+
+[[package]]
+name = "data-encoding-macro"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f9724adfcf41f45bf652b3995837669d73c4d49a1b5ac1ff82905ac7d9b5558"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "data-encoding",
  "data-encoding-macro-internal",
@@ -3939,6 +4140,7 @@ dependencies = [
 
 [[package]]
 name = "data-encoding-macro-internal"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3954,6 +4156,14 @@ dependencies = [
  "data-encoding",
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.1.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18e4fdb82bd54a12e42fb58a800dcae6b9e13982238ce2296dc3570b92148e1f"
+dependencies = [
+ "data-encoding",
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4037,10 +4247,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4052,7 +4266,11 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4063,10 +4281,14 @@ checksum = "30542c1ad912e0e3d22a1935c290e12e8a29d704a420177a31faad4a601a0800"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4086,10 +4308,14 @@ dependencies = [
  "quote",
  "rustc_version 0.4.1",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4119,6 +4345,7 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
  "unicode-xid",
 ]
@@ -4135,6 +4362,9 @@ dependencies = [
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "unicode-xid",
 ]
 
@@ -4225,10 +4455,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4269,10 +4503,13 @@ dependencies = [
  "quote",
  "regex",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
  "termcolor",
  "toml 0.8.22",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
  "termcolor",
  "toml 0.8.20",
@@ -4373,10 +4610,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4509,10 +4750,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4533,10 +4778,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4548,7 +4797,11 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4579,6 +4832,7 @@ name = "env_logger"
 version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c863f0904021b108aa8b2f55046443e6b1ebde8fd4a15c399893aae4fa069f"
+<<<<<<< HEAD
 dependencies = [
  "anstream",
  "anstyle",
@@ -4618,6 +4872,8 @@ name = "env_logger"
 version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c863f0904021b108aa8b2f55046443e6b1ebde8fd4a15c399893aae4fa069f"
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "anstream",
  "anstyle",
@@ -4653,6 +4909,7 @@ dependencies = [
 name = "errno"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
@@ -4666,6 +4923,11 @@ version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
@@ -4789,6 +5051,7 @@ dependencies = [
 name = "event-listener-strategy"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
@@ -4802,6 +5065,11 @@ version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "event-listener 5.4.0",
  "pin-project-lite",
@@ -4820,10 +5088,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -4982,7 +5254,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ced92e76e966ca2fd84c8f7aa01a4aea65b0eb6648d72f7c8f3e2764a67fece"
 dependencies = [
  "crc32fast",
+<<<<<<< HEAD
  "miniz_oxide",
+=======
+ "miniz_oxide 0.8.7",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5299,10 +5575,14 @@ dependencies = [
  "quote",
  "sp-crypto-hashing 0.0.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5324,10 +5604,14 @@ dependencies = [
  "quote",
  "sp-crypto-hashing 0.1.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5340,10 +5624,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5357,10 +5645,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5371,10 +5663,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5386,10 +5682,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5418,11 +5718,15 @@ dependencies = [
  "sp-std 14.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp-version 37.0.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-weights 31.0.0",
 >>>>>>> cf577def (update avail rust changes)
 =======
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5559,10 +5863,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -5665,6 +5973,7 @@ dependencies = [
 [[package]]
 name = "getrandom"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
@@ -5673,6 +5982,11 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73fea8450eea4bac3940448fb7ae50d91f034f941199fcd9d909a5a07aa455f0"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73fea8450eea4bac3940448fb7ae50d91f034f941199fcd9d909a5a07aa455f0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "cfg-if 1.0.0",
  "js-sys",
@@ -5845,6 +6159,7 @@ dependencies = [
  "http 0.2.12",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "indexmap 2.9.0",
 =======
  "indexmap 2.8.0",
@@ -5852,6 +6167,9 @@ dependencies = [
 =======
  "indexmap 2.9.0",
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+ "indexmap 2.9.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "slab",
  "tokio",
  "tokio-util",
@@ -5861,6 +6179,7 @@ dependencies = [
 [[package]]
 name = "h2"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9421a676d1b147b16b82c9225157dc629087ef8ec4d5e2960f9437a90dac0a5"
@@ -5869,6 +6188,11 @@ version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5017294ff4bb30944501348f6f8e42e6ad28f42c8bbef7a74029aff064a4e3c2"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5017294ff4bb30944501348f6f8e42e6ad28f42c8bbef7a74029aff064a4e3c2"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -5878,6 +6202,7 @@ dependencies = [
  "http 1.3.1",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "indexmap 2.9.0",
 =======
  "indexmap 2.8.0",
@@ -5885,6 +6210,9 @@ dependencies = [
 =======
  "indexmap 2.9.0",
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+ "indexmap 2.9.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "slab",
  "tokio",
  "tokio-util",
@@ -6021,6 +6349,7 @@ checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
 [[package]]
 name = "hermit-abi"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f154ce46856750ed433c8649605bf7ed2de3bc35fd9d2a9f30cddd873c80cb08"
@@ -6029,6 +6358,11 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbd780fe5cc30f81464441920d82ac8740e2e46b29a6fad543ddd075229ce37e"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbd780fe5cc30f81464441920d82ac8740e2e46b29a6fad543ddd075229ce37e"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "hex"
@@ -6058,6 +6392,12 @@ dependencies = [
 
 [[package]]
 >>>>>>> cf577def (update avail rust changes)
+name = "hex-literal"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
+
+[[package]]
 name = "hex-literal"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6109,7 +6449,10 @@ dependencies = [
  "rand 0.9.0",
  "socket2",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tinyvec",
  "tokio",
  "tracing",
@@ -6145,7 +6488,10 @@ dependencies = [
  "resolv-conf",
  "smallvec",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tokio",
  "tracing",
 ]
@@ -6328,10 +6674,14 @@ dependencies = [
  "futures-channel",
  "futures-util",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "h2 0.4.10",
 =======
  "h2 0.4.8",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "h2 0.4.8",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "http-body 1.0.1",
  "httparse",
@@ -6351,9 +6701,12 @@ checksum = "2d191583f3da1305256f22463b9bb0471acad48a4e534a5218b9963e9c1f59b2"
 dependencies = [
  "futures-util",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "http 0.2.12",
  "hyper 0.14.29",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "hyper 1.6.0",
  "hyper-util",
@@ -6399,6 +6752,7 @@ dependencies = [
 [[package]]
 name = "hyper-util"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.1.10"
 >>>>>>> cf577def (update avail rust changes)
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6422,6 +6776,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "497bbc33a26fdd4af9ed9c70d63f61cf56a938375fbb32df34db9b1cd6d643f2"
 dependencies = [
  "bytes",
@@ -6432,12 +6790,16 @@ dependencies = [
  "hyper 1.6.0",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "libc",
 =======
 >>>>>>> cf577def (update avail rust changes)
 =======
  "libc",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "libc",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -6447,6 +6809,7 @@ dependencies = [
 
 [[package]]
 name = "iana-time-zone"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.1.63"
@@ -6462,6 +6825,11 @@ version = "0.1.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0c919e5debc312ad217002b8048a17b7d83f80703865bbfcfebb0458b0b27d8"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.1.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c919e5debc312ad217002b8048a17b7d83f80703865bbfcfebb0458b0b27d8"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "android_system_properties",
  "core-foundation-sys",
@@ -6770,10 +7138,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -6816,6 +7188,7 @@ dependencies = [
 name = "indexmap"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
@@ -6829,6 +7202,11 @@ version = "2.9.0"
 >>>>>>> b2cc124a (multiproofs: Part II)
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
+=======
+version = "2.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
@@ -6918,10 +7296,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "hermit-abi 0.5.1",
 =======
  "hermit-abi 0.5.0",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "hermit-abi 0.5.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "libc",
  "windows-sys 0.59.0",
 ]
@@ -7036,7 +7418,10 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -7069,6 +7454,7 @@ checksum = "8eaf4bc02d17cbdd7ff4c7438cafcdf7fb9a4613313ad11b4f8fefe7d3fa0130"
 name = "jobserver"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
@@ -7086,6 +7472,13 @@ checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
 dependencies = [
  "getrandom 0.3.2",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.1.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
+dependencies = [
+ "getrandom 0.3.2",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "libc",
 ]
 
@@ -7101,6 +7494,7 @@ dependencies = [
 
 [[package]]
 name = "jsonrpsee"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.22.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7123,19 +7517,27 @@ dependencies = [
 =======
 version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "37b26c20e2178756451cfeb0661fb74c47dd5988cb7e3939de7e9241fd604d42"
 dependencies = [
  "jsonrpsee-client-transport",
  "jsonrpsee-core 0.24.9",
  "jsonrpsee-http-client",
  "jsonrpsee-types 0.24.9",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "jsonrpsee-wasm-client",
  "jsonrpsee-ws-client",
 ]
 
 [[package]]
 name = "jsonrpsee-client-transport"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.22.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7168,11 +7570,17 @@ version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bacb85abf4117092455e1573625e21b8f8ef4dec8aff13361140b2dc266cdff2"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bacb85abf4117092455e1573625e21b8f8ef4dec8aff13361140b2dc266cdff2"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "base64 0.22.1",
  "futures-channel",
  "futures-util",
  "gloo-net",
+<<<<<<< HEAD
 <<<<<<< HEAD
  "http 1.1.0",
  "jsonrpsee-core 0.23.2",
@@ -7180,6 +7588,10 @@ dependencies = [
  "http 1.3.1",
  "jsonrpsee-core 0.24.9",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "http 1.3.1",
+ "jsonrpsee-core 0.24.9",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "pin-project",
  "rustls",
  "rustls-pki-types",
@@ -7223,6 +7635,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-core"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.22.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4b257e1ec385e07b0255dde0b933f948b5c8b8c28d42afda9587c3a967b896d"
@@ -7231,11 +7644,17 @@ version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "456196007ca3a14db478346f58c7238028d55ee15c1df15115596e411ff27925"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "456196007ca3a14db478346f58c7238028d55ee15c1df15115596e411ff27925"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "async-trait",
  "bytes",
  "futures-timer",
  "futures-util",
+<<<<<<< HEAD
 <<<<<<< HEAD
  "hyper 0.14.29",
  "jsonrpsee-types 0.22.5",
@@ -7245,6 +7664,8 @@ dependencies = [
  "serde_json",
  "thiserror",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -7290,6 +7711,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-http-client"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.22.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ccf93fc4a0bfe05d851d37d7c32b7f370fe94336b52a2f0efc5f1981895c2e5"
@@ -7305,6 +7727,10 @@ dependencies = [
 =======
 version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "c872b6c9961a4ccc543e321bb5b89f6b2d2c7fe8b61906918273a3333c95400c"
 dependencies = [
  "async-trait",
@@ -7347,6 +7773,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-types"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.22.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "150d6168405890a7a3231a3c74843f58b8959471f6df76078db2619ddee1d07d"
@@ -7374,6 +7801,12 @@ version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08a8e70baf945b6b5752fc8eb38c918a48f1234daf11355e07106d963f860089"
 dependencies = [
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08a8e70baf945b6b5752fc8eb38c918a48f1234daf11355e07106d963f860089"
+dependencies = [
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "serde",
  "serde_json",
@@ -7383,6 +7816,7 @@ dependencies = [
 
 [[package]]
 name = "jsonrpsee-wasm-client"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7394,16 +7828,24 @@ dependencies = [
 =======
 version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "e6558a9586cad43019dafd0b6311d0938f46efc116b34b28c74778bc11a2edf6"
 dependencies = [
  "jsonrpsee-client-transport",
  "jsonrpsee-core 0.24.9",
  "jsonrpsee-types 0.24.9",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "jsonrpsee-ws-client"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7418,11 +7860,20 @@ version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01b3323d890aa384f12148e8d2a1fd18eb66e9e7e825f9de4fa53bcc19b93eef"
 dependencies = [
+=======
+version = "0.24.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01b3323d890aa384f12148e8d2a1fd18eb66e9e7e825f9de4fa53bcc19b93eef"
+dependencies = [
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "jsonrpsee-client-transport",
  "jsonrpsee-core 0.24.9",
  "jsonrpsee-types 0.24.9",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "url",
 ]
 
@@ -7444,21 +7895,43 @@ dependencies = [
 [[package]]
 name = "kate"
 version = "0.9.2"
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#bb1d4011a91f1b955979d0de78f2b7cb301b12b2"
+dependencies = [
+ "avail-core",
+ "derive_more 0.99.19",
+ "dusk-bytes",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "dusk-plonk",
  "hex",
  "hex-literal 0.3.4",
  "kate-recovery",
+<<<<<<< HEAD
  "parity-scale-codec",
  "poly-multiproof",
  "serde",
+=======
+ "log",
+ "nalgebra 0.32.6",
+ "once_cell",
+ "parity-scale-codec",
+ "poly-multiproof",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "serde",
+ "serde_json",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "sp-arithmetic 23.0.0",
  "sp-std 14.0.0 (git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch-12)",
  "static_assertions",
  "thiserror-no-std",
+<<<<<<< HEAD
 =======
  "sha2 0.10.8",
 >>>>>>> cf577def (update avail rust changes)
@@ -7468,6 +7941,14 @@ dependencies = [
 name = "kate"
 version = "0.9.2"
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5610f761cfd4aeabe5755d6ff4e821229ad6aa49"
+=======
+]
+
+[[package]]
+name = "kate-recovery"
+version = "0.10.0"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#bb1d4011a91f1b955979d0de78f2b7cb301b12b2"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -7581,6 +8062,7 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 [[package]]
 name = "libc"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.155"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
@@ -7589,6 +8071,11 @@ version = "0.2.171"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.2.171"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "libloading"
@@ -7662,10 +8149,14 @@ dependencies = [
  "pin-project",
  "rw-stream-sink",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -7705,7 +8196,10 @@ dependencies = [
  "rand 0.8.5",
  "rand_core 0.6.4",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "web-time",
 ]
@@ -7742,12 +8236,16 @@ dependencies = [
  "rand 0.8.5",
  "rw-stream-sink",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "serde",
  "smallvec",
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "unsigned-varint 0.8.0",
  "web-time",
@@ -7771,10 +8269,14 @@ dependencies = [
  "quick-protobuf",
  "quick-protobuf-codec",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "web-time",
 ]
@@ -7853,10 +8355,14 @@ dependencies = [
  "quick-protobuf-codec",
  "smallvec",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
 ]
 
@@ -7912,10 +8418,14 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "uint 0.10.0",
  "web-time",
@@ -7979,10 +8489,14 @@ dependencies = [
  "snow",
  "static_assertions",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "x25519-dalek",
  "zeroize",
@@ -8018,18 +8532,24 @@ dependencies = [
  "libp2p-tls",
  "quinn",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "rand",
  "ring 0.17.8",
  "rustls 0.23.10",
  "socket2 0.5.7",
  "thiserror",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "rand 0.8.5",
  "ring 0.17.14",
  "rustls",
  "socket2",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tokio",
  "tracing",
 ]
@@ -8054,10 +8574,14 @@ dependencies = [
  "rand 0.8.5",
  "static_assertions",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "web-time",
 ]
@@ -8118,10 +8642,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -8152,16 +8680,22 @@ dependencies = [
  "libp2p-identity",
  "rcgen",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "ring 0.17.8",
  "rustls 0.23.10",
  "rustls-webpki 0.101.7",
  "thiserror",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "ring 0.17.14",
  "rustls",
  "rustls-webpki 0.101.7",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "x509-parser",
  "yasna",
 ]
@@ -8227,10 +8761,14 @@ dependencies = [
  "libp2p-webrtc-utils",
  "send_wrapper 0.6.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -8257,7 +8795,10 @@ dependencies = [
 =======
  "soketto",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "url",
  "webpki-roots",
@@ -8273,10 +8814,14 @@ dependencies = [
  "futures",
  "libp2p-core",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tracing",
  "yamux 0.12.1",
  "yamux 0.13.4",
@@ -8431,6 +8976,7 @@ dependencies = [
 name = "log"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
@@ -8444,6 +8990,11 @@ version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.4.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "serde",
  "value-bag",
@@ -8553,10 +9104,14 @@ dependencies = [
  "macro_magic_macros",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -8571,10 +9126,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -8586,10 +9145,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -8601,10 +9164,14 @@ dependencies = [
  "macro_magic_core",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -8712,7 +9279,20 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 name = "miniz_oxide"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 checksum = "3be647b768db090acb35d5ec5db2b0e1f1de11133ca123b9eacf5137868f892a"
+=======
+checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
+dependencies = [
+ "adler",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "adler2",
 ]
@@ -8873,6 +9453,7 @@ dependencies = [
 [[package]]
 name = "nalgebra"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d506eb7e08d6329505faa8a3a00a5dcc6de9f76e0c77e4b75763ae3c770831ff"
@@ -8887,6 +9468,8 @@ dependencies = [
  "rand_distr",
  "simba 0.6.0",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 version = "0.32.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b5c17de023a86f59ed79891b2e5d5a94c705dbe904a5b5c9c952ea6221b03e4"
@@ -8897,7 +9480,10 @@ dependencies = [
  "num-rational",
  "num-traits",
  "simba 0.8.1",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "typenum",
 ]
 
@@ -8918,6 +9504,7 @@ dependencies = [
 
 [[package]]
 <<<<<<< HEAD
+<<<<<<< HEAD
 name = "nalgebra-macros"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8934,6 +9521,11 @@ dependencies = [
 name = "native-tls"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+name = "native-tls"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "87de3442987e9dbec73158d5c715e7ad9072fda936bb03d19d7fa10e00520f0e"
 dependencies = [
  "libc",
@@ -9000,11 +9592,15 @@ dependencies = [
  "netlink-packet-core",
  "netlink-sys",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
  "tokio",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -9241,6 +9837,7 @@ dependencies = [
 name = "once_cell"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
@@ -9254,6 +9851,11 @@ version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "1.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "opaque-debug"
@@ -9263,6 +9865,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.10.72"
@@ -9278,6 +9881,11 @@ version = "0.10.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fedfea7d58a1f73118430a55da6a286e7b044961736ce96a16a17068ea25e5da"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+version = "0.10.72"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fedfea7d58a1f73118430a55da6a286e7b044961736ce96a16a17068ea25e5da"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bitflags 2.9.0",
  "cfg-if 1.0.0",
@@ -9297,10 +9905,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -9311,6 +9923,7 @@ checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
 name = "openssl-sys"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.9.108"
@@ -9326,6 +9939,11 @@ version = "0.9.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8288979acd84749c744a9014b4382d42b8f7b2592847b5afb2ed29e5d16ede07"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+version = "0.9.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8288979acd84749c744a9014b4382d42b8f7b2592847b5afb2ed29e5d16ede07"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "cc",
  "libc",
@@ -13497,10 +14115,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -13645,6 +14267,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 name = "pest"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "198db74531d58c70a361c42201efde7e2591e976d518caf7662a47dc5720e7b6"
@@ -13658,6 +14281,11 @@ version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "198db74531d58c70a361c42201efde7e2591e976d518caf7662a47dc5720e7b6"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "2.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "198db74531d58c70a361c42201efde7e2591e976d518caf7662a47dc5720e7b6"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "memchr",
  "thiserror 2.0.12",
@@ -13682,10 +14310,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14306,10 +14938,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14322,10 +14958,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14338,10 +14978,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14352,10 +14996,14 @@ checksum = "8ba81f7b5faac81e528eb6158a6f3c9e0bb1008e0ffa19653bc8dea925ecb429"
 dependencies = [
  "polkavm-derive-impl 0.9.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14366,10 +15014,14 @@ checksum = "9324fe036de37c17829af233b46ef6b5562d4a0c09bb7fdb9f8378856dee30cf"
 dependencies = [
  "polkavm-derive-impl 0.10.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14380,10 +15032,14 @@ checksum = "48c16669ddc7433e34c1007d31080b80901e3e8e523cb9d4b441c3910cf9294b"
 dependencies = [
  "polkavm-derive-impl 0.18.1",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14448,6 +15104,7 @@ name = "poly-multiproof"
 version = "0.1.1"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/poly-multiproof#c2794e32ca040e6b2544abde18b7187af3e66feb"
 =======
 source = "git+https://github.com/aphoh/poly-multiproof#c2794e32ca040e6b2544abde18b7187af3e66feb"
@@ -14455,6 +15112,9 @@ source = "git+https://github.com/aphoh/poly-multiproof#c2794e32ca040e6b2544abde1
 =======
 source = "git+https://github.com/availproject/poly-multiproof#c2794e32ca040e6b2544abde18b7187af3e66feb"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+source = "git+https://github.com/availproject/poly-multiproof#c2794e32ca040e6b2544abde18b7187af3e66feb"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -14531,6 +15191,7 @@ checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "zerocopy",
 =======
  "zerocopy 0.8.23",
@@ -14538,6 +15199,9 @@ dependencies = [
 =======
  "zerocopy 0.8.24",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "zerocopy 0.8.24",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14574,11 +15238,15 @@ dependencies = [
 name = "prettyplease"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
 dependencies = [
  "proc-macro2",
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
 version = "0.2.31"
@@ -14591,6 +15259,9 @@ dependencies = [
  "proc-macro2",
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14688,14 +15359,19 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "proc-macro2"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14705,6 +15381,11 @@ version = "1.0.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31971752e70b8b2686d7e46ec17fb38dad4051d94024c88df49b667caea9c84"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "1.0.94"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31971752e70b8b2686d7e46ec17fb38dad4051d94024c88df49b667caea9c84"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "unicode-ident",
 ]
@@ -14730,10 +15411,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -14777,14 +15462,19 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "psm"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14794,6 +15484,11 @@ version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f58e5423e24c18cc840e1c98370b3993c6649cd1678b4d24318bcf0a083cbe88"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f58e5423e24c18cc840e1c98370b3993c6649cd1678b4d24318bcf0a083cbe88"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "cc",
 ]
@@ -14833,15 +15528,22 @@ dependencies = [
 [[package]]
 <<<<<<< HEAD
 name = "quick-xml"
+<<<<<<< HEAD
 version = "0.37.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+=======
+version = "0.37.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ce8c88de324ff838700f36fb6ab86c96df0e3c4ab6ef3a9b2044465cce1369"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "memchr",
 ]
 
 [[package]]
 name = "quinn"
+<<<<<<< HEAD
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4ceeeeabace7857413798eb1ffa1e9c905a9946a57d81fb69b4b71c4d8eb3ad"
@@ -14851,6 +15553,11 @@ version = "0.11.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3bd15a6f2967aef83887dcb9fec0014580467e33720d073560cf015a5683012"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3bd15a6f2967aef83887dcb9fec0014580467e33720d073560cf015a5683012"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bytes",
  "cfg_aliases",
@@ -14867,7 +15574,10 @@ dependencies = [
  "rustls",
  "socket2",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tokio",
  "tracing",
  "web-time",
@@ -14875,6 +15585,7 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14893,6 +15604,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b820744eb4dc9b57a3398183639c511b5a26d2ed702cedd3febaa1393caa22cc"
 dependencies = [
  "bytes",
+=======
+version = "0.11.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b820744eb4dc9b57a3398183639c511b5a26d2ed702cedd3febaa1393caa22cc"
+dependencies = [
+ "bytes",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "getrandom 0.3.2",
  "rand 0.9.0",
  "ring 0.17.14",
@@ -14901,7 +15619,10 @@ dependencies = [
  "rustls-pki-types",
  "slab",
  "thiserror 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tinyvec",
  "tracing",
  "web-time",
@@ -14909,6 +15630,7 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.5.2"
@@ -14924,6 +15646,11 @@ version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "541d0f57c6ec747a90738a52741d3221f7960e8ac2f0ff4b1a63680e033b4ab5"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "541d0f57c6ec747a90738a52741d3221f7960e8ac2f0ff4b1a63680e033b4ab5"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -14982,11 +15709,15 @@ dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "zerocopy 0.8.23",
 >>>>>>> cf577def (update avail rust changes)
 =======
  "zerocopy 0.8.24",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "zerocopy 0.8.24",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -15029,6 +15760,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.3.3",
 ]
 
@@ -15043,6 +15775,9 @@ dependencies = [
 =======
  "getrandom 0.3.2",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.3.2",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -15095,6 +15830,7 @@ dependencies = [
 
 [[package]]
 <<<<<<< HEAD
+<<<<<<< HEAD
 name = "reconnecting-jsonrpsee-ws-client"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15117,6 +15853,14 @@ checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
 dependencies = [
  "bitflags 2.9.0",
 >>>>>>> cf577def (update avail rust changes)
+=======
+name = "redox_syscall"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
+dependencies = [
+ "bitflags 2.9.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -15157,7 +15901,10 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -15241,6 +15988,9 @@ version = "0.12.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d19c46a6fdd48bc4dab94b6103fccc55d34c67cc0ad04653aad4ea2a07cd7bbb"
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -15248,7 +15998,11 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
+<<<<<<< HEAD
  "h2 0.4.10",
+=======
+ "h2 0.4.8",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -15331,7 +16085,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48375394603e3dd4b2d64371f7148fd8c7baa2680e28741f2cb8d23b59e3d4c4"
 dependencies = [
  "hostname",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -15419,6 +16176,7 @@ dependencies = [
  "sp-runtime 39.0.5",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-weights 31.1.0",
 =======
  "sp-weights 31.0.0",
@@ -15426,6 +16184,9 @@ dependencies = [
 =======
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "staging-xcm",
  "staging-xcm-builder",
 ]
@@ -15456,6 +16217,7 @@ dependencies = [
 name = "ruint"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78a46eb779843b2c4f21fac5773e25d6d5b7c8f0922876c91541790d2ca27eef"
@@ -15469,6 +16231,11 @@ version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78a46eb779843b2c4f21fac5773e25d6d5b7c8f0922876c91541790d2ca27eef"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78a46eb779843b2c4f21fac5773e25d6d5b7c8f0922876c91541790d2ca27eef"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "alloy-rlp",
  "ark-ff 0.3.0",
@@ -15485,12 +16252,16 @@ dependencies = [
  "rand 0.8.5",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "rand 0.9.1",
 =======
 >>>>>>> cf577def (update avail rust changes)
 =======
  "rand 0.9.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "rand 0.9.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "rlp",
  "ruint-macro",
  "serde",
@@ -15576,6 +16347,7 @@ dependencies = [
  "bitflags 1.3.2",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "errno 0.3.11",
 =======
  "errno 0.3.10",
@@ -15583,6 +16355,9 @@ dependencies = [
 =======
  "errno 0.3.11",
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+ "errno 0.3.11",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "io-lifetimes",
  "libc",
  "linux-raw-sys 0.1.4",
@@ -15598,6 +16373,7 @@ dependencies = [
  "bitflags 2.9.0",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "errno 0.3.11",
 =======
  "errno 0.3.10",
@@ -15605,6 +16381,9 @@ dependencies = [
 =======
  "errno 0.3.11",
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+ "errno 0.3.11",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "libc",
  "linux-raw-sys 0.4.15",
  "windows-sys 0.59.0",
@@ -15614,9 +16393,15 @@ dependencies = [
 name = "rustix"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
+=======
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d97817398dd4bb2e6da002002db259209759911da105da92bec29ccb12cf58bf"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bitflags 2.9.0",
  "errno 0.3.11",
@@ -15627,6 +16412,7 @@ dependencies = [
 
 [[package]]
 name = "rustls"
+<<<<<<< HEAD
 version = "0.21.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f56a14d1f48b391359b22f731fd4bd7e43c97f3c50eee276f3aa09c94784d3e"
@@ -15669,12 +16455,17 @@ dependencies = [
 name = "rustls"
 version = "0.23.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+=======
+version = "0.23.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "822ee9188ac4ec04a2f0531e55d035fb2de73f18b41a63c70c2712503b6fb13c"
 dependencies = [
  "log",
  "once_cell",
  "ring 0.17.14",
  "rustls-pki-types",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  "rustls-webpki 0.103.2",
@@ -15684,6 +16475,9 @@ dependencies = [
 =======
  "rustls-webpki 0.103.1",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "rustls-webpki 0.103.1",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "subtle",
  "zeroize",
 ]
@@ -15691,14 +16485,23 @@ dependencies = [
 [[package]]
 name = "rustls-native-certs"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9aace74cb666635c918e9c12bc0d348266037aa8eb599b5cba565709a8dff00"
 dependencies = [
  "openssl-probe",
  "rustls-pemfile 1.0.4",
+=======
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcff2dd52b58a8d98a70243663a0d234c4e2b79235637849d15913394a247d3"
+dependencies = [
+ "openssl-probe",
+ "rustls-pki-types",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "schannel",
- "security-framework",
+ "security-framework 3.2.0",
 ]
 
 [[package]]
@@ -15770,7 +16573,10 @@ name = "rustls-platform-verifier"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5467026f437b4cb2a533865eaa73eb840019a0916f4b9ec563c6e617e086c9"
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "core-foundation 0.10.0",
  "core-foundation-sys",
@@ -15780,6 +16586,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rustls-platform-verifier-android",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  "rustls-webpki 0.103.2",
@@ -15795,6 +16602,12 @@ dependencies = [
  "security-framework-sys",
  "webpki-root-certs",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "rustls-webpki 0.103.1",
+ "security-framework 3.2.0",
+ "security-framework-sys",
+ "webpki-root-certs",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "windows-sys 0.59.0",
 ]
 
@@ -15818,6 +16631,7 @@ dependencies = [
 name = "rustls-webpki"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.103.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7149975849f1abb3832b246010ef62ccc80d3a76169517ada7188252b9cfb437"
@@ -15831,6 +16645,11 @@ version = "0.103.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fef8b8769aaccf73098557a87cd1816b4f9c7c16811c9c77142aa695c16f2c03"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.103.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fef8b8769aaccf73098557a87cd1816b4f9c7c16811c9c77142aa695c16f2c03"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "ring 0.17.14",
  "rustls-pki-types",
@@ -15947,11 +16766,15 @@ dependencies = [
 =======
  "sp-io 38.0.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-panic-handler 13.0.1",
 >>>>>>> cf577def (update avail rust changes)
 =======
  "sp-panic-handler 13.0.2",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-panic-handler 13.0.2",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "sp-runtime-interface 28.0.0",
  "sp-trie 37.0.0",
  "sp-version 37.0.0",
@@ -16055,10 +16878,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 1.0.109",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -16101,10 +16928,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -16131,10 +16962,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -16163,12 +16998,17 @@ dependencies = [
  "quote",
  "scale-info",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.87",
  "thiserror",
 =======
  "syn 2.0.100",
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -16521,10 +17361,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -16718,6 +17562,19 @@ dependencies = [
 
 [[package]]
 name = "simba"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "061507c94fc6ab4ba1c9a0305018408e312e17c041eb63bef8aa726fa33aceae"
+dependencies = [
+ "approx",
+ "num-complex",
+ "num-traits",
+ "paste",
+ "wide",
+]
+
+[[package]]
+name = "simba"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3a386a501cd104797982c15ae17aafe8b9261315b5d07e3ec803f2ea26be0fa"
@@ -16783,6 +17640,7 @@ dependencies = [
 name = "smallvec"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
@@ -16796,6 +17654,11 @@ version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "smol"
@@ -16963,6 +17826,7 @@ name = "snowbridge-beacon-primitives"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25492622eb3e9e8f4e1c8abdfc4253b71735ea2dd8f571c5054292849b1a31cd"
+<<<<<<< HEAD
 =======
 ]
 
@@ -16971,6 +17835,8 @@ name = "snowbridge-beacon-primitives"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25492622eb3e9e8f4e1c8abdfc4253b71735ea2dd8f571c5054292849b1a31cd"
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "byte-slice-cast",
  "frame-support 38.2.0",
@@ -17285,11 +18151,15 @@ name = "socket2"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 <<<<<<< HEAD
+<<<<<<< HEAD
 checksum = "c970269d99b64e60ec3bd6ad27270092a5394c4e309314b18ae3fe575695fbe8"
 >>>>>>> cf577def (update avail rust changes)
 =======
 checksum = "4f5fd57c80058a56cf5c777ab8a126398ece8e442983605d280a44ce79d0edef"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+checksum = "4f5fd57c80058a56cf5c777ab8a126398ece8e442983605d280a44ce79d0edef"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "byte-slice-cast",
  "frame-support 38.2.0",
@@ -17412,10 +18282,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -17431,10 +18305,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -17600,11 +18478,15 @@ dependencies = [
  "sp-mmr-primitives",
  "sp-runtime 39.0.5",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-weights 31.0.0",
 >>>>>>> cf577def (update avail rust changes)
 =======
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "strum 0.26.3",
 ]
 
@@ -17759,6 +18641,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -17772,6 +18655,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -17844,10 +18730,14 @@ dependencies = [
  "quote",
  "sp-crypto-hashing 0.0.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -17859,10 +18749,14 @@ dependencies = [
  "quote",
  "sp-crypto-hashing 0.1.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -17874,10 +18768,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -17888,15 +18786,20 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -17922,6 +18825,13 @@ dependencies = [
  "quote",
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -17942,6 +18852,7 @@ version = "0.25.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -17955,6 +18866,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -18230,6 +19144,7 @@ dependencies = [
 name = "sp-panic-handler"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "13.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8b52e69a577cbfdea62bfaf16f59eb884422ce98f78b5cd8d9bf668776bced1"
@@ -18243,6 +19158,11 @@ version = "13.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8b52e69a577cbfdea62bfaf16f59eb884422ce98f78b5cd8d9bf668776bced1"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "13.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8b52e69a577cbfdea62bfaf16f59eb884422ce98f78b5cd8d9bf668776bced1"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "backtrace",
  "regex",
@@ -18324,6 +19244,7 @@ version = "24.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18337,6 +19258,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -18383,15 +19307,20 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -18409,6 +19338,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "Inflector",
  "expander",
@@ -18416,10 +19348,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -18434,10 +19370,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -18591,6 +19531,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18604,6 +19545,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "sp-storage"
@@ -18625,6 +19569,7 @@ version = "19.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18638,6 +19583,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -18691,6 +19639,7 @@ version = "16.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18704,6 +19653,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -18854,10 +19806,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -18870,10 +19826,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -18896,6 +19856,7 @@ version = "20.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18909,6 +19870,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -18948,6 +19912,7 @@ dependencies = [
 name = "sp-weights"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "31.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "515aa194eabac059041df2dbee75b059b99981213ec680e9de85b45b6988346a"
@@ -18961,12 +19926,18 @@ version = "31.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "515aa194eabac059041df2dbee75b059b99981213ec680e9de85b45b6988346a"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "31.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "515aa194eabac059041df2dbee75b059b99981213ec680e9de85b45b6988346a"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bounded-collections",
  "parity-scale-codec",
  "scale-info",
  "serde",
  "smallvec",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  "sp-arithmetic 26.1.0",
@@ -18976,6 +19947,9 @@ dependencies = [
 =======
  "sp-arithmetic 26.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-arithmetic 26.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "sp-debug-derive 14.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -19056,6 +20030,7 @@ dependencies = [
 [[package]]
 name = "staging-xcm"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "14.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3f66daa99c90c4b1443696ce42f38aa9d47954ae6270301be42f049a1bf0ba5"
@@ -19064,6 +20039,11 @@ version = "14.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "250c5290c308d1f462403dc4e7926976727917e98a196de1ea4a49c86341f21c"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "14.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250c5290c308d1f462403dc4e7926976727917e98a196de1ea4a49c86341f21c"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "array-bytes",
  "bounded-collections",
@@ -19077,6 +20057,7 @@ dependencies = [
  "sp-runtime 39.0.5",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-weights 31.1.0",
 =======
  "sp-weights 31.0.0",
@@ -19084,11 +20065,15 @@ dependencies = [
 =======
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "xcm-procedural",
 ]
 
 [[package]]
 name = "staging-xcm-builder"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "17.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -19098,6 +20083,11 @@ version = "17.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1693870a07e3fd8115c02b44e1223ce149b6cfa0b60f59a1c0fbc26637766a5"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "17.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1693870a07e3fd8115c02b44e1223ce149b6cfa0b60f59a1c0fbc26637766a5"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "frame-support 38.2.0",
  "frame-system",
@@ -19108,6 +20098,7 @@ dependencies = [
  "parity-scale-codec",
  "polkadot-parachain-primitives",
  "scale-info",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  "sp-arithmetic 26.1.0",
@@ -19126,6 +20117,12 @@ dependencies = [
  "sp-runtime 39.0.5",
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-arithmetic 26.1.0",
+ "sp-io 38.0.0",
+ "sp-runtime 39.0.5",
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "staging-xcm",
  "staging-xcm-executor",
 ]
@@ -19150,6 +20147,7 @@ dependencies = [
  "scale-info",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-arithmetic 26.1.0",
  "sp-core 34.0.0",
  "sp-io 38.0.2",
@@ -19169,6 +20167,13 @@ dependencies = [
  "sp-runtime 39.0.5",
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-arithmetic 26.1.0",
+ "sp-core 34.0.0",
+ "sp-io 38.0.0",
+ "sp-runtime 39.0.5",
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "staging-xcm",
  "tracing",
 ]
@@ -19261,10 +20266,14 @@ dependencies = [
  "quote",
  "rustversion",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19377,8 +20386,11 @@ dependencies = [
  "subxt-macro",
  "subxt-metadata",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "thiserror 2.0.12",
  "tokio",
 >>>>>>> cf577def (update avail rust changes)
@@ -19413,6 +20425,7 @@ dependencies = [
  "scale-typegen",
  "subxt-metadata",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.87",
  "thiserror",
  "tokio",
@@ -19420,6 +20433,10 @@ dependencies = [
  "syn 2.0.100",
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19491,10 +20508,14 @@ dependencies = [
  "smoldot",
  "smoldot-light",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "thiserror",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "tokio",
  "tokio-stream",
  "tracing",
@@ -19530,7 +20551,10 @@ dependencies = [
 =======
  "subxt-utils-fetchmetadata",
  "syn 2.0.100",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19554,10 +20578,14 @@ dependencies = [
  "polkadot-sdk",
  "scale-info",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-crypto-hashing 0.1.0",
 =======
  "thiserror 2.0.12",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "thiserror 2.0.12",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19625,6 +20653,7 @@ dependencies = [
 [[package]]
 name = "syn"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "2.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ce2b7fc941b3a24138a0a7cf8e858bfc6a992e7978a068a5c760deb0ed43caf"
@@ -19633,6 +20662,11 @@ version = "2.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b09a44accad81e1ba1cd74a32461ba89dee89095ba17b32f5d03683b1b1fc2a0"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "2.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b09a44accad81e1ba1cd74a32461ba89dee89095ba17b32f5d03683b1b1fc2a0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -19649,10 +20683,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19688,6 +20726,7 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 1.0.109",
  "unicode-xid",
 ]
@@ -19704,6 +20743,9 @@ dependencies = [
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19785,6 +20827,7 @@ checksum = "7437ac7763b9b123ccf33c338a5cc1bac6f69b45a136c19bdd8a65e3916435bf"
 dependencies = [
  "fastrand",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
@@ -19797,6 +20840,11 @@ dependencies = [
 =======
  "rustix 1.0.5",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "getrandom 0.3.2",
+ "once_cell",
+ "rustix 1.0.5",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "windows-sys 0.59.0",
 ]
 
@@ -19834,10 +20882,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19849,10 +20901,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "test-case-core",
 ]
 
@@ -19891,7 +20947,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
 dependencies = [
  "thiserror-impl 2.0.12",
+<<<<<<< HEAD
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19903,10 +20962,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19918,10 +20981,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -19987,6 +21054,7 @@ dependencies = [
 name = "time"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.3.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7619e19bc266e0f9c5e6686659d394bc57973859340060a69221e57dbc0c40"
@@ -20000,6 +21068,11 @@ version = "0.3.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7619e19bc266e0f9c5e6686659d394bc57973859340060a69221e57dbc0c40"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.3.41"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7619e19bc266e0f9c5e6686659d394bc57973859340060a69221e57dbc0c40"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "deranged",
  "itoa",
@@ -20020,6 +21093,7 @@ checksum = "c9e9a38711f559d9e3ce1cdb06dd7c5b8ea546bc90052da6d06bb76da74bb07c"
 name = "time-macros"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3526739392ec93fd8b359c8e98514cb3e8e021beb4e5f597b00a0221f8ed8a49"
@@ -20033,6 +21107,11 @@ version = "0.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3526739392ec93fd8b359c8e98514cb3e8e021beb4e5f597b00a0221f8ed8a49"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "0.2.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3526739392ec93fd8b359c8e98514cb3e8e021beb4e5f597b00a0221f8ed8a49"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "num-conv",
  "time-core",
@@ -20076,6 +21155,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "tokio"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22cfb5bee7a6a52939ca9224d6ac897bb669134078daa8735560897f69de4d33"
@@ -20089,6 +21169,11 @@ version = "1.44.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+version = "1.44.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "backtrace",
  "bytes",
@@ -20111,8 +21196,11 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
 ]
 
@@ -20140,9 +21228,15 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
+<<<<<<< HEAD
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
+=======
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e727b36a1a0e8b74c376ac2211e40c2c8af09fb4013c60d910495810f008e9b"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "rustls 0.21.12",
  "tokio",
@@ -20205,6 +21299,7 @@ dependencies = [
 [[package]]
 name = "tokio-util"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
@@ -20213,6 +21308,11 @@ version = "0.7.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b9590b93e6fcc1739458317cccd391ad3955e2bde8913edf6f95f9e65a8f034"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.7.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b9590b93e6fcc1739458317cccd391ad3955e2bde8913edf6f95f9e65a8f034"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "bytes",
  "futures-core",
@@ -20225,6 +21325,7 @@ dependencies = [
 [[package]]
 name = "tokio_with_wasm"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e42d20f41cbfe26740d0c2fb320d44ce7dfa716be135cb663e99a48248a0e897"
@@ -20233,6 +21334,11 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "517cb552d50351e6f53d2d93d237d37e50e8506fb05df89278b0b87259a947c2"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "517cb552d50351e6f53d2d93d237d37e50e8506fb05df89278b0b87259a947c2"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "js-sys",
  "tokio",
@@ -20244,6 +21350,7 @@ dependencies = [
 
 [[package]]
 name = "tokio_with_wasm_proc"
+<<<<<<< HEAD
 <<<<<<< HEAD
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -20259,6 +21366,14 @@ dependencies = [
  "quote",
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67e0f9c30f96a774e47c489d69f0f0504a347e0ef224a7261951796636708af7"
+dependencies = [
+ "quote",
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -20306,9 +21421,15 @@ dependencies = [
 [[package]]
 name = "toml_edit"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.22.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "310068873db2c5b3e7659d2cc35d21855dbafa50d1ce336397c666e3cb08137e"
+=======
+version = "0.22.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17b4795ff5edd201c7cd6dca065ae59972ce77d1b80fa0a84d94950ece7d1474"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "indexmap 2.9.0",
  "serde",
@@ -20346,10 +21467,14 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "h2 0.4.10",
 =======
  "h2 0.4.8",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "h2 0.4.8",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -20436,10 +21561,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -20719,6 +21848,7 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 name = "unicode-width"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 =======
@@ -20730,6 +21860,8 @@ checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 name = "unicode-width"
 =======
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 >>>>>>> cf577def (update avail rust changes)
@@ -20805,10 +21937,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.3.3",
  "js-sys",
  "rand 0.9.1",
 =======
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "getrandom 0.3.2",
  "js-sys",
  "rand 0.9.0",
@@ -20827,10 +21962,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -20841,6 +21980,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-bag"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "1.11.1"
@@ -20856,6 +21996,11 @@ version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "943ce29a8a743eb10d6082545d861b24f9d1b160b7d741e0f2cdf726bec909c5"
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+version = "1.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "943ce29a8a743eb10d6082545d861b24f9d1b160b7d741e0f2cdf726bec909c5"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 
 [[package]]
 name = "vcpkg"
@@ -21014,10 +22159,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "wasm-bindgen-shared",
 ]
 
@@ -21053,10 +22202,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -21409,6 +22562,7 @@ dependencies = [
 [[package]]
 name = "webpki-root-certs"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75c7f0ef91146ebfb530314f5f1d24528d7f0767efbfd31dce919275413e393e"
@@ -21426,6 +22580,11 @@ version = "0.26.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09aed61f5e8d2c18344b3faa33a4c837855fe56642757754775548fee21386c4"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.26.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09aed61f5e8d2c18344b3faa33a4c837855fe56642757754775548fee21386c4"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "rustls-pki-types",
 ]
@@ -21511,11 +22670,14 @@ dependencies = [
 name = "widestring"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 =======
 name = "widestring"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 checksum = "dd7cf3379ca1aac9eea11fba24fd7e315d621f8dfe35c8d7d2be8b793726e07d"
 
 [[package]]
@@ -21591,6 +22753,8 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.53.0"
+<<<<<<< HEAD
+=======
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9dcc5b895a6377f1ab9fa55acedab1fd5ac0db66ad1e6c7f47e28a22e446a5dd"
 dependencies = [
@@ -21600,6 +22764,25 @@ dependencies = [
 
 [[package]]
 name = "windows-core"
+version = "0.58.0"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dcc5b895a6377f1ab9fa55acedab1fd5ac0db66ad1e6c7f47e28a22e446a5dd"
+dependencies = [
+<<<<<<< HEAD
+ "windows-result 0.1.2",
+=======
+ "windows-implement 0.58.0",
+ "windows-interface 0.58.0",
+ "windows-result 0.2.0",
+ "windows-strings 0.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-core"
+<<<<<<< HEAD
 version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99"
@@ -21627,6 +22810,8 @@ dependencies = [
 =======
 >>>>>>> 0f719b80 (multiproofs: Part I)
 name = "windows-core"
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 version = "0.61.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4763c1de310c86d75a878046489e2e5ba02c649d185f21c67d4cf8a56d098980"
@@ -21640,10 +22825,13 @@ dependencies = [
 
 [[package]]
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> cf577def (update avail rust changes)
 =======
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 name = "windows-implement"
 version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -21651,6 +22839,7 @@ checksum = "2bbd5b46c938e506ecbce286b6628a02171d56153ba733b6c741fc627ec9579b"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
 <<<<<<< HEAD
  "syn 2.0.101",
 ]
@@ -21667,6 +22856,9 @@ dependencies = [
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -21689,7 +22881,11 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -21700,6 +22896,7 @@ checksum = "bd9211b69f8dcdfa817bfd14bf1c97c9188afa36f4750130fcdf3f400eca9fa8"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
@@ -21714,6 +22911,8 @@ checksum = "bd9211b69f8dcdfa817bfd14bf1c97c9188afa36f4750130fcdf3f400eca9fa8"
 dependencies = [
  "proc-macro2",
  "quote",
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
 ]
 
@@ -21783,8 +22982,11 @@ dependencies = [
 [[package]]
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 name = "windows-strings"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -21795,10 +22997,13 @@ dependencies = [
 
 [[package]]
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> cf577def (update avail rust changes)
 =======
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 name = "windows-sys"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -22122,6 +23327,7 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 [[package]]
 name = "winnow"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06928c8748d81b05c9be96aad92e1b6ff01833332f281e8cfca3be4b35fc9ec"
@@ -22130,6 +23336,11 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 dependencies = [
  "memchr",
 ]
@@ -22218,7 +23429,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d65cbf2f12c15564212d48f4e3dfb87923d25d611f2aed18f4cb23f0413d89e"
 dependencies = [
  "libc",
+<<<<<<< HEAD
  "rustix 1.0.7",
+=======
+ "rustix 1.0.5",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -22236,10 +23451,14 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -22254,6 +23473,7 @@ dependencies = [
  "sp-api 34.0.0",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "sp-weights 31.1.0",
 =======
  "sp-weights 31.0.0",
@@ -22261,6 +23481,9 @@ dependencies = [
 =======
  "sp-weights 31.1.0",
 >>>>>>> 0f719b80 (multiproofs: Part I)
+=======
+ "sp-weights 31.1.0",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "staging-xcm",
  "staging-xcm-executor",
 ]
@@ -22422,7 +23645,22 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a996a8f63c5c4448cd959ac1bab0aaa3306ccfd060472f85943ee0750f0169be"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -22442,6 +23680,7 @@ checksum = "d71e5d6e06ab090c67b5e44993ec16b72dcbaabc526db883a360057678b48502"
 dependencies = [
  "proc-macro2",
  "quote",
+<<<<<<< HEAD
  "syn 2.0.101",
  "synstructure 0.13.2",
 =======
@@ -22477,6 +23716,8 @@ checksum = "d71e5d6e06ab090c67b5e44993ec16b72dcbaabc526db883a360057678b48502"
 dependencies = [
  "proc-macro2",
  "quote",
+=======
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "syn 2.0.100",
  "synstructure 0.13.1",
 ]
@@ -22521,6 +23762,7 @@ dependencies = [
  "proc-macro2",
  "quote",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "syn 2.0.101",
 ]
 
@@ -22555,6 +23797,9 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.101",
+=======
+ "syn 2.0.100",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
 ]
 
 [[package]]
@@ -22571,7 +23816,11 @@ dependencies = [
  "crossbeam-utils",
  "deflate64",
  "flate2",
+<<<<<<< HEAD
  "getrandom 0.3.3",
+=======
+ "getrandom 0.3.2",
+>>>>>>> 8a2c1f4b (Update Cargo.lock)
  "hmac 0.12.1",
  "indexmap 2.9.0",
  "lzma-rs",
