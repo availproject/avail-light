@@ -6,11 +6,15 @@ use crate::utils::spawn_in_span;
 use avail_rust::kate_recovery::data::Cell;
 use avail_rust::kate_recovery::{
 <<<<<<< HEAD
+<<<<<<< HEAD
 	commons::ArkPublicParams,
 	data::{Cell, SingleCell},
 =======
 	data::CellVariant,
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+	data::CellType,
+>>>>>>> 47071951 (rename cell variant)
 	matrix::{Dimensions, Position},
 	proof::{verify_v2, Error},
 };
@@ -61,7 +65,7 @@ async fn verify_proof(
 pub async fn verify(
 	block_num: u32,
 	dimensions: Dimensions,
-	cells: &[CellVariant],
+	cells: &[CellType],
 	commitments: &[[u8; 48]],
 	public_parameters: Arc<ArkPublicParams>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
@@ -121,7 +125,7 @@ pub async fn verify(
 pub async fn verify(
 	block_num: u32,
 	dimensions: Dimensions,
-	cells: &[CellVariant],
+	cells: &[CellType],
 	commitments: &[[u8; 48]],
 	_public_parameters: Arc<PublicParameters>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
@@ -137,7 +141,7 @@ pub async fn verify(
 	let mut positions: Vec<Position> = Vec::with_capacity(cells.len());
 
 	for cell in cells {
-		if let CellVariant::MCell(mcell) = cell {
+		if let CellType::MCell(mcell) = cell {
 			let scalars = mcell
 				.scalars
 				.iter()

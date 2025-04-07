@@ -1,7 +1,7 @@
 #[cfg(feature = "multiproof")]
 use avail_rust::kate_recovery::data::MCell;
 use avail_rust::kate_recovery::{
-	data::CellVariant,
+	data::CellType,
 	matrix::{Dimensions, Position, RowIndex},
 };
 #[cfg(not(feature = "multiproof"))]
@@ -57,7 +57,7 @@ pub struct Client {
 	ttl: Duration,
 }
 
-struct DHTCell(CellVariant);
+struct DHTCell(CellType);
 
 impl DHTCell {
 	fn reference(&self, block: u32) -> String {
@@ -505,11 +505,7 @@ impl Client {
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
 	// Return type assumes that cell is not found in case when error is present.
-	async fn fetch_cell_from_dht(
-		&self,
-		block_number: u32,
-		position: Position,
-	) -> Option<CellVariant> {
+	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<CellType> {
 		let reference = position.reference(block_number);
 		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
@@ -529,9 +525,13 @@ impl Client {
 					};
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 				Some(Cell::SingleCell(SingleCell { position, content }))
 =======
 					return Some(CellVariant::Cell(Cell { position, content }));
+=======
+					return Some(CellType::Cell(Cell { position, content }));
+>>>>>>> 47071951 (rename cell variant)
 				}
 
 				#[cfg(feature = "multiproof")]
@@ -551,7 +551,7 @@ impl Client {
 						})
 						.ok()?;
 
-					return Some(CellVariant::MCell(mcell));
+					return Some(CellType::MCell(mcell));
 				}
 >>>>>>> b2cc124a (multiproofs: Part II)
 			},
@@ -593,8 +593,8 @@ impl Client {
 		&self,
 		block_number: u32,
 		positions: &[Position],
-	) -> (Vec<CellVariant>, Vec<Position>) {
-		let mut cells = Vec::<Option<CellVariant>>::with_capacity(positions.len());
+	) -> (Vec<CellType>, Vec<Position>) {
+		let mut cells = Vec::<Option<CellType>>::with_capacity(positions.len());
 
 		for positions in positions.chunks(self.dht_parallelization_limit) {
 			let fetch = |&position| self.fetch_cell_from_dht(block_number, position);
@@ -660,7 +660,7 @@ impl Client {
 	///
 	/// * `block` - Block number
 	/// * `cells` - Matrix cells to store into DHT
-	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellVariant>) -> Result<()> {
+	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellType>) -> Result<()> {
 		let records: Vec<_> = cells
 			.into_iter()
 			.map(DHTCell)

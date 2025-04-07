@@ -24,11 +24,15 @@ use avail_rust::{
 		},
 		commitments,
 <<<<<<< HEAD
+<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::{Cell, DataCell, SingleCell},
 =======
 		data::{Cell, CellVariant, DataCell},
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+		data::{Cell, CellType, DataCell},
+>>>>>>> 47071951 (rename cell variant)
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -295,6 +299,7 @@ async fn fetch_verified(
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
 <<<<<<< HEAD
+<<<<<<< HEAD
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	// If P2P client is not available, return empty fetched and all positions as unfetched
 	let Some(p2p_client) = p2p_client else {
@@ -304,6 +309,9 @@ async fn fetch_verified(
 =======
 ) -> Result<(Vec<CellVariant>, Vec<Position>)> {
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+) -> Result<(Vec<CellType>, Vec<Position>)> {
+>>>>>>> 47071951 (rename cell variant)
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;

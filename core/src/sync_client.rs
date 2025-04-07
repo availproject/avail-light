@@ -269,10 +269,14 @@ mod tests {
 		},
 		kate_recovery::{
 <<<<<<< HEAD
+<<<<<<< HEAD
 			data::{Cell, SingleCell},
 =======
 			data::{Cell, CellVariant},
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+			data::{Cell, CellType},
+>>>>>>> 47071951 (rename cell variant)
 			matrix::Position,
 		},
 		subxt::config::substrate::Digest,
@@ -387,8 +391,7 @@ mod tests {
 					Duration::from_secs(0),
 					None,
 				);
-				let fetched: Vec<CellVariant> =
-					fetched.into_iter().map(CellVariant::Cell).collect();
+				let fetched: Vec<CellType> = fetched.into_iter().map(CellType::Cell).collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -477,10 +480,10 @@ mod tests {
 					Duration::from_secs(0),
 					Some((rpc_fetched.len(), Duration::from_secs(1))),
 				);
-				let fetched: Vec<CellVariant> = dht_fetched
+				let fetched: Vec<CellType> = dht_fetched
 					.into_iter()
 					.chain(rpc_fetched.into_iter())
-					.map(CellVariant::Cell)
+					.map(CellType::Cell)
 					.collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
