@@ -526,12 +526,16 @@ impl Client {
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 				Some(Cell::SingleCell(SingleCell { position, content }))
 =======
 					return Some(CellVariant::Cell(Cell { position, content }));
 =======
 					return Some(CellType::Cell(Cell { position, content }));
 >>>>>>> 47071951 (rename cell variant)
+=======
+					Some(CellType::Cell(Cell { position, content }))
+>>>>>>> ccd58916 (fmt and clippy changes)
 				}
 
 				#[cfg(feature = "multiproof")]
@@ -551,7 +555,7 @@ impl Client {
 						})
 						.ok()?;
 
-					return Some(CellType::MCell(mcell));
+					Some(CellType::MCell(mcell))
 				}
 >>>>>>> b2cc124a (multiproofs: Part II)
 			},

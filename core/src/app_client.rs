@@ -317,7 +317,7 @@ async fn fetch_verified(
 		.await;
 
 	let (verified, mut unverified) =
-		proof::verify(block_number, dimensions, &fetched, &commitments, pp)
+		proof::verify(block_number, dimensions, &fetched, commitments, pp)
 			.await
 			.wrap_err("Failed to verify fetched cells")?;
 
