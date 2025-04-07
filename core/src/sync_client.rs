@@ -268,7 +268,7 @@ mod tests {
 			kate_commitment::v3::KateCommitment,
 		},
 		kate_recovery::{
-			data::{Cell, CellVariant},
+			data::{Cell, CellType},
 			matrix::Position,
 		},
 		subxt::config::substrate::Digest,
@@ -383,8 +383,7 @@ mod tests {
 					Duration::from_secs(0),
 					None,
 				);
-				let fetched: Vec<CellVariant> =
-					fetched.into_iter().map(CellVariant::Cell).collect();
+				let fetched: Vec<CellType> = fetched.into_iter().map(CellType::Cell).collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -473,10 +472,10 @@ mod tests {
 					Duration::from_secs(0),
 					Some((rpc_fetched.len(), Duration::from_secs(1))),
 				);
-				let fetched: Vec<CellVariant> = dht_fetched
+				let fetched: Vec<CellType> = dht_fetched
 					.into_iter()
 					.chain(rpc_fetched.into_iter())
-					.map(CellVariant::Cell)
+					.map(CellType::Cell)
 					.collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});

@@ -23,7 +23,7 @@ use avail_rust::{
 			AppData, Percent,
 		},
 		commitments,
-		data::{Cell, CellVariant, DataCell},
+		data::{Cell, CellType, DataCell},
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -273,7 +273,7 @@ async fn fetch_verified(
 	dimensions: Dimensions,
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
-) -> Result<(Vec<CellVariant>, Vec<Position>)> {
+) -> Result<(Vec<CellType>, Vec<Position>)> {
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
