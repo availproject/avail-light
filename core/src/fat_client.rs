@@ -50,6 +50,7 @@ use crate::{
 	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
 	utils::{blake2_256, extract_kate},
 };
+
 #[async_trait]
 #[automock]
 pub trait Client {
