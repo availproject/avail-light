@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.6
+
+- Download and restart avail light client when update is available
+
+## [1.2.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.5) - 2025-03-21
+
+- Return correct result on some RPC functions
+
 ## [1.2.4](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.4) - 2025-03-17
 
 - Update avail-rust dependency to v0.1.5

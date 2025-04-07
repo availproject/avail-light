@@ -19,6 +19,8 @@ pub struct RuntimeConfig {
 	/// Name of the project running the client. (default: "avail"). Project names are automatically converted to snake_case.
 	/// Only alphanumeric characters and underscores are allowed.
 	pub project_name: ProjectName,
+	/// Address of the Light Client operator
+	pub operator_address: Option<String>,
 	#[serde(flatten)]
 	pub api: APIConfig,
 	#[serde(flatten)]
@@ -62,6 +64,8 @@ pub struct RuntimeConfig {
 	pub tracking_service_address: String,
 	/// Tracking service ping interval in seconds (default: 10)
 	pub tracking_service_ping_interval: u64,
+	/// Don't update light client if update is available (default: false)
+	pub no_update: bool,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -111,6 +115,7 @@ impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
 			project_name: ProjectName::new("avail".to_string()),
+			operator_address: None,
 			api: Default::default(),
 			libp2p: Default::default(),
 			rpc: Default::default(),
@@ -133,6 +138,7 @@ impl Default for RuntimeConfig {
 			tracking_service_enable: false,
 			tracking_service_address: "http://127.0.0.1:8989".to_string(),
 			tracking_service_ping_interval: 10,
+			no_update: false,
 		}
 	}
 }

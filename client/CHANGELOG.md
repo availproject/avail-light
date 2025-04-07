@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.11
+
+- Add support for `operator_address` CLI parameter exported to the LC tracker
+- Update `avail-light-core` to 1.2.6
+
+## [1.12.10](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.10) - 2025-03-21
+
+- Update `avail-light-core` to 1.2.5
+
 ## [1.12.9](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.9) - 2025-03-17
 
 - Stop light client if update is available
