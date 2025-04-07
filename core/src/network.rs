@@ -210,11 +210,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			.p2p_client
 			.insert_cells_into_dht(
 				block_number,
-				rpc_fetched
-					.clone()
-					.into_iter()
-					.map(Into::into)
-					.collect::<Vec<CellType>>(),
+				rpc_fetched.clone().into_iter().collect::<Vec<CellType>>(),
 			)
 			.await
 		{

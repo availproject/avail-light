@@ -505,7 +505,7 @@ impl Client {
 						return None;
 					};
 
-					return Some(CellType::Cell(Cell { position, content }));
+					Some(CellType::Cell(Cell { position, content }))
 				}
 
 				#[cfg(feature = "multiproof")]
@@ -525,7 +525,7 @@ impl Client {
 						})
 						.ok()?;
 
-					return Some(CellType::MCell(mcell));
+					Some(CellType::MCell(mcell))
 				}
 			},
 			Err(error) => {
