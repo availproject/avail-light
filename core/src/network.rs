@@ -22,9 +22,7 @@ use tracing::{debug, info};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use crate::types::NetworkMode;
-
-use crate::{data::Database, proof};
+use crate::{data::Database, proof, types::NetworkMode};
 
 pub mod p2p;
 pub mod rpc;
@@ -89,7 +87,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		// If p2p_client is not available, return empty cells and all positions as unfetched
 		let Some(p2p_client) = &self.p2p_client else {
 			debug!(
 				block_number,
@@ -104,7 +101,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			.await;
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, mut unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -141,13 +137,29 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.rpc_client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.rpc_client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.rpc_client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -268,13 +280,29 @@ impl<T: Database> RPCClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,

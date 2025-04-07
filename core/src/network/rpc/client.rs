@@ -1,10 +1,7 @@
 use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail_core::AppId,
-	kate_recovery::{
-		data::{Cell, SingleCell},
-		matrix::Position,
-	},
+	kate_recovery::{data::SingleCell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
@@ -24,6 +21,12 @@ use avail_rust::{
 		utils::AccountId32,
 	},
 	AOnlineClient, AvailHeader, Client as AvailRpcClient, Keypair, Options, H256, SDK, U256,
+};
+#[cfg(feature = "multiproof")]
+use avail_rust::{
+	kate_recovery::data::{GCellBlock, MultiProofCell},
+	primitives::kate::GMultiProof,
+	rpc::kate::query_multi_proof,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -642,11 +645,59 @@ impl<D: Database> Client<D> {
 		.await
 	}
 
+	#[cfg(feature = "multiproof")]
+	pub async fn request_kate_multi_proof(
+		&self,
+		block_hash: H256,
+		positions: &[Position],
+	) -> Result<Vec<MultiProofCell>> {
+		let cells: Cells = positions
+			.iter()
+			.map(|p| avail_rust::Cell {
+				row: p.row,
+				col: p.col as u32,
+			})
+			.collect::<Vec<_>>()
+			.try_into()
+			.map_err(|_| eyre!("Failed to convert to cells"))?;
+
+		let proofs: Vec<(GMultiProof, GCellBlock)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move {
+					query_multi_proof(&client.client, Some(block_hash), cells.to_vec())
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await?
+			.0;
+
+		let cells = positions
+			.iter()
+			.zip(proofs.into_iter())
+			.map(|(&position, (proof, gcell_block))| {
+				let (scalars, proof) = proof;
+				let proof_bytes: [u8; 48] = proof.0;
+				let raw_scalars: Vec<[u64; 4]> = scalars.into_iter().map(|u| u.0).collect();
+
+				MultiProofCell {
+					position,
+					scalars: raw_scalars,
+					proof: proof_bytes,
+					gcell_block,
+				}
+			})
+			.collect::<Vec<_>>();
+
+		Ok(cells)
+	}
+
 	pub async fn request_kate_proof(
 		&self,
 		block_hash: H256,
 		positions: &[Position],
-	) -> Result<Vec<Cell>> {
+	) -> Result<Vec<SingleCell>> {
 		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
 			let proof: Vec<u8> = proof.into();
 			if proof.len() != 48 {
@@ -689,7 +740,7 @@ impl<D: Database> Client<D> {
 		Ok(positions
 			.iter()
 			.zip(contents)
-			.map(|(&position, content)| Cell::SingleCell(SingleCell { position, content }))
+			.map(|(&position, content)| SingleCell { position, content })
 			.collect::<Vec<_>>())
 	}
 
@@ -725,6 +776,7 @@ impl<D: Database> Client<D> {
 				async move {
 					client
 						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&set_id_key)
@@ -757,6 +809,7 @@ impl<D: Database> Client<D> {
 				async move {
 					client
 						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&validators_key)

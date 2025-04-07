@@ -1,9 +1,13 @@
+#[cfg(feature = "multiproof")]
+use avail_rust::kate_recovery::data::MultiProofCell;
+use avail_rust::kate_recovery::{
+	data::Cell,
+	matrix::{Dimensions, Position, RowIndex},
+};
+#[cfg(not(feature = "multiproof"))]
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
-	kate_recovery::{
-		data::{Cell, SingleCell},
-		matrix::{Dimensions, Position, RowIndex},
-	},
+	kate_recovery::data::SingleCell,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -487,20 +491,43 @@ impl Client {
 		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
-
 		match self.get_kad_record(record_key).await {
 			Ok(peer_record) => {
 				trace!("Fetched cell {reference} from the DHT");
 
-				let try_content: Result<[u8; COMMITMENT_SIZE + CHUNK_SIZE], _> =
-					peer_record.record.value.try_into();
+				#[cfg(not(feature = "multiproof"))]
+				{
+					let try_content: Result<[u8; COMMITMENT_SIZE + CHUNK_SIZE], _> =
+						peer_record.record.value.try_into();
 
-				let Ok(content) = try_content else {
-					debug!("Cannot convert cell {reference} into 80 bytes");
-					return None;
-				};
+					let Ok(content) = try_content else {
+						debug!("Cannot convert cell {reference} into 80 bytes");
+						return None;
+					};
 
-				Some(Cell::SingleCell(SingleCell { position, content }))
+					Some(Cell::SingleCell(SingleCell { position, content }))
+				}
+
+				#[cfg(feature = "multiproof")]
+				{
+					let bytes: Vec<u8> = peer_record
+						.record
+						.value
+						.try_into()
+						.map_err(|e| {
+							debug!("Cannot convert cell {reference} into Vec<u8>: {e}");
+						})
+						.ok()?;
+
+					let mcell =
+						MultiProofCell::from_bytes(position, &bytes)
+							.map_err(|e| {
+								debug!("Failed to parse MultiProofCell from bytes for {reference}: {e}");
+							})
+							.ok()?;
+
+					Some(Cell::MultiProofCell(mcell))
+				}
 			},
 			Err(error) => {
 				trace!("Cell {reference} not found in the DHT: {error}");

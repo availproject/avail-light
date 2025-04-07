@@ -17,6 +17,8 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
+#[cfg(feature = "multiproof")]
+use avail_rust::utils::generate_multiproof_grid_dims;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
 	AvailHeader, H256,
@@ -26,11 +28,9 @@ use color_eyre::Result;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
-#[cfg(target_arch = "wasm32")]
-use tokio_with_wasm::alias as tokio;
 use tracing::{error, info};
 #[cfg(target_arch = "wasm32")]
-use web_time::Instant;
+use {tokio_with_wasm::alias as tokio, web_time::Instant};
 
 use crate::{
 	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
@@ -42,6 +42,9 @@ use crate::{
 	types::{self, BlockRange, ClientChannels, Delay},
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
+
+#[cfg(feature = "multiproof")]
+use crate::types::MULTI_PROOF_CELL_DIMS;
 
 #[derive(Debug)]
 pub enum OutputEvent {
@@ -107,7 +110,38 @@ pub async fn process_block(
 
 			let commitments = commitments::from_slice(&commitment)?;
 			let cell_count = rpc::cell_count_for_confidence(confidence);
-			let positions = rpc::generate_random_cells(dimensions, cell_count);
+			let positions = {
+				#[cfg(feature = "multiproof")]
+				{
+					let Some(multiproof_cell_dims) =
+						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+					else {
+						info!(
+							block_number,
+							"Skipping block with invalid multiproof cell dimensions",
+						);
+						return Ok(None);
+					};
+
+					let Some(target_multiproof_grid_dims) =
+						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+					else {
+						info!(
+							block_number,
+							"Skipping block with invalid target multiproof grid dimensions",
+						);
+						return Ok(None);
+					};
+
+					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
+				}
+
+				#[cfg(not(feature = "multiproof"))]
+				{
+					rpc::generate_random_cells(dimensions, cell_count)
+				}
+			};
+
 			info!(
 				block_number,
 				"cells_requested" = positions.len(),
