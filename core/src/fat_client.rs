@@ -251,6 +251,7 @@ pub async fn process_block(
 		partition_rpc_retrieve_time_elapsed.as_secs_f64(),
 	))?;
 
+	#[cfg(not(feature = "multiproof"))]
 	if rpc_fetched.len() >= dimensions.cols().get() as usize {
 		let data_cell_variants = rpc_fetched
 			.into_iter()
