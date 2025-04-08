@@ -133,13 +133,14 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 - `--avail-passphrase <PASSPHRASE>`: Avail secret seed phrase password, flag is optional
 - `--seed`: Seed string for libp2p keypair generation
 - `--secret-key`: Ed25519 private key for libp2p keypair generation
-- `---no-update`: Don't update light client if update is available (default: false)
+- `--operator-address <ADDRESS>`: Set the address of the Light Client operator
 
 ## Flags
 
 - `--version`: Light Client version
 - `--clean`: Remove previous state dir set in `avail_path` config parameter
 - `--finality_sync_enable`: Enable finality sync
+- `--no-update`: Don't update light client if update is available (default: false)
 
 ## Identity
 
