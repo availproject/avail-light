@@ -133,18 +133,26 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 - `--avail-passphrase <PASSPHRASE>`: Avail secret seed phrase password, flag is optional
 - `--seed`: Seed string for libp2p keypair generation
 - `--secret-key`: Ed25519 private key for libp2p keypair generation
+- `--operator-address <ADDRESS>`: Set the address of the Light Client operator
 
 ## Flags
 
 - `--version`: Light Client version
 - `--clean`: Remove previous state dir set in `avail_path` config parameter
 - `--finality_sync_enable`: Enable finality sync
+- `--no-update`: Don't update light client if update is available (default: false)
 
 ## Identity
 
 In the Avail network, a light client's identity can be configured using the `identity.toml` file. If not specified, a secret URI will be generated and stored in the identity file when the light client starts. To use an existing secret URI, set the `avail_secret_uri` entry in the `identity.toml` file. Secret URI will be used to derive Sr25519 key pair for signing. Location of the identity file can be specified using `--identity` option. Parameter `avail_secret_seed_phrase` is deprecated and replaced with `avail_secret_uri`. More info can be found on [Substrate URI documentation](https://polkadot.js.org/docs/keyring/start/suri/).
 
 Since identity is stored in plain-text, to improve security, `--avail-passphrase` CLI parameter should be used. For maximum security, avoid using identity file and pass Secret URI through `--avail-suri` CLI parameter.
+
+## Updates
+
+The light client periodically checks for newly released versions and will perform an automatic update unless the updater is disabled using the `--no-update` flag.
+Self-update requires certain permissions to replace the binary and restart the application.
+To use the self-update feature on Windows, run the light client from a folder that allows file replacement (e.g., `AppData\Local`).
 
 ## Configuration reference
 

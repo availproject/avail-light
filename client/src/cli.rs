@@ -59,6 +59,9 @@ pub struct CliOpts {
 	/// Set client alias for use in logs and metrics
 	#[arg(long)]
 	pub client_alias: Option<String>,
+	/// Address of the Light Client operator
+	#[arg(long)]
+	pub operator_address: Option<String>,
 	/// Enable or disable light client tracking service
 	#[arg(long, action = ArgAction::SetTrue)]
 	pub tracking_service_enable: bool,
@@ -68,4 +71,6 @@ pub struct CliOpts {
 	/// Tracking service ping interval in seconds
 	#[arg(long)]
 	pub tracking_service_ping_interval: Option<u64>,
+	#[arg(long, default_value = "false")]
+	pub no_update: bool,
 }

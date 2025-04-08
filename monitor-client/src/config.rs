@@ -23,9 +23,15 @@ pub struct CliOpts {
 	/// Testnet or devnet selection.
 	#[arg(short, long, value_name = "network", default_value = "hex")]
 	pub network: Network,
-	/// Time interval for monitoring actions
+	/// Time interval for bootstrap actions
 	#[arg(long, default_value = "10")]
-	pub interval: u64,
+	pub bootstrap_interval: u64,
+	/// Time interval for discovery actions
+	#[arg(long, default_value = "10")]
+	pub peer_discovery_interval: u64,
+	/// Time interval for peer monitoring actions
+	#[arg(long, default_value = "30")]
+	pub peer_monitor_interval: u64,
 	/// Seed string for libp2p keypair generation
 	#[arg(long)]
 	pub seed: Option<String>,
@@ -43,16 +49,26 @@ pub struct CliOpts {
 	pub task_command_buffer_size: Option<usize>,
 	#[arg(long, default_value = "10000")]
 	pub per_connection_event_buffer_size: Option<usize>,
+	#[arg(long, default_value = "10")]
+	pub query_timeout: Option<u64>,
+	#[arg(long, default_value = "3")]
+	pub fail_threshold: usize,
+	#[arg(long, default_value = "3")]
+	pub success_threshold: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
 	/// Genesis hash of the network to be connected to.
 	/// Set to "DEV" to connect to any network.
 	pub genesis_hash: String,
-	/// Time interval for monitoring actions.
-	pub interval: u64,
+	/// Time interval for bootstrap actions.
+	pub bootstrap_interval: u64,
+	/// Time interval for peer discovery actions.
+	pub peer_discovery_interval: u64,
+	/// Time interval for peer monitor actions.
+	pub peer_monitor_interval: u64,
 	/// Log level.
 	#[serde(with = "tracing_level_format")]
 	pub log_level: Level,
@@ -62,6 +78,8 @@ pub struct Config {
 	pub db_path: String,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
+	pub fail_threshold: usize,
+	pub success_threshold: usize,
 }
 
 impl Default for Config {
@@ -72,7 +90,11 @@ impl Default for Config {
 			log_format_json: false,
 			db_path: "./db".to_string(),
 			libp2p: Default::default(),
-			interval: 10,
+			bootstrap_interval: 10,
+			peer_discovery_interval: 10,
+			peer_monitor_interval: 30,
+			fail_threshold: 3,
+			success_threshold: 3,
 		}
 	}
 }
@@ -117,10 +139,19 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	}
 
 	config.db_path = opts.db_path.to_string();
-	config.interval = opts.interval;
+
+	config.bootstrap_interval = opts.bootstrap_interval;
+	config.peer_discovery_interval = opts.peer_discovery_interval;
+	config.peer_monitor_interval = opts.peer_monitor_interval;
+
+	config.fail_threshold = opts.fail_threshold;
+	config.success_threshold = opts.success_threshold;
 
 	if config.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("List of bootstraps must not be empty!"));
+	}
+	if let Some(query_timeout) = opts.query_timeout {
+		config.libp2p.kademlia.query_timeout = Duration::from_secs(query_timeout);
 	}
 	Ok(config)
 }

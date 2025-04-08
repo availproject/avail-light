@@ -23,7 +23,7 @@ use avail_light_core::{
 		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey, Uuid,
 	},
 	updater,
-	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
+	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use avail_rust::{account, avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
 use clap::Parser;
@@ -39,6 +39,7 @@ use tokio::{
 	sync::{
 		broadcast,
 		mpsc::{self, UnboundedReceiver},
+		Mutex,
 	},
 };
 use tracing::{error, info, span, trace, warn, Level};
@@ -65,6 +66,7 @@ async fn run(
 	shutdown: Controller<String>,
 	client_id: Uuid,
 	execution_id: Uuid,
+	restart: Arc<Mutex<bool>>,
 ) -> Result<()> {
 	let version = clap::crate_version!();
 	let rev = env!("GIT_COMMIT_HASH");
@@ -273,12 +275,19 @@ async fn run(
 	}
 
 	let delay_sec = updater::delay_sec();
-	spawn_in_span(shutdown.with_cancel(updater::run(
+	let updater_run = updater::run(
 		version,
 		delay_sec,
 		shutdown.clone(),
 		block_tx.subscribe(),
-	)));
+		restart.clone(),
+		cfg.no_update,
+	);
+	spawn_in_span(shutdown.with_cancel(async move {
+		if let Err(error) = updater_run.await {
+			error!("Updater failed: {error:#}");
+		}
+	}));
 
 	let static_config_params: MaintenanceConfig = (&cfg).into();
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
@@ -356,8 +365,10 @@ async fn run(
 			identity_cfg.avail_key_pair,
 			db.clone(),
 			cfg.tracking_service_address,
+			cfg.operator_address,
 		)));
 	}
+
 	Ok(())
 }
 
@@ -425,7 +436,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.tracking_service_ping_interval = tracking_service_ping_interval
 	}
 
+	cfg.no_update = opts.no_update;
+
 	cfg.tracking_service_enable = opts.tracking_service_enable;
+	cfg.operator_address = opts.operator_address.clone();
 
 	Ok(cfg)
 }
@@ -624,6 +638,9 @@ impl ClientState {
 									error!("Could not handle Failed PUT Record event properly: {error}");
 								};
 							},
+							P2pEvent::DiscoveredPeers { .. } => {
+
+							}
 						}
 					}
 				Some(maintenance_event) = maintenance_receiver.recv() => {
@@ -738,6 +755,7 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.on_user_signal("User signaled shutdown".to_string()));
 
+	let restart = Arc::new(Mutex::new(false));
 	if let Err(error) = run(
 		cfg,
 		identity_cfg,
@@ -745,6 +763,7 @@ pub async fn main() -> Result<()> {
 		shutdown.clone(),
 		client_id,
 		execution_id,
+		restart.clone(),
 	)
 	.await
 	{
@@ -753,6 +772,11 @@ pub async fn main() -> Result<()> {
 	};
 
 	let reason = shutdown.completed_shutdown().await;
+
+	if *restart.lock().await {
+		info!("Restarting Light Client...");
+		utils::restart();
+	}
 
 	// we are not logging error here since expectation is
 	// to log terminating condition before sending message to this channel

@@ -72,12 +72,15 @@ jobs:
           cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
           Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}.exe" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
           Push-Location -Path "target\${{ matrix.rust_target }}\maxperf\"
-          Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
-          
+          Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.zip"
+
+      # Upload any archive which exists
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output_name }}
-          path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
+          path: |
+            target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
+            target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.zip
 
   binary_publish:
     needs: [build]

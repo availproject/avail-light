@@ -6,3 +6,4 @@ config*.yaml
 avail_*
 debug.plist
 /identity.toml
+db/
