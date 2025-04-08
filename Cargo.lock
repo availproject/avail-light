@@ -1247,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-crawler"
-version = "0.2.1"
+version = "0.2.0"
 dependencies = [
  "avail-light-core",
  "avail-rust",
