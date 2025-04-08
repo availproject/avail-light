@@ -260,6 +260,7 @@ pub async fn process_block(
 	))?;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 	if rpc_fetched.len() >= dimensions.cols().get().into() {
 		let cells: Vec<SingleCell> = rpc_fetched
 			.into_iter()
@@ -269,6 +270,9 @@ pub async fn process_block(
 
 		let data_cells: Vec<&SingleCell> = cells.iter().collect();
 =======
+=======
+	#[cfg(not(feature = "multiproof"))]
+>>>>>>> cfc4da89 (disable cell row collection for multiproofs)
 	if rpc_fetched.len() >= dimensions.cols().get() as usize {
 		let data_cell_variants = rpc_fetched
 			.into_iter()
