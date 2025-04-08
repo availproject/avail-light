@@ -11,11 +11,12 @@
 
 use async_trait::async_trait;
 #[cfg(not(feature = "multiproof"))]
-use avail_rust::kate_recovery::data::Cell;
+use avail_rust::kate_recovery::data::{self, Cell};
 #[cfg(feature = "multiproof")]
 use avail_rust::{kate_recovery::data::MCell, utils::generate_multiproof_grid_dims};
 use avail_rust::{
 	kate_recovery::{
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 		data::{self, Cell, SingleCell},
@@ -25,6 +26,9 @@ use avail_rust::{
 =======
 		data::{self, CellType},
 >>>>>>> 47071951 (rename cell variant)
+=======
+		data::CellType,
+>>>>>>> ba1d06a8 (remove warnings on feature build)
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
 	AvailHeader, H256,
@@ -36,6 +40,11 @@ use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
+<<<<<<< HEAD
+=======
+#[cfg(not(feature = "multiproof"))]
+use tracing::warn;
+>>>>>>> ba1d06a8 (remove warnings on feature build)
 use tracing::{debug, error, info};
 
 #[cfg(feature = "multiproof")]
