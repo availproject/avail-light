@@ -4,6 +4,8 @@ use color_eyre::{
 	Report, Result,
 };
 use configuration::{kad_config, LibP2PConfig};
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::tcp;
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
@@ -12,8 +14,6 @@ use libp2p::{
 	swarm::NetworkBehaviour,
 	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
-#[cfg(not(target_arch = "wasm32"))]
-use libp2p::{mdns, tcp};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
 use semver::Version;
@@ -182,8 +182,6 @@ pub struct Behaviour {
 	kademlia: kad::Behaviour<Store>,
 	identify: identify::Behaviour,
 	ping: ping::Behaviour,
-	#[cfg(not(target_arch = "wasm32"))]
-	mdns: mdns::tokio::Behaviour,
 	auto_nat: autonat::Behaviour,
 	relay_client: relay::client::Behaviour,
 	dcutr: dcutr::Behaviour,
@@ -304,8 +302,6 @@ async fn build_swarm(
 			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
 			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, kad_cfg),
 			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
-			#[cfg(not(target_arch = "wasm32"))]
-			mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
 			blocked_peers: allow_block_list::Behaviour::default(),
 		})
 	};
