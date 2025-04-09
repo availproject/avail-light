@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.2
+## [0.5.2](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.2) - 2025-04-09
 
 - Update `avail-light-core` to 1.2.6
 
