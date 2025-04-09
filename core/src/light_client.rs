@@ -43,6 +43,9 @@ use crate::{
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
+#[cfg(feature = "multiproof")]
+use crate::types::MULTI_PROOF_CELL_DIMS;
+
 #[derive(Debug)]
 pub enum OutputEvent {
 	RecordBlockProcessingDelay(f64),
@@ -92,22 +95,62 @@ pub async fn process_block(
 			return Ok(None);
 		},
 		Some((rows, cols, _, commitment)) => {
-			let Some(dimensions) = Dimensions::new(rows, cols) else {
-				info!(
-					block_number,
-					"Skipping block with invalid dimensions {rows}x{cols}",
-				);
-				return Ok(None);
+			let commitments = commitments::from_slice(&commitment)?;
+			let (dimensions, positions) = {
+				#[cfg(feature = "multiproof")]
+				{
+					let Some(target_multiproof_grid_dims) =
+						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+					else {
+						info!(
+							block_number,
+							target_rows = MULTI_PROOF_CELL_DIMS.0,
+							target_cols = MULTI_PROOF_CELL_DIMS.1,
+							header_rows = rows,
+							header_cols = cols,
+							"Skipping block with invalid target multiproof cell dimensions",
+						);
+						return Ok(None);
+					};
+
+					if target_multiproof_grid_dims.cols().get() <= 2 {
+						error!(
+							block_number,
+							"more than 2 columns on target grid is required"
+						);
+						return Ok(None);
+					}
+
+					let cell_count = rpc::cell_count_for_confidence(confidence);
+					(
+						target_multiproof_grid_dims,
+						rpc::generate_random_cells(target_multiproof_grid_dims, cell_count),
+					)
+				}
+
+				#[cfg(not(feature = "multiproof"))]
+				{
+					let Some(dimensions) = Dimensions::new(rows, cols) else {
+						info!(
+							block_number,
+							"Skipping block with invalid dimensions {rows}x{cols}",
+						);
+						return Ok(None);
+					};
+
+					if dimensions.cols().get() <= 2 {
+						error!(block_number, "more than 2 columns is required");
+						return Ok(None);
+					}
+
+					let cell_count = rpc::cell_count_for_confidence(confidence);
+					(
+						dimensions,
+						rpc::generate_random_cells(dimensions, cell_count),
+					)
+				}
 			};
 
-			if dimensions.cols().get() <= 2 {
-				error!(block_number, "more than 2 columns is required");
-				return Ok(None);
-			}
-
-			let commitments = commitments::from_slice(&commitment)?;
-			let cell_count = rpc::cell_count_for_confidence(confidence);
-			let positions = rpc::generate_random_cells(dimensions, cell_count);
 			info!(
 				block_number,
 				"cells_requested" = positions.len(),
@@ -277,7 +320,7 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::Cell, matrix::Position},
+		kate_recovery::{data::CellType, matrix::Position},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -301,7 +344,7 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
 		let db = data::MemoryDB::default();
-		let cells_fetched: Vec<Cell> = vec![];
+		let cells_fetched: Vec<CellType> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
 			Position { row: 0, col: 0 },

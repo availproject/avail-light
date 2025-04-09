@@ -19,6 +19,12 @@ use avail_rust::{
 	},
 	AvailHeader, Keypair, Options, H256, SDK, U256,
 };
+#[cfg(feature = "multiproof")]
+use avail_rust::{
+	kate_recovery::data::{GCellBlock, MCell},
+	primitives::kate::GMultiProof,
+	rpc::kate::query_multi_proof,
+};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
@@ -309,7 +315,7 @@ impl<D: Database> Client<D> {
 			.map_err(|e| Report::msg(e.to_string()))?;
 
 		// Verify genesis hash
-		let genesis_hash = client.client.online_client.genesis_hash();
+		let genesis_hash = client.tx.balances.client.online_client.genesis_hash();
 		info!("Genesis hash for {}: {:?}", host, genesis_hash);
 
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
@@ -323,11 +329,11 @@ impl<D: Database> Client<D> {
 		}
 
 		// Fetch system and runtime information
-		let system_version = version(&client.client)
+		let system_version = version(&client.tx.balances.client)
 			.await
 			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
 
-		let runtime_version = client.client.online_client.runtime_version();
+		let runtime_version = client.tx.balances.client.online_client.runtime_version();
 
 		// Create Node variant
 		let node = Node::new(
@@ -476,6 +482,8 @@ impl<D: Database> Client<D> {
 		let timeout_in = Duration::from_secs(30);
 
 		let headers_stream = client
+			.tx
+			.balances
 			.client
 			.online_client
 			.backend()
@@ -492,6 +500,8 @@ impl<D: Database> Client<D> {
 		let headers: SubscriptionStream = Box::pin(headers_stream.fuse());
 
 		let justifications_stream = client
+			.tx
+			.balances
 			.client
 			.rpc_client
 			.subscribe(
@@ -541,7 +551,7 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
 		self.with_retries(|client| async move {
-			get_block_hash(&client.client, Some(block_number))
+			get_block_hash(&client.tx.balances.client, Some(block_number))
 				.await
 				.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 				.map_err(Into::into)
@@ -552,6 +562,8 @@ impl<D: Database> Client<D> {
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.with_retries(|client| async move {
 			client
+				.tx
+				.balances
 				.client
 				.online_client
 				.backend()
@@ -575,6 +587,8 @@ impl<D: Database> Client<D> {
 		let res = self
 			.with_retries(|client| async move {
 				client
+					.tx
+					.balances
 					.client
 					.online_client
 					.runtime_api()
@@ -594,7 +608,7 @@ impl<D: Database> Client<D> {
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		let head = self
 			.with_retries(|client| async move {
-				get_finalized_head(&client.client)
+				get_finalized_head(&client.tx.balances.client)
 					.await
 					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 					.map_err(Into::into)
@@ -613,7 +627,13 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = query_rows(&client.client, rows.to_vec(), Some(block_hash)).await?;
+				let rows = query_rows(
+					&client.tx.balances.client.rpc_client,
+					rows.to_vec(),
+					Some(block_hash),
+				)
+				.await
+				.unwrap();
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -625,6 +645,54 @@ impl<D: Database> Client<D> {
 			}
 		})
 		.await
+	}
+
+	#[cfg(feature = "multiproof")]
+	pub async fn request_kate_multi_proof(
+		&self,
+		block_hash: H256,
+		positions: &[Position],
+	) -> Result<Vec<MCell>> {
+		let cells: Cells = positions
+			.iter()
+			.map(|p| avail_rust::Cell {
+				row: p.row,
+				col: p.col as u32,
+			})
+			.collect::<Vec<_>>()
+			.try_into()
+			.map_err(|_| eyre!("Failed to convert to cells"))?;
+
+		let proofs: Vec<(GMultiProof, GCellBlock)> = self
+			.with_retries(|client| {
+				let cells = cells.clone();
+				async move {
+					query_multi_proof(&client.client, Some(block_hash), cells.to_vec())
+						.await
+						.map_err(Into::into)
+				}
+			})
+			.await?
+			.0;
+
+		let cells = positions
+			.iter()
+			.zip(proofs.into_iter())
+			.map(|(&position, (proof, gcell_block))| {
+				let (scalars, proof) = proof;
+				let proof_bytes: [u8; 48] = proof.0;
+				let raw_scalars: Vec<[u64; 4]> = scalars.into_iter().map(|u| u.0).collect();
+
+				MCell {
+					position,
+					scalars: raw_scalars,
+					proof: proof_bytes,
+					gcell_block,
+				}
+			})
+			.collect::<Vec<_>>();
+
+		Ok(cells)
 	}
 
 	pub async fn request_kate_proof(
@@ -709,7 +777,10 @@ impl<D: Database> Client<D> {
 				let set_id_key = avail::storage().grandpa().current_set_id();
 				async move {
 					client
+						.tx
+						.balances
 						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&set_id_key)
@@ -741,7 +812,10 @@ impl<D: Database> Client<D> {
 				let validators_key = avail::storage().session().validators();
 				async move {
 					client
+						.tx
+						.balances
 						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&validators_key)
@@ -792,8 +866,10 @@ impl<D: Database> Client<D> {
 		tx_bytes: Vec<u8>,
 	) -> Result<SubmitResponse> {
 		self.with_retries(|client| {
-			let extrinsic =
-				SubmittableExtrinsic::from_bytes(client.client.online_client, tx_bytes.clone());
+			let extrinsic: SubmittableExtrinsic<_, _> = SubmittableExtrinsic::from_bytes(
+				client.tx.balances.client.online_client,
+				tx_bytes.clone(),
+			);
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
@@ -823,7 +899,7 @@ impl<D: Database> Client<D> {
 	) -> Result<Vec<StorageKey>> {
 		let key = &key;
 		self.with_retries(|client| async move {
-			let storage = client.client.storage().at(hash);
+			let storage = client.tx.balances.client.online_client.storage().at(hash);
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
 			raw_keys
 				.take(count)
@@ -846,7 +922,10 @@ impl<D: Database> Client<D> {
 					.key_owner(KeyTypeId(crypto::key_types::GRANDPA.0), public_key.0);
 				async move {
 					client
+						.tx
+						.balances
 						.client
+						.online_client
 						.storage()
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
@@ -867,6 +946,8 @@ impl<D: Database> Client<D> {
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
 				let api = client
+					.tx
+					.balances
 					.client
 					.online_client
 					.runtime_api()
@@ -886,6 +967,8 @@ impl<D: Database> Client<D> {
 		let gen_hash = self
 			.current_client()
 			.await
+			.tx
+			.balances
 			.client
 			.online_client
 			.genesis_hash();

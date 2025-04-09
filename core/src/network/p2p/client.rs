@@ -1,9 +1,13 @@
+#[cfg(feature = "multiproof")]
+use avail_rust::kate_recovery::data::MCell;
+use avail_rust::kate_recovery::{
+	data::CellType,
+	matrix::{Dimensions, Position, RowIndex},
+};
+#[cfg(not(feature = "multiproof"))]
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
-	kate_recovery::{
-		data::Cell,
-		matrix::{Dimensions, Position, RowIndex},
-	},
+	kate_recovery::data::Cell,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -42,7 +46,7 @@ pub struct Client {
 	ttl: Duration,
 }
 
-struct DHTCell(Cell);
+struct DHTCell(CellType);
 
 impl DHTCell {
 	fn reference(&self, block: u32) -> String {
@@ -52,7 +56,7 @@ impl DHTCell {
 	fn dht_record(&self, block: u32, ttl: Duration) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
-			value: self.0.content.to_vec(),
+			value: self.0.to_bytes(),
 			publisher: None,
 			expires: Instant::now().checked_add(ttl),
 		}
@@ -482,25 +486,47 @@ impl Client {
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
 	// Return type assumes that cell is not found in case when error is present.
-	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
+	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<CellType> {
 		let reference = position.reference(block_number);
 		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
-
 		match self.get_kad_record(record_key).await {
 			Ok(peer_record) => {
 				trace!("Fetched cell {reference} from the DHT");
 
-				let try_content: Result<[u8; COMMITMENT_SIZE + CHUNK_SIZE], _> =
-					peer_record.record.value.try_into();
+				#[cfg(not(feature = "multiproof"))]
+				{
+					let try_content: Result<[u8; COMMITMENT_SIZE + CHUNK_SIZE], _> =
+						peer_record.record.value.try_into();
 
-				let Ok(content) = try_content else {
-					debug!("Cannot convert cell {reference} into 80 bytes");
-					return None;
-				};
+					let Ok(content) = try_content else {
+						debug!("Cannot convert cell {reference} into 80 bytes");
+						return None;
+					};
 
-				Some(Cell { position, content })
+					Some(CellType::Cell(Cell { position, content }))
+				}
+
+				#[cfg(feature = "multiproof")]
+				{
+					let bytes: Vec<u8> = peer_record
+						.record
+						.value
+						.try_into()
+						.map_err(|_| {
+							debug!("Cannot convert cell {reference} into Vec<u8>");
+						})
+						.ok()?;
+
+					let mcell = MCell::from_bytes(position, &bytes)
+						.map_err(|e| {
+							debug!("Failed to parse MCell from bytes for {reference}: {e}");
+						})
+						.ok()?;
+
+					Some(CellType::MCell(mcell))
+				}
 			},
 			Err(error) => {
 				trace!("Cell {reference} not found in the DHT: {error}");
@@ -540,8 +566,8 @@ impl Client {
 		&self,
 		block_number: u32,
 		positions: &[Position],
-	) -> (Vec<Cell>, Vec<Position>) {
-		let mut cells = Vec::<Option<Cell>>::with_capacity(positions.len());
+	) -> (Vec<CellType>, Vec<Position>) {
+		let mut cells = Vec::<Option<CellType>>::with_capacity(positions.len());
 
 		for positions in positions.chunks(self.dht_parallelization_limit) {
 			let fetch = |&position| self.fetch_cell_from_dht(block_number, position);
@@ -607,7 +633,7 @@ impl Client {
 	///
 	/// * `block` - Block number
 	/// * `cells` - Matrix cells to store into DHT
-	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
+	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellType>) -> Result<()> {
 		let records: Vec<_> = cells
 			.into_iter()
 			.map(DHTCell)

@@ -1,7 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{verify, Error};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "multiproof")))]
 pub use avail_rust::kate_recovery::proof::{verify, Error};
 
 #[cfg(target_arch = "wasm32")]
