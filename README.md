@@ -1,6 +1,9 @@
 # Central repository for the Avail Light Clients
 
-[![Project](https://img.shields.io/badge/project-Avail-cyan)](https://www.availproject.org/) [![Build status](https://github.com/availproject/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/availproject/avail-light/actions/workflows/default.yml) [![Code coverage](https://codecov.io/gh/availproject/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/availproject/avail-light)
+[![Project](https://img.shields.io/badge/project-Avail-cyan)](https://www.availproject.org/)
+[![Github release](https://img.shields.io/github/v/release/availproject/avail-light.svg?sort=semver)](https://github.com/availproject/avail-light/releases)
+[![Build status](https://github.com/availproject/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/availproject/avail-light/actions/workflows/default.yml) 
+[![Code coverage](https://codecov.io/gh/availproject/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/availproject/avail-light)
 
 This repository is the central place for the development of the [Avail Light Client](https://docs.availproject.org/docs/operate-a-node/node-types).
 
