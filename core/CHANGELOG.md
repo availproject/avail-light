@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.6
+## [1.2.6](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.6) - 2025-04-09
 
 - Removed the mDNS behaviour because of the issue: [Bug: Arithmetic overflow](https://github.com/libp2p/rust-libp2p/issues/5943)
 - Download and restart avail light client when update is available
