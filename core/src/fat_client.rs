@@ -10,8 +10,6 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
-#[cfg(not(feature = "multiproof"))]
-use avail_rust::kate_recovery::data::{self, Cell};
 #[cfg(feature = "multiproof")]
 use avail_rust::{kate_recovery::data::MCell, utils::generate_multiproof_grid_dims};
 use avail_rust::{
@@ -41,11 +39,19 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 #[cfg(not(feature = "multiproof"))]
 use tracing::warn;
 >>>>>>> ba1d06a8 (remove warnings on feature build)
+=======
+>>>>>>> 8bd2c48f (optimize pmp init)
 use tracing::{debug, error, info};
+#[cfg(not(feature = "multiproof"))]
+use {
+	avail_rust::kate_recovery::data::{self, Cell},
+	tracing::warn,
+};
 
 #[cfg(feature = "multiproof")]
 use crate::types::MULTI_PROOF_CELL_DIMS;

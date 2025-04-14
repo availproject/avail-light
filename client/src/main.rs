@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
+#[cfg(feature = "multiproof")]
+use avail_light_core::proof::spawn_pmp_initializer;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
@@ -101,7 +103,14 @@ async fn run(
 		)
 		.await?;
 
+<<<<<<< HEAD
 		spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+=======
+	#[cfg(feature = "multiproof")]
+	spawn_pmp_initializer();
+
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+>>>>>>> 8bd2c48f (optimize pmp init)
 
 		let addrs = vec![cfg.libp2p.tcp_multiaddress()];
 
