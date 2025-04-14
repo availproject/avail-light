@@ -2,8 +2,13 @@
 
 ## 1.2.8
 
+<<<<<<< HEAD
 - Added flag to disable inserts into DHT on failed fetch
 - Improved updater logging
+=======
+<<<<<<< HEAD
+- Update avail-rust to latest version
+>>>>>>> 3480b039 (feat: multiproof das query support, wasm build fixes)
 - Increase default `ping` protocol interval from 20 to 60 seconds
 - Added network mode configuration option that can disable the use of RCP or P2P cell fetching
 - Made replicaton and publicaton intervals optional
@@ -26,6 +31,9 @@
 ## [1.2.6](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.6) - 2025-04-09
 
 - Removed the mDNS behaviour because of the issue: [Bug: Arithmetic overflow](https://github.com/libp2p/rust-libp2p/issues/5943)
+=======
+- Add polynomial multiproof features on core
+>>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
 - Download and restart avail light client when update is available
 
 ## [1.2.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.5) - 2025-03-21

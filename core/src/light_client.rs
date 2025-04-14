@@ -95,8 +95,21 @@ pub async fn process_block(
 			return Ok(None);
 		},
 		Some((rows, cols, _, commitment)) => {
+			let Some(dimensions) = Dimensions::new(rows, cols) else {
+				info!(
+					block_number,
+					"Skipping block with invalid dimensions {rows}x{cols}",
+				);
+				return Ok(None);
+			};
+
+			if dimensions.cols().get() <= 2 {
+				error!(block_number, "more than 2 columns is required");
+				return Ok(None);
+			}
 			let commitments = commitments::from_slice(&commitment)?;
-			let (dimensions, positions) = {
+
+			let positions = {
 				#[cfg(feature = "multiproof")]
 				{
 					let Some(target_multiproof_grid_dims) =
@@ -122,32 +135,13 @@ pub async fn process_block(
 					}
 
 					let cell_count = rpc::cell_count_for_confidence(confidence);
-					(
-						target_multiproof_grid_dims,
-						rpc::generate_random_cells(target_multiproof_grid_dims, cell_count),
-					)
+					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
 				}
 
 				#[cfg(not(feature = "multiproof"))]
 				{
-					let Some(dimensions) = Dimensions::new(rows, cols) else {
-						info!(
-							block_number,
-							"Skipping block with invalid dimensions {rows}x{cols}",
-						);
-						return Ok(None);
-					};
-
-					if dimensions.cols().get() <= 2 {
-						error!(block_number, "more than 2 columns is required");
-						return Ok(None);
-					}
-
 					let cell_count = rpc::cell_count_for_confidence(confidence);
-					(
-						dimensions,
-						rpc::generate_random_cells(dimensions, cell_count),
-					)
+					rpc::generate_random_cells(dimensions, cell_count)
 				}
 			};
 
