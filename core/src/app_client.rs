@@ -124,7 +124,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			fetched.len(),
 			unfetched.len()
 		);
-
+		let fetched: Vec<Cell> = fetched
+			.into_iter()
+			.map(Cell::try_from)
+			.map(|res| res.map_err(|e| eyre!(e)))
+			.collect::<Result<_, _>>()?;
 		let mut rng = ChaChaRng::from_seed(Default::default());
 		let missing_cells =
 			columns_positions(dimensions, &unfetched, Percent::from_percent(66), &mut rng);
@@ -138,11 +142,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
-
 		let missing_fetched: Vec<Cell> = missing_fetched
 			.into_iter()
-			.filter_map(|v| Cell::try_from(v).ok())
-			.collect(); // TODO
+			.map(Cell::try_from)
+			.map(|res| res.map_err(|e| eyre!(e)))
+			.collect::<Result<_, _>>()?;
 
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
@@ -164,7 +168,8 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			reconstructed_cells.len()
 		);
 
-		let mut data_cells: Vec<DataCell> = vec![];
+		let mut data_cells: Vec<DataCell> = fetched.into_iter().map(Into::into).collect::<Vec<_>>();
+
 		data_cells.append(&mut reconstructed_cells);
 
 		data_cells.sort_by(|a, b| {

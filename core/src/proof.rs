@@ -1,31 +1,35 @@
 use std::sync::Arc;
 
-#[cfg(not(feature = "multiproof"))]
-use crate::utils::spawn_in_span;
-#[cfg(not(feature = "multiproof"))]
-use avail_rust::kate_recovery::data::Cell;
 use avail_rust::kate_recovery::{
 	data::CellType,
 	matrix::{Dimensions, Position},
 };
-#[cfg(feature = "multiproof")]
-use avail_rust::{
-	kate_recovery::data::GCellBlock,
-	primitives::kate::{GMultiProof, GProof},
-	rpc::kate::{generate_pmp, verify_multi_proof},
-	U256,
-};
 use color_eyre::eyre;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-#[cfg(not(feature = "multiproof"))]
-use futures::future::join_all;
-#[cfg(not(feature = "multiproof"))]
-use itertools::{Either, Itertools};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
 use tracing::debug;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+#[cfg(not(feature = "multiproof"))]
+use {
+	avail_rust::kate_recovery::data::Cell,
+	futures::future::join_all,
+	itertools::{Either, Itertools},
+};
+#[cfg(feature = "multiproof")]
+use {
+	avail_rust::{
+		primitives::kate::GProof,
+		rpc::kate::{generate_pmp, verify_multi_proof},
+		Bls12_381, BlstMSMEngine, M1NoPrecomp, U256,
+	},
+	tokio::{sync::OnceCell, task},
+	tracing::{info, warn},
+};
+
+#[cfg(not(feature = "multiproof"))]
+use crate::utils::spawn_in_span;
 
 mod core;
 
@@ -55,8 +59,8 @@ pub async fn verify(
 	let start_time = Instant::now();
 	let tasks = cells
 		.iter()
-		.filter_map(|cell_variant| {
-			Cell::try_from(cell_variant.clone()).ok().map(|cell| {
+		.filter_map(|cell_type| {
+			Cell::try_from(cell_type.clone()).ok().map(|cell| {
 				spawn_in_span(verify_proof(
 					public_parameters.clone(),
 					dimensions,
@@ -84,7 +88,7 @@ pub async fn verify(
 		}))
 }
 
-/// Verifies multiproofs for given block, cells and commitments
+/// Verifies multiproofs for the given block, cells, and commitments.
 #[cfg(feature = "multiproof")]
 pub async fn verify(
 	block_num: u32,
@@ -98,41 +102,60 @@ pub async fn verify(
 	}
 
 	let start_time = Instant::now();
-	let pmp = generate_pmp().await;
+	let pmp = get_or_init_pmp().await;
 	let cols = dimensions.cols().get();
 
-	let mut proof_pairs: Vec<(GMultiProof, GCellBlock)> = Vec::with_capacity(cells.len());
-	let mut positions: Vec<Position> = Vec::with_capacity(cells.len());
+	let mut proof_pairs = Vec::with_capacity(cells.len());
+	let mut positions = Vec::with_capacity(cells.len());
 
-	for cell in cells {
+	for cell in cells.iter().cloned() {
 		if let CellType::MCell(mcell) = cell {
 			let scalars = mcell
 				.scalars
-				.iter()
-				.map(|limbs| U256(*limbs))
-				.collect::<Vec<U256>>();
+				.into_iter()
+				.map(|limbs| U256(limbs))
+				.collect::<Vec<_>>();
 
 			let gproof = GProof(mcell.proof);
-			let gcell_block = mcell.gcell_block.clone();
+			let gcell_block = mcell.gcell_block;
 
 			proof_pairs.push(((scalars, gproof), gcell_block));
 			positions.push(mcell.position);
 		}
 	}
 
-	let flat_commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
-
-	let is_verified = verify_multi_proof(pmp, proof_pairs, flat_commitments, cols.into()).await?;
+	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
+	let is_verified =
+		verify_multi_proof(pmp.clone(), proof_pairs, commitments, cols.into()).await?;
 
 	debug!(
 		block_num,
 		verified = is_verified,
 		duration = ?start_time.elapsed(),
-		"Multiproof verification completed"
+		"Multiproof verification completed",
 	);
 
-	let (verified, unverified): (Vec<Position>, Vec<Position>) =
-		positions.into_iter().partition(|_| is_verified);
+	let (verified, unverified) = positions.into_iter().partition(|_| is_verified);
 
 	Ok((verified, unverified))
 }
+
+#[cfg(feature = "multiproof")]
+pub fn spawn_pmp_initializer() {
+	task::spawn(async {
+		let pmp = generate_pmp().await;
+		if let Err(_) = PMP.set(pmp) {
+			warn!("PMP was already initialized");
+		} else {
+			info!("PMP initialized successfully");
+		}
+	});
+}
+
+#[cfg(feature = "multiproof")]
+pub async fn get_or_init_pmp() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine> {
+	PMP.get_or_init(generate_pmp).await
+}
+
+#[cfg(feature = "multiproof")]
+pub static PMP: OnceCell<M1NoPrecomp<Bls12_381, BlstMSMEngine>> = OnceCell::const_new();

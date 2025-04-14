@@ -514,8 +514,8 @@ impl Client {
 						.record
 						.value
 						.try_into()
-						.map_err(|_| {
-							debug!("Cannot convert cell {reference} into Vec<u8>");
+						.map_err(|e| {
+							debug!("Cannot convert cell {reference} into Vec<u8>: {e}");
 						})
 						.ok()?;
 
