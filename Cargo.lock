@@ -1102,7 +1102,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-bootstrap"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "async-std",
@@ -1130,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "1.12.11"
+version = "1.12.12"
 dependencies = [
  "avail-light-core",
  "avail-rust",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-core"
-version = "1.2.6"
+version = "1.2.7"
 dependencies = [
  "async-std",
  "async-stream",
@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-fat"
-version = "1.12.6"
+version = "1.12.7"
 dependencies = [
  "avail-light-core",
  "avail-rust",
@@ -15224,9 +15224,9 @@ dependencies = [
 
 [[package]]
 name = "tokio_with_wasm"
-version = "0.7.4"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c33ccdd8192685c79013359bf42e1c2649ed6bf11e8fa05f1f7f2acc7c71368"
+checksum = "e42d20f41cbfe26740d0c2fb320d44ce7dfa716be135cb663e99a48248a0e897"
 dependencies = [
  "js-sys",
  "tokio",
@@ -15238,9 +15238,9 @@ dependencies = [
 
 [[package]]
 name = "tokio_with_wasm_proc"
-version = "0.7.4"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ff8fa1b71e329058cc97c093972aeb51dd7e658bd5197f294665639194bbc4c"
+checksum = "ee80eb7e23abaa636caa9afe6042c6d8a8c0686165b8165f4fbf2988f0dd347f"
 dependencies = [
  "quote",
  "syn 2.0.98",

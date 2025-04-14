@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.12
+
+- Update `avail-light-core` to 1.2.7
+
 ## [1.12.11](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.11) - 2025-04-09
 
 - Add `no-update` flag to prevent auto-updates

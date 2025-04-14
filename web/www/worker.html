@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avail Light Client Web</title>
+  </head>
+  <body>
+    <h1>Avail Light Client Web</h1>
+    <script type="module">
+      const worker = new Worker('./worker.js', { type: 'module' });
+      worker.onmessage = (event) => {
+          console.log(event.data);
+          let { message, topic } = JSON.parse(event.data);
+          if (topic == "status") {
+              document.getElementById("status").innerHTML = JSON.stringify(message);
+          }
+      };
+      window.worker = worker;
+      setInterval(() => {
+          const uuid = crypto.randomUUID();
+          worker.postMessage({
+              "type": "status",
+              "request_id": uuid
+          });
+      }, 10000);
+    </script>
+    <div id="status" />
+  </body>
+</html>
