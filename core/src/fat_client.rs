@@ -177,8 +177,7 @@ pub async fn process_block(
 	let positions: Vec<Position> = {
 		#[cfg(feature = "multiproof")]
 		{
-			let Some(target_dims) =
-				Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+			let Some(dims) = Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
 			else {
 				info!(
 					block_number,
@@ -187,7 +186,7 @@ pub async fn process_block(
 				return Ok(());
 			};
 
-			let Some(multiproof_grid_dims) = generate_multiproof_grid_dims(target_dims, dimensions)
+			let Some(target_multiproof_grid_dims) = generate_multiproof_grid_dims(dims, dimensions)
 			else {
 				info!(
 					block_number,
@@ -196,7 +195,7 @@ pub async fn process_block(
 				return Ok(());
 			};
 
-			multiproof_grid_dims
+			target_multiproof_grid_dims
 				.iter_extended_partition_positions(&cfg.block_matrix_partition)
 				.collect()
 		}

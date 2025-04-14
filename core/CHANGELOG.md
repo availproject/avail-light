@@ -2,6 +2,7 @@
 
 ## 1.2.6
 
+- Add polynomial multiproof features on core
 - Download and restart avail light client when update is available
 
 ## [1.2.5](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.5) - 2025-03-21
