@@ -1,7 +1,8 @@
 # Changelog
 
-## [1.2.7]
+## 1.2.7
 
+- Add RPC client which doesn't subscribe to finalized headers
 - Add kbucket pending timeout to kademlia configuration
 
 ## [1.2.6](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.6) - 2025-04-09
