@@ -345,6 +345,7 @@ impl<D: Database> Client<D> {
 
 		// Verify genesis hash
 <<<<<<< HEAD
+<<<<<<< HEAD
 		let genesis_hash = client.client.online_client.genesis_hash();
 =======
 		let client = SDK::new(host)
@@ -361,6 +362,9 @@ impl<D: Database> Client<D> {
 =======
 		let genesis_hash = client.tx.balances.client.online_client.genesis_hash();
 >>>>>>> cf577def (update avail rust changes)
+=======
+		let genesis_hash = client.client.online_client.genesis_hash();
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 		info!("Genesis hash for {}: {:?}", host, genesis_hash);
 
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
@@ -374,6 +378,7 @@ impl<D: Database> Client<D> {
 		}
 
 		// Fetch system and runtime information
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -413,6 +418,13 @@ impl<D: Database> Client<D> {
 
 		let runtime_version = client.tx.balances.client.online_client.runtime_version();
 >>>>>>> cf577def (update avail rust changes)
+=======
+		let system_version = version(&client.client)
+			.await
+			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
+
+		let runtime_version = client.client.online_client.runtime_version();
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 
 		// Create Node variant
 		let node = Node::new(
@@ -561,8 +573,6 @@ impl<D: Database> Client<D> {
 
 <<<<<<< HEAD
 		let headers_stream = client
-			.tx
-			.balances
 			.client
 			.online_client
 			.backend()
@@ -594,8 +604,6 @@ impl<D: Database> Client<D> {
 		let headers: SubscriptionStream = Box::pin(headers_stream.fuse());
 
 		let justifications_stream = client
-			.tx
-			.balances
 			.client
 			.rpc_client
 			.subscribe(
@@ -667,7 +675,7 @@ impl<D: Database> Client<D> {
 =======
 >>>>>>> 97de53dd (point to mmp version of avail-rust)
 		self.with_retries(|client| async move {
-			get_block_hash(&client.tx.balances.client, Some(block_number))
+			get_block_hash(&client.client, Some(block_number))
 				.await
 				.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 				.map_err(Into::into)
@@ -697,6 +705,7 @@ impl<D: Database> Client<D> {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 				.client
 =======
 >>>>>>> 2aa1a027 (update avail-rust deps)
@@ -709,6 +718,8 @@ impl<D: Database> Client<D> {
 =======
 				.tx
 				.balances
+=======
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 				.client
 				.online_client
 >>>>>>> 52a80d25 (build error fixes)
@@ -749,8 +760,6 @@ impl<D: Database> Client<D> {
 >>>>>>> cf577def (update avail rust changes)
 =======
 				client
-					.tx
-					.balances
 					.client
 					.online_client
 >>>>>>> 52a80d25 (build error fixes)
@@ -775,7 +784,7 @@ impl<D: Database> Client<D> {
 >>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let head = self
 			.with_retries(|client| async move {
-				get_finalized_head(&client.tx.balances.client)
+				get_finalized_head(&client.client)
 					.await
 					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
 					.map_err(Into::into)
@@ -819,6 +828,7 @@ impl<D: Database> Client<D> {
 			let rows = rows.clone();
 			async move {
 <<<<<<< HEAD
+<<<<<<< HEAD
 				let rows = query_rows(&client.tx.balances.client.rpc_client, rows.to_vec(), Some(block_hash))
 					.await
 <<<<<<< HEAD
@@ -835,6 +845,11 @@ impl<D: Database> Client<D> {
 				.await
 				.unwrap();
 >>>>>>> 52a80d25 (build error fixes)
+=======
+				let rows = query_rows(&client.client.rpc_client, rows.to_vec(), Some(block_hash))
+					.await
+					.unwrap();
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -1167,8 +1182,6 @@ impl<D: Database> Client<D> {
 				let set_id_key = avail::storage().grandpa().current_set_id();
 				async move {
 					client
-						.tx
-						.balances
 						.client
 						.online_client
 						.storage()
@@ -1226,8 +1239,6 @@ impl<D: Database> Client<D> {
 				let validators_key = avail::storage().session().validators();
 				async move {
 					client
-						.tx
-						.balances
 						.client
 						.online_client
 						.storage()
@@ -1347,6 +1358,7 @@ impl<D: Database> Client<D> {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 			let extrinsic =
 				SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
 =======
@@ -1370,6 +1382,10 @@ impl<D: Database> Client<D> {
 				tx_bytes.clone(),
 			);
 >>>>>>> 52a80d25 (build error fixes)
+=======
+			let extrinsic: SubmittableExtrinsic<_, _> =
+				SubmittableExtrinsic::from_bytes(client.client.online_client, tx_bytes.clone());
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
@@ -1402,6 +1418,7 @@ impl<D: Database> Client<D> {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 			let storage = client.client.storage().at(hash);
 =======
 			let storage = client.online_client.storage().at(hash);
@@ -1412,6 +1429,9 @@ impl<D: Database> Client<D> {
 =======
 			let storage = client.tx.balances.client.online_client.storage().at(hash);
 >>>>>>> cf577def (update avail rust changes)
+=======
+			let storage = client.client.online_client.storage().at(hash);
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
 			raw_keys
 				.take(count)
@@ -1438,6 +1458,7 @@ impl<D: Database> Client<D> {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 						.client
 =======
 						.online_client
@@ -1451,6 +1472,8 @@ impl<D: Database> Client<D> {
 =======
 						.tx
 						.balances
+=======
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 						.client
 						.online_client
 >>>>>>> 52a80d25 (build error fixes)
@@ -1480,9 +1503,12 @@ impl<D: Database> Client<D> {
 				let api = client
 =======
 				let api = client
+<<<<<<< HEAD
 					.tx
 					.balances
 >>>>>>> 52a80d25 (build error fixes)
+=======
+>>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 					.client
 					.online_client
 					.runtime_api()
@@ -1534,8 +1560,6 @@ impl<D: Database> Client<D> {
 		let gen_hash = self
 			.current_client()
 			.await
-			.tx
-			.balances
 			.client
 			.online_client
 			.genesis_hash();
