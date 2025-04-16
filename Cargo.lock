@@ -1411,6 +1411,7 @@ version = "0.6.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "binary-merkle-tree",
@@ -1435,6 +1436,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#090fedab306fa5fb92004e3a344955f59855d6bd"
 >>>>>>> 181dce4e (Update Cargo.lock)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -1735,6 +1739,7 @@ dependencies = [
 
 [[package]]
 name = "avail-rust"
+<<<<<<< HEAD
 version = "0.1.7"
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -1758,6 +1763,10 @@ source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integrat
 =======
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#a67035aab2364443a2ec980485bc408ca5b1d361"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "0.1.9"
+source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#fbaea86eda6ae39b3d1016f5251dee4619022050"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "avail-core",
  "base58",
@@ -3978,6 +3987,7 @@ dependencies = [
 name = "cxx"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b4ab2681454aacfe7ce296ebc6df86791009f237f8020b0c752e8b245ba7c1d"
@@ -3991,6 +4001,11 @@ version = "1.0.156"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa3a202fc4f3dd6d2ce5a2f87b04fb2becc00f5643ee9c4743ba10777efb314f"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "1.0.157"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d6354e975ea4ec28033ec3a36fa9baa1a02e3eb22ad740eeb4929370d4f5ba8"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "cc",
  "cxxbridge-cmd",
@@ -4002,6 +4017,7 @@ dependencies = [
 
 [[package]]
 name = "cxx-build"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "1.0.153"
@@ -4017,6 +4033,11 @@ version = "1.0.156"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "644bdf46f34f6325783f76a8ad8e737ab995a302d7868b5236a1ba55008883e0"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "1.0.157"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4400e26ea4b99417e4263b1ce2d8452404d750ba0809a7bd043072593d430d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "cc",
  "codespan-reporting",
@@ -4028,6 +4049,7 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-cmd"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "1.0.153"
@@ -4043,6 +4065,11 @@ version = "1.0.156"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e8cefbebcb74ed0b4a08b76139e6c29d8884a0bb94d02c6f35de821a14a6e39"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "1.0.157"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31860c98f69fc14da5742c5deaf78983e846c7b27804ca8c8319e32eef421bde"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "clap",
  "codespan-reporting",
@@ -4053,6 +4080,7 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-flags"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 version = "1.0.153"
@@ -4069,19 +4097,26 @@ version = "1.0.155"
 =======
 version = "1.0.156"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "1.0.157"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "604e3eff62e2f27289d618f621491a068330c3c9f8eb06555dabc292c123596e"
+checksum = "b0402a66013f3b8d3d9f2d7c9994656cc81e671054822b0728d7454d9231892f"
 
 [[package]]
 name = "cxxbridge-macro"
-version = "1.0.156"
+version = "1.0.157"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+<<<<<<< HEAD
 <<<<<<< HEAD
 checksum = "c36a0a2b78ff9232a3dc584340471d4fa1751a81026cf62f3661a06d5a8bae17"
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
 =======
 checksum = "130c3a05501d9c15dedbf08f2ff9af60f8e78422e3dffac1f43e2d83c5b489a1"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+checksum = "64c0b38f32d68f3324a981645ee39b2d686af36d03c98a386df3716108c9feae"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6323,6 +6358,7 @@ dependencies = [
 name = "h2"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9421a676d1b147b16b82c9225157dc629087ef8ec4d5e2960f9437a90dac0a5"
@@ -6336,6 +6372,11 @@ version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5017294ff4bb30944501348f6f8e42e6ad28f42c8bbef7a74029aff064a4e3c2"
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75249d144030531f8dee69fe9cea04d3edf809a017ae445e2abdff6629e86633"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -6818,6 +6859,7 @@ dependencies = [
  "futures-util",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "h2 0.4.10",
 =======
  "h2 0.4.8",
@@ -6825,6 +6867,9 @@ dependencies = [
 =======
  "h2 0.4.8",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+ "h2 0.4.9",
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
  "http 1.3.1",
  "http-body 1.0.1",
  "httparse",
@@ -8051,12 +8096,16 @@ version = "0.9.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#bb1d4011a91f1b955979d0de78f2b7cb301b12b2"
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -8137,6 +8186,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "avail-core",
@@ -8155,6 +8205,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#090fedab306fa5fb92004e3a344955f59855d6bd"
 >>>>>>> 181dce4e (Update Cargo.lock)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -8227,6 +8280,7 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 name = "libc"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.155"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
@@ -8240,6 +8294,11 @@ version = "0.2.171"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+version = "0.2.172"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 
 [[package]]
 name = "libloading"
@@ -15552,6 +15611,7 @@ dependencies = [
 name = "proc-macro2"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
@@ -15565,6 +15625,11 @@ version = "1.0.94"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31971752e70b8b2686d7e46ec17fb38dad4051d94024c88df49b667caea9c84"
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+version = "1.0.95"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "unicode-ident",
 ]
@@ -16178,10 +16243,14 @@ dependencies = [
  "futures-core",
  "futures-util",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "h2 0.4.10",
 =======
  "h2 0.4.8",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+ "h2 0.4.9",
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -18825,6 +18894,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18844,6 +18914,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -18991,6 +19064,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 dependencies = [
  "proc-macro2",
@@ -19007,6 +19081,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#7605ace3799faaeb48be8a0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2d46b1a0fe1e9aaee0"
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -19044,6 +19121,7 @@ version = "0.25.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19063,6 +19141,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -19450,6 +19531,7 @@ version = "24.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19469,6 +19551,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -19534,6 +19619,7 @@ version = "17.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19553,6 +19639,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "Inflector",
  "expander",
@@ -19745,6 +19834,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19764,6 +19854,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 
 [[package]]
 name = "sp-storage"
@@ -19787,6 +19880,7 @@ version = "19.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19806,6 +19900,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -19861,6 +19958,7 @@ version = "16.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19880,6 +19978,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -20082,6 +20183,7 @@ version = "20.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20101,6 +20203,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -21696,6 +21801,7 @@ dependencies = [
  "bytes",
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "h2 0.4.10",
 =======
  "h2 0.4.8",
@@ -21703,6 +21809,9 @@ dependencies = [
 =======
  "h2 0.4.8",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+ "h2 0.4.9",
+>>>>>>> 5be0bfe7 (update changes from avail-rust)
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
