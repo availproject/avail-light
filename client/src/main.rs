@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
+#[cfg(feature = "multiproof")]
+use avail_light_core::proof::spawn_pmp_initializer;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
@@ -93,6 +95,9 @@ async fn run(
 	)
 	.await?;
 
+	#[cfg(feature = "multiproof")]
+	spawn_pmp_initializer();
+
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	let addrs = vec![cfg.libp2p.tcp_multiaddress()];
@@ -141,7 +146,7 @@ async fn run(
 	let client = rpc_client.current_client().await;
 
 	let account_address = account_id.to_string();
-	let nonce = account::nonce_node(&client.client, &account_address)
+	let nonce = account::nonce(&client.client, &account_address)
 		.await
 		.map_err(|error| eyre!("{:?}", error))?;
 	db.put(SignerNonceKey, nonce);

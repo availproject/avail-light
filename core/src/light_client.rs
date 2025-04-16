@@ -26,11 +26,9 @@ use color_eyre::Result;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
-#[cfg(target_arch = "wasm32")]
-use tokio_with_wasm::alias as tokio;
 use tracing::{error, info};
 #[cfg(target_arch = "wasm32")]
-use web_time::Instant;
+use {tokio_with_wasm::alias as tokio, web_time::Instant};
 
 use crate::{
 	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
@@ -42,6 +40,9 @@ use crate::{
 	types::{self, BlockRange, ClientChannels, Delay},
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
+
+#[cfg(feature = "multiproof")]
+use crate::types::MULTI_PROOF_CELL_DIMS;
 
 #[derive(Debug)]
 pub enum OutputEvent {
@@ -107,7 +108,40 @@ pub async fn process_block(
 
 			let commitments = commitments::from_slice(&commitment)?;
 			let cell_count = rpc::cell_count_for_confidence(confidence);
-			let positions = rpc::generate_random_cells(dimensions, cell_count);
+			let positions = {
+				#[cfg(feature = "multiproof")]
+				{
+					let Some(target_dims) =
+						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+					else {
+						info!(
+							block_number,
+							target_rows = MULTI_PROOF_CELL_DIMS.0,
+							target_cols = MULTI_PROOF_CELL_DIMS.1,
+							header_rows = rows,
+							header_cols = cols,
+							"Skipping block with invalid target multiproof cell dimensions",
+						);
+						return Ok(None);
+					};
+
+					if target_dims.cols().get() <= 2 {
+						error!(
+							block_number,
+							"more than 2 columns on target grid is required"
+						);
+						return Ok(None);
+					}
+
+					rpc::generate_random_cells(target_dims, cell_count)
+				}
+
+				#[cfg(not(feature = "multiproof"))]
+				{
+					rpc::generate_random_cells(dimensions, cell_count)
+				}
+			};
+
 			info!(
 				block_number,
 				"cells_requested" = positions.len(),
@@ -277,7 +311,7 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::Cell, matrix::Position},
+		kate_recovery::{data::CellType, matrix::Position},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -301,7 +335,7 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
 		let db = data::MemoryDB::default();
-		let cells_fetched: Vec<Cell> = vec![];
+		let cells_fetched: Vec<CellType> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
 			Position { row: 0, col: 0 },

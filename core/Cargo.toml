@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-core"
-version = "1.2.6"
+version = "1.2.7"
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -109,5 +109,6 @@ test-case = "3.2.1"
 [features]
 network-analysis = []
 rocksdb = ["dep:rocksdb"]
-crawl = []
 default = []
+crawl = []
+multiproof = []
