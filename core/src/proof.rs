@@ -98,7 +98,7 @@ pub async fn verify(
 	_public_parameters: Arc<PublicParameters>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
 	if cells.is_empty() {
-		return Ok((vec![], vec![]));
+		return Ok((Vec::new(), Vec::new()));
 	}
 
 	let start_time = Instant::now();
@@ -110,12 +110,7 @@ pub async fn verify(
 
 	for cell in cells.iter().cloned() {
 		if let CellType::MCell(mcell) = cell {
-			let scalars = mcell
-				.scalars
-				.into_iter()
-				.map(|limbs| U256(limbs))
-				.collect::<Vec<_>>();
-
+			let scalars = mcell.scalars.iter().map(|limbs| U256(*limbs)).collect();
 			let gproof = GProof(mcell.proof);
 			let gcell_block = mcell.gcell_block;
 
@@ -125,14 +120,13 @@ pub async fn verify(
 	}
 
 	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
-	let is_verified =
-		verify_multi_proof(pmp.clone(), proof_pairs, commitments, cols.into()).await?;
+	let is_verified = verify_multi_proof(&pmp, &proof_pairs, &commitments, cols.into()).await?;
 
 	debug!(
 		block_num,
 		verified = is_verified,
 		duration = ?start_time.elapsed(),
-		"Multiproof verification completed",
+		"Multiproof verification completed"
 	);
 
 	let (verified, unverified) = positions.into_iter().partition(|_| is_verified);
@@ -144,8 +138,8 @@ pub async fn verify(
 pub fn spawn_pmp_initializer() {
 	task::spawn(async {
 		let pmp = generate_pmp().await;
-		if let Err(_) = PMP.set(pmp) {
-			warn!("PMP was already initialized");
+		if let Err(e) = PMP.set(pmp) {
+			warn!("Failed to initialize PMP: {e}");
 		} else {
 			info!("PMP initialized successfully");
 		}

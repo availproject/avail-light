@@ -1069,7 +1069,7 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "avail-core"
 version = "0.6.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#090fedab306fa5fb92004e3a344955f59855d6bd"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -1338,8 +1338,8 @@ dependencies = [
 
 [[package]]
 name = "avail-rust"
-version = "0.1.7"
-source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#a67035aab2364443a2ec980485bc408ca5b1d361"
+version = "0.1.9"
+source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#fbaea86eda6ae39b3d1016f5251dee4619022050"
 dependencies = [
  "avail-core",
  "base58",
@@ -3126,9 +3126,9 @@ dependencies = [
 
 [[package]]
 name = "cxx"
-version = "1.0.156"
+version = "1.0.157"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa3a202fc4f3dd6d2ce5a2f87b04fb2becc00f5643ee9c4743ba10777efb314f"
+checksum = "3d6354e975ea4ec28033ec3a36fa9baa1a02e3eb22ad740eeb4929370d4f5ba8"
 dependencies = [
  "cc",
  "cxxbridge-cmd",
@@ -3140,9 +3140,9 @@ dependencies = [
 
 [[package]]
 name = "cxx-build"
-version = "1.0.156"
+version = "1.0.157"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644bdf46f34f6325783f76a8ad8e737ab995a302d7868b5236a1ba55008883e0"
+checksum = "8b4400e26ea4b99417e4263b1ce2d8452404d750ba0809a7bd043072593d430d"
 dependencies = [
  "cc",
  "codespan-reporting",
@@ -3154,9 +3154,9 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-cmd"
-version = "1.0.156"
+version = "1.0.157"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e8cefbebcb74ed0b4a08b76139e6c29d8884a0bb94d02c6f35de821a14a6e39"
+checksum = "31860c98f69fc14da5742c5deaf78983e846c7b27804ca8c8319e32eef421bde"
 dependencies = [
  "clap",
  "codespan-reporting",
@@ -3167,15 +3167,15 @@ dependencies = [
 
 [[package]]
 name = "cxxbridge-flags"
-version = "1.0.156"
+version = "1.0.157"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "604e3eff62e2f27289d618f621491a068330c3c9f8eb06555dabc292c123596e"
+checksum = "b0402a66013f3b8d3d9f2d7c9994656cc81e671054822b0728d7454d9231892f"
 
 [[package]]
 name = "cxxbridge-macro"
-version = "1.0.156"
+version = "1.0.157"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "130c3a05501d9c15dedbf08f2ff9af60f8e78422e3dffac1f43e2d83c5b489a1"
+checksum = "64c0b38f32d68f3324a981645ee39b2d686af36d03c98a386df3716108c9feae"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4885,9 +4885,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5017294ff4bb30944501348f6f8e42e6ad28f42c8bbef7a74029aff064a4e3c2"
+checksum = "75249d144030531f8dee69fe9cea04d3edf809a017ae445e2abdff6629e86633"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -5285,7 +5285,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "h2 0.4.8",
+ "h2 0.4.9",
  "http 1.3.1",
  "http-body 1.0.1",
  "httparse",
@@ -6074,7 +6074,7 @@ dependencies = [
 [[package]]
 name = "kate"
 version = "0.9.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#090fedab306fa5fb92004e3a344955f59855d6bd"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -6093,7 +6093,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#090fedab306fa5fb92004e3a344955f59855d6bd"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -6152,9 +6152,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.171"
+version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
+checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 
 [[package]]
 name = "libloading"
@@ -10876,9 +10876,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.94"
+version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a31971752e70b8b2686d7e46ec17fb38dad4051d94024c88df49b667caea9c84"
+checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
 dependencies = [
  "unicode-ident",
 ]
@@ -11300,7 +11300,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.4.8",
+ "h2 0.4.9",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -13327,7 +13327,7 @@ dependencies = [
 [[package]]
 name = "sp-crypto-ec-utils"
 version = "0.10.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -13437,7 +13437,7 @@ dependencies = [
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13458,7 +13458,7 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.25.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -13794,7 +13794,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "24.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -13846,7 +13846,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "Inflector",
  "expander",
@@ -14008,7 +14008,7 @@ source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.
 [[package]]
 name = "sp-std"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 
 [[package]]
 name = "sp-storage"
@@ -14026,7 +14026,7 @@ dependencies = [
 [[package]]
 name = "sp-storage"
 version = "19.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -14076,7 +14076,7 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "16.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -14243,7 +14243,7 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841fe7222a5ba96eafb5c"
+source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -15300,7 +15300,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
- "h2 0.4.8",
+ "h2 0.4.9",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
