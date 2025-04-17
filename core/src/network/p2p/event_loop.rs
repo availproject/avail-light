@@ -520,9 +520,9 @@ impl EventLoop {
 					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
 				},
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { result, .. })) => {
+			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { peer, result, .. })) => {
 				if let Ok(rtt) = result {
-					_ = self.event_sender.send(OutputEvent::Ping(rtt));
+					_ = self.event_sender.send(OutputEvent::Ping { peer, rtt });
 				}
 			},
 			swarm_event => {

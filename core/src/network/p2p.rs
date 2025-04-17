@@ -80,7 +80,10 @@ pub enum OutputEvent {
 	IncomingGetRecord,
 	IncomingPutRecord,
 	KadModeChange(Mode),
-	Ping(Duration),
+	Ping {
+		peer: PeerId,
+		rtt: Duration,
+	},
 	IncomingConnection,
 	IncomingConnectionError,
 	ExternalMultiaddressUpdate(Multiaddr),

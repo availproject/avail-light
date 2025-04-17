@@ -13,8 +13,8 @@ use avail_light_core::network::p2p::Client;
 
 use crate::{config::Config, ServerInfo};
 pub struct PeerMonitor {
-	interval: Interval,
 	p2p_client: Client,
+	interval: Interval,
 	server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	config: Config,
@@ -24,13 +24,14 @@ impl PeerMonitor {
 		p2p_client: Client,
 		interval: Interval,
 		server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
+		server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 		config: Config,
 	) -> Self {
 		Self {
 			interval,
 			p2p_client,
 			server_monitor_list,
-			server_black_list: Default::default(),
+			server_black_list,
 			config,
 		}
 	}
