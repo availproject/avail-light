@@ -15,6 +15,7 @@ serde = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+statrs = "0.16.0"
 
 [features]
 rocksdb = ["avail-light-core/rocksdb"]
