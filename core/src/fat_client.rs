@@ -191,13 +191,13 @@ pub async fn process_block(
 			else {
 				info!(
 					block_number,
-					"Skipping block with invalid target multiproof grid dims",
+					"Skipping block with invalid target multiproof grid dimensions",
 				);
 				return Ok(());
 			};
 
 			target_multiproof_grid_dims
-				.iter_extended_partition_positions(&cfg.block_matrix_partition)
+				.iter_mcell_partition_positions(&cfg.block_matrix_partition)
 				.collect()
 		}
 

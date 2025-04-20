@@ -1069,7 +1069,7 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "avail-core"
 version = "0.6.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -2256,9 +2256,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.36"
+version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2df961d8c8a0d08aa9945718ccf584145eee3f3aa06cddbeac12933781102e04"
+checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2266,9 +2266,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.36"
+version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "132dbda40fb6753878316a489d5a1242a8ef2f0d9e47ba01c951ea8aa7d013a5"
+checksum = "efd9466fac8543255d3b1fcad4762c5e116ffe808c8a3043d4263cd4fd4862a2"
 dependencies = [
  "anstream",
  "anstyle",
@@ -3252,9 +3252,9 @@ checksum = "da692b8d1080ea3045efaab14434d40468c3d8657e42abddfffca87b428f4c1b"
 
 [[package]]
 name = "der"
-version = "0.7.9"
+version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f55bf8e7b65898637379c1b74eb1551107c8294ed26d855ceb9fd1a09cfc9bc0"
+checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid",
  "zeroize",
@@ -5088,7 +5088,7 @@ dependencies = [
  "idna",
  "ipnet",
  "once_cell",
- "rand 0.9.0",
+ "rand 0.9.1",
  "socket2",
  "thiserror 2.0.12",
  "tinyvec",
@@ -5110,7 +5110,7 @@ dependencies = [
  "moka",
  "once_cell",
  "parking_lot",
- "rand 0.9.0",
+ "rand 0.9.1",
  "resolv-conf",
  "smallvec",
  "thiserror 2.0.12",
@@ -5837,9 +5837,9 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jiff"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5ad87c89110f55e4cd4dc2893a9790820206729eaf221555f742d540b0724a0"
+checksum = "59ec30f7142be6fe14e1b021f50b85db8df2d4324ea6e91ec3e5dcde092021d0"
 dependencies = [
  "jiff-static",
  "log",
@@ -5850,9 +5850,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d076d5b64a7e2fe6f0743f02c43ca4a6725c0f904203bfe276a5b3e793103605"
+checksum = "526b834d727fd59d37b076b0c3236d9adde1b1729a4361e20b2026f738cc1dbe"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6074,7 +6074,7 @@ dependencies = [
 [[package]]
 name = "kate"
 version = "0.9.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -6093,7 +6093,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -6877,12 +6877,6 @@ dependencies = [
  "autocfg",
  "scopeguard",
 ]
-
-[[package]]
-name = "lockfree-object-pool"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9374ef4228402d4b7e403e5838cb880d9ee663314b0a900d5a6aabf0c213552e"
 
 [[package]]
 name = "log"
@@ -11024,7 +11018,7 @@ checksum = "b820744eb4dc9b57a3398183639c511b5a26d2ed702cedd3febaa1393caa22cc"
 dependencies = [
  "bytes",
  "getrandom 0.3.2",
- "rand 0.9.0",
+ "rand 0.9.1",
  "ring 0.17.14",
  "rustc-hash 2.1.1",
  "rustls",
@@ -11084,13 +11078,12 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
- "zerocopy 0.8.24",
 ]
 
 [[package]]
@@ -11462,7 +11455,7 @@ dependencies = [
  "primitive-types 0.12.2",
  "proptest",
  "rand 0.8.5",
- "rand 0.9.0",
+ "rand 0.9.1",
  "rlp",
  "ruint-macro",
  "serde",
@@ -12393,9 +12386,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.2"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
+checksum = "9203b8055f63a2a00e2f593bb0510367fe707d7ff1e5c872de2f537b339e5410"
 dependencies = [
  "libc",
 ]
@@ -13327,7 +13320,7 @@ dependencies = [
 [[package]]
 name = "sp-crypto-ec-utils"
 version = "0.10.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -13437,7 +13430,7 @@ dependencies = [
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13458,7 +13451,7 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.25.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -13794,7 +13787,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "24.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -13846,7 +13839,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "Inflector",
  "expander",
@@ -14008,7 +14001,7 @@ source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.
 [[package]]
 name = "sp-std"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 
 [[package]]
 name = "sp-storage"
@@ -14026,7 +14019,7 @@ dependencies = [
 [[package]]
 name = "sp-storage"
 version = "19.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -14076,7 +14069,7 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "16.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -14243,7 +14236,7 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -15747,7 +15740,7 @@ checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
  "getrandom 0.3.2",
  "js-sys",
- "rand 0.9.0",
+ "rand 0.9.1",
  "serde",
  "uuid-macro-internal",
  "wasm-bindgen",
@@ -17256,15 +17249,13 @@ dependencies = [
 
 [[package]]
 name = "zopfli"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5019f391bac5cf252e93bbcc53d039ffd62c7bfb7c150414d61369afe57e946"
+checksum = "edfc5ee405f504cd4984ecc6f14d02d55cfda60fa4b689434ef4102aae150cd7"
 dependencies = [
  "bumpalo",
  "crc32fast",
- "lockfree-object-pool",
  "log",
- "once_cell",
  "simd-adler32",
 ]
 
