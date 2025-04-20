@@ -1412,6 +1412,7 @@ version = "0.6.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "binary-merkle-tree",
@@ -1439,6 +1440,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -2905,6 +2909,7 @@ name = "clap"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
@@ -2928,6 +2933,11 @@ version = "4.5.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2df961d8c8a0d08aa9945718ccf584145eee3f3aa06cddbeac12933781102e04"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "4.5.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2935,6 +2945,7 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -2962,6 +2973,11 @@ version = "4.5.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "132dbda40fb6753878316a489d5a1242a8ef2f0d9e47ba01c951ea8aa7d013a5"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "4.5.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efd9466fac8543255d3b1fcad4762c5e116ffe808c8a3043d4263cd4fd4862a2"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "anstream",
  "anstyle",
@@ -6630,7 +6646,7 @@ dependencies = [
  "idna",
  "ipnet",
  "once_cell",
- "rand 0.9.0",
+ "rand 0.9.1",
  "socket2",
  "thiserror 2.0.12",
 <<<<<<< HEAD
@@ -6663,12 +6679,16 @@ dependencies = [
  "once_cell",
  "parking_lot",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "rand 0.9.1",
  "resolv-conf",
  "smallvec",
  "thiserror",
 =======
  "rand 0.9.0",
+=======
+ "rand 0.9.1",
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
  "resolv-conf",
  "smallvec",
  "thiserror 2.0.12",
@@ -7564,6 +7584,7 @@ name = "jiff"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f02000660d30638906021176af16b17498bd0d12813dbfe7b276d8bc7f3c0806"
@@ -7582,6 +7603,11 @@ version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ad87c89110f55e4cd4dc2893a9790820206729eaf221555f742d540b0724a0"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59ec30f7142be6fe14e1b021f50b85db8df2d4324ea6e91ec3e5dcde092021d0"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "jiff-static",
  "log",
@@ -7592,6 +7618,7 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -7610,8 +7637,11 @@ version = "0.2.5"
 =======
 version = "0.2.8"
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+version = "0.2.9"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d076d5b64a7e2fe6f0743f02c43ca4a6725c0f904203bfe276a5b3e793103605"
+checksum = "526b834d727fd59d37b076b0c3236d9adde1b1729a4361e20b2026f738cc1dbe"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8097,6 +8127,7 @@ version = "0.9.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
 dependencies = [
  "avail-core",
@@ -8106,6 +8137,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -8187,6 +8221,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "avail-core",
@@ -8208,6 +8243,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#01d784252064fc1aa0724d86a778418b19d3ffc5"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "avail-core",
  "derive_more 0.99.19",
@@ -15856,7 +15894,7 @@ dependencies = [
  "bytes",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
  "getrandom 0.3.2",
- "rand 0.9.0",
+ "rand 0.9.1",
  "ring 0.17.14",
  "rustc-hash 2.1.1",
  "rustls",
@@ -15939,6 +15977,7 @@ dependencies = [
 [[package]]
 name = "rand"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
@@ -15947,11 +15986,15 @@ dependencies = [
  "rand_core 0.9.3",
 =======
 version = "0.9.0"
+=======
+version = "0.9.1"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  "zerocopy 0.8.23",
@@ -15962,6 +16005,8 @@ dependencies = [
 =======
  "zerocopy 0.8.24",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 ]
 
 [[package]]
@@ -16501,6 +16546,7 @@ dependencies = [
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
  "rand 0.9.1",
 =======
 >>>>>>> cf577def (update avail rust changes)
@@ -16510,6 +16556,9 @@ dependencies = [
 =======
  "rand 0.9.0",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+ "rand 0.9.1",
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
  "rlp",
  "ruint-macro",
  "serde",
@@ -18895,6 +18944,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18917,6 +18967,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -19065,6 +19118,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 dependencies = [
  "proc-macro2",
@@ -19084,6 +19138,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#f5de39196e8c30de4bc47a2
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -19122,6 +19179,7 @@ version = "0.25.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19144,6 +19202,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -19532,6 +19593,7 @@ version = "24.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19554,6 +19616,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -19620,6 +19685,7 @@ version = "17.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19642,6 +19708,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "Inflector",
  "expander",
@@ -19835,6 +19904,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19857,6 +19927,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 
 [[package]]
 name = "sp-storage"
@@ -19881,6 +19954,7 @@ version = "19.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19903,6 +19977,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -19959,6 +20036,7 @@ version = "16.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19981,6 +20059,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -20184,6 +20265,7 @@ version = "20.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20206,6 +20288,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#6ce6110199a429ce449841f
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0c20497bdefa194e0d"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -22283,8 +22368,12 @@ dependencies = [
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
  "getrandom 0.3.2",
  "js-sys",
+<<<<<<< HEAD
  "rand 0.9.0",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "rand 0.9.1",
+>>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
  "serde",
  "uuid-macro-internal",
  "wasm-bindgen",
