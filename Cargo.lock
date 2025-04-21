@@ -1769,8 +1769,12 @@ source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integrat
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
 =======
 version = "0.1.9"
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#fbaea86eda6ae39b3d1016f5251dee4619022050"
 >>>>>>> 5be0bfe7 (update changes from avail-rust)
+=======
+source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#0f1033306181332c46adb7f1ca3bbb354b203bb5"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "avail-core",
  "base58",
@@ -8206,6 +8210,7 @@ dependencies = [
  "kate-recovery",
  "parity-scale-codec",
  "poly-multiproof",
+ "serde",
  "sp-arithmetic 23.0.0",
  "sp-std 14.0.0 (git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.1-patch-12)",
  "static_assertions",
@@ -18945,6 +18950,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18970,6 +18976,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -19119,6 +19128,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 dependencies = [
  "proc-macro2",
@@ -19141,6 +19151,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -19180,6 +19193,7 @@ version = "0.25.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19205,6 +19219,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -19594,6 +19611,7 @@ version = "24.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19619,6 +19637,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -19686,6 +19707,7 @@ version = "17.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19711,6 +19733,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "Inflector",
  "expander",
@@ -19905,6 +19930,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19930,6 +19956,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 
 [[package]]
 name = "sp-storage"
@@ -19955,6 +19984,7 @@ version = "19.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19980,6 +20010,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -20037,6 +20070,7 @@ version = "16.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20062,6 +20096,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -20266,6 +20303,7 @@ version = "20.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20291,6 +20329,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#e5bb4f9fc8b1528cd15efb0
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fdb58097a1860aa20b7"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+>>>>>>> 55cfa3e1 (fix wasm build)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",

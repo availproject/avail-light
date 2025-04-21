@@ -17,6 +17,8 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
+#[cfg(feature = "multiproof")]
+use avail_rust::utils::generate_multiproof_grid_dims;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
 	AvailHeader, H256,
@@ -111,29 +113,27 @@ pub async fn process_block(
 			let positions = {
 				#[cfg(feature = "multiproof")]
 				{
-					let Some(target_dims) =
+					let Some(multiproof_cell_dims) =
 						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
 					else {
 						info!(
 							block_number,
-							target_rows = MULTI_PROOF_CELL_DIMS.0,
-							target_cols = MULTI_PROOF_CELL_DIMS.1,
-							header_rows = rows,
-							header_cols = cols,
-							"Skipping block with invalid target multiproof cell dimensions",
+							"Skipping block with invalid multiproof cell dimensions",
 						);
 						return Ok(None);
 					};
 
-					if target_dims.cols().get() <= 2 {
-						error!(
+					let Some(target_multiproof_grid_dims) =
+						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+					else {
+						info!(
 							block_number,
-							"more than 2 columns on target grid is required"
+							"Skipping block with invalid target multiproof grid dimensions",
 						);
 						return Ok(None);
-					}
+					};
 
-					rpc::generate_random_cells(target_dims, cell_count)
+					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
 				}
 
 				#[cfg(not(feature = "multiproof"))]
