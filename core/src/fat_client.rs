@@ -178,16 +178,18 @@ pub async fn process_block(
 	let positions: Vec<Position> = {
 		#[cfg(feature = "multiproof")]
 		{
-			let Some(dims) = Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+			let Some(multiproof_cell_dims) =
+				Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
 			else {
 				info!(
 					block_number,
-					"Skipping block with invalid target multiproof cell dimensions",
+					"Skipping block with invalid multiproof cell dimensions",
 				);
 				return Ok(());
 			};
 
-			let Some(target_multiproof_grid_dims) = generate_multiproof_grid_dims(dims, dimensions)
+			let Some(target_multiproof_grid_dims) =
+				generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
 			else {
 				info!(
 					block_number,
