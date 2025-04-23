@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use avail_rust::kate_recovery::{
-	data::CellType,
+	data::Cell,
 	matrix::{Dimensions, Position},
 };
 use color_eyre::eyre;
@@ -11,12 +11,15 @@ use tokio::time::Instant;
 use tracing::debug;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+
 #[cfg(not(feature = "multiproof"))]
 use {
-	avail_rust::kate_recovery::data::Cell,
+	crate::utils::spawn_in_span,
+	avail_rust::kate_recovery::data::SingleCell,
 	futures::future::join_all,
 	itertools::{Either, Itertools},
 };
+
 #[cfg(feature = "multiproof")]
 use {
 	avail_rust::{
@@ -24,12 +27,9 @@ use {
 		rpc::kate::{generate_pmp, verify_multi_proof},
 		Bls12_381, BlstMSMEngine, M1NoPrecomp, U256,
 	},
-	tokio::{sync::OnceCell, task},
+	tokio::{runtime::Handle, sync::OnceCell},
 	tracing::{info, warn},
 };
-
-#[cfg(not(feature = "multiproof"))]
-use crate::utils::spawn_in_span;
 
 mod core;
 
@@ -38,7 +38,7 @@ async fn verify_proof(
 	public_parameters: Arc<PublicParameters>,
 	dimensions: Dimensions,
 	commitment: [u8; 48],
-	cell: Cell,
+	cell: SingleCell,
 ) -> Result<(Position, bool), core::Error> {
 	core::verify(&public_parameters, dimensions, &commitment, &cell)
 		.map(|verified| (cell.position, verified))
@@ -49,18 +49,20 @@ async fn verify_proof(
 pub async fn verify(
 	block_num: u32,
 	dimensions: Dimensions,
-	cells: &[CellType],
+	cells: &[Cell],
 	commitments: &[[u8; 48]],
 	public_parameters: Arc<PublicParameters>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
 	if cells.is_empty() {
 		return Ok((Vec::new(), Vec::new()));
-	};
+	}
+
 	let start_time = Instant::now();
+
 	let tasks = cells
 		.iter()
 		.filter_map(|cell_type| {
-			Cell::try_from(cell_type.clone()).ok().map(|cell| {
+			SingleCell::try_from(cell_type.clone()).ok().map(|cell| {
 				spawn_in_span(verify_proof(
 					public_parameters.clone(),
 					dimensions,
@@ -82,9 +84,12 @@ pub async fn verify(
 
 	Ok(results
 		.into_iter()
-		.partition_map(|(position, is_verified)| match is_verified {
-			true => Either::Left(position),
-			false => Either::Right(position),
+		.partition_map(|(position, is_verified)| {
+			if is_verified {
+				Either::Left(position)
+			} else {
+				Either::Right(position)
+			}
 		}))
 }
 
@@ -93,7 +98,7 @@ pub async fn verify(
 pub async fn verify(
 	block_num: u32,
 	dimensions: Dimensions,
-	cells: &[CellType],
+	cells: &[Cell],
 	commitments: &[[u8; 48]],
 	_public_parameters: Arc<PublicParameters>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
@@ -109,7 +114,7 @@ pub async fn verify(
 	let mut positions = Vec::with_capacity(cells.len());
 
 	for cell in cells.iter().cloned() {
-		if let CellType::MCell(mcell) = cell {
+		if let Cell::MultiProofCell(mcell) = cell {
 			let scalars = mcell.scalars.iter().map(|limbs| U256(*limbs)).collect();
 			let gproof = GProof(mcell.proof);
 			let gcell_block = mcell.gcell_block;
@@ -130,13 +135,13 @@ pub async fn verify(
 	);
 
 	let (verified, unverified) = positions.into_iter().partition(|_| is_verified);
-
 	Ok((verified, unverified))
 }
 
 #[cfg(feature = "multiproof")]
 pub fn spawn_pmp_initializer() {
-	task::spawn(async {
+	let rt = Handle::current();
+	rt.block_on(async {
 		let pmp = generate_pmp().await;
 		if let Err(e) = PMP.set(pmp) {
 			warn!("Failed to initialize PMP: {e}");

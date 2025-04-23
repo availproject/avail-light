@@ -89,7 +89,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "once_cell",
  "version_check",
 ]
@@ -101,7 +101,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e89da841a80418a9b391ebaea17f5c112ffaaa96f621d2c285b5174da76b9011"
 dependencies = [
  "cfg-if 1.0.0",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "once_cell",
  "version_check",
  "zerocopy 0.7.35",
@@ -132,7 +132,7 @@ dependencies = [
  "bytes",
  "cfg-if 1.0.0",
  "const-hex",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "hex-literal 0.4.1",
  "itoa",
  "proptest",
@@ -1069,12 +1069,12 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "avail-core"
 version = "0.6.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#3935f358a0addc68174c0cf09076431f2928f626"
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
  "bounded-collections",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "ethabi-decode 2.0.0",
  "frame-support 28.0.0",
  "hash-db",
@@ -1190,7 +1190,7 @@ dependencies = [
  "ed25519-compact",
  "flate2",
  "futures",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "hex",
  "hex-literal 0.4.1",
  "hyper 0.14.32",
@@ -2458,7 +2458,7 @@ version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "once_cell",
  "tiny-keccak",
 ]
@@ -3329,9 +3329,9 @@ dependencies = [
 
 [[package]]
 name = "derive-where"
-version = "1.2.7"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62d671cc41a825ebabc75757b62d3d168c577f9149b2d49ece1dad1f72119d25"
+checksum = "2364b9aa47e460ce9bca6ac1777d14c98eef7e274eb077beed49f3adc94183ed"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3351,9 +3351,9 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "0.99.19"
+version = "0.99.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3da29a38df43d6f156149c9b43ded5e018ddff2a855cf2cfd62e8cd7d079c69f"
+checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
 dependencies = [
  "convert_case 0.4.0",
  "proc-macro2",
@@ -3648,7 +3648,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9b3460f44bea8cd47f45a0c70892f1eff856d97cd55358b2f73f663789f6190"
 dependencies = [
  "ct-codecs",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
 ]
 
 [[package]]
@@ -4723,9 +4723,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.15"
+version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4567c8db10ae91089c99af84c68c38da3ec2f087c3f82960bcdbf3656b6f4d7"
+checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
 dependencies = [
  "cfg-if 1.0.0",
  "js-sys",
@@ -5837,9 +5837,9 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jiff"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59ec30f7142be6fe14e1b021f50b85db8df2d4324ea6e91ec3e5dcde092021d0"
+checksum = "5a064218214dc6a10fbae5ec5fa888d80c45d611aba169222fc272072bf7aef6"
 dependencies = [
  "jiff-static",
  "log",
@@ -5850,9 +5850,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "526b834d727fd59d37b076b0c3236d9adde1b1729a4361e20b2026f738cc1dbe"
+checksum = "199b7932d97e325aff3a7030e141eafe7f2c6268e1d1b24859b753a627f45254"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6074,10 +6074,10 @@ dependencies = [
 [[package]]
 name = "kate"
 version = "0.9.2"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#3935f358a0addc68174c0cf09076431f2928f626"
 dependencies = [
  "avail-core",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "dusk-plonk",
  "hex",
  "hex-literal 0.3.4",
@@ -6094,10 +6094,10 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
-source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#3935f358a0addc68174c0cf09076431f2928f626"
 dependencies = [
  "avail-core",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "dusk-bytes",
  "dusk-plonk",
  "once_cell",
@@ -6179,9 +6179,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.11"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa"
+checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
 
 [[package]]
 name = "libp2p"
@@ -6193,7 +6193,7 @@ dependencies = [
  "either",
  "futures",
  "futures-timer",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "libp2p-allow-block-list",
  "libp2p-autonat",
  "libp2p-connection-limits",
@@ -6347,7 +6347,7 @@ dependencies = [
  "fnv",
  "futures",
  "futures-timer",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "hashlink",
  "hex_fmt",
  "libp2p-core",
@@ -6584,7 +6584,7 @@ dependencies = [
  "fnv",
  "futures",
  "futures-timer",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "libp2p-core",
  "libp2p-identity",
  "libp2p-swarm-derive",
@@ -6691,7 +6691,7 @@ checksum = "3830f0bf6f0f16ded2c735599fe70baea43a8c1a2d76152216693329217301dd"
 dependencies = [
  "bytes",
  "futures",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "hex",
  "js-sys",
  "libp2p-core",
@@ -10006,7 +10006,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52b5648a2e8ce1f9a0f8c41c38def670cefd91932cd793468e1a5b0b0b4e4af1"
 dependencies = [
  "bounded-collections",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "parity-scale-codec",
  "polkadot-core-primitives",
  "scale-info",
@@ -10141,7 +10141,7 @@ checksum = "1d4cdf181c2419b35c2cbde813da2d8ee777b69b4a6fa346b962d144e3521976"
 dependencies = [
  "bitflags 1.3.2",
  "bitvec",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "frame-benchmarking",
  "frame-support 38.2.0",
  "frame-system",
@@ -11013,9 +11013,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.10"
+version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b820744eb4dc9b57a3398183639c511b5a26d2ed702cedd3febaa1393caa22cc"
+checksum = "bcbafbbdbb0f638fe3f35f3c56739f77a8a1d070cb25603226c83339b391472b"
 dependencies = [
  "bytes",
  "getrandom 0.3.2",
@@ -11113,7 +11113,7 @@ version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
 ]
 
 [[package]]
@@ -11188,7 +11188,7 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "libredox",
  "thiserror 1.0.69",
 ]
@@ -11376,7 +11376,7 @@ checksum = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
 dependencies = [
  "cc",
  "cfg-if 1.0.0",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
@@ -11688,7 +11688,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5174a470eeb535a721ae9fdd6e291c2411a906b96592182d05217591d5c5cf7b"
 dependencies = [
  "byteorder",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
 ]
 
 [[package]]
@@ -12505,7 +12505,7 @@ dependencies = [
  "bs58",
  "chacha20",
  "crossbeam-queue",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "ed25519-zebra",
  "either",
  "event-listener 5.4.0",
@@ -12555,7 +12555,7 @@ dependencies = [
  "base64 0.22.1",
  "blake2-rfc",
  "bs58",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "either",
  "event-listener 5.4.0",
  "fnv",
@@ -13321,7 +13321,7 @@ dependencies = [
 [[package]]
 name = "sp-crypto-ec-utils"
 version = "0.10.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -13431,7 +13431,7 @@ dependencies = [
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13452,7 +13452,7 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.25.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -13788,7 +13788,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "24.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -13840,7 +13840,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "Inflector",
  "expander",
@@ -14002,7 +14002,7 @@ source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.
 [[package]]
 name = "sp-std"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 
 [[package]]
 name = "sp-storage"
@@ -14020,7 +14020,7 @@ dependencies = [
 [[package]]
 name = "sp-storage"
 version = "19.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -14070,7 +14070,7 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "16.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -14237,7 +14237,7 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -14564,7 +14564,7 @@ dependencies = [
  "finito",
  "frame-metadata 18.0.0",
  "futures",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "hex",
  "impl-serde 0.5.0",
  "jsonrpsee",
@@ -14597,7 +14597,7 @@ version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b622b426e571fdd86b08ad0bec4ef0e323d937bb56ff5edcfaf4716f50384ca"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "heck 0.5.0",
  "parity-scale-codec",
  "proc-macro2",
@@ -14648,7 +14648,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "futures-util",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "js-sys",
  "pin-project",
  "send_wrapper 0.6.0",
@@ -14707,7 +14707,7 @@ dependencies = [
  "bip39",
  "cfg-if 1.0.0",
  "crypto_secretbox",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "hex",
  "hmac 0.12.1",
  "parity-scale-codec",
@@ -15204,9 +15204,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.14"
+version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b9590b93e6fcc1739458317cccd391ad3955e2bde8913edf6f95f9e65a8f034"
+checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
 dependencies = [
  "bytes",
  "futures-core",

@@ -23,7 +23,7 @@ use avail_rust::{
 			AppData, Percent,
 		},
 		commitments,
-		data::{Cell, CellType, DataCell},
+		data::{Cell, DataCell, SingleCell},
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -124,9 +124,9 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			fetched.len(),
 			unfetched.len()
 		);
-		let fetched: Vec<Cell> = fetched
+		let fetched: Vec<SingleCell> = fetched
 			.into_iter()
-			.map(Cell::try_from)
+			.map(SingleCell::try_from)
 			.map(|res| res.map_err(|e| eyre!(e)))
 			.collect::<Result<_, _>>()?;
 		let mut rng = ChaChaRng::from_seed(Default::default());
@@ -142,9 +142,9 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
-		let missing_fetched: Vec<Cell> = missing_fetched
+		let missing_fetched: Vec<SingleCell> = missing_fetched
 			.into_iter()
-			.map(Cell::try_from)
+			.map(SingleCell::try_from)
 			.map(|res| res.map_err(|e| eyre!(e)))
 			.collect::<Result<_, _>>()?;
 
@@ -278,7 +278,7 @@ async fn fetch_verified(
 	dimensions: Dimensions,
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
-) -> Result<(Vec<CellType>, Vec<Position>)> {
+) -> Result<(Vec<Cell>, Vec<Position>)> {
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;

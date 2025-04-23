@@ -1,7 +1,7 @@
 use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail_core::AppId,
-	kate_recovery::{data::Cell, matrix::Position},
+	kate_recovery::{data::SingleCell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
@@ -21,7 +21,7 @@ use avail_rust::{
 };
 #[cfg(feature = "multiproof")]
 use avail_rust::{
-	kate_recovery::data::{GCellBlock, MCell},
+	kate_recovery::data::{GCellBlock, MultiProofCell},
 	primitives::kate::GMultiProof,
 	rpc::kate::query_multi_proof,
 };
@@ -640,7 +640,7 @@ impl<D: Database> Client<D> {
 		&self,
 		block_hash: H256,
 		positions: &[Position],
-	) -> Result<Vec<MCell>> {
+	) -> Result<Vec<MultiProofCell>> {
 		let cells: Cells = positions
 			.iter()
 			.map(|p| avail_rust::Cell {
@@ -671,7 +671,7 @@ impl<D: Database> Client<D> {
 				let proof_bytes: [u8; 48] = proof.0;
 				let raw_scalars: Vec<[u64; 4]> = scalars.into_iter().map(|u| u.0).collect();
 
-				MCell {
+				MultiProofCell {
 					position,
 					scalars: raw_scalars,
 					proof: proof_bytes,
@@ -687,7 +687,7 @@ impl<D: Database> Client<D> {
 		&self,
 		block_hash: H256,
 		positions: &[Position],
-	) -> Result<Vec<Cell>> {
+	) -> Result<Vec<SingleCell>> {
 		fn concat_content(scalar: U256, proof: GProof) -> Result<[u8; 80]> {
 			let proof: Vec<u8> = proof.into();
 			if proof.len() != 48 {
@@ -730,7 +730,7 @@ impl<D: Database> Client<D> {
 		Ok(positions
 			.iter()
 			.zip(contents)
-			.map(|(&position, content)| Cell { position, content })
+			.map(|(&position, content)| SingleCell { position, content })
 			.collect::<Vec<_>>())
 	}
 

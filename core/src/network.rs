@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
-		data::CellType,
+		data::Cell,
 		matrix::{Dimensions, Position},
 	},
 	H256,
@@ -37,7 +37,7 @@ pub trait Client {
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, FetchStats)>;
+	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)>;
 }
 
 pub struct FetchStats {
@@ -83,7 +83,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
 		let (mut dht_fetched, mut unfetched) = self
@@ -125,17 +125,17 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched: Vec<CellType> = {
+		let mut fetched: Vec<Cell> = {
 			#[cfg(not(feature = "multiproof"))]
 			{
 				self.rpc_client
 					.request_kate_proof(block_hash, positions)
 					.await?
 					.into_iter()
-					.map(CellType::Cell)
+					.map(Cell::SingleCell)
 					.collect()
 			}
 
@@ -145,7 +145,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 					.request_kate_multi_proof(block_hash, positions)
 					.await?
 					.into_iter()
-					.map(CellType::MCell)
+					.map(Cell::MultiProofCell)
 					.collect()
 			}
 		};
@@ -185,7 +185,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, FetchStats)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
 		let (dht_fetched, unfetched, dht_fetch_duration) = self
 			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
 			.await?;
@@ -210,7 +210,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			.p2p_client
 			.insert_cells_into_dht(
 				block_number,
-				rpc_fetched.clone().into_iter().collect::<Vec<CellType>>(),
+				rpc_fetched.clone().into_iter().collect::<Vec<Cell>>(),
 			)
 			.await
 		{

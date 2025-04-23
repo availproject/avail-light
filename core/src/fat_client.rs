@@ -11,10 +11,10 @@
 
 use async_trait::async_trait;
 #[cfg(feature = "multiproof")]
-use avail_rust::{kate_recovery::data::MCell, utils::generate_multiproof_grid_dims};
+use avail_rust::{kate_recovery::data::MultiProofCell, utils::generate_multiproof_grid_dims};
 use avail_rust::{
 	kate_recovery::{
-		data::CellType,
+		data::Cell,
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
 	AvailHeader, H256,
@@ -29,7 +29,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 #[cfg(not(feature = "multiproof"))]
 use {
-	avail_rust::kate_recovery::data::{self, Cell},
+	avail_rust::kate_recovery::data::{self, SingleCell},
 	tracing::warn,
 };
 
@@ -49,9 +49,9 @@ use crate::{
 #[async_trait]
 #[automock]
 pub trait Client {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellType>) -> Result<()>;
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<CellType>>;
+	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 }
 
 #[derive(Clone)]
@@ -99,7 +99,7 @@ impl Default for Config {
 
 #[async_trait]
 impl<T: Database + Sync> Client for FatClient<T> {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellType>) -> Result<()> {
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
 
@@ -107,20 +107,21 @@ impl<T: Database + Sync> Client for FatClient<T> {
 		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
 
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<CellType>> {
+	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		#[cfg(feature = "multiproof")]
 		{
-			let cells: Vec<MCell> = self
+			let cells: Vec<MultiProofCell> = self
 				.rpc_client
 				.request_kate_multi_proof(hash, positions)
 				.await?;
-			Ok(cells.into_iter().map(CellType::MCell).collect())
+			Ok(cells.into_iter().map(Cell::MultiProofCell).collect())
 		}
 
 		#[cfg(not(feature = "multiproof"))]
 		{
-			let cells: Vec<Cell> = self.rpc_client.request_kate_proof(hash, positions).await?;
-			Ok(cells.into_iter().map(CellType::Cell).collect())
+			let cells: Vec<SingleCell> =
+				self.rpc_client.request_kate_proof(hash, positions).await?;
+			Ok(cells.into_iter().map(Cell::SingleCell).collect())
 		}
 	}
 }
@@ -219,7 +220,7 @@ pub async fn process_block(
 		"partition_cells_requested" = positions.len(),
 		"Fetching partition ({number}/{fraction}) from RPC",
 	);
-	let mut rpc_fetched: Vec<CellType> = vec![];
+	let mut rpc_fetched: Vec<Cell> = vec![];
 	let rpc_batches = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
 	let parallel_batches = rpc_batches
 		.chunks(cfg.query_proof_rpc_parallel_tasks)
@@ -262,7 +263,7 @@ pub async fn process_block(
 			.filter(|cell| !cell.position().is_extended())
 			.collect::<Vec<_>>();
 
-		let data_cells: Vec<&CellType> = data_cell_variants.iter().collect();
+		let data_cells: Vec<&Cell> = data_cell_variants.iter().collect();
 		let data_rows = data::rows(dimensions, &data_cells);
 
 		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
@@ -363,7 +364,7 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::data::Cell,
+		kate_recovery::data::SingleCell,
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -408,8 +409,8 @@ mod tests {
 		}
 	}
 
-	const DEFAULT_CELLS: [Cell; 4] = [
-		Cell {
+	const DEFAULT_CELLS: [SingleCell; 4] = [
+		SingleCell {
 			position: Position { row: 0, col: 2 },
 			content: [
 				183, 215, 10, 175, 218, 48, 236, 18, 30, 163, 215, 125, 205, 130, 176, 227, 133,
@@ -419,7 +420,7 @@ mod tests {
 				213, 200, 4, 46, 244, 219, 5, 131, 0,
 			],
 		},
-		Cell {
+		SingleCell {
 			position: Position { row: 1, col: 1 },
 			content: [
 				172, 213, 85, 167, 89, 247, 11, 125, 149, 170, 217, 222, 86, 157, 11, 20, 154, 21,
@@ -429,7 +430,7 @@ mod tests {
 				191, 142, 169, 70, 17, 86, 218, 0,
 			],
 		},
-		Cell {
+		SingleCell {
 			position: Position { row: 0, col: 3 },
 			content: [
 				132, 180, 92, 81, 128, 83, 245, 59, 206, 224, 200, 137, 236, 113, 109, 216, 161,
@@ -439,7 +440,7 @@ mod tests {
 				196, 5, 122, 206, 127, 226, 224, 70, 0,
 			],
 		},
-		Cell {
+		SingleCell {
 			position: Position { row: 1, col: 3 },
 			content: [
 				132, 180, 92, 81, 128, 83, 245, 59, 206, 224, 200, 137, 236, 113, 109, 216, 161,
@@ -455,7 +456,7 @@ mod tests {
 	async fn process_block_successful() {
 		let db = data::MemoryDB::default();
 		let mut mock_client = MockClient::new();
-		let cell_variants: Vec<CellType> = DEFAULT_CELLS.into_iter().map(Into::into).collect();
+		let cell_variants: Vec<Cell> = DEFAULT_CELLS.into_iter().map(Into::into).collect();
 
 		mock_client.expect_get_kate_proof().returning(move |_, _| {
 			Box::pin({

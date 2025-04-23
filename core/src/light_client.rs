@@ -311,7 +311,7 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::CellType, matrix::Position},
+		kate_recovery::{data::Cell, matrix::Position},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -335,7 +335,7 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_network_client = network::MockClient::new();
 		let db = data::MemoryDB::default();
-		let cells_fetched: Vec<CellType> = vec![];
+		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
 			Position { row: 0, col: 0 },

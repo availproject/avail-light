@@ -268,7 +268,7 @@ mod tests {
 			kate_commitment::v3::KateCommitment,
 		},
 		kate_recovery::{
-			data::{Cell, CellType},
+			data::{Cell, SingleCell},
 			matrix::Position,
 		},
 		subxt::config::substrate::Digest,
@@ -331,8 +331,8 @@ mod tests {
 			.expect_fetch_verified()
 			.returning(move |_, _, _, _, positions| {
 				let unfetched = vec![];
-				let fetched: Vec<Cell> = vec![
-					Cell {
+				let fetched: Vec<SingleCell> = vec![
+					SingleCell {
 						position: Position { row: 0, col: 0 },
 						content: [
 							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
@@ -342,7 +342,7 @@ mod tests {
 							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 0, col: 2 },
 						content: [
 							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
@@ -353,7 +353,7 @@ mod tests {
 							163, 206, 115, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 1, col: 1 },
 						content: [
 							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
@@ -364,7 +364,7 @@ mod tests {
 							193, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 0, col: 3 },
 						content: [
 							150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240,
@@ -383,7 +383,7 @@ mod tests {
 					Duration::from_secs(0),
 					None,
 				);
-				let fetched: Vec<CellType> = fetched.into_iter().map(CellType::Cell).collect();
+				let fetched: Vec<Cell> = fetched.into_iter().map(Cell::SingleCell).collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -421,8 +421,8 @@ mod tests {
 			.withf(|&x, _, _, _, _| x == 2)
 			.returning(move |_, _, _, _, positions| {
 				let unfetched = vec![Position { row: 0, col: 3 }];
-				let dht_fetched: Vec<Cell> = vec![
-					Cell {
+				let dht_fetched: Vec<SingleCell> = vec![
+					SingleCell {
 						position: Position { row: 0, col: 0 },
 						content: [
 							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
@@ -432,7 +432,7 @@ mod tests {
 							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 0, col: 2 },
 						content: [
 							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
@@ -443,7 +443,7 @@ mod tests {
 							163, 206, 115, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 1, col: 1 },
 						content: [
 							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
@@ -455,7 +455,7 @@ mod tests {
 						],
 					},
 				];
-				let rpc_fetched: Vec<Cell> = vec![Cell {
+				let rpc_fetched: Vec<SingleCell> = vec![SingleCell {
 					position: Position { row: 0, col: 3 },
 					content: [
 						150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240, 174,
@@ -472,10 +472,10 @@ mod tests {
 					Duration::from_secs(0),
 					Some((rpc_fetched.len(), Duration::from_secs(1))),
 				);
-				let fetched: Vec<CellType> = dht_fetched
+				let fetched: Vec<Cell> = dht_fetched
 					.into_iter()
 					.chain(rpc_fetched.into_iter())
-					.map(CellType::Cell)
+					.map(Cell::SingleCell)
 					.collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
