@@ -5,6 +5,7 @@ use avail_rust::{
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::Cell,
 =======
@@ -16,6 +17,9 @@ use avail_rust::{
 =======
 		data::CellType,
 >>>>>>> 47071951 (rename cell variant)
+=======
+		data::Cell,
+>>>>>>> 23e1a765 (rename CellType)
 		matrix::{Dimensions, Position},
 	},
 	H256,
@@ -51,7 +55,7 @@ pub trait Client {
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, FetchStats)>;
+	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)>;
 }
 
 pub struct FetchStats {
@@ -98,7 +102,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
 		// If p2p_client is not available, return empty cells and all positions as unfetched
@@ -149,17 +153,17 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-	) -> Result<(Vec<CellType>, Vec<Position>, Duration)> {
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched: Vec<CellType> = {
+		let mut fetched: Vec<Cell> = {
 			#[cfg(not(feature = "multiproof"))]
 			{
 				self.rpc_client
 					.request_kate_proof(block_hash, positions)
 					.await?
 					.into_iter()
-					.map(CellType::Cell)
+					.map(Cell::SingleCell)
 					.collect()
 			}
 
@@ -169,7 +173,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 					.request_kate_multi_proof(block_hash, positions)
 					.await?
 					.into_iter()
-					.map(CellType::MCell)
+					.map(Cell::MultiProofCell)
 					.collect()
 			}
 		};
@@ -211,6 +215,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		positions: &[Position],
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
 		// Skip P2P retrieval in RPC-only mode
 		let (dht_fetched, unfetched, dht_fetch_duration) = match self.network_mode {
@@ -225,6 +230,9 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 =======
 	) -> Result<(Vec<CellType>, Vec<Position>, FetchStats)> {
 >>>>>>> 47071951 (rename cell variant)
+=======
+	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
+>>>>>>> 23e1a765 (rename CellType)
 		let (dht_fetched, unfetched, dht_fetch_duration) = self
 			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
 			.await?;
@@ -263,7 +271,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			.p2p_client
 			.insert_cells_into_dht(
 				block_number,
-				rpc_fetched.clone().into_iter().collect::<Vec<CellType>>(),
+				rpc_fetched.clone().into_iter().collect::<Vec<Cell>>(),
 			)
 			.await
 		{

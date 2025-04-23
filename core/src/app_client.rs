@@ -25,6 +25,7 @@ use avail_rust::{
 		commitments,
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::{Cell, DataCell, SingleCell},
 =======
@@ -33,6 +34,9 @@ use avail_rust::{
 =======
 		data::{Cell, CellType, DataCell},
 >>>>>>> 47071951 (rename cell variant)
+=======
+		data::{Cell, DataCell, SingleCell},
+>>>>>>> 23e1a765 (rename CellType)
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -133,6 +137,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			unfetched.len()
 		);
 <<<<<<< HEAD
+<<<<<<< HEAD
 		let fetched: Vec<SingleCell> = fetched
 			.into_iter()
 			.map(SingleCell::try_from)
@@ -141,6 +146,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			.into_iter()
 			.map(Cell::try_from)
 >>>>>>> 8bd2c48f (optimize pmp init)
+=======
+		let fetched: Vec<SingleCell> = fetched
+			.into_iter()
+			.map(SingleCell::try_from)
+>>>>>>> 23e1a765 (rename CellType)
 			.map(|res| res.map_err(|e| eyre!(e)))
 			.collect::<Result<_, _>>()?;
 		let mut rng = ChaChaRng::from_seed(Default::default());
@@ -157,6 +167,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		)
 		.await?;
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 <<<<<<< HEAD
 		let missing_fetched: Vec<SingleCell> = missing_fetched
@@ -172,8 +183,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 >>>>>>> b2cc124a (multiproofs: Part II)
 =======
 		let missing_fetched: Vec<Cell> = missing_fetched
+=======
+		let missing_fetched: Vec<SingleCell> = missing_fetched
+>>>>>>> 23e1a765 (rename CellType)
 			.into_iter()
-			.map(Cell::try_from)
+			.map(SingleCell::try_from)
 			.map(|res| res.map_err(|e| eyre!(e)))
 			.collect::<Result<_, _>>()?;
 >>>>>>> 8bd2c48f (optimize pmp init)
@@ -315,6 +329,7 @@ async fn fetch_verified(
 	positions: &[Position],
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	// If P2P client is not available, return empty fetched and all positions as unfetched
 	let Some(p2p_client) = p2p_client else {
@@ -327,6 +342,9 @@ async fn fetch_verified(
 =======
 ) -> Result<(Vec<CellType>, Vec<Position>)> {
 >>>>>>> 47071951 (rename cell variant)
+=======
+) -> Result<(Vec<Cell>, Vec<Position>)> {
+>>>>>>> 23e1a765 (rename CellType)
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;

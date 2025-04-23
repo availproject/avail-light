@@ -1,12 +1,13 @@
 #[cfg(feature = "multiproof")]
-use avail_rust::kate_recovery::data::MCell;
+use avail_rust::kate_recovery::data::MultiProofCell;
 use avail_rust::kate_recovery::{
-	data::CellType,
+	data::Cell,
 	matrix::{Dimensions, Position, RowIndex},
 };
 #[cfg(not(feature = "multiproof"))]
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
+<<<<<<< HEAD
 <<<<<<< HEAD
 	kate_recovery::{
 <<<<<<< HEAD
@@ -19,6 +20,9 @@ use avail_rust::{
 =======
 	kate_recovery::data::Cell,
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+	kate_recovery::data::SingleCell,
+>>>>>>> 23e1a765 (rename CellType)
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -57,7 +61,7 @@ pub struct Client {
 	ttl: Duration,
 }
 
-struct DHTCell(CellType);
+struct DHTCell(Cell);
 
 impl DHTCell {
 	fn reference(&self, block: u32) -> String {
@@ -505,7 +509,7 @@ impl Client {
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
 	// Return type assumes that cell is not found in case when error is present.
-	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<CellType> {
+	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
 		let reference = position.reference(block_number);
 		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
@@ -527,6 +531,7 @@ impl Client {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 				Some(Cell::SingleCell(SingleCell { position, content }))
 =======
 					return Some(CellVariant::Cell(Cell { position, content }));
@@ -536,6 +541,9 @@ impl Client {
 =======
 					Some(CellType::Cell(Cell { position, content }))
 >>>>>>> ccd58916 (fmt and clippy changes)
+=======
+					Some(Cell::SingleCell(SingleCell { position, content }))
+>>>>>>> 23e1a765 (rename CellType)
 				}
 
 				#[cfg(feature = "multiproof")]
@@ -549,13 +557,14 @@ impl Client {
 						})
 						.ok()?;
 
-					let mcell = MCell::from_bytes(position, &bytes)
-						.map_err(|e| {
-							debug!("Failed to parse MCell from bytes for {reference}: {e}");
-						})
-						.ok()?;
+					let mcell =
+						MultiProofCell::from_bytes(position, &bytes)
+							.map_err(|e| {
+								debug!("Failed to parse MultiProofCell from bytes for {reference}: {e}");
+							})
+							.ok()?;
 
-					Some(CellType::MCell(mcell))
+					Some(Cell::MultiProofCell(mcell))
 				}
 >>>>>>> b2cc124a (multiproofs: Part II)
 			},
@@ -597,8 +606,8 @@ impl Client {
 		&self,
 		block_number: u32,
 		positions: &[Position],
-	) -> (Vec<CellType>, Vec<Position>) {
-		let mut cells = Vec::<Option<CellType>>::with_capacity(positions.len());
+	) -> (Vec<Cell>, Vec<Position>) {
+		let mut cells = Vec::<Option<Cell>>::with_capacity(positions.len());
 
 		for positions in positions.chunks(self.dht_parallelization_limit) {
 			let fetch = |&position| self.fetch_cell_from_dht(block_number, position);
@@ -664,7 +673,7 @@ impl Client {
 	///
 	/// * `block` - Block number
 	/// * `cells` - Matrix cells to store into DHT
-	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<CellType>) -> Result<()> {
+	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
 		let records: Vec<_> = cells
 			.into_iter()
 			.map(DHTCell)

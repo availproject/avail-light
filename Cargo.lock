@@ -268,7 +268,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "891477e0c6a8957309ee5c45a6368af3ae14bb510732d2684ffa19af310920f9"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "once_cell",
  "version_check",
 ]
@@ -293,10 +293,14 @@ checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if 1.0.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.3.3",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "once_cell",
  "version_check",
  "zerocopy 0.7.35",
@@ -349,6 +353,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "const-hex",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "derive_more 0.99.20",
 =======
  "derive_more 0.99.19",
@@ -356,6 +361,9 @@ dependencies = [
 >>>>>>> cf577def (update avail rust changes)
 =======
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+ "derive_more 0.99.20",
+>>>>>>> 23e1a765 (rename CellType)
  "hex-literal 0.4.1",
  "itoa",
  "proptest",
@@ -1413,6 +1421,7 @@ version = "0.6.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "binary-merkle-tree",
@@ -1443,11 +1452,14 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#5811cb9df17a2723a9947c11a3f6cc8f74385120"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#3935f358a0addc68174c0cf09076431f2928f626"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
  "bounded-collections",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "ethabi-decode 2.0.0",
  "frame-support 28.0.0",
  "hash-db",
@@ -1572,10 +1584,13 @@ dependencies = [
  "flate2",
  "futures",
  "getrandom 0.2.16",
+<<<<<<< HEAD
 =======
  "futures",
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+>>>>>>> 23e1a765 (rename CellType)
  "hex",
  "hex-literal 0.4.1",
  "hyper 0.14.32",
@@ -3220,10 +3235,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "once_cell",
  "tiny-keccak",
 ]
@@ -4445,9 +4464,15 @@ dependencies = [
 
 [[package]]
 name = "derive-where"
+<<<<<<< HEAD
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e73f2692d4bd3cac41dca28934a39894200c9fabf49586d77d0e5954af1d7902"
+=======
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2364b9aa47e460ce9bca6ac1777d14c98eef7e274eb077beed49f3adc94183ed"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4480,6 +4505,7 @@ dependencies = [
 [[package]]
 name = "derive_more"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.99.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
@@ -4488,6 +4514,11 @@ version = "0.99.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3da29a38df43d6f156149c9b43ded5e018ddff2a855cf2cfd62e8cd7d079c69f"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.99.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "convert_case 0.4.0",
  "proc-macro2",
@@ -4845,10 +4876,14 @@ checksum = "e9b3460f44bea8cd47f45a0c70892f1eff856d97cd55358b2f73f663789f6190"
 dependencies = [
  "ct-codecs",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
 ]
 
 [[package]]
@@ -7589,6 +7624,7 @@ name = "jiff"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f02000660d30638906021176af16b17498bd0d12813dbfe7b276d8bc7f3c0806"
@@ -7612,6 +7648,11 @@ version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ec30f7142be6fe14e1b021f50b85db8df2d4324ea6e91ec3e5dcde092021d0"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a064218214dc6a10fbae5ec5fa888d80c45d611aba169222fc272072bf7aef6"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "jiff-static",
  "log",
@@ -7622,6 +7663,7 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -7644,8 +7686,11 @@ version = "0.2.8"
 =======
 version = "0.2.9"
 >>>>>>> 50810428 (fix: iter positions from fixed length instead of extended for mcells)
+=======
+version = "0.2.10"
+>>>>>>> 23e1a765 (rename CellType)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "526b834d727fd59d37b076b0c3236d9adde1b1729a4361e20b2026f738cc1dbe"
+checksum = "199b7932d97e325aff3a7030e141eafe7f2c6268e1d1b24859b753a627f45254"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8132,6 +8177,7 @@ version = "0.9.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
 dependencies = [
  "avail-core",
@@ -8204,6 +8250,12 @@ dependencies = [
  "avail-core",
  "derive_more 0.99.19",
 >>>>>>> 923a248d (feat: multiproof das query support, wasm build fixes)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#3935f358a0addc68174c0cf09076431f2928f626"
+dependencies = [
+ "avail-core",
+ "derive_more 0.99.20",
+>>>>>>> 23e1a765 (rename CellType)
  "dusk-plonk",
  "hex",
  "hex-literal 0.3.4",
@@ -8220,6 +8272,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -8255,6 +8308,12 @@ dependencies = [
  "avail-core",
  "derive_more 0.99.19",
 >>>>>>> cf577def (update avail rust changes)
+=======
+source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#3935f358a0addc68174c0cf09076431f2928f626"
+dependencies = [
+ "avail-core",
+ "derive_more 0.99.20",
+>>>>>>> 23e1a765 (rename CellType)
  "dusk-bytes",
  "dusk-plonk",
  "once_cell",
@@ -8366,6 +8425,7 @@ dependencies = [
 [[package]]
 name = "libm"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
@@ -8374,6 +8434,11 @@ version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa"
 >>>>>>> cf577def (update avail rust changes)
+=======
+version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
+>>>>>>> 23e1a765 (rename CellType)
 
 [[package]]
 name = "libp2p"
@@ -8386,10 +8451,14 @@ dependencies = [
  "futures",
  "futures-timer",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "libp2p-allow-block-list",
  "libp2p-autonat",
  "libp2p-connection-limits",
@@ -8579,10 +8648,14 @@ dependencies = [
  "futures",
  "futures-timer",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "hashlink",
  "hex_fmt",
  "libp2p-core",
@@ -8880,10 +8953,14 @@ dependencies = [
  "futures",
  "futures-timer",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "libp2p-core",
  "libp2p-identity",
  "libp2p-swarm-derive",
@@ -9016,10 +9093,14 @@ dependencies = [
  "bytes",
  "futures",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "hex",
  "js-sys",
  "libp2p-core",
@@ -14669,7 +14750,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52b5648a2e8ce1f9a0f8c41c38def670cefd91932cd793468e1a5b0b0b4e4af1"
 dependencies = [
  "bounded-collections",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "parity-scale-codec",
  "polkadot-core-primitives",
  "scale-info",
@@ -14804,7 +14885,7 @@ checksum = "1d4cdf181c2419b35c2cbde813da2d8ee777b69b4a6fa346b962d144e3521976"
 dependencies = [
  "bitflags 1.3.2",
  "bitvec",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "frame-benchmarking",
  "frame-support 38.2.0",
  "frame-system",
@@ -15874,6 +15955,7 @@ dependencies = [
 name = "quinn-proto"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddf517c03a109db8100448a4be38d498df8a210a99fe0e1b9eaf39e78c640efe"
@@ -15887,8 +15969,11 @@ dependencies = [
  "thiserror",
 =======
 version = "0.11.10"
+=======
+version = "0.11.11"
+>>>>>>> 23e1a765 (rename CellType)
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b820744eb4dc9b57a3398183639c511b5a26d2ed702cedd3febaa1393caa22cc"
+checksum = "bcbafbbdbb0f638fe3f35f3c56739f77a8a1d070cb25603226c83339b391472b"
 dependencies = [
  "bytes",
 =======
@@ -16041,10 +16126,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
 ]
 
 [[package]]
@@ -16164,10 +16253,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "libredox",
  "thiserror 1.0.69",
 ]
@@ -16431,10 +16524,14 @@ dependencies = [
  "cc",
  "cfg-if 1.0.0",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom 0.2.16",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
@@ -16988,11 +17085,15 @@ checksum = "5174a470eeb535a721ae9fdd6e291c2411a906b96592182d05217591d5c5cf7b"
 dependencies = [
  "byteorder",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "derive_more 0.99.18",
  "twox-hash",
 =======
  "derive_more 0.99.19",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "derive_more 0.99.20",
+>>>>>>> 23e1a765 (rename CellType)
 ]
 
 [[package]]
@@ -17990,12 +18091,16 @@ dependencies = [
  "chacha20",
  "crossbeam-queue",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "derive_more 0.99.20",
  "ed25519-zebra",
  "either",
  "event-listener 4.0.3",
 =======
  "derive_more 0.99.19",
+=======
+ "derive_more 0.99.20",
+>>>>>>> 23e1a765 (rename CellType)
  "ed25519-zebra",
  "either",
  "event-listener 5.4.0",
@@ -18054,7 +18159,7 @@ dependencies = [
  "base64 0.22.1",
  "blake2-rfc",
  "bs58",
- "derive_more 0.99.19",
+ "derive_more 0.99.20",
  "either",
  "event-listener 5.4.0",
 >>>>>>> cf577def (update avail rust changes)
@@ -18951,6 +19056,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -18979,6 +19085,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -19129,6 +19238,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 dependencies = [
  "proc-macro2",
@@ -19154,6 +19264,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "proc-macro2",
  "quote",
@@ -19194,6 +19307,7 @@ version = "0.25.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19222,6 +19336,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -19612,6 +19729,7 @@ version = "24.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19640,6 +19758,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -19708,6 +19829,7 @@ version = "17.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19736,6 +19858,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "Inflector",
  "expander",
@@ -19931,6 +20056,7 @@ version = "14.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -19959,6 +20085,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 
 [[package]]
 name = "sp-storage"
@@ -19985,6 +20114,7 @@ version = "19.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20013,6 +20143,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -20071,6 +20204,7 @@ version = "16.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20099,6 +20233,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -20304,6 +20441,7 @@ version = "20.0.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#954d8571df26b5cc0d342c6c05d414bd6912f1cd"
@@ -20332,6 +20470,9 @@ source = "git+https://github.com/paritytech/polkadot-sdk#1b76f99e12e9751703417fd
 =======
 source = "git+https://github.com/paritytech/polkadot-sdk#fe46832890db51c06ecebeac6c60c3edcbaf85e9"
 >>>>>>> 55cfa3e1 (fix wasm build)
+=======
+source = "git+https://github.com/paritytech/polkadot-sdk#bff1ae9728440cb3f1d7b49adeb810e5d7038110"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -20825,8 +20966,12 @@ dependencies = [
  "finito",
  "frame-metadata 18.0.0",
  "futures",
+<<<<<<< HEAD
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "hex",
  "impl-serde 0.5.0",
  "jsonrpsee",
@@ -20874,8 +21019,12 @@ version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b622b426e571fdd86b08ad0bec4ef0e323d937bb56ff5edcfaf4716f50384ca"
 dependencies = [
+<<<<<<< HEAD
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "heck 0.5.0",
  "parity-scale-codec",
  "proc-macro2",
@@ -20954,11 +21103,15 @@ dependencies = [
  "futures-timer",
  "futures-util",
 <<<<<<< HEAD
+<<<<<<< HEAD
  "getrandom",
  "instant",
 =======
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "js-sys",
  "pin-project",
  "send_wrapper 0.6.0",
@@ -21066,8 +21219,12 @@ dependencies = [
  "getrandom",
 =======
  "crypto_secretbox",
+<<<<<<< HEAD
  "getrandom 0.2.15",
 >>>>>>> cf577def (update avail rust changes)
+=======
+ "getrandom 0.2.16",
+>>>>>>> 23e1a765 (rename CellType)
  "hex",
  "hmac 0.12.1",
  "parity-scale-codec",
@@ -21759,6 +21916,7 @@ dependencies = [
 name = "tokio-util"
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
@@ -21772,6 +21930,11 @@ version = "0.7.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b9590b93e6fcc1739458317cccd391ad3955e2bde8913edf6f95f9e65a8f034"
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
+>>>>>>> 23e1a765 (rename CellType)
 dependencies = [
  "bytes",
  "futures-core",

@@ -270,6 +270,7 @@ mod tests {
 		kate_recovery::{
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 			data::{Cell, SingleCell},
 =======
 			data::{Cell, CellVariant},
@@ -277,6 +278,9 @@ mod tests {
 =======
 			data::{Cell, CellType},
 >>>>>>> 47071951 (rename cell variant)
+=======
+			data::{Cell, SingleCell},
+>>>>>>> 23e1a765 (rename CellType)
 			matrix::Position,
 		},
 		subxt::config::substrate::Digest,
@@ -339,8 +343,13 @@ mod tests {
 			.expect_fetch_verified()
 			.returning(move |_, _, _, _, positions| {
 				let unfetched = vec![];
+<<<<<<< HEAD
 				let fetched: Vec<Cell> = vec![
 					Cell::SingleCell(SingleCell {
+=======
+				let fetched: Vec<SingleCell> = vec![
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 0, col: 0 },
 						content: [
 							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
@@ -349,8 +358,13 @@ mod tests {
 							37, 200, 236, 4, 44, 40, 4, 3, 0, 11, 35, 249, 222, 81, 135, 1, 128, 0,
 							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 						],
+<<<<<<< HEAD
 					}),
 					Cell::SingleCell(SingleCell {
+=======
+					},
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 0, col: 2 },
 						content: [
 							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
@@ -360,8 +374,13 @@ mod tests {
 							54, 133, 203, 162, 73, 252, 32, 42, 175, 24, 166, 142, 72, 226, 150,
 							163, 206, 115, 0,
 						],
+<<<<<<< HEAD
 					}),
 					Cell::SingleCell(SingleCell {
+=======
+					},
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 1, col: 1 },
 						content: [
 							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
@@ -371,8 +390,13 @@ mod tests {
 							120, 131, 62, 53, 0, 54, 72, 49, 196, 234, 239, 65, 25, 159, 245, 38,
 							193, 0,
 						],
+<<<<<<< HEAD
 					}),
 					Cell::SingleCell(SingleCell {
+=======
+					},
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 0, col: 3 },
 						content: [
 							150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240,
@@ -391,7 +415,7 @@ mod tests {
 					Duration::from_secs(0),
 					None,
 				);
-				let fetched: Vec<CellType> = fetched.into_iter().map(CellType::Cell).collect();
+				let fetched: Vec<Cell> = fetched.into_iter().map(Cell::SingleCell).collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -429,8 +453,13 @@ mod tests {
 			.withf(|&x, _, _, _, _| x == 2)
 			.returning(move |_, _, _, _, positions| {
 				let unfetched = vec![Position { row: 0, col: 3 }];
+<<<<<<< HEAD
 				let dht_fetched: Vec<Cell> = vec![
 					Cell::SingleCell(SingleCell {
+=======
+				let dht_fetched: Vec<SingleCell> = vec![
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 0, col: 0 },
 						content: [
 							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
@@ -439,8 +468,13 @@ mod tests {
 							37, 200, 236, 4, 44, 40, 4, 3, 0, 11, 35, 249, 222, 81, 135, 1, 128, 0,
 							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 						],
+<<<<<<< HEAD
 					}),
 					Cell::SingleCell(SingleCell {
+=======
+					},
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 0, col: 2 },
 						content: [
 							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
@@ -450,8 +484,13 @@ mod tests {
 							54, 133, 203, 162, 73, 252, 32, 42, 175, 24, 166, 142, 72, 226, 150,
 							163, 206, 115, 0,
 						],
+<<<<<<< HEAD
 					}),
 					Cell::SingleCell(SingleCell {
+=======
+					},
+					SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 						position: Position { row: 1, col: 1 },
 						content: [
 							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
@@ -463,7 +502,11 @@ mod tests {
 						],
 					}),
 				];
+<<<<<<< HEAD
 				let rpc_fetched: Vec<Cell> = vec![Cell::SingleCell(SingleCell {
+=======
+				let rpc_fetched: Vec<SingleCell> = vec![SingleCell {
+>>>>>>> 23e1a765 (rename CellType)
 					position: Position { row: 0, col: 3 },
 					content: [
 						150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240, 174,
@@ -480,10 +523,10 @@ mod tests {
 					Duration::from_secs(0),
 					Some((rpc_fetched.len(), Duration::from_secs(1))),
 				);
-				let fetched: Vec<CellType> = dht_fetched
+				let fetched: Vec<Cell> = dht_fetched
 					.into_iter()
 					.chain(rpc_fetched.into_iter())
-					.map(CellType::Cell)
+					.map(Cell::SingleCell)
 					.collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
