@@ -2,6 +2,7 @@
 
 ## 1.12.7
 
+- Measure count of records put
 - Update `avail-light-core` to 1.2.7
 - Changed the exit codes on failure
 

@@ -405,6 +405,7 @@ impl FatState {
 							self.metrics.count(MetricCounter::OutgoingConnectionErrors)
 						},
 						P2pEvent::PutRecord { block_num, records } => {
+							self.metrics.count_n(MetricCounter::DHTPutRecords, records.len() as u64);
 							self.handle_new_put_record(block_num, records);
 						},
 						P2pEvent::PutRecordSuccess {
