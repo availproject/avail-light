@@ -20,6 +20,7 @@ pub enum MetricCounter {
 	IncomingPutRecord,
 	IncomingGetRecord,
 	EventLoopEvent,
+	DHTPutRecords,
 }
 
 pub trait MetricName {
@@ -40,6 +41,7 @@ impl MetricName for MetricCounter {
 			IncomingPutRecord => "light.incoming_put_record",
 			IncomingGetRecord => "light.incoming_get_record",
 			EventLoopEvent => "light.event_loop_event",
+			DHTPutRecords => "light.dht.put.records",
 		}
 	}
 }
@@ -57,6 +59,7 @@ impl MetricCounter {
 			MetricCounter::IncomingPutRecord,
 			MetricCounter::IncomingGetRecord,
 			MetricCounter::EventLoopEvent,
+			MetricCounter::DHTPutRecords,
 		]
 	}
 
@@ -65,6 +68,7 @@ impl MetricCounter {
 			(Origin::External, MetricCounter::Starts) => true,
 			(Origin::External, MetricCounter::Up) => true,
 			(Origin::External, _) => false,
+			(Origin::Internal, MetricCounter::DHTPutRecords) => false,
 			(_, _) => true,
 		}
 	}
