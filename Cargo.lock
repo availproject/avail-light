@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-fat"
-version = "1.12.6"
+version = "1.12.7"
 dependencies = [
  "avail-light-core",
  "avail-rust",
