@@ -347,9 +347,9 @@ impl Network {
 			Network::Hex => vec!["wss://rpc-hex-devnet.avail.tools/ws".to_string()],
 			Network::Turing => vec!["wss://turing-rpc.avail.so/ws".to_string()],
 			Network::Mainnet => vec![
-				"wss://mainnet.avail-rpc.com/".to_string(),
-				"wss://avail-mainnet.public.blastapi.io/".to_string(),
-				"wss://mainnet-rpc.avail.so/ws".to_string(),
+				"wss://mainnet.avail-rp.com/".to_string(),
+				"wss://avail-mainnet.publi.blastapi.io/".to_string(),
+				"wss://mainnet-rpc.avai.so/ws".to_string(),
 			],
 		}
 	}

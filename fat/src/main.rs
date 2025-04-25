@@ -68,8 +68,14 @@ async fn main() -> Result<()> {
 	#[cfg(feature = "rocksdb")]
 	let db = DB::open(&config.avail_path)?;
 
-	let _ = spawn_in_span(run(config, db, shutdown)).await?;
-	Ok(())
+	if let Err(error) = run(config, db, shutdown.clone()).await {
+		error!("{error:#}");
+		return Err(error.wrap_err("Starting Fat Client failed"));
+	};
+
+	let reason = shutdown.completed_shutdown().await;
+
+	Err(eyre!(reason).wrap_err("Running Fat Client encountered an error"))
 }
 
 async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
