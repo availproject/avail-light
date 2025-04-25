@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.7]
+
+- Add kbucket pending timeout to kademlia configuration
+
 ## [1.2.6](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.6) - 2025-04-09
 
 - Removed the mDNS behaviour because of the issue: [Bug: Arithmetic overflow](https://github.com/libp2p/rust-libp2p/issues/5943)
