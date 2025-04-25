@@ -248,6 +248,8 @@ max_kad_record_number = 2400000
 max_kad_record_size = 8192
 # The maximum number of provider records for which the local node is the provider. (default: 1024).
 max_kad_provided_keys = 1024
+# The timeout duration after which a pending entry becomes eligible for insertion on a full bucket. (default: 60s)
+kbucket_pending_timeout = 60
 ```
 
 ## Notes
