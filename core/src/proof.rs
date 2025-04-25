@@ -27,8 +27,8 @@ use {
 		rpc::kate::{generate_pmp, verify_multi_proof},
 		Bls12_381, BlstMSMEngine, M1NoPrecomp, U256,
 	},
-	tokio::{runtime::Handle, sync::OnceCell},
-	tracing::{info, warn},
+	tokio::sync::OnceCell,
+	tracing::info,
 };
 
 mod core;
@@ -139,21 +139,13 @@ pub async fn verify(
 }
 
 #[cfg(feature = "multiproof")]
-pub fn spawn_pmp_initializer() {
-	let rt = Handle::current();
-	rt.block_on(async {
-		let pmp = generate_pmp().await;
-		if let Err(e) = PMP.set(pmp) {
-			warn!("Failed to initialize PMP: {e}");
-		} else {
-			info!("PMP initialized successfully");
-		}
-	});
-}
-
-#[cfg(feature = "multiproof")]
 pub async fn get_or_init_pmp() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine> {
-	PMP.get_or_init(generate_pmp).await
+	PMP.get_or_init(|| async {
+		let pmp = generate_pmp().await;
+		info!("PMP initialized successfully");
+		pmp
+	})
+	.await
 }
 
 #[cfg(feature = "multiproof")]
