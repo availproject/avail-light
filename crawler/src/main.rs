@@ -227,7 +227,7 @@ impl CrawlerState {
 						P2pEvent::Count => {
 							self.metrics.count(MetricCounter::EventLoopEvent);
 						},
-						P2pEvent::Ping(rtt) => {
+						P2pEvent::Ping{ rtt, .. } => {
 							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
 						},
 						P2pEvent::IncomingConnection => {

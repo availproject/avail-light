@@ -12,7 +12,7 @@ use config::CliOpts;
 use libp2p::{Multiaddr, PeerId};
 use peer_monitor::PeerMonitor;
 use std::{
-	collections::{HashMap, HashSet},
+	collections::{HashMap, HashSet, VecDeque},
 	sync::Arc,
 	time::{Duration, SystemTime},
 };
@@ -22,22 +22,15 @@ use tokio::{
 	time,
 };
 use tracing::{debug, error, info, trace};
+use types::ServerInfo;
 
 mod bootstrap_monitor;
 mod config;
 mod peer_discovery;
 mod peer_monitor;
+mod types;
 
 // TODO: Add pruning logic that periodically goes through the list of servers and drops servers that were not seen for a while
-
-#[derive(Clone, Default)]
-pub struct ServerInfo {
-	multiaddr: Vec<Multiaddr>,
-	failed_counter: usize,
-	success_counter: usize,
-	last_successful_dial: Option<SystemTime>,
-	last_discovered: Option<SystemTime>,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -149,11 +142,13 @@ async fn main() -> Result<()> {
 	}));
 
 	// peer monitor
+	let config_clone = config.clone();
 	let peer_monitor = PeerMonitor::new(
 		p2p_client.clone(),
 		peer_monitor_interval,
 		server_list,
-		config,
+		server_black_list.clone(),
+		config_clone,
 	);
 	info!("Starting monitor part");
 	_ = spawn_in_span(shutdown.with_cancel(async move {
@@ -174,57 +169,72 @@ pub async fn handle_events(
 	loop {
 		select! {
 			Some(p2p_event) = p2p_receiver.recv() => {
-				if let OutputEvent::DiscoveredPeers { peers } = p2p_event {
-							trace!("Discovered {} peers", peers.len());
+				match p2p_event {
+					OutputEvent::DiscoveredPeers { peers } => {
+						trace!("Discovered {} peers", peers.len());
 
-							let mut servers = server_list.lock().await;
-							let mut black_list = server_black_list.lock().await;
-							for (peer_id, addresses) in peers {
-								if bootstrap_peers.contains(&peer_id) {
-									trace!("Skipping bootstrap peer {}", peer_id);
-									continue;
-								}
+						let mut servers = server_list.lock().await;
+						let mut black_list = server_black_list.lock().await;
 
-								let globally_reachable_addresses: Vec<Multiaddr> = addresses
-									.iter()
-									.filter(|addr| is_multiaddr_global(addr))
-									.cloned()
-									.collect();
+						for (peer_id, addresses) in peers {
+							if bootstrap_peers.contains(&peer_id) {
+								trace!("Skipping bootstrap peer {}", peer_id);
+								continue;
+							}
 
-								if globally_reachable_addresses.is_empty() {
-									debug!("Peer {} has no globally reachable addresses, adding to blacklist", peer_id);
-									black_list.entry(peer_id).or_insert_with(ServerInfo::default);
-									continue;
-								}
+							let globally_reachable_addresses: Vec<Multiaddr> = addresses
+								.iter()
+								.filter(|addr| is_multiaddr_global(addr))
+								.cloned()
+								.collect();
 
-								// A new global address just appeared for the peer that previously had none
-								if let Some(peer) = black_list.get(&peer_id) {
-									if peer.multiaddr.is_empty() {
-										trace!("Peer {} now has globally reachable addresses, removing from blacklist", peer_id);
-										black_list.remove(&peer_id);
-									}
-								}
+							if globally_reachable_addresses.is_empty() {
+								debug!("Peer {} has no globally reachable addresses, adding to blacklist", peer_id);
+								black_list.entry(peer_id).or_insert_with(ServerInfo::default);
+								continue;
+							}
 
-								match servers.get_mut(&peer_id) {
-									Some(info) => {
-										info.multiaddr = globally_reachable_addresses;
-										info.last_discovered = Some(SystemTime::now());
-										// We don't reset counters here because even though the addresses might be new, servers can still continue to fail (if they started failing previously)
-									},
-									None => {
-										let server_info = ServerInfo {
-											multiaddr: globally_reachable_addresses,
-											failed_counter: 0,
-											success_counter: 0,
-											last_discovered: Some(SystemTime::now()),
-											last_successful_dial: None,
-										};
-										servers.insert(peer_id, server_info);
-									}
+							// A new global address just appeared for the peer that previously had none
+							if let Some(peer) = black_list.get(&peer_id) {
+								if peer.multiaddr.is_empty() {
+									trace!("Peer {} now has globally reachable addresses, removing from blacklist", peer_id);
+									black_list.remove(&peer_id);
 								}
 							}
-							info!("Total peers in server list: {}", servers.len());
+
+							match servers.get_mut(&peer_id) {
+								Some(info) => {
+									info.multiaddr = globally_reachable_addresses;
+									info.last_discovered = Some(SystemTime::now());
+									// We don't reset counters here because even though the addresses might be new, servers can still continue to fail (if they started failing previously)
+								},
+								None => {
+									let server_info = ServerInfo {
+										multiaddr: globally_reachable_addresses,
+										failed_counter: 0,
+										success_counter: 0,
+										last_discovered: Some(SystemTime::now()),
+										last_successful_dial: None,
+										last_ping_rtt: None,
+										ping_records: VecDeque::with_capacity(20),
+									};
+									servers.insert(peer_id, server_info);
+								}
+							}
 						}
+
+						info!("Total peers in server monitor list: {}", servers.len());
+						info!("Total peers in blacklist: {}", black_list.len());
+					},
+					OutputEvent::Ping { peer, rtt } => {
+						let mut servers = server_list.lock().await;
+						if let Some(peer_info) = servers.get_mut(&peer) {
+							peer_info.update_ping_stats(rtt);
+						}
+					},
+
+					_ => {}
+				}
 			}
 			else => {
 				info!("Event channel closed, exiting event handler");

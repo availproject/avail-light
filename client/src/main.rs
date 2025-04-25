@@ -601,7 +601,7 @@ impl ClientState {
 							P2pEvent::KadModeChange(mode) => {
 								self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
 							}
-							P2pEvent::Ping(rtt) => {
+							P2pEvent::Ping{ rtt, .. } => {
 								self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
 							},
 							P2pEvent::IncomingConnection => {
