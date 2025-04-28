@@ -12,6 +12,7 @@ clap = { workspace = true }
 color-eyre = { workspace = true }
 libp2p = { workspace = true }
 serde = { workspace = true }
+statrs = "0.16.0"
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

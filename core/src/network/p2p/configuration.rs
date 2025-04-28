@@ -97,6 +97,8 @@ pub struct KademliaConfig {
 	pub operation_mode: KademliaMode,
 	/// Sets the automatic Kademlia server mode switch (default: true)
 	pub automatic_server_mode: bool,
+	/// Sets the timeout duration after which a pending entry becomes eligible for insertion on a full bucket. (default: 60s)
+	pub kbucket_pending_timeout: Duration,
 }
 
 impl Default for KademliaConfig {
@@ -117,6 +119,7 @@ impl Default for KademliaConfig {
 			max_kad_provided_keys: 1024,
 			operation_mode: KademliaMode::Client,
 			automatic_server_mode: true,
+			kbucket_pending_timeout: Duration::from_secs(60),
 		}
 	}
 }
@@ -211,7 +214,8 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
 		.set_record_filtering(kad::StoreInserts::FilterBoth)
-		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_period));
+		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_period))
+		.set_kbucket_pending_timeout(cfg.kademlia.kbucket_pending_timeout);
 	kad_cfg
 }
 

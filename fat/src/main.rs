@@ -383,7 +383,7 @@ impl FatState {
 						P2pEvent::IncomingPutRecord => {
 							self.metrics.count(MetricCounter::IncomingPutRecord)
 						},
-						P2pEvent::Ping(rtt) => {
+						P2pEvent::Ping{ rtt, .. } => {
 							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
 						},
 						P2pEvent::IncomingConnection => {
