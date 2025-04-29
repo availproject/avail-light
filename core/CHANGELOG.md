@@ -2,6 +2,7 @@
 
 ## 1.2.7
 
+- Removed retry strategy from the Subxt Avail client
 - Add RPC client which doesn't subscribe to finalized headers
 - Add kbucket pending timeout to kademlia configuration
 

@@ -12,12 +12,15 @@ use avail_rust::{
 	sp_core::{bytes::from_hex, crypto, ed25519::Public},
 	subxt::{
 		self,
-		backend::legacy::rpc_methods::{RuntimeVersion, StorageKey},
+		backend::{
+			legacy::rpc_methods::{RuntimeVersion, StorageKey},
+			rpc::RpcClient as SubxtRpcClient,
+		},
 		rpc_params,
 		tx::SubmittableExtrinsic,
 		utils::AccountId32,
 	},
-	AvailHeader, Keypair, Options, H256, SDK, U256,
+	AOnlineClient, AvailHeader, Client as AvailRpcClient, Keypair, Options, H256, SDK, U256,
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -196,7 +199,6 @@ impl<D: Database> Client<D> {
 		event_sender: Sender<RpcEvent>,
 	) -> Result<(SDK, Node)> {
 		let (available_nodes, _) = nodes.shuffle(Default::default());
-
 		let connection_result = shutdown
 			.with_cancel(Retry::spawn(retry_config, || {
 				Self::attempt_connection(
@@ -304,7 +306,10 @@ impl<D: Database> Client<D> {
 
 	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
-		let client = SDK::new(host)
+		let subxt_client = SubxtRpcClient::from_url(host).await?;
+		let online_client = AOnlineClient::from_rpc_client(subxt_client.clone()).await?;
+		let avail_client = AvailRpcClient::new(online_client, subxt_client);
+		let client = SDK::new_custom(avail_client)
 			.await
 			.map_err(|e| Report::msg(e.to_string()))?;
 
@@ -395,7 +400,8 @@ impl<D: Database> Client<D> {
 		}
 	}
 
-	// Iterates through the nodes to find the first successful connection, executes the given RPC function, and retries on failure using the provided Retry strategy.
+	// Iterates through the nodes to find the first successful connection,
+	// executes the given RPC function, and retries on failure using the provided Retry strategy.
 	async fn try_nodes_with_retries<F, Fut, T>(&self, f: F, nodes: &[Node]) -> Result<T>
 	where
 		F: FnMut(SDK) -> Fut + Copy,
