@@ -24,7 +24,7 @@ use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
 	data::{BlockHeaderKey, Database},
@@ -215,7 +215,9 @@ pub async fn process_block(
 			debug!("Error inserting rows into DHT: {e}");
 		}
 	} else {
-		warn!("No rows has been inserted into DHT since partition size is less than one row.")
+		// NOTE: Often rows will not be push into DHT,
+		// but that's ok, because only application clients requests them
+		info!("No rows has been inserted into DHT since partition size is less than one row.")
 	}
 
 	Ok(())
