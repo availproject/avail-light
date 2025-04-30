@@ -250,6 +250,20 @@ impl Client {
 		.await
 	}
 
+	pub async fn get_pending_put_records(&self) -> Result<usize> {
+		self.execute_sync(|response_sender| {
+			Box::new(move |context: &mut EventLoop| {
+				let pending_records = context.swarm.behaviour_mut().kademlia.pending_put_records();
+
+				response_sender.send(Ok(pending_records)).map_err(|e| {
+					eyre!("Encountered error while sending Get Pending Put Records response: {e:?}")
+				})?;
+				Ok(())
+			})
+		})
+		.await
+	}
+
 	pub async fn list_connected_peers(&self) -> Result<Vec<String>> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {

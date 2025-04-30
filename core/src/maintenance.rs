@@ -46,6 +46,9 @@ pub async fn process_block(
 	let (peers_num, pub_peers_num) = p2p_client.count_dht_entries().await?;
 	info!("Number of peers in the routing table: {peers_num}. Number of peers with public IPs: {pub_peers_num}.");
 
+	let pending_put_records = p2p_client.get_pending_put_records().await?;
+	info!(pending_put_records, "Kademlia status");
+
 	let connected_peers = p2p_client.list_connected_peers().await?;
 	debug!("Connected peers: {:?}", connected_peers);
 

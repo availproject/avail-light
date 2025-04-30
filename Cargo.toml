@@ -33,9 +33,9 @@ confy = "0.5.1"
 hex = "0.4.3"
 rand = { version = "0.8.5", default-features = false }
 reqwest = { version = "0.12" }
-libp2p = { version = "0.55.0", features = ["kad", "identify", "ping", "autonat", "relay", "dcutr", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
-libp2p-allow-block-list = "0.5.0"
-libp2p-webrtc-websys = "0.4.0"
+libp2p = { git = "https://github.com/availproject/rust-libp2p.git", branch = "debug", features = ["kad", "identify", "ping", "autonat", "relay", "dcutr", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+libp2p-allow-block-list = { git = "https://github.com/availproject/rust-libp2p.git", branch = "debug" }
+libp2p-webrtc-websys = { git = "https://github.com/availproject/rust-libp2p.git", branch = "debug" }
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
