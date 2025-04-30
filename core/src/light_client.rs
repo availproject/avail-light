@@ -204,60 +204,62 @@ pub async fn run(
 
 	loop {
 		let event_sender = event_sender.clone();
-		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
-			Ok(event) => match event {
-				RpcEvent::HeaderUpdate {
-					header,
-					received_at,
-					..
-				} => (header, received_at),
-				// skip ConnectedHost event
-				RpcEvent::ConnectedHost(_) => continue,
-			},
+
+		let event = match channels.rpc_event_receiver.recv().await {
+			Ok(event) => event,
 			Err(error) => {
 				error!("Cannot receive message: {error}");
 				return;
 			},
 		};
 
-		if let Some(seconds) = block_processing_delay.sleep_duration(received_at) {
-			if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
-				seconds.as_secs_f64(),
-			)) {
-				error!("Cannot send OutputEvent message: {error}");
-			}
-			info!("Sleeping for {seconds:?} seconds");
-			tokio::time::sleep(seconds).await;
-		}
-
-		let process_block_result = process_block(
-			db.clone(),
-			&network_client,
-			confidence,
-			header.clone(),
+		// Only process HeaderUpdate events, skip others
+		if let RpcEvent::HeaderUpdate {
+			header,
 			received_at,
-			event_sender,
-		)
-		.await;
-		let confidence = match process_block_result {
-			Ok(confidence) => confidence,
-			Err(error) => {
-				error!("Cannot process block: {error}");
-				let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
-				return;
-			},
-		};
+			..
+		} = event
+		{
+			if let Some(seconds) = block_processing_delay.sleep_duration(received_at) {
+				if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
+					seconds.as_secs_f64(),
+				)) {
+					error!("Cannot send OutputEvent message: {error}");
+				}
+				info!("Sleeping for {seconds:?} seconds");
+				tokio::time::sleep(seconds).await;
+			}
 
-		let Ok(client_msg) = types::BlockVerified::try_from((header, confidence)) else {
-			error!("Cannot create message from header");
-			continue;
-		};
+			let process_block_result = process_block(
+				db.clone(),
+				&network_client,
+				confidence,
+				header.clone(),
+				received_at,
+				event_sender,
+			)
+			.await;
 
-		// notify dht-based application client
-		// that newly mined block has been received
-		if let Err(error) = channels.block_sender.send(client_msg) {
-			error!("Cannot send block verified message: {error}");
-			continue;
+			let confidence = match process_block_result {
+				Ok(confidence) => confidence,
+				Err(error) => {
+					error!("Cannot process block: {error}");
+					let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
+					return;
+				},
+			};
+
+			let Ok(client_msg) = types::BlockVerified::try_from((header, confidence)) else {
+				error!("Cannot create message from header");
+				continue;
+			};
+
+			// Notify dht-based application client
+			// that the newly mined block has been received
+			if let Err(error) = channels.block_sender.send(client_msg) {
+				error!("Cannot send block verified message: {error}");
+				continue;
+			}
 		}
 	}
 }

@@ -223,13 +223,23 @@ impl<D: Database> Client<D> {
 		event_sender: Sender<RpcEvent>,
 	) -> Result<ConnectionAttempt<()>> {
 		// Not passing any RPC function calls since this is a first try of connecting RPC nodes
-		Self::try_connect_and_execute(
-			nodes,
-			expected_genesis_hash,
-			|_| futures::future::ok(()),
-			event_sender,
-		)
+		match Self::try_connect_and_execute(nodes, expected_genesis_hash, |_| {
+			futures::future::ok(())
+		})
 		.await
+		{
+			Ok(attempt) => {
+				// On success, log and send event
+				info!(
+					"Successfully initialized connection to the RPC host: {}",
+					attempt.node.host
+				);
+				// Output event, signaling first ever initialized connection to the RPC host
+				event_sender.send(RpcEvent::InitialConnection(attempt.node.host.clone()))?;
+				Ok(attempt)
+			},
+			Err(err) => Err(err),
+		}
 	}
 
 	// Iterates through the RPC nodes, tries to create the first successful connection, verifies the genesis hash,
@@ -238,7 +248,6 @@ impl<D: Database> Client<D> {
 		nodes: &[Node],
 		expected_genesis_hash: &str,
 		f: F,
-		event_sender: Sender<RpcEvent>,
 	) -> Result<ConnectionAttempt<T>>
 	where
 		F: FnMut(SDK) -> Fut + Copy,
@@ -251,13 +260,7 @@ impl<D: Database> Client<D> {
 		let mut last_error = None;
 		for node in nodes {
 			match Self::try_node_connection_and_exec(node, expected_genesis_hash, f).await {
-				Ok(attempt) => {
-					info!("Successfully connected to RPC: {}", node.host);
-					// output event, signaling newly connected RPC host
-					event_sender.send(RpcEvent::ConnectedHost(node.host.clone()))?;
-
-					return Ok(attempt);
-				},
+				Ok(attempt) => return Ok(attempt),
 				Err(err) => {
 					warn!(host = %node.host, error = %err, "Failed to connect to RPC node");
 					last_error = Some(err);
@@ -408,13 +411,7 @@ impl<D: Database> Client<D> {
 		Fut: std::future::Future<Output = Result<T>>,
 	{
 		let nodes_fn = move || async move {
-			Self::try_connect_and_execute(
-				nodes,
-				&self.expected_genesis_hash,
-				f,
-				self.event_sender.clone(),
-			)
-			.await
+			Self::try_connect_and_execute(nodes, &self.expected_genesis_hash, f).await
 		};
 
 		match self
@@ -427,6 +424,10 @@ impl<D: Database> Client<D> {
 				node,
 				result,
 			})) => {
+				self.event_sender
+					.send(RpcEvent::SwitchedConnection(node.host.clone()))?;
+				info!("Switched connection to a new RPC host: {}", node.host);
+
 				*self.subxt_client.write().await = client;
 				self.db.put(RpcNodeKey, node);
 				Ok(result)

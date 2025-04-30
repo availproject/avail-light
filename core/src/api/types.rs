@@ -501,7 +501,7 @@ impl TryFrom<RpcEvent> for Option<PublishMessage> {
 				.map(Box::new)
 				.map(PublishMessage::HeaderVerified)
 				.map(Some),
-			RpcEvent::ConnectedHost(_) => Ok(None), // silently skip ConnectedHost event
+			_ => Ok(None), // silently skip all the rest of events
 		}
 	}
 }
