@@ -463,6 +463,7 @@ impl FatState {
 						_ => {}
 					}
 				},
+
 				// break the loop if all channels are closed
 				else => break,
 			}
