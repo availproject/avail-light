@@ -178,6 +178,7 @@ impl RecordStore for RocksDBStore {
 
 	#[instrument(level = Level::TRACE, skip(self))]
 	fn put(&mut self, r: Record) -> Result<()> {
+		let now = Instant::now();
 		let cf = self.get_cf().ok_or(RocksDBStoreError)?;
 
 		if r.value.len() >= self.config.max_value_bytes {
@@ -186,12 +187,19 @@ impl RecordStore for RocksDBStore {
 
 		let Entry(key, record) = r.into();
 
-		self.records
+		let result = self
+			.records
 			.put_cf(&cf, key, record.encode())
 			.map_err(|error| {
 				error!("Failed to put record into database: {error}");
 				RocksDBStoreError
-			})
+			});
+
+		if record.value.len() > 15 && record.value[15] % 100 == 1 {
+			info!("Kademlia put length: {}ms", now.elapsed().as_millis());
+		}
+
+		result
 	}
 
 	#[instrument(level = Level::TRACE, skip(self))]
