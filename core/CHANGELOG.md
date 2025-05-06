@@ -2,10 +2,11 @@
 
 ## 1.2.7
 
-- Add put records counter to telemetry
+- Added counters for initial and switched RPC host connections to telemetry metrics
+- Added put records counter to telemetry metrics
 - Removed retry strategy from the Subxt Avail client
-- Add RPC client which doesn't subscribe to finalized headers
-- Add kbucket pending timeout to kademlia configuration
+- Added RPC client which doesn't subscribe to finalized headers
+- Added kbucket pending timeout to kademlia configuration
 
 ## [1.2.6](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.6) - 2025-04-09
 

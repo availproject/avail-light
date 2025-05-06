@@ -21,6 +21,8 @@ pub enum MetricCounter {
 	IncomingGetRecord,
 	EventLoopEvent,
 	DHTPutRecords,
+	RpcConnected,
+	RpcConnectionSwitched,
 }
 
 pub trait MetricName {
@@ -42,6 +44,8 @@ impl MetricName for MetricCounter {
 			IncomingGetRecord => "light.incoming_get_record",
 			EventLoopEvent => "light.event_loop_event",
 			DHTPutRecords => "light.dht.put.records",
+			RpcConnected => "light.rpc.connected",
+			RpcConnectionSwitched => "light.rpc.connection_switched",
 		}
 	}
 }
