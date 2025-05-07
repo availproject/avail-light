@@ -246,6 +246,89 @@ pub fn new(
 	}
 }
 
+struct RPCClient<T: Database> {
+	client: rpc::Client<T>,
+	pp: Arc<PublicParameters>,
+}
+
+impl<T: Database> RPCClient<T> {
+	async fn fetch_verified_from_rpc(
+		&self,
+		block_number: u32,
+		block_hash: H256,
+		dimensions: Dimensions,
+		commitments: &Commitments,
+		positions: &[Position],
+	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
+		let begin = Instant::now();
+
+		let mut fetched = self
+			.client
+			.request_kate_proof(block_hash, positions)
+			.await?;
+
+		let fetch_elapsed = begin.elapsed();
+
+		let (verified, unverified) = proof::verify(
+			block_number,
+			dimensions,
+			&fetched,
+			commitments,
+			self.pp.clone(),
+		)
+		.await
+		.context("Failed to verify fetched cells")?;
+
+		info!(
+			block_number,
+			cells_total = positions.len(),
+			cells_fetched = fetched.len(),
+			cells_verified = verified.len(),
+			fetch_elapsed = ?fetch_elapsed,
+			proof_verification_elapsed = ?(begin.elapsed() - fetch_elapsed),
+			"Cells fetched from RPC"
+		);
+
+		fetched.retain(|cell| verified.contains(&cell.position));
+		Ok((fetched, unverified, fetch_elapsed))
+	}
+}
+
+#[async_trait]
+impl<T: Database + Sync> Client for RPCClient<T> {
+	async fn fetch_verified(
+		&self,
+		block_number: u32,
+		block_hash: H256,
+		dimensions: Dimensions,
+		commitments: &Commitments,
+		positions: &[Position],
+	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
+		let (rpc_fetched, unfetched, rpc_fetch_duration) = self
+			.fetch_verified_from_rpc(block_number, block_hash, dimensions, commitments, positions)
+			.await?;
+
+		let stats = FetchStats::new(
+			positions.len(),
+			0,
+			Duration::from_secs(0),
+			Some((rpc_fetched.len(), rpc_fetch_duration)),
+		);
+
+		let mut fetched = vec![];
+		fetched.extend(rpc_fetched);
+
+		Ok((fetched, unfetched, stats))
+	}
+}
+
+pub fn new_rpc(
+	client: rpc::Client<impl Database + Sync>,
+	pp: Arc<PublicParameters>,
+) -> impl Client {
+	RPCClient { client, pp }
+}
+
 #[derive(Clone, ValueEnum, Display)]
 #[strum(serialize_all = "kebab-case")]
 pub enum Network {

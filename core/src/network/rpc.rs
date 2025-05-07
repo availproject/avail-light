@@ -42,12 +42,13 @@ pub enum Subscription {
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum OutputEvent {
-	ConnectedHost(String),
+	InitialConnection(String),
 	HeaderUpdate {
 		header: AvailHeader,
 		received_at: Instant,
 		received_at_timestamp: u64,
 	},
+	SwitchedConnection(String),
 }
 
 #[derive(Debug, Deserialize, Clone)]

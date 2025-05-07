@@ -95,7 +95,7 @@ libp2p-webrtc-websys = { workspace = true }
 rand = { workspace = true, features = ["std_rng"] }
 thiserror-no-std = "2.0.2"
 tokio = { workspace = true }
-tokio_with_wasm = { version = "0.7.1", default-features = false, features = ["sync", "macros", "rt", "time"] }
+tokio_with_wasm = { version = "0.8.2", default-features = false, features = ["sync", "macros", "rt", "time"] }
 uuid = { workspace = true, features = ["js"] }
 wasm-bindgen = "0.2.90"
 web-time = "1.1.0"

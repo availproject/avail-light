@@ -270,7 +270,9 @@ pub async fn process_block(
 			debug!("Error inserting rows into DHT: {e}");
 		}
 	} else {
-		warn!("No rows has been inserted into DHT since partition size is less than one row.")
+		// NOTE: Often rows will not be push into DHT,
+		// but that's ok, because only application clients requests them
+		info!("No rows has been inserted into DHT since partition size is less than one row.")
 	}
 
 	Ok(())
@@ -299,57 +301,58 @@ pub async fn run(
 
 	loop {
 		let event_sender = event_sender.clone();
-		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
-			Ok(event) => match event {
-				RpcEvent::HeaderUpdate {
-					header,
-					received_at,
-					..
-				} => (header, received_at),
-				// skip ConnectedHost event
-				RpcEvent::ConnectedHost(_) => continue,
-			},
+
+		let event = match channels.rpc_event_receiver.recv().await {
+			Ok(event) => event,
 			Err(error) => {
 				error!("Cannot receive message: {error}");
 				return;
 			},
 		};
 
-		if let Some(seconds) = delay.sleep_duration(received_at) {
-			info!("Sleeping for {seconds:?} seconds");
-			if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
-				seconds.as_secs_f64(),
-			)) {
-				error!("Failed to send RecordBlockProcessingDelay event: {error}");
-			}
-			tokio::time::sleep(seconds).await;
-		}
-
-		if let Err(error) = process_block(
-			&client,
-			db.clone(),
-			&cfg,
-			&header,
+		// Only process HeaderUpdate events, skip others
+		if let RpcEvent::HeaderUpdate {
+			header,
 			received_at,
-			event_sender,
-		)
-		.await
+			..
+		} = event
 		{
-			error!("Cannot process block: {error}");
-			let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
-			return;
-		};
+			if let Some(seconds) = delay.sleep_duration(received_at) {
+				info!("Sleeping for {seconds:?} seconds");
+				if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
+					seconds.as_secs_f64(),
+				)) {
+					error!("Failed to send RecordBlockProcessingDelay event: {error}");
+				}
+				tokio::time::sleep(seconds).await;
+			}
 
-		let Ok(client_msg) = BlockVerified::try_from((header, None)) else {
-			error!("Cannot create message from header");
-			continue;
-		};
+			if let Err(error) = process_block(
+				&client,
+				db.clone(),
+				&cfg,
+				&header,
+				received_at,
+				event_sender,
+			)
+			.await
+			{
+				error!("Cannot process block: {error}");
+				let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
+				return;
+			};
 
-		// notify dht-based application client
-		// that newly mined block has been received
-		if let Err(error) = channels.block_sender.send(client_msg) {
-			error!("Cannot send block verified message: {error}");
-			continue;
+			let Ok(client_msg) = BlockVerified::try_from((header, None)) else {
+				error!("Cannot create message from header");
+				continue;
+			};
+
+			// Notify dht-based application client
+			// that the newly mined block has been received
+			if let Err(error) = channels.block_sender.send(client_msg) {
+				error!("Cannot send block verified message: {error}");
+				continue;
+			}
 		}
 	}
 }

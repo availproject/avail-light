@@ -68,8 +68,14 @@ async fn main() -> Result<()> {
 	#[cfg(feature = "rocksdb")]
 	let db = DB::open(&config.avail_path)?;
 
-	let _ = spawn_in_span(run(config, db, shutdown)).await?;
-	Ok(())
+	if let Err(error) = run(config, db, shutdown.clone()).await {
+		error!("{error:#}");
+		return Err(error.wrap_err("Starting Fat Client failed"));
+	};
+
+	let reason = shutdown.completed_shutdown().await;
+
+	Err(eyre!(reason).wrap_err("Running Fat Client encountered an error"))
 }
 
 async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
@@ -399,6 +405,7 @@ impl FatState {
 							self.metrics.count(MetricCounter::OutgoingConnectionErrors)
 						},
 						P2pEvent::PutRecord { block_num, records } => {
+							self.metrics.count_n(MetricCounter::DHTPutRecords, records.len() as u64);
 							self.handle_new_put_record(block_num, records);
 						},
 						P2pEvent::PutRecordSuccess {
@@ -445,7 +452,18 @@ impl FatState {
 					}
 				}
 
-				Ok(_) = rpc_receiver.recv() => continue,
+				Ok(rpc_event) = rpc_receiver.recv() => {
+					match rpc_event {
+						RpcEvent::InitialConnection(_) => {
+							self.metrics.count(MetricCounter::RpcConnected);
+						},
+						RpcEvent::SwitchedConnection(_) => {
+							self.metrics.count(MetricCounter::RpcConnectionSwitched);
+						}
+						_ => {}
+					}
+				},
+
 				// break the loop if all channels are closed
 				else => break,
 			}

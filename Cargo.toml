@@ -21,7 +21,7 @@ repository = "https://github.com/availproject/avail-light"
 # Internal deps
 avail-rust = { git = "https://github.com/availproject/avail-rust.git", branch = "mmp-integration", default-features = false }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-avail-light-core = { path = "./core" }
+avail-light-core = { path = "./core", default-features = false }
 
 anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }

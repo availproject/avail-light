@@ -1,9 +1,13 @@
 # Changelog
 
-## [1.2.7]
+## 1.2.7
 
 - Add polynomial multiproof features on core
-- Add kbucket pending timeout to kademlia configuration
+- Added counters for initial and switched RPC host connections to telemetry metrics
+- Added put records counter to telemetry metrics
+- Removed retry strategy from the Subxt Avail client
+- Added RPC client which doesn't subscribe to finalized headers
+- Added kbucket pending timeout to kademlia configuration
 
 ## [1.2.6](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.6) - 2025-04-09
 

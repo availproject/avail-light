@@ -1,17 +1,18 @@
 #![cfg(target_arch = "wasm32")]
-
 use std::sync::Arc;
+use web_time::Instant;
 
 use avail_light_core::api::configuration::SharedConfig;
 use avail_light_core::api::types::{PublishMessage, Request, Topic};
 use avail_light_core::api::v2::transactions::Submitter;
-use avail_light_core::light_client::OutputEvent as LcEvent;
+use avail_light_core::light_client::{self, OutputEvent as LcEvent};
 use avail_light_core::network::{self, p2p, rpc, Network};
 use avail_light_core::shutdown::Controller;
 use avail_light_core::types::{Delay, PeerAddress};
 use avail_light_core::utils::spawn_in_span;
 use avail_light_core::{api, data};
 use avail_rust::kate_recovery::couscous;
+use avail_rust::SDK;
 use clap::ValueEnum;
 use libp2p::Multiaddr;
 use std::str::FromStr;
@@ -266,4 +267,81 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	if let Err(error) = light_client_handle.await {
 		error!("Error running light client: {error}")
 	};
+}
+
+/// Returns the latest block hash and confidence.
+/// NOTE: Function will panic in case of errors,
+/// until better API for error reporting is implemented
+#[wasm_bindgen]
+pub async fn latest_block(network_param: Option<String>) -> String {
+	console_error_panic_hook::set_once();
+	if !tracing::dispatcher::has_been_set() {
+		tracing_wasm::set_as_global_default();
+	}
+
+	let mut network = network::Network::Local;
+	if let Some(value) = network_param {
+		network = Network::from_str(&value, true).unwrap();
+	};
+
+	let endpoint = network.full_node_ws().first().cloned().unwrap();
+	let sdk = SDK::new(&endpoint).await.unwrap();
+	let db = data::DB::default();
+	let shutdown = Controller::new();
+	let pp = Arc::new(couscous::public_params());
+
+	info!("Fetching the latest block...");
+
+	let block = sdk.client.online_client.blocks().at_latest().await.unwrap();
+	let header = block.header().clone();
+	let received_at = Instant::now();
+
+	let (lc_sender, mut lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
+
+	spawn_in_span(async move {
+		loop {
+			let Some(message) = lc_receiver.recv().await else {
+				info!("Exiting...");
+				break;
+			};
+			info!("{message:?}");
+		}
+	});
+
+	let cfg_rpc = rpc::configuration::RPCConfig {
+		full_node_ws: network.full_node_ws(),
+		..Default::default()
+	};
+
+	let (rpc_event_sender, mut rpc_event_receiver) = broadcast::channel(1000);
+
+	let (rpc_client, _) = rpc::init(
+		db.clone(),
+		network.genesis_hash(),
+		&cfg_rpc,
+		shutdown,
+		rpc_event_sender,
+	)
+	.await
+	.unwrap();
+
+	spawn_in_span(async move {
+		loop {
+			match rpc_event_receiver.recv().await {
+				Ok(_) => break,
+				Err(error) => error!("{error:?}"),
+			}
+		}
+	});
+
+	let network_client = network::new_rpc(rpc_client, pp);
+
+	let confidence =
+		light_client::process_block(db, &network_client, 99.9, header, received_at, lc_sender)
+			.await
+			.unwrap()
+			.map(|confidence| format!("{confidence}"))
+			.unwrap_or("none".to_string());
+
+	format!("Confidence for block {} is {confidence}.", block.number())
 }

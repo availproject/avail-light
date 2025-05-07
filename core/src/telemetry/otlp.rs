@@ -56,10 +56,14 @@ impl Metrics {
 	/// Puts counter to the counter buffer if it is allowed.
 	/// If counter is not buffered, counter is incremented.
 	pub fn count(&mut self, counter: super::MetricCounter) {
+		self.count_n(counter, 1);
+	}
+
+	pub fn count_n(&mut self, counter: super::MetricCounter, value: u64) {
 		if !counter.is_allowed(&self.origin) {
 			return;
 		}
-		self.counters[&counter.name()].add(1, &self.attributes());
+		self.counters[&counter.name()].add(value, &self.attributes());
 	}
 
 	/// Puts metric to the metric buffer if it is allowed.

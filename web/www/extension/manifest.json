@@ -1,0 +1,27 @@
+{
+	"manifest_version": 3,
+	"name": "Avail Light",
+	"version": "1.0",
+	"action": {
+		"default_popup": "popup.html",
+		"default_title": "Latest Block"
+	},
+	"background": {
+		"service_worker": "service_worker.js",
+		"type": "module"
+	},
+	"content_security_policy": {
+		"extension_pages": "script-src 'self'; object-src 'self';"
+	},
+	"permissions": ["storage"],
+	"host_permissions": ["<all_urls>"],
+	"content_security_policy": {
+		"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+	},
+	"web_accessible_resources": [
+		{
+			"resources": ["popup.js", "avail_light_web.js", "avail_light_web_bg.wasm"],
+			"matches": ["<all_urls>"]
+		}
+	]
+}

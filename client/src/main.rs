@@ -696,7 +696,18 @@ impl ClientState {
 					}
 				}
 
-				Ok(_) = rpc_receiver.recv() => continue,
+				Ok(rpc_event) = rpc_receiver.recv() => {
+					match rpc_event {
+						RpcEvent::InitialConnection(_) => {
+							self.metrics.count(MetricCounter::RpcConnected);
+						},
+						RpcEvent::SwitchedConnection(_) => {
+							self.metrics.count(MetricCounter::RpcConnectionSwitched);
+						}
+						_ => {}
+					}
+				},
+
 				// break the loop if all channels are closed
 				else => break,
 			}
