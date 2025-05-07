@@ -17,16 +17,16 @@ use web_time::Duration;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct AutoNATConfig {
-	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 20 sec)
+	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_retry_interval: Duration,
-	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 360 sec)
+	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 900 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_refresh_interval: Duration,
-	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
+	/// AutoNat on init delay before starting the fist probe. (default: 15 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_boot_delay: Duration,
-	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_throttle: Duration,
 	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
@@ -36,10 +36,10 @@ pub struct AutoNATConfig {
 impl Default for AutoNATConfig {
 	fn default() -> Self {
 		Self {
-			autonat_retry_interval: Duration::from_secs(20),
-			autonat_refresh_interval: Duration::from_secs(360),
-			autonat_boot_delay: Duration::from_secs(5),
-			autonat_throttle: Duration::from_secs(1),
+			autonat_retry_interval: Duration::from_secs(90),
+			autonat_refresh_interval: Duration::from_secs(15 * 60),
+			autonat_boot_delay: Duration::from_secs(15),
+			autonat_throttle: Duration::from_secs(90),
 			autonat_only_global_ips: false,
 		}
 	}

@@ -2,6 +2,7 @@
 
 ## 1.2.7
 
+- Updated the default AutoNat configuration with increased timeouts
 - Added counters for initial and switched RPC host connections to telemetry metrics
 - Added put records counter to telemetry metrics
 - Removed retry strategy from the Subxt Avail client
