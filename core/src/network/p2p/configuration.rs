@@ -29,7 +29,7 @@ pub struct AutoNATConfig {
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_throttle: Duration,
-	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: true)
 	pub autonat_only_global_ips: bool,
 }
 
@@ -40,7 +40,7 @@ impl Default for AutoNATConfig {
 			autonat_refresh_interval: Duration::from_secs(15 * 60),
 			autonat_boot_delay: Duration::from_secs(15),
 			autonat_throttle: Duration::from_secs(90),
-			autonat_only_global_ips: false,
+			autonat_only_global_ips: true,
 		}
 	}
 }
