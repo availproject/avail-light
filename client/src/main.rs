@@ -80,7 +80,7 @@ async fn run(
 
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+	let (p2p_client, p2p_event_loop, p2p_event_receiver, registry) = p2p::init(
 		cfg.libp2p.clone(),
 		cfg.project_name.clone(),
 		id_keys,
@@ -199,6 +199,7 @@ async fn run(
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
 		p2p_client: p2p_client.clone(),
+		metric_registry: registry.clone(),
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(cfg.api.clone())));
 

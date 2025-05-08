@@ -10,6 +10,7 @@ use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
 	kad::{self, GetClosestPeersResult, Mode, PeerRecord, QueryStats, Record, RecordKey},
+	metrics::Registry,
 	noise, ping, relay,
 	swarm::NetworkBehaviour,
 	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -20,7 +21,12 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
-use std::{fmt, net::Ipv4Addr, str::FromStr};
+use std::{
+	fmt,
+	net::Ipv4Addr,
+	str::FromStr,
+	sync::{Arc, Mutex},
+};
 use tokio::sync::{
 	mpsc::{self, UnboundedReceiver},
 	oneshot,
@@ -236,7 +242,12 @@ pub async fn init(
 	is_fat: bool,
 	shutdown: Controller<String>,
 	#[cfg(feature = "rocksdb")] db: crate::data::DB,
-) -> Result<(Client, EventLoop, UnboundedReceiver<OutputEvent>)> {
+) -> Result<(
+	Client,
+	EventLoop,
+	UnboundedReceiver<OutputEvent>,
+	Option<Arc<Mutex<Registry>>>,
+)> {
 	// create sender channel for P2P event loop commands
 	let (command_sender, command_receiver) = mpsc::unbounded_channel();
 	// create P2P Client
@@ -253,14 +264,14 @@ pub async fn init(
 		db.inner(),
 	);
 	// create Swarm
-	let swarm = build_swarm(&cfg, project_name, version, genesis_hash, &id_keys, store)
+	let (swarm, registry) = build_swarm(&cfg, project_name, version, genesis_hash, &id_keys, store)
 		.await
 		.expect("Unable to build swarm.");
 	let (event_sender, event_receiver) = mpsc::unbounded_channel();
 	// create EventLoop
 	let event_loop = EventLoop::new(cfg, swarm, is_fat, command_receiver, event_sender, shutdown);
 
-	Ok((client, event_loop, event_receiver))
+	Ok((client, event_loop, event_receiver, registry))
 }
 
 async fn build_swarm(
@@ -270,7 +281,7 @@ async fn build_swarm(
 	genesis_hash: &str,
 	id_keys: &Keypair,
 	kad_store: Store,
-) -> Result<Swarm<Behaviour>> {
+) -> Result<(Swarm<Behaviour>, Option<Arc<Mutex<Registry>>>)> {
 	// create Identify Protocol Config
 	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), id_keys.public())
 		.with_agent_version(AgentVersion::new(project_name, version).to_string());
@@ -285,16 +296,6 @@ async fn build_swarm(
 		..Default::default()
 	};
 
-	// build the Swarm, connecting the lower transport logic with the
-	// higher layer network behaviour logic
-	#[cfg(not(target_arch = "wasm32"))]
-	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
-
-	#[cfg(target_arch = "wasm32")]
-	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_wasm_bindgen();
-
-	let mut swarm;
-
 	let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
 
 	let behaviour = |key: &identity::Keypair, relay_client| {
@@ -308,8 +309,14 @@ async fn build_swarm(
 			blocked_peers: allow_block_list::Behaviour::default(),
 		})
 	};
+
+	let mut swarm;
+	let registry;
+
 	#[cfg(target_arch = "wasm32")]
 	{
+		let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_wasm_bindgen();
+
 		use libp2p_webrtc_websys as webrtc;
 		swarm = tokio_swarm
 			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(&key)))?
@@ -317,29 +324,64 @@ async fn build_swarm(
 			.with_behaviour(behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
+		registry = None;
 	}
 
 	#[cfg(not(target_arch = "wasm32"))]
-	if cfg.ws_transport_enable {
-		swarm = tokio_swarm
-			.with_websocket(noise::Config::new, yamux::Config::default)
-			.await?
-			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(behaviour)?
-			.with_swarm_config(|c| generate_config(c, cfg))
-			.build();
-	} else {
-		swarm = tokio_swarm
-			.with_tcp(
-				tcp::Config::default().nodelay(false),
-				noise::Config::new,
-				yamux::Config::default,
-			)?
-			.with_dns()?
-			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(behaviour)?
-			.with_swarm_config(|c| generate_config(c, cfg))
-			.build();
+	{
+		let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
+
+		if cfg.metrics {
+			registry = Some(Arc::new(Mutex::new(Registry::default())));
+		} else {
+			registry = None;
+		}
+
+		swarm = if cfg.ws_transport_enable {
+			if let Some(registry) = registry.clone() {
+				tokio_swarm
+					.with_websocket(noise::Config::new, yamux::Config::default)
+					.await?
+					.with_relay_client(noise::Config::new, yamux::Config::default)?
+					.with_bandwidth_metrics(&mut registry.lock().unwrap())
+					.with_behaviour(behaviour)?
+					.with_swarm_config(|c| generate_config(c, cfg))
+					.build()
+			} else {
+				tokio_swarm
+					.with_websocket(noise::Config::new, yamux::Config::default)
+					.await?
+					.with_relay_client(noise::Config::new, yamux::Config::default)?
+					.with_behaviour(behaviour)?
+					.with_swarm_config(|c| generate_config(c, cfg))
+					.build()
+			}
+		} else if let Some(registry) = registry.clone() {
+			tokio_swarm
+				.with_tcp(
+					tcp::Config::default().nodelay(false),
+					noise::Config::new,
+					yamux::Config::default,
+				)?
+				.with_dns()?
+				.with_relay_client(noise::Config::new, yamux::Config::default)?
+				.with_bandwidth_metrics(&mut registry.lock().unwrap())
+				.with_behaviour(behaviour)?
+				.with_swarm_config(|c| generate_config(c, cfg))
+				.build()
+		} else {
+			tokio_swarm
+				.with_tcp(
+					tcp::Config::default().nodelay(false),
+					noise::Config::new,
+					yamux::Config::default,
+				)?
+				.with_dns()?
+				.with_relay_client(noise::Config::new, yamux::Config::default)?
+				.with_behaviour(behaviour)?
+				.with_swarm_config(|c| generate_config(c, cfg))
+				.build()
+		};
 	}
 
 	info!("Local peerID: {}", swarm.local_peer_id());
@@ -354,7 +396,7 @@ async fn build_swarm(
 		.kademlia
 		.set_mode(Some(cfg.kademlia.operation_mode.into()));
 
-	Ok(swarm)
+	Ok((swarm, registry.clone()))
 }
 
 // Keypair function creates identity Keypair for a local node.
