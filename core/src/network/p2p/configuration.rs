@@ -281,10 +281,8 @@ pub fn identify_config(
 	project_name: ProjectName,
 	version: &str,
 ) -> identify::Config {
-	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), local_public_key)
-		.with_agent_version(AgentVersion::new(project_name, version).to_string());
-
-	identify_cfg
+	identify::Config::new(IDENTITY_PROTOCOL.to_string(), local_public_key)
+		.with_agent_version(AgentVersion::new(project_name, version).to_string())
 }
 
 /// creates AutoNAT Config
