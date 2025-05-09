@@ -1,5 +1,6 @@
 use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
+use itertools::Either;
 use libp2p::{
 	autonat::{self, NatStatus},
 	core::ConnectedPoint,
@@ -34,7 +35,8 @@ use tracing::{debug, error, info, trace, warn};
 use web_time::{Duration, Instant};
 
 use super::{
-	configuration::LibP2PConfig, Behaviour, BehaviourEvent, Command, OutputEvent, QueryChannel,
+	configuration::LibP2PConfig, Command, ConfigurableBehaviour, ConfigurableBehaviourEvent,
+	OutputEvent, QueryChannel,
 };
 use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
@@ -122,7 +124,7 @@ impl EventCounter {
 }
 
 pub struct EventLoop {
-	pub swarm: Swarm<Behaviour>,
+	pub swarm: Swarm<ConfigurableBehaviour>,
 	command_receiver: UnboundedReceiver<Command>,
 	pub(crate) event_sender: UnboundedSender<OutputEvent>,
 	// Tracking Kademlia events
@@ -162,7 +164,7 @@ impl EventLoop {
 	#[allow(clippy::too_many_arguments)]
 	pub(crate) fn new(
 		cfg: LibP2PConfig,
-		swarm: Swarm<Behaviour>,
+		swarm: Swarm<ConfigurableBehaviour>,
 		is_fat_client: bool,
 		command_receiver: UnboundedReceiver<Command>,
 		event_sender: UnboundedSender<OutputEvent>,
@@ -278,9 +280,9 @@ impl EventLoop {
 	}
 
 	#[tracing::instrument(level = "trace", skip(self))]
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
+	async fn handle_event(&mut self, event: SwarmEvent<ConfigurableBehaviourEvent>) {
 		match event {
-			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Kademlia(Either::Left(event))) => {
 				match event {
 					kad::Event::RoutingUpdated {
 						peer,
@@ -314,7 +316,11 @@ impl EventLoop {
 									// Set TTL for all incoming records
 									// TTL will be set to a lower value between the local TTL and incoming record TTL
 									record.expires = record.expires.min(ttl.expires());
-									_ = self.swarm.behaviour_mut().kademlia.store_mut().put(record);
+									_ = self
+										.swarm
+										.behaviour_mut()
+										.kademlia()
+										.map(|kad| kad.store_mut().put(record));
 								},
 								None => {
 									debug!("Received empty cell record from: {source:?}");
@@ -380,7 +386,10 @@ impl EventLoop {
 									// Remove local records for fat clients (memory optimization)
 									if self.event_loop_config.is_fat_client {
 										trace!("Pruning local records on fat client");
-										self.swarm.behaviour_mut().kademlia.remove_record(&key);
+										self.swarm
+											.behaviour_mut()
+											.kademlia()
+											.map(|kad| kad.remove_record(&key));
 									}
 
 									_ = self.event_sender.send(OutputEvent::PutRecordFailed {
@@ -395,7 +404,10 @@ impl EventLoop {
 							// Remove local records for fat clients (memory optimization)
 							if self.event_loop_config.is_fat_client {
 								trace!("Pruning local records on fat client");
-								self.swarm.behaviour_mut().kademlia.remove_record(&key);
+								self.swarm
+									.behaviour_mut()
+									.kademlia()
+									.map(|kad| kad.remove_record(&key));
 							}
 
 							_ = self.event_sender.send(OutputEvent::PutRecordSuccess {
@@ -421,106 +433,135 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => match event {
-				identify::Event::Received {
-					peer_id,
-					info:
-						Info {
-							listen_addrs,
-							agent_version,
-							protocol_version,
-							protocols,
-							..
-						},
-					connection_id: _,
-				} => {
-					trace!(
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Identify(Either::Left(event))) => {
+				match event {
+					identify::Event::Received {
+						peer_id,
+						info:
+							Info {
+								listen_addrs,
+								agent_version,
+								protocol_version,
+								protocols,
+								..
+							},
+						connection_id: _,
+					} => {
+						trace!(
 						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
 					);
 
-					let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
-						Ok(agent) => agent,
-						Err(e) => {
-							debug!("Error parsing incoming agent version: {e}");
-							return;
-						},
-					};
+						let incoming_peer_agent_version =
+							match AgentVersion::from_str(&agent_version) {
+								Ok(agent) => agent,
+								Err(e) => {
+									debug!("Error parsing incoming agent version: {e}");
+									return;
+								},
+							};
 
-					if !incoming_peer_agent_version.is_supported() {
-						debug!(
-							"Unsupported release version: {}",
-							incoming_peer_agent_version.release_version
-						);
-						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-						return;
-					}
-
-					if protocols.contains(&self.swarm.behaviour_mut().kademlia.protocol_names()[0])
-					{
-						trace!("Adding peer {peer_id} to routing table.");
-						for addr in listen_addrs {
+						if !incoming_peer_agent_version.is_supported() {
+							debug!(
+								"Unsupported release version: {}",
+								incoming_peer_agent_version.release_version
+							);
 							self.swarm
 								.behaviour_mut()
-								.kademlia
-								.add_address(&peer_id, addr);
+								.kademlia()
+								.map(|kad| kad.remove_peer(&peer_id));
+							return;
 						}
-					} else {
-						// Block and remove non-compatible peers
-						debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
-						self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-					}
-				},
-				identify::Event::Sent {
-					peer_id,
-					connection_id: _,
-				} => {
-					trace!("Identity Sent event to: {peer_id:?}");
-				},
-				identify::Event::Pushed { peer_id, .. } => {
-					trace!("Identify Pushed event. PeerId: {peer_id:?}");
-				},
-				identify::Event::Error {
-					peer_id,
-					error,
-					connection_id: _,
-				} => {
-					trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
-				},
-			},
-			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
-				autonat::Event::InboundProbe(e) => {
-					trace!("[AutoNat] Inbound Probe: {:#?}", e);
-				},
-				autonat::Event::OutboundProbe(e) => {
-					trace!("[AutoNat] Outbound Probe: {:#?}", e);
-				},
-				autonat::Event::StatusChanged { old, new } => {
-					debug!("[AutoNat] Old status: {:#?}. New status: {:#?}", old, new);
-					// check if went private or are private
-					// if so, create reservation request with relay
-					if new == NatStatus::Private || old == NatStatus::Private {
-						info!("[AutoNat] Autonat says we're still private.");
-						// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
-						if !self.event_loop_config.is_fat_client {
-							// select a relay, try to dial it
-							self.select_and_dial_relay();
+
+						if let Some(protocol) = self
+							.swarm
+							.behaviour_mut()
+							.kademlia()
+							.map(|kad| kad.protocol_names()[0].clone())
+						{
+							if protocols.contains(&protocol) {
+								trace!("Adding peer {peer_id} to routing table.");
+								for addr in listen_addrs {
+									self.swarm
+										.behaviour_mut()
+										.kademlia()
+										.map(|kad| kad.add_address(&peer_id, addr));
+								}
+							} else {
+								// Block and remove non-compatible peers
+								debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
+								self.swarm
+									.behaviour_mut()
+									.kademlia()
+									.map(|kad| kad.remove_peer(&peer_id));
+							}
 						}
-					};
+					},
+					identify::Event::Sent {
+						peer_id,
+						connection_id: _,
+					} => {
+						trace!("Identity Sent event to: {peer_id:?}");
+					},
+					identify::Event::Pushed { peer_id, .. } => {
+						trace!("Identify Pushed event. PeerId: {peer_id:?}");
+					},
+					identify::Event::Error {
+						peer_id,
+						error,
+						connection_id: _,
+					} => {
+						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+					},
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(Either::Left(event))) => {
+				match event {
+					autonat::Event::InboundProbe(e) => {
+						trace!("[AutoNat] Inbound Probe: {:#?}", e);
+					},
+					autonat::Event::OutboundProbe(e) => {
+						trace!("[AutoNat] Outbound Probe: {:#?}", e);
+					},
+					autonat::Event::StatusChanged { old, new } => {
+						debug!("[AutoNat] Old status: {:#?}. New status: {:#?}", old, new);
+						// check if went private or are private
+						// if so, create reservation request with relay
+						if new == NatStatus::Private || old == NatStatus::Private {
+							info!("[AutoNat] Autonat says we're still private.");
+							// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
+							if !self.event_loop_config.is_fat_client {
+								// select a relay, try to dial it
+								self.select_and_dial_relay();
+							}
+						};
+					},
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Relay(behaviour)) => {
+				match behaviour {
+					Either::Left(Either::Left(clint_event)) => {
+						trace! {"Relay Client Event: {clint_event:#?}"};
+					},
+					Either::Left(Either::Right(server_event)) => {
+						trace! {"Relay Server Event: {server_event:#?}"};
+					},
+					_ => {},
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Dcutr(Either::Left(
+				dcutr::Event {
+					remote_peer_id,
+					result,
 				},
-			},
-			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
-				trace! {"Relay Client Event: {event:#?}"};
-			},
-			SwarmEvent::Behaviour(BehaviourEvent::Dcutr(dcutr::Event {
-				remote_peer_id,
-				result,
-			})) => match result {
+			))) => match result {
 				Ok(_) => trace!("Hole punching succeeded with: {remote_peer_id:#?}"),
 				Err(err) => {
 					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
 				},
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Ping(ping::Event { peer, result, .. })) => {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(Either::Left(
+				ping::Event { peer, result, .. },
+			))) => {
 				if let Ok(rtt) = result {
 					_ = self.event_sender.send(OutputEvent::Ping { peer, rtt });
 				}
@@ -587,8 +628,11 @@ impl EventLoop {
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occurred
 							if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
-								if let Some(peer) =
-									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id)
+								if let Some(Some(peer)) = self
+									.swarm
+									.behaviour_mut()
+									.kademlia()
+									.map(|kad| kad.remove_peer(&peer_id))
 								{
 									let removed_peer_id = peer.node.key.preimage();
 									debug!("Removed peer {removed_peer_id} from the routing table. Cause: {error}");

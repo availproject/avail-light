@@ -156,8 +156,9 @@ impl Client {
 				context
 					.swarm
 					.behaviour_mut()
-					.kademlia
-					.add_address(&peer_id, peer_addr);
+					.kademlia()
+					.map(|kad| kad.add_address(&peer_id, peer_addr));
+
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Add Address Command to the EventLoop"))
@@ -193,8 +194,8 @@ impl Client {
 				context
 					.swarm
 					.behaviour_mut()
-					.auto_nat
-					.add_server(peer_id, Some(address));
+					.auto_nat()
+					.map(|nat| nat.add_server(peer_id, Some(address)));
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Add AutoNat Server Command to the EventLoop"))
@@ -217,10 +218,19 @@ impl Client {
 	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
-				let query_id = context.swarm.behaviour_mut().kademlia.get_record(key);
-				context
-					.pending_kad_queries
-					.insert(query_id, QueryChannel::GetRecord(response_sender));
+				let query_id = context
+					.swarm
+					.behaviour_mut()
+					.kademlia()
+					.map(|kad| kad.get_record(key));
+
+				if let Some(id) = query_id {
+					context
+						.pending_kad_queries
+						.insert(id, QueryChannel::GetRecord(response_sender))
+				} else {
+					None
+				};
 				Ok(())
 			})
 		})
@@ -236,9 +246,10 @@ impl Client {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
 				for record in records.clone() {
-					let kademlia = &mut context.swarm.behaviour_mut().kademlia;
-					if let Err(error) = kademlia.put_record(record, quorum) {
-						warn!("Put record failed: {error}");
+					if let Some(kademlia) = &mut context.swarm.behaviour_mut().kademlia() {
+						if let Err(error) = kademlia.put_record(record, quorum) {
+							warn!("Put record failed: {error}");
+						}
 					}
 				}
 
@@ -256,16 +267,25 @@ impl Client {
 			Box::new(move |context: &mut EventLoop| {
 				let mut total_peers: usize = 0;
 				let mut peers_with_non_pvt_addr: usize = 0;
-				for bucket in context.swarm.behaviour_mut().kademlia.kbuckets() {
-					for item in bucket.iter() {
-						for address in item.node.value.iter() {
-							if is_multiaddr_global(address) {
-								peers_with_non_pvt_addr += 1;
-								// We just need to hit the first external address
-								break;
+
+				if let Some(buckets) = context
+					.swarm
+					.behaviour_mut()
+					.kademlia()
+					.map(|kad| kad.kbuckets())
+				{
+					// Now buckets is directly the iterator
+					for bucket in buckets {
+						for item in bucket.iter() {
+							for address in item.node.value.iter() {
+								if is_multiaddr_global(address) {
+									peers_with_non_pvt_addr += 1;
+									// We just need to hit the first external address
+									break;
+								}
 							}
+							total_peers += 1;
 						}
-						total_peers += 1;
 					}
 				}
 
@@ -323,8 +343,8 @@ impl Client {
 						context
 							.swarm
 							.behaviour_mut()
-							.kademlia
-							.set_mode(Some(Mode::Server));
+							.kademlia()
+							.map(|kad| kad.set_mode(Some(Mode::Server)));
 						context.kad_mode = Mode::Server;
 					}
 				} else if matches!(context.kad_mode, Mode::Server) && external_addresses.is_empty()
@@ -333,8 +353,8 @@ impl Client {
 					context
 						.swarm
 						.behaviour_mut()
-						.kademlia
-						.set_mode(Some(Mode::Client));
+						.kademlia()
+						.map(|kad| kad.set_mode(Some(Mode::Client)));
 					context.kad_mode = Mode::Client;
 				}
 
@@ -401,8 +421,8 @@ impl Client {
 				context
 					.swarm
 					.behaviour_mut()
-					.kademlia
-					.get_n_closest_peers(peer_id, NonZeroUsize::new(20).unwrap());
+					.kademlia()
+					.map(|kad| kad.get_n_closest_peers(peer_id, NonZeroUsize::new(20).unwrap()));
 
 				response_sender
 					.send(Ok(()))
@@ -419,11 +439,18 @@ impl Client {
 			Box::new(move |context: &mut EventLoop| {
 				let mut multiaddresses: Vec<String> = Vec::new();
 
-				for bucket in context.swarm.behaviour_mut().kademlia.kbuckets() {
-					for item in bucket.iter() {
-						if *item.node.key.preimage() == peer_id {
-							for addr in item.node.value.iter() {
-								multiaddresses.push(addr.to_string());
+				if let Some(buckets) = context
+					.swarm
+					.behaviour_mut()
+					.kademlia()
+					.map(|kad| kad.kbuckets())
+				{
+					for bucket in buckets {
+						for item in bucket.iter() {
+							if *item.node.key.preimage() == peer_id {
+								for addr in item.node.value.iter() {
+									multiaddresses.push(addr.to_string());
+								}
 							}
 						}
 					}
@@ -450,9 +477,9 @@ impl Client {
 				context
 					.swarm
 					.behaviour_mut()
-					.kademlia
-					.store_mut()
-					.shrink_hashmap();
+					.kademlia()
+					.map(|kad| kad.store_mut())
+					.map(|store| store.shrink_hashmap());
 
 				Ok(())
 			}))
@@ -462,17 +489,20 @@ impl Client {
 	pub async fn get_kademlia_map_size(&self) -> Result<usize> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
-				let size = context
+				if let Some(records) = context
 					.swarm
 					.behaviour_mut()
-					.kademlia
-					.store_mut()
-					.records()
-					.count();
-
-				response_sender.send(Ok(size)).map_err(|e| {
-					eyre!("Encountered error while sending Get Kademlia Map Size response: {e:?}")
-				})?;
+					.kademlia()
+					.map(|kad| kad.store_mut())
+					.map(|store| store.records())
+				{
+					let size = records.count();
+					response_sender.send(Ok(size)).map_err(|e| {
+						eyre!(
+							"Encountered error while sending Get Kademlia Map Size response: {e:?}"
+						)
+					})?;
+				}
 				Ok(())
 			})
 		})
@@ -492,17 +522,22 @@ impl Client {
 				})
 			} else {
 				Box::new(move |context: &mut EventLoop| {
-					let store = context.swarm.behaviour_mut().kademlia.store_mut();
+					if let Some(store) = context
+						.swarm
+						.behaviour_mut()
+						.kademlia()
+						.map(|kad| kad.store_mut())
+					{
+						let before = store.records().count();
+						store.retain(|_, record| !record.is_expired(now));
+						let after = store.records().count();
 
-					let before = store.records().count();
-					store.retain(|_, record| !record.is_expired(now));
-					let after = store.records().count();
-
-					response_sender.send(Ok(before - after)).map_err(|e| {
-						eyre!(
+						response_sender.send(Ok(before - after)).map_err(|e| {
+							eyre!(
 							"Encountered error while sending Prune Expired Records response: {e:?}"
 						)
-					})?;
+						})?;
+					}
 					Ok(())
 				})
 			}

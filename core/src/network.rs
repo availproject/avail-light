@@ -446,3 +446,15 @@ impl Network {
 		format!("{}:{}", network, prefix)
 	}
 }
+
+// Defines the Service mode as a ValueEnum for clap
+// currently used for: AutoNAT and Relay
+#[derive(Clone, Debug, PartialEq, ValueEnum)]
+pub enum ServiceMode {
+	/// Service disabled
+	Disabled,
+	/// Client only mode
+	Client,
+	/// Server only mode
+	Server,
+}

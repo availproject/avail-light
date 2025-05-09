@@ -1,4 +1,7 @@
-use avail_light_core::{network::Network, types::NetworkMode};
+use avail_light_core::{
+	network::{Network, ServiceMode},
+	types::NetworkMode,
+};
 use clap::{command, ArgAction, Parser};
 use tracing::Level;
 
@@ -78,4 +81,8 @@ pub struct CliOpts {
 	pub no_update: bool,
 	#[arg(long)]
 	pub p2p_client_restart_interval: Option<u64>,
+
+	/// AutoNAT behaviour mode: client, server, or disabled
+	#[arg(long, value_enum, default_value = "server")]
+	pub auto_nat_mode: ServiceMode,
 }
