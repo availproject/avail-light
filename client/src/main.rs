@@ -83,7 +83,7 @@ async fn run(
 		&identity_cfg.clone().avail_public_key
 	);
 
-	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, Some(db.clone()))?;
 
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {

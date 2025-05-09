@@ -310,19 +310,11 @@ async fn build_swarm(
 			};
 
 			let identify = if cfg.behaviour.enable_identify {
-<<<<<<< HEAD
 				// create Identify Protocol Config
 				let identify_cfg = identify_config(cfg, id_keys.public())
 					.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
 
 				Some(identify::Behaviour::new(identify_cfg))
-=======
-				Either::Left(identify::Behaviour::new(identify_config(
-					key.public(),
-					project_name,
-					version,
-				)))
->>>>>>> 3a4d6acd (Encapsulated config creations)
 			} else {
 				None
 			};
@@ -337,11 +329,7 @@ async fn build_swarm(
 				AutoNatMode::Disabled => None,
 				_ => {
 					let autonat_cfg = auto_nat_config(cfg);
-<<<<<<< HEAD
 					Some(autonat::Behaviour::new(
-=======
-					Either::Left(autonat::Behaviour::new(
->>>>>>> 3a4d6acd (Encapsulated config creations)
 						key.public().to_peer_id(),
 						autonat_cfg,
 					))
@@ -516,22 +504,35 @@ pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
 		.any(|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)))
 }
 
-fn get_or_init_keypair(cfg: &LibP2PConfig, db: impl Database) -> Result<identity::Keypair> {
+fn get_or_init_keypair(cfg: &LibP2PConfig, db: Option<impl Database>) -> Result<identity::Keypair> {
+	// First, check if secret key is provided in config
 	if let Some(secret_key) = cfg.secret_key.as_ref() {
 		return keypair(secret_key);
 	};
 
-	if let Some(mut bytes) = db.get(P2PKeypairKey) {
-		return Ok(ed25519::Keypair::try_from_bytes(&mut bytes[..]).map(From::from)?);
-	};
+	// Then check if we have a database and try to retrieve the keypair
+	if let Some(db_instance) = db.as_ref() {
+		if let Some(mut bytes) = db_instance.get(P2PKeypairKey) {
+			return Ok(ed25519::Keypair::try_from_bytes(&mut bytes[..]).map(From::from)?);
+		}
+	}
 
+	// Generate a new keypair if not found
 	let id_keys = identity::Keypair::generate_ed25519();
-	let keypair = id_keys.clone().try_into_ed25519()?;
-	db.put(P2PKeypairKey, keypair.to_bytes().to_vec());
+
+	// Store the keypair if we have a database
+	if let Some(db_instance) = db {
+		let keypair = id_keys.clone().try_into_ed25519()?;
+		db_instance.put(P2PKeypairKey, keypair.to_bytes().to_vec());
+	}
+
 	Ok(id_keys)
 }
 
-pub fn identity(cfg: &LibP2PConfig, db: impl Database) -> Result<(identity::Keypair, PeerId)> {
+pub fn identity<T: Database>(
+	cfg: &LibP2PConfig,
+	db: Option<T>,
+) -> Result<(identity::Keypair, PeerId)> {
 	let keypair = get_or_init_keypair(cfg, db)?;
 	let peer_id = PeerId::from(keypair.public());
 	Ok((keypair, peer_id))
