@@ -6,10 +6,9 @@ edition = "2021"
 description = "Avail network Bootstrap Node for p2p Light Client"
 
 [dependencies]
-avail-light-core = { workspace = true, features = ["crawl"] }
-
 async-std = { workspace = true }
 async-trait = { workspace = true }
+avail-light-core = { workspace = true, features = ["bootstrap"], default-features = false }
 clap = { workspace = true }
 color-eyre = { workspace = true }
 confy = { workspace = true }
