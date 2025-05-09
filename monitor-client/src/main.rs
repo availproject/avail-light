@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
 	let shutdown = Controller::new();
 	install_panic_hooks(shutdown.clone())?;
 
-	let (p2p_keypair, _) = p2p::identity(&config.libp2p, db.clone())?;
+	let (p2p_keypair, _) = p2p::identity(&config.libp2p, Some(db.clone()))?;
 
 	let (p2p_client, p2p_event_loop, p2p_events) = p2p::init(
 		config.libp2p.clone(),

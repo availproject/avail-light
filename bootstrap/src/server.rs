@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use tracing::info;
 use warp::{reply::Reply, Filter};
 
-use crate::{p2p, types::Addr};
+use crate::{config::Addr, p2p};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Listeners {

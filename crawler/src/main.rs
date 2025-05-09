@@ -79,7 +79,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using configuration: {config:?}");
 
-	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
+	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, Some(db.clone()))?;
 	let partition = config.crawl_block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
