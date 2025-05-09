@@ -3,7 +3,9 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use configuration::{identify_config, kad_config, AutoNatMode, LibP2PConfig, RelayMode};
+use configuration::{
+	auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig, RelayMode,
+};
 use itertools::Either;
 #[cfg(not(target_arch = "wasm32"))]
 use libp2p::tcp;
@@ -315,7 +317,6 @@ async fn build_swarm(
 	let make_behaviour =
 		move |key: &identity::Keypair, relay_client_opt: Option<relay::client::Behaviour>| {
 			let kademlia = if cfg.behaviour.enable_kademlia {
-				// create KAD Config
 				let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
 				Either::Left(kad::Behaviour::with_config(
 					key.public().to_peer_id(),
@@ -345,15 +346,7 @@ async fn build_swarm(
 			let auto_nat = match cfg.behaviour.auto_nat_mode {
 				AutoNatMode::Disabled => Either::Right(DummyBehaviour),
 				_ => {
-					// create AutoNAT Client Config
-					let autonat_cfg = autonat::Config {
-						retry_interval: cfg.autonat.autonat_retry_interval,
-						refresh_interval: cfg.autonat.autonat_refresh_interval,
-						boot_delay: cfg.autonat.autonat_boot_delay,
-						throttle_server_period: cfg.autonat.autonat_throttle,
-						only_global_ips: cfg.autonat.autonat_only_global_ips,
-						..Default::default()
-					};
+					let autonat_cfg = auto_nat_config(cfg);
 					Either::Left(autonat::Behaviour::new(
 						key.public().to_peer_id(),
 						autonat_cfg,
