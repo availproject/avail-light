@@ -262,13 +262,29 @@ impl<T: Database> RPCClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -289,7 +305,7 @@ impl<T: Database> RPCClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }

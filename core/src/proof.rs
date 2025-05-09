@@ -34,6 +34,7 @@ use {
 mod core;
 
 #[cfg(not(feature = "multiproof"))]
+#[allow(deprecated)]
 async fn verify_proof(
 	public_parameters: Arc<PublicParameters>,
 	dimensions: Dimensions,

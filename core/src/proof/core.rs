@@ -2,6 +2,7 @@
 pub use wasm::{verify, Error};
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "multiproof")))]
+#[allow(deprecated)]
 pub use avail_rust::kate_recovery::proof::{verify, Error};
 
 #[cfg(target_arch = "wasm32")]
