@@ -443,17 +443,23 @@ pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
 }
 
 fn get_or_init_keypair(cfg: &LibP2PConfig, db: impl Database) -> Result<identity::Keypair> {
+	// First, check if secret key is provided in config
 	if let Some(secret_key) = cfg.secret_key.as_ref() {
 		return keypair(secret_key);
 	};
 
+	// Try to retrieve the keypair from db
 	if let Some(mut bytes) = db.get(P2PKeypairKey) {
 		return Ok(ed25519::Keypair::try_from_bytes(&mut bytes[..]).map(From::from)?);
-	};
+	}
 
+	// Generate a new keypair if not found
 	let id_keys = identity::Keypair::generate_ed25519();
+
+	// Store the keypair in the db
 	let keypair = id_keys.clone().try_into_ed25519()?;
 	db.put(P2PKeypairKey, keypair.to_bytes().to_vec());
+
 	Ok(id_keys)
 }
 

@@ -6,9 +6,8 @@ edition = "2021"
 description = "Avail network Bootstrap Node for p2p Light Client"
 
 [dependencies]
-avail-light-core = { workspace = true }
+avail-light-core = { workspace = true, features = ["crawl"] }
 
-anyhow = { workspace = true }
 async-std = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
@@ -31,3 +30,7 @@ warp = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+
+[features]
+rocksdb = ["avail-light-core/rocksdb"]
+default = ["rocksdb"]

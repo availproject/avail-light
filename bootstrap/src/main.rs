@@ -1,174 +1,300 @@
 #![doc = include_str!("../README.md")]
 
-use crate::types::{network_name, LibP2PConfig};
-use anyhow::{Context, Result};
 use avail_light_core::{
-	telemetry::{self, MetricCounter, MetricValue},
-	types::{Origin, ProjectName},
+	data::{self, ClientIdKey, Database, DB},
+	network::{
+		p2p::{self, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		Network,
+	},
+	shutdown::Controller,
+	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
+	types::{load_or_init_suri, IdentityConfig, SecretKey, Uuid},
+	utils::spawn_in_span,
 };
 use clap::Parser;
-use libp2p::{multiaddr::Protocol, Multiaddr};
-use std::{net::Ipv4Addr, time::Duration};
-use tokio::time::{interval_at, Instant};
-use tracing::{debug, error, info, metadata::ParseLevelError, warn, Level, Subscriber};
+use cli::CliOpts;
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Result,
+};
+use config::RuntimeConfig;
+use std::fs;
+use tokio::{select, sync::mpsc::UnboundedReceiver};
+use tracing::{error, info, span, warn, Level, Subscriber};
 use tracing_subscriber::{
 	fmt::format::{self},
 	EnvFilter, FmtSubscriber,
 };
-use types::RuntimeConfig;
 
-mod p2p;
+mod cli;
+mod config;
 mod server;
-mod types;
 
 const CLIENT_ROLE: &str = "bootnode";
 
-#[derive(Debug, Parser)]
-#[clap(name = "Avail Bootstrap Node")]
-struct CliOpts {
-	#[clap(long, short = 'c', help = "yaml configuration file")]
-	config: Option<String>,
-}
-
-fn parse_log_lvl(log_lvl: &str, default: Level) -> (Level, Option<ParseLevelError>) {
-	log_lvl
-		.to_uppercase()
-		.parse::<Level>()
-		.map(|lvl| (lvl, None))
-		.unwrap_or_else(|err| (default, Some(err)))
-}
-
-fn json_subscriber(log_lvl: Level) -> impl Subscriber + Send + Sync {
+pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light_bootstrap={log_lvl}")))
-		.event_format(format::json())
-		.finish()
-}
-
-fn default_subscriber(log_lvl: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light_bootstrap={log_lvl}")))
+		.json()
+		.with_env_filter(EnvFilter::new(format!("avail_light_bootstrap={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
 
-async fn run() -> Result<()> {
-	let opts = CliOpts::parse();
-	let mut cfg = RuntimeConfig::default();
-	if let Some(cfg_path) = &opts.config {
-		cfg = confy::load_path(cfg_path)
-			.context(format!("Failed to load configuration from path {cfg_path}"))?;
-	}
-
-	let (log_lvl, parse_err) = parse_log_lvl(&cfg.log_level, Level::INFO);
-	// set json trace format
-	if cfg.log_format_json {
-		tracing::subscriber::set_global_default(json_subscriber(log_lvl))
-			.expect("global json subscriber to be set");
-	} else {
-		tracing::subscriber::set_global_default(default_subscriber(log_lvl))
-			.expect("global default subscriber to be set");
-	}
-	if let Some(err) = parse_err {
-		warn!("Using default log level: {err}");
-	}
-
+pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
+	FmtSubscriber::builder()
+		.with_env_filter(EnvFilter::new(format!("avail_boot={log_level}")))
+		.with_span_events(format::FmtSpan::CLOSE)
+		.finish()
+}
+async fn run(
+	cfg: RuntimeConfig,
+	identity_cfg: IdentityConfig,
+	db: DB,
+	shutdown: Controller<String>,
+	client_id: Uuid,
+	execution_id: Uuid,
+) -> Result<()> {
 	let version = clap::crate_version!();
 	let rev = env!("GIT_COMMIT_HASH");
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using config: {:?}", cfg);
 
-	let cfg_libp2p: LibP2PConfig = (&cfg).into();
-	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
-	let (network_client, network_event_loop) =
-		p2p::init(&cfg_libp2p, id_keys, cfg.ws_transport_enable)
+	let (mut p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+		cfg.libp2p.clone(),
+		cfg.project_name.clone(),
+		id_keys,
+		version,
+		&cfg.genesis_hash,
+		false,
+		shutdown.clone(),
+		#[cfg(feature = "rocksdb")]
+		db.clone(),
+	)
+	.await?;
+
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+
+	// Start the TCP and WebRTC listeners
+	let addrs = vec![cfg.libp2p.tcp_multiaddress()];
+	p2p_client
+		.start_listening(addrs)
+		.await
+		.wrap_err("Error starting listener.")?;
+	info!("TCP listener started on port {}", cfg.libp2p.port);
+
+	let p2p_clone = p2p_client.to_owned();
+	let cfg_clone = cfg.to_owned();
+	spawn_in_span(shutdown.with_cancel(async move {
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		if let Err(error) = p2p_clone
+			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
 			.await
-			.context("Failed to initialize P2P Network Service.")?;
+		{
+			warn!("Bootstrap unsuccessful: {error:#}");
+		}
+	}));
 
-	tokio::spawn(server::run((&cfg).into(), network_client.clone()));
+	spawn_in_span(shutdown.with_cancel(server::run((&cfg).into(), p2p_client.clone())));
 
 	let resource_attributes = vec![
 		("version", version.to_string()),
 		("role", CLIENT_ROLE.to_string()),
+		("origin", cfg.origin.to_string()),
 		("peerID", peer_id.to_string()),
-		("origin", cfg.origin.clone()),
-		("network", network_name(&cfg.genesis_hash)),
+		("avail_address", identity_cfg.avail_public_key),
+		("network", Network::name(&cfg.genesis_hash)),
+		("client_id", client_id.to_string()),
+		(
+			"client_alias",
+			cfg.client_alias.clone().unwrap_or("".to_string()),
+		),
 	];
 
-	let mut ot_metrics = telemetry::otlp::initialize(
-		ProjectName::new("avail".to_string()),
-		&Origin::Other(cfg.origin),
-		cfg.otel,
+	let mut metrics = telemetry::otlp::initialize(
+		cfg.project_name.clone(),
+		&cfg.origin,
+		cfg.otel.clone(),
 		resource_attributes,
 	)
-	.map_err(anyhow::Error::msg)
-	.context("Unable to initialize OpenTelemetry service")?;
+	.wrap_err("Unable to initialize OpenTelemetry service")?;
 
-	// Spawn the network task
-	let loop_handle = tokio::spawn(network_event_loop.run());
+	metrics.set_attribute("execution_id", execution_id.to_string());
 
-	// Spawn metrics task
-	let m_network_client = network_client.clone();
-	tokio::spawn(async move {
-		let pause_duration = Duration::from_secs(cfg.metrics_network_dump_interval);
-		let mut interval = interval_at(Instant::now() + pause_duration, pause_duration);
-		// repeat and send commands on given interval
-		loop {
-			interval.tick().await;
-			// try and read current multiaddress
-			if let Ok(counted_peers) = m_network_client.count_dht_entries().await {
-				debug!("Number of peers in the routing table: {}", counted_peers);
-				ot_metrics.record(MetricValue::DHTConnectedPeers(counted_peers));
-			};
-			ot_metrics.count(MetricCounter::Up);
-		}
-	});
+	let mut state = ClientState::new(metrics);
 
-	// Listen on all interfaces
-
-	network_client
-		.start_listening(construct_multiaddress(cfg.ws_transport_enable, cfg.port))
-		.await
-		.context("Unable to create TCP P2P listener.")?;
-
-	info!("TCP listener started on port {}.", cfg.port);
-
-	info!("WebRTC listening on port {}.", cfg.webrtc_port);
-
-	info!("Bootstrap node starting ...");
-	// add bootstrap nodes, if provided
-	if !cfg.bootstraps.is_empty() {
-		network_client
-			.add_bootstrap_nodes(cfg.bootstraps.iter().map(Into::into).collect())
-			.await?;
-	} else {
-		info!("No bootstrap list provided, starting client as the first bootstrap on the network.")
-	}
-
-	loop_handle.await?;
+	spawn_in_span(shutdown.with_cancel(async move {
+		state.handle_events(p2p_event_receiver).await;
+	}));
 
 	Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-	run().await.map_err(|err| {
-		error!("{err}");
-		err
-	})
-}
+pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
+	let mut cfg = if let Some(cfg_path) = &opts.config {
+		fs::metadata(cfg_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
+		confy::load_path(cfg_path)
+			.wrap_err(format!("Failed to load configuration from: {}", cfg_path))?
+	} else {
+		RuntimeConfig::default()
+	};
 
-fn construct_multiaddress(is_websocket: bool, port: u16) -> Multiaddr {
-	let tcp_multiaddress = Multiaddr::empty()
-		.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-		.with(Protocol::Tcp(port));
+	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
+	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
 
-	if is_websocket {
-		return tcp_multiaddress.with(Protocol::Ws(std::borrow::Cow::Borrowed(
-			"avail-light-bootstrap",
-		)));
+	if let Some(port) = opts.port {
+		cfg.libp2p.port = port;
 	}
 
-	tcp_multiaddress
+	if let Some(http_port) = opts.http_server_port {
+		cfg.http_server_port = http_port;
+	}
+
+	if let Some(http_host) = opts.http_server_host.clone() {
+		cfg.http_server_host = http_host;
+	}
+
+	if let Some(secret_key) = &opts.private_key {
+		cfg.libp2p.secret_key = Some(SecretKey::Key {
+			key: secret_key.to_string(),
+		});
+	}
+
+	if let Some(seed) = &opts.seed {
+		cfg.libp2p.secret_key = Some(SecretKey::Seed {
+			seed: seed.to_string(),
+		})
+	}
+
+	if let Some(client_alias) = &opts.client_alias {
+		cfg.client_alias = Some(client_alias.clone())
+	}
+
+	if cfg.libp2p.bootstraps.is_empty() {
+		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
+	}
+
+	Ok(cfg)
+}
+
+struct ClientState {
+	metrics: Metrics,
+}
+
+impl ClientState {
+	fn new(metrics: Metrics) -> Self {
+		ClientState { metrics }
+	}
+
+	pub async fn handle_events(&mut self, mut p2p_receiver: UnboundedReceiver<P2pEvent>) {
+		self.metrics.count(MetricCounter::Starts);
+		loop {
+			select! {
+					Some(p2p_event) = p2p_receiver.recv() => {
+						match p2p_event {
+							P2pEvent::Count => {
+								self.metrics.count(MetricCounter::EventLoopEvent);
+							},
+							P2pEvent::IncomingGetRecord => {
+								self.metrics.count(MetricCounter::IncomingGetRecord);
+							},
+							P2pEvent::IncomingPutRecord => {
+								self.metrics.count(MetricCounter::IncomingPutRecord);
+							},
+							P2pEvent::KadModeChange(mode) => {
+								self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
+							}
+							P2pEvent::Ping{ rtt, .. } => {
+								self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
+							},
+							P2pEvent::IncomingConnection => {
+								self.metrics.count(MetricCounter::IncomingConnections);
+							},
+							P2pEvent::IncomingConnectionError => {
+								self.metrics.count(MetricCounter::IncomingConnectionErrors);
+							},
+							P2pEvent::EstablishedConnection => {
+								self.metrics.count(MetricCounter::EstablishedConnections);
+							},
+							P2pEvent::OutgoingConnectionError => {
+								self.metrics.count(MetricCounter::OutgoingConnectionErrors);
+							},
+							_ => {}
+						}
+					}
+
+				// break the loop if all channels are closed
+				else => break,
+			}
+		}
+	}
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+	let shutdown = Controller::new();
+	let opts = CliOpts::parse();
+	let cfg = load_runtime_config(&opts)?;
+
+	if cfg.log_format_json {
+		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))?;
+	} else {
+		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
+	};
+
+	#[cfg(not(feature = "rocksdb"))]
+	let db = data::DB::default();
+	#[cfg(feature = "rocksdb")]
+	let db = data::DB::open(&cfg.avail_bootstrap_path)?;
+
+	let client_id = db.get(ClientIdKey).unwrap_or_else(|| {
+		let client_id = Uuid::new_v4();
+		db.put(ClientIdKey, client_id.clone());
+		client_id
+	});
+
+	let execution_id = Uuid::new_v4();
+
+	let suri = match opts.avail_suri {
+		None => load_or_init_suri(&opts.identity)?,
+		Some(suri) => suri,
+	};
+	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
+
+	let span = span!(
+		Level::INFO,
+		"run",
+		client_id = client_id.to_string(),
+		execution_id = execution_id.to_string(),
+		client_alias = cfg.client_alias.clone().unwrap_or("".to_string())
+	); // Do not enter span if logs format is not JSON
+	let _enter = if cfg.log_format_json {
+		Some(span.enter())
+	} else {
+		None
+	};
+
+	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
+	spawn_in_span(shutdown.on_user_signal("User signaled shutdown".to_string()));
+
+	if let Err(error) = run(
+		cfg,
+		identity_cfg,
+		db,
+		shutdown.clone(),
+		client_id,
+		execution_id,
+	)
+	.await
+	{
+		error!("{error:#}");
+		return Err(error.wrap_err("Starting Light Client failed"));
+	};
+
+	let reason = shutdown.completed_shutdown().await;
+
+	// we are not logging error here since expectation is
+	// to log terminating condition before sending message to this channel
+	Err(eyre!(reason).wrap_err("Running Bootstrap Client encountered an error"))
 }
