@@ -3,6 +3,9 @@
 ## 1.2.7
 
 - Add polynomial multiproof features on core
+- Changed the default AutoNat `only_global_ips` from `false` to `true` so the servers (and clients) discard AutoNat probes
+  from the private-only peers
+- Updated the default AutoNat configuration with increased timeouts
 - Added counters for initial and switched RPC host connections to telemetry metrics
 - Added put records counter to telemetry metrics
 - Removed retry strategy from the Subxt Avail client

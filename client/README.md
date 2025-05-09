@@ -171,16 +171,6 @@ secret_key = { seed={seed} }
 port = 37000
 # P2P WebRTC listener port (default: 37001).
 webrtc_port = 37001
-# Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
-autonat_only_global_ips = false
-# AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1s)
-autonat_throttle = 2
-# Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 20s)
-autonat_retry_interval = 20
-# Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 360s)
-autonat_refresh_interval = 360
-# AutoNat on init delay before starting the first probe. (default: 5s)
-autonat_boot_delay = 10
 # Vector of Light Client bootstrap nodes, used to bootstrap the DHT (mandatory field).
 bootstraps = ["/ip4/13.51.79.255/tcp/39000/p2p/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
 # Vector of Relay nodes, which are used for hole punching

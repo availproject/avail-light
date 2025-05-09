@@ -64,6 +64,8 @@ impl MetricCounter {
 			MetricCounter::IncomingGetRecord,
 			MetricCounter::EventLoopEvent,
 			MetricCounter::DHTPutRecords,
+			MetricCounter::RpcConnected,
+			MetricCounter::RpcConnectionSwitched,
 		]
 	}
 
