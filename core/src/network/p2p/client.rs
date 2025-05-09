@@ -191,11 +191,9 @@ impl Client {
 	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
-				context
-					.swarm
-					.behaviour_mut()
-					.auto_nat()
-					.map(|nat| nat.add_server(peer_id, Some(address)));
+				if let Some(nat) = context.swarm.behaviour_mut().auto_nat() {
+					nat.add_server(peer_id, Some(address))
+				}
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Add AutoNat Server Command to the EventLoop"))
@@ -340,21 +338,17 @@ impl Client {
 
 					if memory_gb > memory_gb_threshold && cpus > cpus_threshold {
 						info!("Switching Kademlia mode to server!");
-						context
-							.swarm
-							.behaviour_mut()
-							.kademlia()
-							.map(|kad| kad.set_mode(Some(Mode::Server)));
+						if let Some(kad) = context.swarm.behaviour_mut().kademlia() {
+							kad.set_mode(Some(Mode::Server))
+						}
 						context.kad_mode = Mode::Server;
 					}
 				} else if matches!(context.kad_mode, Mode::Server) && external_addresses.is_empty()
 				{
 					info!("Peer is not externally reachable, switching to client mode.");
-					context
-						.swarm
-						.behaviour_mut()
-						.kademlia()
-						.map(|kad| kad.set_mode(Some(Mode::Client)));
+					if let Some(kad) = context.swarm.behaviour_mut().kademlia() {
+						kad.set_mode(Some(Mode::Client))
+					}
 					context.kad_mode = Mode::Client;
 				}
 
@@ -474,12 +468,14 @@ impl Client {
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.command_sender
 			.send(Box::new(|context: &mut EventLoop| {
-				context
+				if let Some(store) = context
 					.swarm
 					.behaviour_mut()
 					.kademlia()
 					.map(|kad| kad.store_mut())
-					.map(|store| store.shrink_hashmap());
+				{
+					store.shrink_hashmap()
+				}
 
 				Ok(())
 			}))

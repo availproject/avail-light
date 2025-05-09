@@ -310,7 +310,7 @@ async fn build_swarm(
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_wasm_bindgen();
 
 	// check if we need relay client
-	let needs_relay_client = RelayMode::from(cfg.behaviour.relay_mode.clone()) == RelayMode::Client;
+	let needs_relay_client = cfg.behaviour.relay_mode.clone() == RelayMode::Client;
 
 	// create behaviour closure that uses the configuration to
 	// determine which components to enable
@@ -476,10 +476,9 @@ async fn build_swarm(
 	// Because the identify protocol doesn't allow us to change
 	// agent data on the fly, we're forced to use static Kad modes
 	// instead of relying on dynamic changes
-	swarm
-		.behaviour_mut()
-		.kademlia()
-		.map(|kad| kad.set_mode(Some(cfg.kademlia.operation_mode.into())));
+	if let Some(kad) = swarm.behaviour_mut().kademlia() {
+		kad.set_mode(Some(cfg.kademlia.operation_mode.into()))
+	}
 
 	Ok(swarm)
 }

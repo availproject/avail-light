@@ -386,10 +386,9 @@ impl EventLoop {
 									// Remove local records for fat clients (memory optimization)
 									if self.event_loop_config.is_fat_client {
 										trace!("Pruning local records on fat client");
-										self.swarm
-											.behaviour_mut()
-											.kademlia()
-											.map(|kad| kad.remove_record(&key));
+										if let Some(kad) = self.swarm.behaviour_mut().kademlia() {
+											kad.remove_record(&key)
+										}
 									}
 
 									_ = self.event_sender.send(OutputEvent::PutRecordFailed {
@@ -404,10 +403,9 @@ impl EventLoop {
 							// Remove local records for fat clients (memory optimization)
 							if self.event_loop_config.is_fat_client {
 								trace!("Pruning local records on fat client");
-								self.swarm
-									.behaviour_mut()
-									.kademlia()
-									.map(|kad| kad.remove_record(&key));
+								if let Some(kad) = self.swarm.behaviour_mut().kademlia() {
+									kad.remove_record(&key)
+								}
 							}
 
 							_ = self.event_sender.send(OutputEvent::PutRecordSuccess {
