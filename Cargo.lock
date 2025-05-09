@@ -1302,7 +1302,6 @@ dependencies = [
 name = "avail-light-bootstrap"
 version = "0.5.3"
 dependencies = [
- "anyhow",
  "async-std",
  "async-trait",
  "avail-light-core",
