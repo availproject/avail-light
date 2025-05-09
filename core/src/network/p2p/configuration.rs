@@ -309,7 +309,7 @@ impl LibP2PConfig {
 	}
 }
 
-/// creates Identify Config
+/// Creates Identify Config
 pub fn identify_config(
 	cfg: &LibP2PConfig,
 	public_key: libp2p::identity::PublicKey,
