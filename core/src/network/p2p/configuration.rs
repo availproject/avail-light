@@ -1,7 +1,9 @@
-use super::{protocol_name, ProvidersConfig};
+use super::{protocol_name, AgentVersion, ProvidersConfig, IDENTITY_PROTOCOL};
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::ServiceMode;
-use crate::types::{duration_seconds_format, KademliaMode, PeerAddress, SecretKey};
+use crate::types::{duration_seconds_format, KademliaMode, PeerAddress, ProjectName, SecretKey};
+use libp2p::identity::PublicKey;
+use libp2p::{autonat, identify};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
@@ -286,8 +288,30 @@ impl LibP2PConfig {
 	}
 }
 
+pub fn identify_config(
+	local_public_key: PublicKey,
+	project_name: ProjectName,
+	version: &str,
+) -> identify::Config {
+	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), local_public_key)
+		.with_agent_version(AgentVersion::new(project_name, version).to_string());
+
+	identify_cfg
+}
+
+pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
+	autonat::Config {
+		retry_interval: cfg.autonat.autonat_retry_interval,
+		refresh_interval: cfg.autonat.autonat_refresh_interval,
+		boot_delay: cfg.autonat.autonat_boot_delay,
+		throttle_server_period: cfg.autonat.autonat_throttle,
+		only_global_ips: cfg.autonat.autonat_only_global_ips,
+		..Default::default()
+	}
+}
+
+// creates Kademlia Config
 pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
-	// create Kademlia Config
 	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
 	kad_cfg
 		.set_publication_interval(Some(cfg.kademlia.publication_interval))
