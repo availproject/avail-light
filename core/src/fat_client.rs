@@ -10,6 +10,8 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
+#[cfg(not(feature = "multiproof"))]
+use avail_rust::kate_recovery::data::{self, SingleCell};
 #[cfg(feature = "multiproof")]
 use avail_rust::{kate_recovery::data::MultiProofCell, utils::generate_multiproof_grid_dims};
 use avail_rust::{
@@ -51,11 +53,6 @@ use tracing::warn;
 =======
 >>>>>>> 8bd2c48f (optimize pmp init)
 use tracing::{debug, error, info};
-#[cfg(not(feature = "multiproof"))]
-use {
-	avail_rust::kate_recovery::data::{self, SingleCell},
-	tracing::warn,
-};
 
 #[cfg(feature = "multiproof")]
 use crate::types::MULTI_PROOF_CELL_DIMS;
@@ -295,11 +292,13 @@ pub async fn process_block(
 	#[cfg(not(feature = "multiproof"))]
 >>>>>>> cfc4da89 (disable cell row collection for multiproofs)
 	if rpc_fetched.len() >= dimensions.cols().get() as usize {
-		let data_cell_variants = rpc_fetched
+		let cells: Vec<SingleCell> = rpc_fetched
 			.into_iter()
-			.filter(|cell| !cell.position().is_extended())
-			.collect::<Vec<_>>();
+			.filter(|c| !c.position().is_extended())
+			.filter_map(|c| SingleCell::try_from(c).ok())
+			.collect();
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 		let data_cells: Vec<&CellVariant> = data_cell_variants.iter().collect();
@@ -310,6 +309,9 @@ pub async fn process_block(
 =======
 		let data_cells: Vec<&Cell> = data_cell_variants.iter().collect();
 >>>>>>> 23e1a765 (rename CellType)
+=======
+		let data_cells: Vec<&SingleCell> = cells.iter().collect();
+>>>>>>> 2ecc1038 (merge changes from main)
 		let data_rows = data::rows(dimensions, &data_cells);
 
 		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {

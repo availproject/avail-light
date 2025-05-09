@@ -79,7 +79,11 @@ use crate::utils::spawn_in_span;
 mod core;
 
 #[cfg(not(feature = "multiproof"))]
+<<<<<<< HEAD
 >>>>>>> b2cc124a (multiproofs: Part II)
+=======
+#[allow(deprecated)]
+>>>>>>> 2ecc1038 (merge changes from main)
 async fn verify_proof(
 	public_parameters: Arc<ArkPublicParams>,
 	dimensions: Dimensions,
