@@ -310,11 +310,19 @@ async fn build_swarm(
 			};
 
 			let identify = if cfg.behaviour.enable_identify {
+<<<<<<< HEAD
 				// create Identify Protocol Config
 				let identify_cfg = identify_config(cfg, id_keys.public())
 					.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
 
 				Some(identify::Behaviour::new(identify_cfg))
+=======
+				Either::Left(identify::Behaviour::new(identify_config(
+					key.public(),
+					project_name,
+					version,
+				)))
+>>>>>>> 3a4d6acd (Encapsulated config creations)
 			} else {
 				None
 			};
@@ -329,7 +337,11 @@ async fn build_swarm(
 				AutoNatMode::Disabled => None,
 				_ => {
 					let autonat_cfg = auto_nat_config(cfg);
+<<<<<<< HEAD
 					Some(autonat::Behaviour::new(
+=======
+					Either::Left(autonat::Behaviour::new(
+>>>>>>> 3a4d6acd (Encapsulated config creations)
 						key.public().to_peer_id(),
 						autonat_cfg,
 					))

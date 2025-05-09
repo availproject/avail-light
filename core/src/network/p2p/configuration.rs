@@ -1,4 +1,4 @@
-use super::{protocol_name, ProvidersConfig};
+use super::{protocol_name, AgentVersion, ProvidersConfig, IDENTITY_PROTOCOL};
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::ServiceMode;
 use crate::types::{
@@ -334,7 +334,7 @@ impl LibP2PConfig {
 	}
 }
 
-/// creates Identify Config
+/// Creates Identify Config
 pub fn identify_config(
 	cfg: &LibP2PConfig,
 	public_key: libp2p::identity::PublicKey,
@@ -352,7 +352,7 @@ pub fn identify_config(
 	identify_cfg
 }
 
-/// creates AutoNAT Config
+/// Creates AutoNAT Config
 pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 	autonat::Config {
 		retry_interval: cfg.autonat.autonat_retry_interval,
@@ -364,7 +364,7 @@ pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 	}
 }
 
-/// creates Kademlia Config
+/// Creates Kademlia Config
 pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
 	kad_cfg
