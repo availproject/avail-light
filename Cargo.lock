@@ -1210,6 +1210,7 @@ dependencies = [
  "opentelemetry_sdk",
  "parity-scale-codec",
  "pcap",
+ "prometheus-client",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",

@@ -157,6 +157,8 @@ pub struct LibP2PConfig {
 	pub bootstraps: Vec<PeerAddress>,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 	pub dht_parallelization_limit: usize,
+	/// Enable metrics collection (default: false)
+	pub metrics: bool,
 }
 
 impl Default for LibP2PConfig {
@@ -176,6 +178,7 @@ impl Default for LibP2PConfig {
 			dial_concurrency_factor: NonZeroU8::new(8).unwrap(),
 			bootstraps: vec![],
 			dht_parallelization_limit: 20,
+			metrics: false,
 		}
 	}
 }
