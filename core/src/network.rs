@@ -92,7 +92,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			.await;
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, mut unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -113,7 +112,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from DHT"
 		);
 
-		dht_fetched.retain(|cell| verified.contains(&cell.position));
+		dht_fetched.retain(|cell| verified.contains(&cell.position()));
 		unfetched.append(&mut unverified);
 
 		Ok((dht_fetched, unfetched, fetch_elapsed))
@@ -129,13 +128,29 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.rpc_client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.rpc_client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.rpc_client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -156,7 +171,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -193,7 +208,10 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 
 		if let Err(error) = self
 			.p2p_client
-			.insert_cells_into_dht(block_number, rpc_fetched.clone())
+			.insert_cells_into_dht(
+				block_number,
+				rpc_fetched.clone().into_iter().collect::<Vec<Cell>>(),
+			)
 			.await
 		{
 			debug!("Error inserting cells into DHT: {error}");
@@ -244,13 +262,29 @@ impl<T: Database> RPCClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -271,7 +305,7 @@ impl<T: Database> RPCClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
