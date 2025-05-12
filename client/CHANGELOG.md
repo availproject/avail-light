@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.12
+## [1.12.12](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.12) - 2025-05-12
 
 - Counting initialized and switched RPC host connections
 - Update `avail-light-core` to 1.2.7
