@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.7
+## [1.2.7](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.7) - 2025-05-12
 
 - Changed the default AutoNat `only_global_ips` from `false` to `true` so the servers (and clients) discard AutoNat probes
   from the private-only peers
