@@ -1,14 +1,12 @@
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, web, HttpResponse, Responder};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::HashMap,
-	net::{Ipv4Addr, SocketAddr},
 	sync::Arc,
 	time::{Duration, SystemTime},
 };
 use tokio::sync::Mutex;
-use tracing::{error, info};
 
 use crate::{config::PaginationConfig, types::ServerInfo};
 
@@ -57,7 +55,7 @@ fn default_limit() -> usize {
 pub struct AppState {
 	pub blacklist: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	pub server_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
-	pub config_pagination: PaginationConfig,
+	pub pagination: PaginationConfig,
 }
 
 #[get("/blacklisted_peers")]
@@ -67,8 +65,8 @@ async fn get_blacklisted_peers(
 ) -> impl Responder {
 	let blacklist = app_state.blacklist.lock().await;
 
-	let page = app_state.config_pagination.validate_page(pagination.page);
-	let limit = app_state.config_pagination.validate_limit(pagination.limit);
+	let page = app_state.pagination.validate_page(pagination.page);
+	let limit = app_state.pagination.validate_limit(pagination.limit);
 
 	let peers: Vec<(String, PeerInfo)> = blacklist
 		.iter()
@@ -109,8 +107,8 @@ async fn get_peers(
 	app_state: web::Data<AppState>,
 	pagination: web::Query<PaginationParams>,
 ) -> impl Responder {
-	let page = app_state.config_pagination.validate_page(pagination.page);
-	let limit = app_state.config_pagination.validate_limit(pagination.limit);
+	let page = app_state.pagination.validate_page(pagination.page);
+	let limit = app_state.pagination.validate_limit(pagination.limit);
 
 	let server_list = app_state.server_list.lock().await;
 	let blacklist = app_state.blacklist.lock().await;
@@ -163,42 +161,6 @@ async fn get_peer_count(app_state: web::Data<AppState>) -> impl Responder {
 	};
 
 	HttpResponse::Ok().json(counts)
-}
-pub async fn start_server(
-	blacklist: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
-	server_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
-	pagination_config: PaginationConfig,
-	http_port: u16,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let http_addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, http_port));
-	info!("Starting HTTP server on {}", http_addr);
-
-	let app_state = web::Data::new(AppState {
-		blacklist: blacklist.clone(),
-		server_list: server_list.clone(),
-		config_pagination: pagination_config.clone(),
-	});
-
-	let server = HttpServer::new(move || {
-		App::new()
-			.app_data(app_state.clone())
-			.service(get_blacklisted_peers)
-			.service(get_peers)
-			.service(get_peer_count)
-	})
-	.bind(http_addr)
-	.expect("Failed to bind HTTP server");
-
-	match server.run().await {
-		Ok(_) => {
-			info!("HTTP server stopped");
-			Ok(())
-		},
-		Err(e) => {
-			error!("HTTP server error: {}", e);
-			Err(Box::new(e))
-		},
-	}
 }
 
 fn build_pagination_urls(

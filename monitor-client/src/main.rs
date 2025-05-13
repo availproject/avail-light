@@ -1,3 +1,5 @@
+use crate::server::{get_blacklisted_peers, get_peer_count, get_peers};
+use actix_web::{web, App, HttpServer};
 use avail_light_core::{
 	data,
 	network::p2p::{self, is_multiaddr_global, OutputEvent},
@@ -11,8 +13,10 @@ use color_eyre::{eyre::Context, Result};
 use config::CliOpts;
 use libp2p::{Multiaddr, PeerId};
 use peer_monitor::PeerMonitor;
+use server::AppState;
 use std::{
 	collections::{HashMap, HashSet, VecDeque},
+	net::{Ipv4Addr, SocketAddr},
 	sync::Arc,
 	time::{Duration, SystemTime},
 };
@@ -143,28 +147,28 @@ async fn main() -> Result<()> {
 		};
 	}));
 
-	let server_list_clone = server_list.clone();
-	let server_black_list_clone = server_black_list.clone();
-	let config_pagination = config.pagination.clone();
-	spawn_in_span(shutdown.with_cancel(async move {
-		if let Err(e) = server::start_server(
-			server_black_list_clone,
-			server_list_clone,
-			config_pagination,
-			config.http_port.unwrap(),
-		)
-		.await
-		{
-			error!("HTTP server error: {e}");
-		}
-	}));
+	// let server_list_clone = server_list.clone();
+	// let server_black_list_clone = server_black_list.clone();
+	// let config_pagination = config.pagination.clone();
+	// spawn_in_span(shutdown.with_cancel(async move {
+	// 	if let Err(e) = server::start_server(
+	// 		server_black_list_clone,
+	// 		server_list_clone,
+	// 		config_pagination,
+	// 		config.http_port.unwrap(),
+	// 	)
+	// 	.await
+	// 	{
+	// 		error!("HTTP server error: {e}");
+	// 	}
+	// }));
 
 	// peer monitor
 	let config_clone = config.clone();
 	let peer_monitor = PeerMonitor::new(
 		p2p_client.clone(),
 		peer_monitor_interval,
-		server_list,
+		server_list.clone(),
 		server_black_list.clone(),
 		config_clone,
 	);
@@ -173,8 +177,35 @@ async fn main() -> Result<()> {
 		if let Err(e) = peer_monitor.start_monitoring().await {
 			error!("Peer monitor error: {e}");
 		};
-	}))
-	.await;
+	}));
+
+	let app_state = web::Data::new(AppState {
+		blacklist: server_black_list.clone(),
+		server_list: server_list.clone(),
+		pagination: config.pagination,
+	});
+
+	let server = HttpServer::new(move || {
+		App::new()
+			.app_data(app_state.clone())
+			.service(get_blacklisted_peers)
+			.service(get_peers)
+			.service(get_peer_count)
+	})
+	.bind(SocketAddr::from((
+		Ipv4Addr::UNSPECIFIED,
+		config.http_port.unwrap(),
+	)))?;
+
+	match server.run().await {
+		Ok(_) => {
+			info!("HTTP server stopped");
+		},
+		Err(e) => {
+			error!("HTTP server error: {}", e);
+		},
+	}
+
 	Ok(())
 }
 
