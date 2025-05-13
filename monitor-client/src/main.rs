@@ -28,12 +28,14 @@ mod bootstrap_monitor;
 mod config;
 mod peer_discovery;
 mod peer_monitor;
+mod server;
 mod types;
 
 // TODO: Add pruning logic that periodically goes through the list of servers and drops servers that were not seen for a while
 
 #[tokio::main]
 async fn main() -> Result<()> {
+	// Contains blacklisted peers
 	let server_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>> =
 		Arc::new(Mutex::new(HashMap::default()));
 	let server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>> =
@@ -139,6 +141,22 @@ async fn main() -> Result<()> {
 		if let Err(e) = peer_discovery.start_discovery().await {
 			error!("Peer discovery error: {e}");
 		};
+	}));
+
+	let server_list_clone = server_list.clone();
+	let server_black_list_clone = server_black_list.clone();
+	let config_pagination = config.pagination.clone();
+	spawn_in_span(shutdown.with_cancel(async move {
+		if let Err(e) = server::start_server(
+			server_black_list_clone,
+			server_list_clone,
+			config_pagination,
+			config.http_port.unwrap(),
+		)
+		.await
+		{
+			error!("HTTP server error: {e}");
+		}
 	}));
 
 	// peer monitor
