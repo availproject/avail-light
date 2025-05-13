@@ -16,7 +16,7 @@ pub struct PeerInfo {
 	multiaddr: Vec<String>,
 	last_discovered: Option<u64>,
 	last_successful_dial: Option<u64>,
-	average_ping_ms: Option<f64>,
+	average_ping_ms: Option<u128>,
 	last_ping_rtt: Option<Duration>,
 }
 
@@ -120,7 +120,7 @@ async fn get_peers(
 			let (avg_ping_ms, last_ping) = if is_blacklisted {
 				(None, None)
 			} else {
-				(info.avg_ping().map(|d| d.as_secs_f64()), info.last_ping_rtt)
+				(info.avg_ping().map(|d| d.as_millis()), info.last_ping_rtt)
 			};
 			(
 				peer_id.to_string(),
