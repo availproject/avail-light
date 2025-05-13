@@ -147,22 +147,6 @@ async fn main() -> Result<()> {
 		};
 	}));
 
-	// let server_list_clone = server_list.clone();
-	// let server_black_list_clone = server_black_list.clone();
-	// let config_pagination = config.pagination.clone();
-	// spawn_in_span(shutdown.with_cancel(async move {
-	// 	if let Err(e) = server::start_server(
-	// 		server_black_list_clone,
-	// 		server_list_clone,
-	// 		config_pagination,
-	// 		config.http_port.unwrap(),
-	// 	)
-	// 	.await
-	// 	{
-	// 		error!("HTTP server error: {e}");
-	// 	}
-	// }));
-
 	// peer monitor
 	let config_clone = config.clone();
 	let peer_monitor = PeerMonitor::new(
