@@ -1,14 +1,14 @@
 #![doc = include_str!("../README.md")]
 
 use avail_light_core::{
-	data::MemoryDB,
+	data::{self, ClientIdKey, Database, DB},
 	network::{
 		p2p::{self, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
 		Network,
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{load_or_init_suri, IdentityConfig, SecretKey, Uuid},
+	types::{load_or_init_suri, IdentityConfig, ProjectName, SecretKey, Uuid},
 	utils::spawn_in_span,
 };
 use clap::Parser;
@@ -49,6 +49,7 @@ pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
+	db: DB,
 	shutdown: Controller<String>,
 	client_id: Uuid,
 	execution_id: Uuid,
@@ -58,16 +59,18 @@ async fn run(
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using config: {:?}", cfg);
 
-	let (id_keys, peer_id) = p2p::identity::<MemoryDB>(&cfg.libp2p, None)?;
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		cfg.libp2p.clone(),
-		cfg.project_name.clone(),
+		ProjectName::new("avail".to_string()),
 		id_keys,
 		version,
 		&cfg.genesis_hash,
-		false,
+		true,
 		shutdown.clone(),
+		#[cfg(feature = "rocksdb")]
+		db.clone(),
 	)
 	.await?;
 
@@ -240,7 +243,17 @@ async fn main() -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
 	};
 
-	let client_id = Uuid::new_v4();
+	#[cfg(not(feature = "rocksdb"))]
+	let db = data::DB::default();
+	#[cfg(feature = "rocksdb")]
+	let db = data::DB::open(&cfg.avail_bootstrap_path)?;
+
+	let client_id = db.get(ClientIdKey).unwrap_or_else(|| {
+		let client_id = Uuid::new_v4();
+		db.put(ClientIdKey, client_id.clone());
+		client_id
+	});
+
 	let execution_id = Uuid::new_v4();
 
 	let suri = match opts.avail_suri {
@@ -265,7 +278,16 @@ async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.on_user_signal("User signaled shutdown".to_string()));
 
-	if let Err(error) = run(cfg, identity_cfg, shutdown.clone(), client_id, execution_id).await {
+	if let Err(error) = run(
+		cfg,
+		identity_cfg,
+		db,
+		shutdown.clone(),
+		client_id,
+		execution_id,
+	)
+	.await
+	{
 		error!("{error:#}");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};

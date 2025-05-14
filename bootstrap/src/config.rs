@@ -35,6 +35,8 @@ pub struct RuntimeConfig {
 	pub genesis_hash: String,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
+	/// File system path where RocksDB used by bootstrap client, stores its data.
+	pub avail_bootstrap_path: String,
 }
 
 impl Default for RuntimeConfig {
@@ -71,6 +73,7 @@ impl Default for RuntimeConfig {
 				..Default::default()
 			},
 			client_alias: None,
+			avail_bootstrap_path: "avail_bootstrap_path".to_owned(),
 		}
 	}
 }
