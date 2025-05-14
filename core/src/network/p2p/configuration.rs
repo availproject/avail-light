@@ -1,11 +1,10 @@
-use super::{protocol_name, AgentVersion, ProvidersConfig, IDENTITY_PROTOCOL};
+use super::{protocol_name, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::ServiceMode;
 use crate::types::{
-	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress,
-	ProjectName, SecretKey,
+	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress, SecretKey,
 };
-use libp2p::{autonat, identify, identity::PublicKey, kad, multiaddr::Protocol, Multiaddr};
+use libp2p::{autonat, kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
