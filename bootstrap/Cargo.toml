@@ -8,7 +8,7 @@ description = "Avail network Bootstrap Node for p2p Light Client"
 [dependencies]
 async-std = { workspace = true }
 async-trait = { workspace = true }
-avail-light-core = { workspace = true, features = ["bootstrap"], default-features = false }
+avail-light-core = { workspace = true }
 clap = { workspace = true }
 color-eyre = { workspace = true }
 confy = { workspace = true }

@@ -8,7 +8,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{load_or_init_suri, IdentityConfig, SecretKey, Uuid},
+	types::{load_or_init_suri, IdentityConfig, ProjectName, SecretKey, Uuid},
 	utils::spawn_in_span,
 };
 use clap::Parser;
@@ -63,11 +63,11 @@ async fn run(
 
 	let (mut p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		cfg.libp2p.clone(),
-		cfg.project_name.clone(),
+		ProjectName::new("avail".to_string()),
 		id_keys,
 		version,
 		&cfg.genesis_hash,
-		false,
+		true,
 		shutdown.clone(),
 		#[cfg(feature = "rocksdb")]
 		db.clone(),

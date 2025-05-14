@@ -292,8 +292,8 @@ impl Client {
 								// We just need to hit the first external address
 								break;
 							}
-							total_peers += 1;
 						}
+						total_peers += 1;
 					}
 				}
 

@@ -35,7 +35,7 @@ pub struct RuntimeConfig {
 	pub genesis_hash: String,
 	/// Client alias for use in logs and metrics
 	pub client_alias: Option<String>,
-	/// File system path where RocksDB used by light client bootstrap to stores its data.
+	/// File system path where RocksDB used by bootstrap client to stores its data.
 	pub avail_bootstrap_path: String,
 }
 
