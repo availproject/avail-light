@@ -282,7 +282,7 @@ impl EventLoop {
 	#[tracing::instrument(level = "trace", skip(self))]
 	async fn handle_event(&mut self, event: SwarmEvent<ConfigurableBehaviourEvent>) {
 		match event {
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Kademlia(Either::Left(event))) => {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Kademlia(event)) => {
 				match event {
 					kad::Event::RoutingUpdated {
 						peer,
@@ -319,7 +319,8 @@ impl EventLoop {
 									_ = self
 										.swarm
 										.behaviour_mut()
-										.kademlia()
+										.kademlia
+										.as_mut()
 										.map(|kad| kad.store_mut().put(record));
 								},
 								None => {
@@ -359,8 +360,15 @@ impl EventLoop {
 						QueryResult::GetClosestPeers(result) => match result {
 							Ok(GetClosestPeersOk { peers, .. }) => {
 								let peer_addresses = collect_peer_addresses(peers);
-
 								if !peer_addresses.is_empty() {
+									// Send results to the query channel if it exists
+									if let Some(QueryChannel::GetClosestPeer(ch)) =
+										self.pending_kad_queries.remove(&id)
+									{
+										let _ = ch.send(Ok(peer_addresses.clone()));
+									}
+
+									// Notify about discovered peers
 									let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
 										peers: peer_addresses,
 									});
@@ -371,8 +379,15 @@ impl EventLoop {
 								let GetClosestPeersError::Timeout { key: _, peers } = err;
 
 								let peer_addresses = collect_peer_addresses(peers);
-
 								if !peer_addresses.is_empty() {
+									// Send results to the query channel if it exists
+									if let Some(QueryChannel::GetClosestPeer(ch)) =
+										self.pending_kad_queries.remove(&id)
+									{
+										let _ = ch.send(Ok(peer_addresses.clone()));
+									}
+
+									// Notify about discovered peers
 									let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
 										peers: peer_addresses,
 									});
@@ -386,7 +401,9 @@ impl EventLoop {
 									// Remove local records for fat clients (memory optimization)
 									if self.event_loop_config.is_fat_client {
 										trace!("Pruning local records on fat client");
-										if let Some(kad) = self.swarm.behaviour_mut().kademlia() {
+										if let Some(kad) =
+											self.swarm.behaviour_mut().kademlia.as_mut()
+										{
 											kad.remove_record(&key)
 										}
 									}
@@ -403,7 +420,7 @@ impl EventLoop {
 							// Remove local records for fat clients (memory optimization)
 							if self.event_loop_config.is_fat_client {
 								trace!("Pruning local records on fat client");
-								if let Some(kad) = self.swarm.behaviour_mut().kademlia() {
+								if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
 									kad.remove_record(&key)
 								}
 							}
@@ -431,7 +448,7 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Identify(Either::Left(event))) => {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Identify(event)) => {
 				match event {
 					identify::Event::Received {
 						peer_id,
@@ -465,7 +482,8 @@ impl EventLoop {
 							);
 							self.swarm
 								.behaviour_mut()
-								.kademlia()
+								.kademlia
+								.as_mut()
 								.map(|kad| kad.remove_peer(&peer_id));
 							return;
 						}
@@ -473,7 +491,8 @@ impl EventLoop {
 						if let Some(protocol) = self
 							.swarm
 							.behaviour_mut()
-							.kademlia()
+							.kademlia
+							.as_mut()
 							.map(|kad| kad.protocol_names()[0].clone())
 						{
 							if protocols.contains(&protocol) {
@@ -481,7 +500,8 @@ impl EventLoop {
 								for addr in listen_addrs {
 									self.swarm
 										.behaviour_mut()
-										.kademlia()
+										.kademlia
+										.as_mut()
 										.map(|kad| kad.add_address(&peer_id, addr));
 								}
 							} else {
@@ -489,7 +509,8 @@ impl EventLoop {
 								debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 								self.swarm
 									.behaviour_mut()
-									.kademlia()
+									.kademlia
+									.as_mut()
 									.map(|kad| kad.remove_peer(&peer_id));
 							}
 						}
@@ -512,7 +533,7 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(Either::Left(event))) => {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(event)) => {
 				match event {
 					autonat::Event::InboundProbe(e) => {
 						trace!("[AutoNat] Inbound Probe: {:#?}", e);
@@ -537,29 +558,28 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Relay(behaviour)) => {
 				match behaviour {
-					Either::Left(Either::Left(clint_event)) => {
+					Either::Left(clint_event) => {
 						trace! {"Relay Client Event: {clint_event:#?}"};
 					},
-					Either::Left(Either::Right(server_event)) => {
+					Either::Right(server_event) => {
 						trace! {"Relay Server Event: {server_event:#?}"};
 					},
-					_ => {},
 				}
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Dcutr(Either::Left(
-				dcutr::Event {
-					remote_peer_id,
-					result,
-				},
-			))) => match result {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Dcutr(dcutr::Event {
+				remote_peer_id,
+				result,
+			})) => match result {
 				Ok(_) => trace!("Hole punching succeeded with: {remote_peer_id:#?}"),
 				Err(err) => {
 					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
 				},
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(Either::Left(
-				ping::Event { peer, result, .. },
-			))) => {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(ping::Event {
+				peer,
+				result,
+				..
+			})) => {
 				if let Ok(rtt) = result {
 					_ = self.event_sender.send(OutputEvent::Ping { peer, rtt });
 				}
@@ -629,7 +649,8 @@ impl EventLoop {
 								if let Some(Some(peer)) = self
 									.swarm
 									.behaviour_mut()
-									.kademlia()
+									.kademlia
+									.as_mut()
 									.map(|kad| kad.remove_peer(&peer_id))
 								{
 									let removed_peer_id = peer.node.key.preimage();

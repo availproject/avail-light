@@ -12,9 +12,9 @@ use libp2p::tcp;
 use libp2p::{
 	autonat, dcutr, identify,
 	identity::{self, ed25519, Keypair},
-	kad::{self, GetClosestPeersResult, Mode, PeerRecord, QueryStats, Record, RecordKey},
+	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
 	noise, ping, relay,
-	swarm::{dummy::Behaviour as DummyBehaviour, NetworkBehaviour},
+	swarm::{behaviour::toggle::Toggle, NetworkBehaviour},
 	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -173,10 +173,12 @@ impl AgentVersion {
 	}
 }
 
+pub type ClosestPeers = Vec<(PeerId, Vec<libp2p::Multiaddr>)>;
+
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	GetClosestPeer(oneshot::Sender<Result<GetClosestPeersResult>>),
+	GetClosestPeer(oneshot::Sender<Result<ClosestPeers>>),
 }
 
 type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
@@ -186,41 +188,25 @@ type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
 #[behaviour(event_process = false)]
 pub struct ConfigurableBehaviour {
 	#[behaviour(optional)]
-	kademlia: Either<kad::Behaviour<Store>, DummyBehaviour>,
+	kademlia: Toggle<kad::Behaviour<Store>>,
 
 	#[behaviour(optional)]
-	identify: Either<identify::Behaviour, DummyBehaviour>,
+	identify: Toggle<identify::Behaviour>,
 
 	#[behaviour(optional)]
-	ping: Either<ping::Behaviour, DummyBehaviour>,
+	ping: Toggle<ping::Behaviour>,
 
 	#[behaviour(optional)]
-	auto_nat: Either<autonat::Behaviour, DummyBehaviour>,
+	auto_nat: Toggle<autonat::Behaviour>,
 
 	#[behaviour(optional)]
-	relay: Either<Either<relay::client::Behaviour, relay::Behaviour>, DummyBehaviour>,
+	relay: Toggle<Either<relay::client::Behaviour, relay::Behaviour>>,
 
 	#[behaviour(optional)]
-	dcutr: Either<dcutr::Behaviour, DummyBehaviour>,
+	dcutr: Toggle<dcutr::Behaviour>,
 
 	#[behaviour(optional)]
-	blocked_peers: Either<allow_block_list::Behaviour<BlockedPeers>, DummyBehaviour>,
-}
-
-impl ConfigurableBehaviour {
-	pub fn kademlia(&mut self) -> Option<&mut kad::Behaviour<Store>> {
-		match &mut self.kademlia {
-			Either::Left(k) => Some(k),
-			Either::Right(_) => None,
-		}
-	}
-
-	pub fn auto_nat(&mut self) -> Option<&mut autonat::Behaviour> {
-		match &mut self.auto_nat {
-			Either::Left(a) => Some(a),
-			Either::Right(_) => None,
-		}
-	}
+	blocked_peers: Toggle<allow_block_list::Behaviour<BlockedPeers>>,
 }
 
 #[derive(Debug)]
@@ -318,13 +304,13 @@ async fn build_swarm(
 		move |key: &identity::Keypair, relay_client_opt: Option<relay::client::Behaviour>| {
 			let kademlia = if cfg.behaviour.enable_kademlia {
 				let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
-				Either::Left(kad::Behaviour::with_config(
+				Some(kad::Behaviour::with_config(
 					key.public().to_peer_id(),
 					kad_store,
 					kad_cfg,
 				))
 			} else {
-				Either::Right(DummyBehaviour)
+				None
 			};
 
 			let identify = if cfg.behaviour.enable_identify {
@@ -332,22 +318,22 @@ async fn build_swarm(
 				let identify_cfg = identify_config(cfg, id_keys.public())
 					.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
 
-				Either::Left(identify::Behaviour::new(identify_cfg))
+				Some(identify::Behaviour::new(identify_cfg))
 			} else {
-				Either::Right(DummyBehaviour)
+				None
 			};
 
 			let ping = if cfg.behaviour.enable_ping {
-				Either::Left(ping::Behaviour::new(ping::Config::new()))
+				Some(ping::Behaviour::new(ping::Config::new()))
 			} else {
-				Either::Right(DummyBehaviour)
+				None
 			};
 
 			let auto_nat = match cfg.behaviour.auto_nat_mode {
-				AutoNatMode::Disabled => Either::Right(DummyBehaviour),
+				AutoNatMode::Disabled => None,
 				_ => {
 					let autonat_cfg = auto_nat_config(cfg);
-					Either::Left(autonat::Behaviour::new(
+					Some(autonat::Behaviour::new(
 						key.public().to_peer_id(),
 						autonat_cfg,
 					))
@@ -355,42 +341,34 @@ async fn build_swarm(
 			};
 
 			let relay = match cfg.behaviour.relay_mode {
-				RelayMode::Disabled => Either::Right(DummyBehaviour),
-				RelayMode::Client => {
-					if let Some(client) = relay_client_opt {
-						Either::Left(Either::Left(client))
-					} else {
-						// fallback if the client is not provided
-						// this shouldn't happen in normal flow
-						Either::Right(DummyBehaviour)
-					}
-				},
-				RelayMode::Server => Either::Left(Either::Right(relay::Behaviour::new(
+				RelayMode::Disabled => None,
+				RelayMode::Client => relay_client_opt.map(Either::Left),
+				RelayMode::Server => Some(Either::Right(relay::Behaviour::new(
 					key.public().to_peer_id(),
 					relay::Config::default(),
 				))),
 			};
 
 			let dcutr = if cfg.behaviour.enable_dcutr {
-				Either::Left(dcutr::Behaviour::new(key.public().to_peer_id()))
+				Some(dcutr::Behaviour::new(key.public().to_peer_id()))
 			} else {
-				Either::Right(DummyBehaviour)
+				None
 			};
 
 			let blocked_peers = if cfg.behaviour.enable_blocked_peers {
-				Either::Left(allow_block_list::Behaviour::default())
+				Some(allow_block_list::Behaviour::default())
 			} else {
-				Either::Right(DummyBehaviour)
+				None
 			};
 
 			Ok(ConfigurableBehaviour {
-				ping,
-				identify,
-				relay,
-				dcutr,
-				kademlia,
-				auto_nat,
-				blocked_peers,
+				ping: ping.into(),
+				identify: identify.into(),
+				relay: relay.into(),
+				dcutr: dcutr.into(),
+				kademlia: kademlia.into(),
+				auto_nat: auto_nat.into(),
+				blocked_peers: blocked_peers.into(),
 			})
 		};
 
@@ -476,7 +454,7 @@ async fn build_swarm(
 	// Because the identify protocol doesn't allow us to change
 	// agent data on the fly, we're forced to use static Kad modes
 	// instead of relying on dynamic changes
-	if let Some(kad) = swarm.behaviour_mut().kademlia() {
+	if let Some(kad) = swarm.behaviour_mut().kademlia.as_mut() {
 		kad.set_mode(Some(cfg.kademlia.operation_mode.into()))
 	}
 

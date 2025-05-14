@@ -10,7 +10,7 @@ use kate_recovery::{
 };
 
 use color_eyre::{
-	eyre::{eyre, WrapErr},
+	eyre::{eyre, OptionExt, WrapErr},
 	Result,
 };
 use futures::future::join_all;
@@ -153,12 +153,14 @@ impl Client {
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
-				context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.add_address(&peer_id, peer_addr));
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
 
+				kad.add_address(&peer_id, peer_addr);
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Add Address Command to the EventLoop"))
@@ -191,9 +193,14 @@ impl Client {
 	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
-				if let Some(nat) = context.swarm.behaviour_mut().auto_nat() {
-					nat.add_server(peer_id, Some(address))
-				}
+				let nat = context
+					.swarm
+					.behaviour_mut()
+					.auto_nat
+					.as_mut()
+					.ok_or_eyre("AutoNAT behaviour is not configured")?;
+
+				nat.add_server(peer_id, Some(address));
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Add AutoNat Server Command to the EventLoop"))
@@ -216,19 +223,18 @@ impl Client {
 	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
-				let query_id = context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.get_record(key));
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
 
-				if let Some(id) = query_id {
-					context
-						.pending_kad_queries
-						.insert(id, QueryChannel::GetRecord(response_sender))
-				} else {
-					None
-				};
+				let query_id = kad.get_record(key);
+				context
+					.pending_kad_queries
+					.insert(query_id, QueryChannel::GetRecord(response_sender));
+
 				Ok(())
 			})
 		})
@@ -243,18 +249,22 @@ impl Client {
 	) -> Result<()> {
 		self.command_sender
 			.send(Box::new(move |context: &mut EventLoop| {
+				let kad = context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
+
 				for record in records.clone() {
-					if let Some(kademlia) = &mut context.swarm.behaviour_mut().kademlia() {
-						if let Err(error) = kademlia.put_record(record, quorum) {
-							warn!("Put record failed: {error}");
-						}
+					if let Err(error) = kad.put_record(record, quorum) {
+						warn!("Put record failed: {error}");
 					}
 				}
 
 				context
 					.event_sender
 					.send(OutputEvent::PutRecord { block_num, records })?;
-
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Put Kad Record Command to the EventLoop"))
@@ -266,24 +276,24 @@ impl Client {
 				let mut total_peers: usize = 0;
 				let mut peers_with_non_pvt_addr: usize = 0;
 
-				if let Some(buckets) = context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.kbuckets())
-				{
-					// Now buckets is directly the iterator
-					for bucket in buckets {
-						for item in bucket.iter() {
-							for address in item.node.value.iter() {
-								if is_multiaddr_global(address) {
-									peers_with_non_pvt_addr += 1;
-									// We just need to hit the first external address
-									break;
-								}
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
+
+				// Now buckets is directly the iterator
+				for bucket in kad.kbuckets() {
+					for item in bucket.iter() {
+						for address in item.node.value.iter() {
+							if is_multiaddr_global(address) {
+								peers_with_non_pvt_addr += 1;
+								// We just need to hit the first external address
+								break;
 							}
-							total_peers += 1;
 						}
+						total_peers += 1;
 					}
 				}
 
@@ -328,6 +338,14 @@ impl Client {
 					.external_addresses()
 					.map(ToString::to_string)
 					.collect();
+
+				let kad = context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
+
 				if matches!(context.kad_mode, Mode::Client) && !external_addresses.is_empty() {
 					const BYTES_IN_GB: usize = 1024 * 1024 * 1024;
 
@@ -338,17 +356,13 @@ impl Client {
 
 					if memory_gb > memory_gb_threshold && cpus > cpus_threshold {
 						info!("Switching Kademlia mode to server!");
-						if let Some(kad) = context.swarm.behaviour_mut().kademlia() {
-							kad.set_mode(Some(Mode::Server))
-						}
+						kad.set_mode(Some(Mode::Server));
 						context.kad_mode = Mode::Server;
 					}
 				} else if matches!(context.kad_mode, Mode::Server) && external_addresses.is_empty()
 				{
 					info!("Peer is not externally reachable, switching to client mode.");
-					if let Some(kad) = context.swarm.behaviour_mut().kademlia() {
-						kad.set_mode(Some(Mode::Client))
-					}
+					kad.set_mode(Some(Mode::Client));
 					context.kad_mode = Mode::Client;
 				}
 
@@ -408,20 +422,26 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_closest_peers(&self, peer_id: PeerId) -> Result<()> {
+	pub async fn get_closest_peers(
+		&self,
+		peer_id: PeerId,
+	) -> Result<Vec<(PeerId, Vec<libp2p::Multiaddr>)>> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
 				// N = 20 because that's the Kademlia max limit
-				context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.get_n_closest_peers(peer_id, NonZeroUsize::new(20).unwrap()));
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
 
-				response_sender
-					.send(Ok(()))
-					.map_err(|e| eyre!("Failed to send response for closest peers: {e:?}"))?;
-
+				let num_results =
+					NonZeroUsize::new(20).ok_or_eyre("Failed to create NonZeroUsize value")?;
+				let query_id = kad.get_n_closest_peers(peer_id, num_results);
+				context
+					.pending_kad_queries
+					.insert(query_id, QueryChannel::GetClosestPeer(response_sender));
 				Ok(())
 			})
 		})
@@ -433,18 +453,18 @@ impl Client {
 			Box::new(move |context: &mut EventLoop| {
 				let mut multiaddresses: Vec<String> = Vec::new();
 
-				if let Some(buckets) = context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.kbuckets())
-				{
-					for bucket in buckets {
-						for item in bucket.iter() {
-							if *item.node.key.preimage() == peer_id {
-								for addr in item.node.value.iter() {
-									multiaddresses.push(addr.to_string());
-								}
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
+
+				for bucket in kad.kbuckets() {
+					for item in bucket.iter() {
+						if *item.node.key.preimage() == peer_id {
+							for addr in item.node.value.iter() {
+								multiaddresses.push(addr.to_string());
 							}
 						}
 					}
@@ -468,15 +488,14 @@ impl Client {
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.command_sender
 			.send(Box::new(|context: &mut EventLoop| {
-				if let Some(store) = context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.store_mut())
-				{
-					store.shrink_hashmap()
-				}
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
 
+				kad.store_mut().shrink_hashmap();
 				Ok(())
 			}))
 			.map_err(|_| eyre!("Failed to send the Shrink Kademlia Map Command to the EventLoop"))
@@ -485,20 +504,18 @@ impl Client {
 	pub async fn get_kademlia_map_size(&self) -> Result<usize> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
-				if let Some(records) = context
+				let kad = context
 					.swarm
 					.behaviour_mut()
-					.kademlia()
-					.map(|kad| kad.store_mut())
-					.map(|store| store.records())
-				{
-					let size = records.count();
-					response_sender.send(Ok(size)).map_err(|e| {
-						eyre!(
-							"Encountered error while sending Get Kademlia Map Size response: {e:?}"
-						)
-					})?;
-				}
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
+
+				let size = kad.store_mut().records().count();
+				response_sender.send(Ok(size)).map_err(|e| {
+					eyre!("Encountered error while sending Get Kademlia Map Size response: {e:?}")
+				})?;
+
 				Ok(())
 			})
 		})
@@ -518,22 +535,24 @@ impl Client {
 				})
 			} else {
 				Box::new(move |context: &mut EventLoop| {
-					if let Some(store) = context
+					let kad = context
 						.swarm
 						.behaviour_mut()
-						.kademlia()
-						.map(|kad| kad.store_mut())
-					{
-						let before = store.records().count();
-						store.retain(|_, record| !record.is_expired(now));
-						let after = store.records().count();
+						.kademlia
+						.as_mut()
+						.ok_or_eyre("Kademlia behaviour not configured")?;
 
-						response_sender.send(Ok(before - after)).map_err(|e| {
-							eyre!(
+					let store = kad.store_mut();
+					let before = store.records().count();
+					store.retain(|_, record| !record.is_expired(now));
+					let after = store.records().count();
+
+					response_sender.send(Ok(before - after)).map_err(|e| {
+						eyre!(
 							"Encountered error while sending Prune Expired Records response: {e:?}"
 						)
-						})?;
-					}
+					})?;
+
 					Ok(())
 				})
 			}
