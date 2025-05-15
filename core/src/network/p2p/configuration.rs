@@ -34,7 +34,7 @@ pub struct AutoNATConfig {
 	pub autonat_only_global_ips: bool,
 
 	/// Server configuration:
-	/// Max total dial requests done in `[Config::throttle_clients_period`]. (default: 10)
+	/// Max total dial requests done in `[Config::throttle_clients_period`]. (default: 5)
 	pub throttle_clients_global_max: usize,
 	/// Max dial requests done in `[Config::throttle_clients_period`] for a peer. (default: 10)
 	pub throttle_clients_peer_max: usize,
