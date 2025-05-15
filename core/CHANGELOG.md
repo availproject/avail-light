@@ -1,8 +1,14 @@
 # Changelog
 
+<<<<<<< HEAD
 ## [1.2.8]
 
 - Exposed additional AutoNat configurations, increased AutoNat server throttling
+=======
+## 1.2.8
+
+- Allow insecure URLs to be used when creating RPC client
+>>>>>>> 55e3684d (Allowing insecure urls for rpc client)
 
 ## [1.2.7](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.7) - 2025-05-12
 
