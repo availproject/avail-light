@@ -17,6 +17,7 @@ use web_time::Duration;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct AutoNATConfig {
+	/// Client configuration:
 	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_retry_interval: Duration,
@@ -29,8 +30,17 @@ pub struct AutoNATConfig {
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_throttle: Duration,
-	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: true)
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address. (default: true)
 	pub autonat_only_global_ips: bool,
+
+	/// Server configuration:
+	/// Max total dial requests done in `[Config::throttle_clients_period`]. (default: 5)
+	pub throttle_clients_global_max: usize,
+	/// Max dial requests done in `[Config::throttle_clients_period`] for a peer. (default: 10)
+	pub throttle_clients_peer_max: usize,
+	/// Period for throttling clients requests. (default: 1s)
+	#[serde(with = "duration_seconds_format")]
+	pub throttle_clients_period: Duration,
 }
 
 impl Default for AutoNATConfig {
@@ -41,6 +51,9 @@ impl Default for AutoNATConfig {
 			autonat_boot_delay: Duration::from_secs(15),
 			autonat_throttle: Duration::from_secs(90),
 			autonat_only_global_ips: true,
+			throttle_clients_global_max: 5,
+			throttle_clients_peer_max: 1,
+			throttle_clients_period: Duration::from_secs(1),
 		}
 	}
 }
