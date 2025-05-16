@@ -78,7 +78,7 @@ async fn run(
 		&identity_cfg.clone().avail_public_key
 	);
 
-	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
+	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, Some(db.clone()))?;
 
 	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		cfg.libp2p.clone(),
