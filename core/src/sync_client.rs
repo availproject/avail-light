@@ -15,6 +15,8 @@
 //!
 //! In case RPC is disabled, RPC calls will be skipped.
 
+#[cfg(feature = "multiproof")]
+use crate::types::MULTI_PROOF_CELL_DIMS;
 use crate::{
 	data::{
 		AchievedSyncConfidenceKey, BlockHeaderKey, Database, IsSyncedKey, LatestSyncKey,
@@ -29,6 +31,8 @@ use crate::{
 };
 
 use async_trait::async_trait;
+#[cfg(feature = "multiproof")]
+use avail_rust::utils::generate_multiproof_grid_dims;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
 	AvailHeader, H256,
@@ -154,7 +158,37 @@ async fn process_block(
 
 			// now this is in `u64`
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-			let positions = rpc::generate_random_cells(dimensions, cell_count);
+			let positions = {
+				#[cfg(feature = "multiproof")]
+				{
+					let Some(multiproof_cell_dims) =
+						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+					else {
+						info!(
+							block_number,
+							"Skipping block with invalid multiproof cell dimensions",
+						);
+						return Ok(());
+					};
+
+					let Some(target_multiproof_grid_dims) =
+						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+					else {
+						info!(
+							block_number,
+							"Skipping block with invalid target multiproof grid dimensions",
+						);
+						return Ok(());
+					};
+
+					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
+				}
+
+				#[cfg(not(feature = "multiproof"))]
+				{
+					rpc::generate_random_cells(dimensions, cell_count)
+				}
+			};
 
 			let (fetched, unfetched, _fetch_stats) = network_client
 				.fetch_verified(
@@ -267,7 +301,10 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::Cell, matrix::Position},
+		kate_recovery::{
+			data::{Cell, SingleCell},
+			matrix::Position,
+		},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -328,8 +365,8 @@ mod tests {
 			.expect_fetch_verified()
 			.returning(move |_, _, _, _, positions| {
 				let unfetched = vec![];
-				let fetched: Vec<Cell> = vec![
-					Cell {
+				let fetched: Vec<SingleCell> = vec![
+					SingleCell {
 						position: Position { row: 0, col: 0 },
 						content: [
 							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
@@ -339,7 +376,7 @@ mod tests {
 							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 0, col: 2 },
 						content: [
 							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
@@ -350,7 +387,7 @@ mod tests {
 							163, 206, 115, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 1, col: 1 },
 						content: [
 							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
@@ -361,7 +398,7 @@ mod tests {
 							193, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 0, col: 3 },
 						content: [
 							150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240,
@@ -380,6 +417,7 @@ mod tests {
 					Duration::from_secs(0),
 					None,
 				);
+				let fetched: Vec<Cell> = fetched.into_iter().map(Cell::SingleCell).collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 		mock_client
@@ -417,8 +455,8 @@ mod tests {
 			.withf(|&x, _, _, _, _| x == 2)
 			.returning(move |_, _, _, _, positions| {
 				let unfetched = vec![Position { row: 0, col: 3 }];
-				let dht_fetched: Vec<Cell> = vec![
-					Cell {
+				let dht_fetched: Vec<SingleCell> = vec![
+					SingleCell {
 						position: Position { row: 0, col: 0 },
 						content: [
 							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
@@ -428,7 +466,7 @@ mod tests {
 							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 0, col: 2 },
 						content: [
 							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
@@ -439,7 +477,7 @@ mod tests {
 							163, 206, 115, 0,
 						],
 					},
-					Cell {
+					SingleCell {
 						position: Position { row: 1, col: 1 },
 						content: [
 							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
@@ -451,7 +489,7 @@ mod tests {
 						],
 					},
 				];
-				let rpc_fetched: Vec<Cell> = vec![Cell {
+				let rpc_fetched: Vec<SingleCell> = vec![SingleCell {
 					position: Position { row: 0, col: 3 },
 					content: [
 						150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240, 174,
@@ -468,7 +506,11 @@ mod tests {
 					Duration::from_secs(0),
 					Some((rpc_fetched.len(), Duration::from_secs(1))),
 				);
-				let fetched = [&dht_fetched[..], &rpc_fetched[..]].concat();
+				let fetched: Vec<Cell> = dht_fetched
+					.into_iter()
+					.chain(rpc_fetched.into_iter())
+					.map(Cell::SingleCell)
+					.collect();
 				Box::pin(async move { Ok((fetched, unfetched, stats)) })
 			});
 
