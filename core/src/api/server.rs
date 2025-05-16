@@ -22,11 +22,15 @@ use crate::{
 
 use color_eyre::eyre::WrapErr;
 use futures::{Future, FutureExt};
-use hyper::StatusCode;
-use std::{net::SocketAddr, str::FromStr};
+use prometheus_client::{encoding::text::encode, registry::Registry};
+use std::{
+	net::SocketAddr,
+	str::FromStr,
+	sync::{Arc, Mutex},
+};
 use tracing::error;
 use tracing::info;
-use warp::{Filter, Rejection, Reply};
+use warp::{http, reply, Filter, Rejection, Reply};
 
 use super::configuration::{APIConfig, SharedConfig};
 use super::types::WsClients;
@@ -40,6 +44,34 @@ pub struct Server<T: Database> {
 	pub ws_clients: WsClients,
 	pub shutdown: Controller<String>,
 	pub p2p_client: p2p::Client,
+	pub metric_registry: Option<Arc<Mutex<Registry>>>,
+}
+
+async fn metrics_handler(registry: Option<Arc<Mutex<Registry>>>) -> Result<impl Reply, Rejection> {
+	let Some(registry) = registry else {
+		return Ok(
+			reply::with_status("Metrics not found", http::StatusCode::NOT_FOUND).into_response(),
+		);
+	};
+
+	let registry = registry.lock().unwrap();
+	let mut buffer = String::new();
+	encode(&mut buffer, &registry).unwrap();
+
+	Ok(reply::with_header(
+		reply::with_status(buffer, http::StatusCode::OK),
+		"Content-Type",
+		"application/openmetrics-text;charset=utf-8;version=1.0.0",
+	)
+	.into_response())
+}
+
+fn metrics_route(
+	registry: Option<Arc<Mutex<Registry>>>,
+) -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
+	warp::get()
+		.and(warp::path("metrics"))
+		.and_then(move || metrics_handler(registry.clone()))
 }
 
 fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
@@ -71,6 +103,7 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 			.allow_methods(vec!["GET", "POST", "DELETE"]);
 
 		let routes = health_route()
+			.or(metrics_route(self.metric_registry.clone()))
 			.or(v1_api)
 			.or(v2_api)
 			.or(diagnostics_api)
@@ -90,7 +123,7 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {
 	if error.find::<InternalServerError>().is_some() {
-		return Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response());
+		return Ok(http::StatusCode::INTERNAL_SERVER_ERROR.into_response());
 	}
 	Err(error)
 }

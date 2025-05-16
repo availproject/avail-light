@@ -89,7 +89,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 	let identity_cfg = IdentityConfig::from_suri("//Alice".to_string(), None)?;
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+	let (p2p_client, p2p_event_loop, p2p_event_receiver, _) = p2p::init(
 		config.libp2p.clone(),
 		ProjectName::new("avail".to_string()),
 		p2p_keypair,
@@ -185,6 +185,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
 		p2p_client: p2p_client.clone(),
+		metric_registry: None,
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(config.api.clone())));
 

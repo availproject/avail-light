@@ -83,7 +83,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition = config.crawl_block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+	let (p2p_client, p2p_event_loop, p2p_event_receiver, _) = p2p::init(
 		config.libp2p.clone(),
 		ProjectName::new("avail".to_string()),
 		p2p_keypair,

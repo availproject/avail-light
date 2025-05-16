@@ -29,6 +29,8 @@ itertools = "0.10.5"
 libp2p-allow-block-list = { workspace = true }
 mockall = "0.11.3"
 once_cell = "1.20.3"
+# NOTE: Specified version must match libp2p version
+prometheus-client = "=0.22.3"
 regex = "1.11.1"
 reqwest = { workspace = true, features = ["json"] }
 semver = { workspace = true }
