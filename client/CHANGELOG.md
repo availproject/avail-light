@@ -1,8 +1,9 @@
 # Changelog
 
-## [1.12.13]
+## 1.12.13
 
-- Update `avail-light-core` to 1.2.8
+- Exposed random restarts configuration (`false` by default)
+- Updated `avail-light-core` to 1.2.8
 
 ## [1.12.12](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.12) - 2025-05-12
 

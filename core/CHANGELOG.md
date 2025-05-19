@@ -1,7 +1,8 @@
 # Changelog
 
-## [1.2.8]
+## 1.2.8
 
+- Added configurable random restarts to the maintenance phase
 - Exposed additional Identify protocol configuration, increased the timeouts between requests
 - Exposed additional AutoNat configurations, increased AutoNat server throttling
 - Allow insecure URLs to be used when creating RPC client

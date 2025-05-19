@@ -1,6 +1,9 @@
 use color_eyre::{eyre::WrapErr, Result};
-use std::time::Instant;
-use tokio::sync::{broadcast, mpsc::UnboundedSender};
+use std::{
+	sync::Arc,
+	time::{Duration, Instant},
+};
+use tokio::sync::{broadcast, mpsc::UnboundedSender, Mutex};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -79,9 +82,29 @@ pub async fn run(
 	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
 	event_sender: UnboundedSender<OutputEvent>,
+	restart: Arc<Mutex<bool>>,
+	restart_delay_sec: Option<u64>,
 ) {
 	info!("Starting maintenance...");
+
+	// Postpone restart to allow at least 3 hours of uptime
+	let restart_delay = restart_delay_sec.map(|sec| Duration::from_secs(sec + 60 * 60 * 3));
+	let started_at = Instant::now();
+
 	loop {
+		if let Some(delay) = restart_delay {
+			if started_at.elapsed() >= delay {
+				let mut restart = restart.lock().await;
+				*restart = true;
+				let message = "Avail Light Client maintenance restart...".to_string();
+				info!("{message}");
+				if let Err(error) = shutdown.trigger_shutdown(message) {
+					error!("{error:#}");
+				}
+				return;
+			}
+		}
+
 		let result = match block_receiver.recv().await {
 			Ok(block) => {
 				process_block(
