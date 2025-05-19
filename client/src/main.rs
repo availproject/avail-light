@@ -297,6 +297,8 @@ async fn run(
 		static_config_params,
 		shutdown.clone(),
 		maintenance_sender,
+		restart.clone(),
+		cfg.maintenance_restart.then_some(delay_sec),
 	)));
 
 	let channels = avail_light_core::types::ClientChannels {
