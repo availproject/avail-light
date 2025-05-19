@@ -3,7 +3,7 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use configuration::{kad_config, LibP2PConfig};
+use configuration::{identify_config, kad_config, LibP2PConfig};
 #[cfg(not(target_arch = "wasm32"))]
 use libp2p::tcp;
 use libp2p::{
@@ -65,10 +65,6 @@ use libp2p_allow_block_list as allow_block_list;
 
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
-const IDENTITY_PROTOCOL: &str = "/avail/light/1.0.0";
-const IDENTITY_AGENT_BASE: &str = "light-client";
-const IDENTITY_AGENT_ROLE: &str = "light-client";
-const IDENTITY_AGENT_CLIENT_TYPE: &str = "rust-client";
 
 pub const BOOTSTRAP_LIST_EMPTY_MESSAGE: &str = r#"
 Bootstrap node list must not be empty.
@@ -146,12 +142,12 @@ impl FromStr for AgentVersion {
 }
 
 impl AgentVersion {
-	fn new(project_name: ProjectName, version: &str) -> Self {
+	fn new(project_name: ProjectName, version: &str, cfg: &LibP2PConfig) -> Self {
 		Self {
-			base_version: format!("{project_name}-{IDENTITY_AGENT_BASE}"),
-			role: IDENTITY_AGENT_ROLE.to_string(),
+			base_version: format!("{project_name}-{}", cfg.identify.agent_base),
+			role: cfg.identify.agent_role.clone(),
 			release_version: version.to_string(),
-			client_type: IDENTITY_AGENT_CLIENT_TYPE.to_string(),
+			client_type: cfg.identify.agent_client_type.clone(),
 		}
 	}
 
@@ -272,8 +268,8 @@ async fn build_swarm(
 	kad_store: Store,
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config
-	let identify_cfg = identify::Config::new(IDENTITY_PROTOCOL.to_string(), id_keys.public())
-		.with_agent_version(AgentVersion::new(project_name, version).to_string());
+	let identify_cfg = identify_config(cfg, id_keys.public())
+		.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
 
 	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {

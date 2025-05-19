@@ -2,6 +2,7 @@
 
 ## [1.2.8]
 
+- Exposed additional Identify protocol configuration, increased the timeouts between requests
 - Exposed additional AutoNat configurations, increased AutoNat server throttling
 - Allow insecure URLs to be used when creating RPC client
 
