@@ -116,7 +116,7 @@ pub async fn run(
 				.collect::<Vec<_>>();
 
 			let total = positions.len();
-			
+
 			// Handle the Option<Client>
 			let fetched = if let Some(client) = &network_client {
 				client
@@ -128,7 +128,11 @@ pub async fn run(
 				0 // No client available
 			};
 
-			let success_rate = if total > 0 { fetched as f64 / total as f64 } else { 0.0 };
+			let success_rate = if total > 0 {
+				fetched as f64 / total as f64
+			} else {
+				0.0
+			};
 			let partition = format!("{}/{}", partition.number, partition.fraction);
 			info!(
 				block_number,
@@ -145,7 +149,7 @@ pub async fn run(
 			let dimensions = extension.dimensions;
 			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
 			let total = rows.len();
-			
+
 			// Handle the Option<Client>
 			let fetched_rows = if let Some(client) = &network_client {
 				client
@@ -154,14 +158,14 @@ pub async fn run(
 			} else {
 				vec![None; dimensions.extended_rows() as usize] // Empty result when no client
 			};
-			
-			let fetched = fetched_rows
-				.iter()
-				.step_by(2)
-				.flatten()
-				.count();
 
-			let success_rate = if total > 0 { fetched as f64 / total as f64 } else { 0.0 };
+			let fetched = fetched_rows.iter().step_by(2).flatten().count();
+
+			let success_rate = if total > 0 {
+				fetched as f64 / total as f64
+			} else {
+				0.0
+			};
 			info!(
 				block_number,
 				success_rate, total, fetched, "Fetched block rows"

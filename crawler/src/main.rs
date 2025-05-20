@@ -117,11 +117,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 				}
 			}));
 
-			(
-				Some(p2p_client),
-				Some(p2p_event_receiver),
-				p2p_peer_id,
-			)
+			(Some(p2p_client), Some(p2p_event_receiver), p2p_peer_id)
 		} else {
 			info!("Running in RPC-only mode, P2P client is disabled");
 			// Generate a random peer ID for metrics when P2P is disabled
