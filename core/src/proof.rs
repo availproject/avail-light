@@ -1,35 +1,33 @@
-use std::sync::Arc;
-
 use avail_rust::kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 use color_eyre::eyre;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
 use tracing::debug;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
-
 #[cfg(not(feature = "multiproof"))]
 use {
-	crate::utils::spawn_in_span,
 	avail_rust::kate_recovery::data::SingleCell,
 	futures::future::join_all,
 	itertools::{Either, Itertools},
 };
-
 #[cfg(feature = "multiproof")]
 use {
 	avail_rust::{
-		primitives::kate::GProof,
-		rpc::kate::{generate_pmp, verify_multi_proof},
-		Bls12_381, BlstMSMEngine, M1NoPrecomp, U256,
+		kate_recovery::proof::verify_multi_proof, rpc::kate::generate_pmp, Bls12_381,
+		BlstMSMEngine, M1NoPrecomp, U256,
 	},
 	tokio::sync::OnceCell,
-	tracing::info,
+	tracing::{info, warn},
 };
+
+#[cfg(not(feature = "multiproof"))]
+use crate::utils::spawn_in_span;
 
 mod core;
 
@@ -114,15 +112,23 @@ pub async fn verify(
 	let mut proof_pairs = Vec::with_capacity(cells.len());
 	let mut positions = Vec::with_capacity(cells.len());
 
-	for cell in cells.iter().cloned() {
-		if let Cell::MultiProofCell(mcell) = cell {
-			let scalars = mcell.scalars.iter().map(|limbs| U256(*limbs)).collect();
-			let gproof = GProof(mcell.proof);
-			let gcell_block = mcell.gcell_block;
+	for cell in cells {
+		let mcell = match cell {
+			Cell::MultiProofCell(m) => m,
+			_ => {
+				warn!("incorrect cell type received: {:?}", cell);
+				continue;
+			},
+		};
 
-			proof_pairs.push(((scalars, gproof), gcell_block));
-			positions.push(mcell.position);
-		}
+		let scalars: Vec<[u8; 32]> = mcell
+			.scalars
+			.iter()
+			.map(|&limbs| U256(limbs).to_big_endian())
+			.collect();
+
+		proof_pairs.push(((scalars, mcell.proof), mcell.gcell_block.clone()));
+		positions.push(mcell.position);
 	}
 
 	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();

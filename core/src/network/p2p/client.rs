@@ -1,9 +1,10 @@
-#[cfg(feature = "multiproof")]
-use avail_rust::kate_recovery::data::MultiProofCell;
+
 use avail_rust::kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position, RowIndex},
 };
+#[cfg(feature = "multiproof")]
+use avail_rust::kate_recovery::data::MultiProofCell;
 #[cfg(not(feature = "multiproof"))]
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
