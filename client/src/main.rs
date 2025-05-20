@@ -1,8 +1,6 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
-#[cfg(feature = "multiproof")]
-use avail_light_core::proof::get_or_init_pmp;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
@@ -94,9 +92,6 @@ async fn run(
 		db.clone(),
 	)
 	.await?;
-
-	#[cfg(feature = "multiproof")]
-	spawn_in_span(get_or_init_pmp());
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 

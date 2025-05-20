@@ -23,8 +23,7 @@ use {
 		BlstMSMEngine, M1NoPrecomp, U256,
 	},
 	tokio::sync::OnceCell,
-	tracing::info,
-	tracing::warn,
+	tracing::{info, warn},
 };
 
 #[cfg(not(feature = "multiproof"))]

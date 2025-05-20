@@ -10,10 +10,7 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
-#[cfg(not(feature = "multiproof"))]
 use avail_rust::kate_recovery::data::{self, SingleCell};
-#[cfg(feature = "multiproof")]
-use avail_rust::{kate_recovery::data::MultiProofCell, utils::generate_multiproof_grid_dims};
 use avail_rust::{
 	kate_recovery::{
 		data::Cell,
@@ -30,8 +27,6 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
-#[cfg(feature = "multiproof")]
-use crate::types::MULTI_PROOF_CELL_DIMS;
 use crate::{
 	data::{BlockHeaderKey, Database},
 	network::{
@@ -105,21 +100,8 @@ impl<T: Database + Sync> Client for FatClient<T> {
 	}
 
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		#[cfg(feature = "multiproof")]
-		{
-			let cells: Vec<MultiProofCell> = self
-				.rpc_client
-				.request_kate_multi_proof(hash, positions)
-				.await?;
-			Ok(cells.into_iter().map(Cell::MultiProofCell).collect())
-		}
-
-		#[cfg(not(feature = "multiproof"))]
-		{
-			let cells: Vec<SingleCell> =
-				self.rpc_client.request_kate_proof(hash, positions).await?;
-			Ok(cells.into_iter().map(Cell::SingleCell).collect())
-		}
+		let cells: Vec<SingleCell> = self.rpc_client.request_kate_proof(hash, positions).await?;
+		Ok(cells.into_iter().map(Cell::SingleCell).collect())
 	}
 }
 
@@ -173,41 +155,9 @@ pub async fn process_block(
 	// when this process started
 	db.put(BlockHeaderKey(block_number), header.clone());
 
-	let positions: Vec<Position> = {
-		#[cfg(feature = "multiproof")]
-		{
-			let Some(multiproof_cell_dims) =
-				Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
-			else {
-				info!(
-					block_number,
-					"Skipping block with invalid multiproof cell dimensions",
-				);
-				return Ok(());
-			};
-
-			let Some(target_multiproof_grid_dims) =
-				generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
-			else {
-				info!(
-					block_number,
-					"Skipping block with invalid target multiproof grid dimensions",
-				);
-				return Ok(());
-			};
-
-			target_multiproof_grid_dims
-				.iter_mcell_partition_positions(&cfg.block_matrix_partition)
-				.collect()
-		}
-
-		#[cfg(not(feature = "multiproof"))]
-		{
-			dimensions
-				.iter_extended_partition_positions(&cfg.block_matrix_partition)
-				.collect()
-		}
-	};
+	let positions: Vec<Position> = dimensions
+		.iter_extended_partition_positions(&cfg.block_matrix_partition)
+		.collect();
 
 	let begin = Instant::now();
 	let get_kate_proof = |&n| client.get_kate_proof(header_hash, n);
@@ -253,7 +203,6 @@ pub async fn process_block(
 		partition_rpc_retrieve_time_elapsed.as_secs_f64(),
 	))?;
 
-	#[cfg(not(feature = "multiproof"))]
 	if rpc_fetched.len() >= dimensions.cols().get() as usize {
 		let cells: Vec<SingleCell> = rpc_fetched
 			.into_iter()
