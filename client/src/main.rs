@@ -274,7 +274,7 @@ async fn run(
 		db.put(IsFinalitySyncedKey, true);
 	}
 
-	let delay_sec = updater::delay_sec();
+	let delay_sec = updater::delay_sec(cfg.max_restart_delay);
 	let updater_run = updater::run(
 		version,
 		delay_sec,
