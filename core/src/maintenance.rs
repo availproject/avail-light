@@ -87,8 +87,7 @@ pub async fn run(
 ) {
 	info!("Starting maintenance...");
 
-	// Postpone restart to allow at least 3 hours of uptime
-	let restart_delay = restart_delay_sec.map(|sec| Duration::from_secs(sec + 60 * 60 * 3));
+	let restart_delay = restart_delay_sec.map(Duration::from_secs);
 	let started_at = Instant::now();
 
 	loop {
