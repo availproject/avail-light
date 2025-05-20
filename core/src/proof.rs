@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use avail_rust::kate_recovery::{
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -32,6 +30,7 @@ use avail_rust::{
 };
 use color_eyre::eyre;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
+<<<<<<< HEAD
 #[cfg(not(feature = "multiproof"))]
 >>>>>>> b2cc124a (multiproofs: Part II)
 use futures::future::join_all;
@@ -41,31 +40,32 @@ use itertools::{Either, Itertools};
 use color_eyre::eyre;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 >>>>>>> 8bd2c48f (optimize pmp init)
+=======
+use std::sync::Arc;
+>>>>>>> 73dd1331 (update proof for fat client)
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
 use tracing::debug;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
-
 #[cfg(not(feature = "multiproof"))]
 use {
-	crate::utils::spawn_in_span,
 	avail_rust::kate_recovery::data::SingleCell,
 	futures::future::join_all,
 	itertools::{Either, Itertools},
 };
-
 #[cfg(feature = "multiproof")]
 use {
 	avail_rust::{
-		primitives::kate::GProof,
-		rpc::kate::{generate_pmp, verify_multi_proof},
-		Bls12_381, BlstMSMEngine, M1NoPrecomp, U256,
+		kate_recovery::proof::verify_multi_proof, rpc::kate::generate_pmp, Bls12_381,
+		BlstMSMEngine, M1NoPrecomp, U256,
 	},
 	tokio::sync::OnceCell,
 	tracing::info,
+	tracing::warn,
 };
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 #[cfg(not(feature = "multiproof"))]
 use crate::utils::spawn_in_span;
@@ -76,6 +76,11 @@ use crate::utils::spawn_in_span;
 =======
 =======
 >>>>>>> 23e1a765 (rename CellType)
+=======
+#[cfg(not(feature = "multiproof"))]
+use crate::utils::spawn_in_span;
+
+>>>>>>> 73dd1331 (update proof for fat client)
 mod core;
 
 #[cfg(not(feature = "multiproof"))]
@@ -194,15 +199,23 @@ pub async fn verify(
 	let mut proof_pairs = Vec::with_capacity(cells.len());
 	let mut positions = Vec::with_capacity(cells.len());
 
-	for cell in cells.iter().cloned() {
-		if let Cell::MultiProofCell(mcell) = cell {
-			let scalars = mcell.scalars.iter().map(|limbs| U256(*limbs)).collect();
-			let gproof = GProof(mcell.proof);
-			let gcell_block = mcell.gcell_block;
+	for cell in cells {
+		let mcell = match cell {
+			Cell::MultiProofCell(m) => m,
+			_ => {
+				warn!("incorrect cell type received: {:?}", cell);
+				continue;
+			},
+		};
 
-			proof_pairs.push(((scalars, gproof), gcell_block));
-			positions.push(mcell.position);
-		}
+		let scalars: Vec<[u8; 32]> = mcell
+			.scalars
+			.iter()
+			.map(|&limbs| U256(limbs).to_big_endian())
+			.collect();
+
+		proof_pairs.push(((scalars, mcell.proof), mcell.gcell_block.clone()));
+		positions.push(mcell.position);
 	}
 
 	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
