@@ -70,6 +70,8 @@ pub struct RuntimeConfig {
 	pub max_restart_delay: u64,
 	/// Perform random maintenance restart
 	pub maintenance_restart: bool,
+	/// Delay maintenance restart to allow fixed uptime (default: 1h)
+	pub maintenance_restart_delay: u64,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -145,6 +147,7 @@ impl Default for RuntimeConfig {
 			no_update: false,
 			max_restart_delay: 60 * 60 * 24,
 			maintenance_restart: false,
+			maintenance_restart_delay: 60 * 60,
 		}
 	}
 }

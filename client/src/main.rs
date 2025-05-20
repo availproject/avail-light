@@ -289,6 +289,11 @@ async fn run(
 		}
 	}));
 
+	// Delay for maintenance restart, updater restart delay + maintenance restart delay
+	let maintenance_restart_delay = cfg
+		.maintenance_restart
+		.then_some(delay_sec + cfg.maintenance_restart_delay);
+
 	let static_config_params: MaintenanceConfig = (&cfg).into();
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
@@ -298,7 +303,7 @@ async fn run(
 		shutdown.clone(),
 		maintenance_sender,
 		restart.clone(),
-		cfg.maintenance_restart.then_some(delay_sec),
+		maintenance_restart_delay,
 	)));
 
 	let channels = avail_light_core::types::ClientChannels {
