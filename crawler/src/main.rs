@@ -83,7 +83,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
 	// Initialize p2p components only if not in RPC-only mode
-	let (p2p_client, p2p_event_loop, p2p_event_receiver, p2p_peer_id) =
+	let (p2p_client, p2p_event_receiver, p2p_peer_id) =
 		if !matches!(config.network_mode, NetworkMode::RPCOnly) {
 			let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
@@ -119,15 +119,15 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 			(
 				Some(p2p_client),
-				Some(p2p_event_loop),
 				Some(p2p_event_receiver),
 				p2p_peer_id,
 			)
 		} else {
 			info!("Running in RPC-only mode, P2P client is disabled");
 			// Generate a random peer ID for metrics when P2P is disabled
-			let (_, p2p_peer_id) = p2p::generate_random_keypair();
-			(None, None, None, p2p_peer_id)
+			let keypair = libp2p::identity::Keypair::generate_ed25519();
+			let p2p_peer_id = libp2p::PeerId::from(keypair.public());
+			(None, None, p2p_peer_id)
 		};
 
 	let (rpc_events_sender, _) = broadcast::channel(1000);
