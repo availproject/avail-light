@@ -59,6 +59,38 @@ pub struct CliOpts {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
+pub struct PaginationConfig {
+	pub default_page: usize,
+	pub default_limit: usize,
+	pub min_page: usize,
+	pub min_limit: usize,
+	pub max_limit: usize,
+}
+
+impl Default for PaginationConfig {
+	fn default() -> Self {
+		Self {
+			default_page: 1,
+			default_limit: 50,
+			min_page: 1,
+			min_limit: 1,
+			max_limit: 100,
+		}
+	}
+}
+
+impl PaginationConfig {
+	pub fn validate_page(&self, page: usize) -> usize {
+		page.max(self.min_page)
+	}
+
+	pub fn validate_limit(&self, limit: usize) -> usize {
+		limit.clamp(self.min_limit, self.max_limit)
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct Config {
 	/// Genesis hash of the network to be connected to.
 	/// Set to "DEV" to connect to any network.
@@ -80,6 +112,8 @@ pub struct Config {
 	pub libp2p: LibP2PConfig,
 	pub fail_threshold: usize,
 	pub success_threshold: usize,
+	pub http_port: Option<u16>,
+	pub pagination: PaginationConfig,
 }
 
 impl Default for Config {
@@ -95,6 +129,8 @@ impl Default for Config {
 			peer_monitor_interval: 30,
 			fail_threshold: 3,
 			success_threshold: 3,
+			http_port: Some(3030),
+			pagination: PaginationConfig::default(),
 		}
 	}
 }

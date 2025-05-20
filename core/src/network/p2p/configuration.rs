@@ -17,6 +17,7 @@ use web_time::Duration;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(default)]
 pub struct AutoNATConfig {
+	/// Client configuration:
 	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_retry_interval: Duration,
@@ -29,8 +30,17 @@ pub struct AutoNATConfig {
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub autonat_throttle: Duration,
-	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: true)
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address. (default: true)
 	pub autonat_only_global_ips: bool,
+
+	/// Server configuration:
+	/// Max total dial requests done in `[Config::throttle_clients_period`]. (default: 5)
+	pub throttle_clients_global_max: usize,
+	/// Max dial requests done in `[Config::throttle_clients_period`] for a peer. (default: 10)
+	pub throttle_clients_peer_max: usize,
+	/// Period for throttling clients requests. (default: 1s)
+	#[serde(with = "duration_seconds_format")]
+	pub throttle_clients_period: Duration,
 }
 
 impl Default for AutoNATConfig {
@@ -41,6 +51,47 @@ impl Default for AutoNATConfig {
 			autonat_boot_delay: Duration::from_secs(15),
 			autonat_throttle: Duration::from_secs(90),
 			autonat_only_global_ips: true,
+			throttle_clients_global_max: 5,
+			throttle_clients_peer_max: 1,
+			throttle_clients_period: Duration::from_secs(1),
+		}
+	}
+}
+
+/// Identify configuration for libp2p identify protocol
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(default)]
+pub struct IdentifyConfig {
+	/// Protocol name/version to use for the identify protocol (default: "/avail/light/1.0.0")
+	pub protocol_name: String,
+	/// Base name for the agent version string (default: "light-client")
+	pub agent_base: String,
+	/// Role identifier for the agent version string (default: "light-client")
+	pub agent_role: String,
+	/// Client type for the agent version string (default: "rust-client")
+	pub agent_client_type: String,
+	/// Cache size for peer addresses (default: 100)
+	pub cache_size: Option<usize>,
+	/// The delay between identification requests (default: 10 min)
+	#[serde(with = "duration_seconds_format")]
+	pub interval: Duration,
+	/// Whether to push listen address updates to connected peers (default: false)
+	pub push_listen_addr_updates: bool,
+	/// Whether to include our listen addresses in our responses (default: false)
+	pub hide_listen_addrs: bool,
+}
+
+impl Default for IdentifyConfig {
+	fn default() -> Self {
+		Self {
+			protocol_name: "/avail/light/1.0.0".to_string(),
+			agent_base: "light-client".to_string(),
+			agent_role: "light-client".to_string(),
+			agent_client_type: "rust-client".to_string(),
+			cache_size: Some(100),
+			interval: Duration::from_secs(10 * 60),
+			push_listen_addr_updates: false,
+			hide_listen_addrs: false,
 		}
 	}
 }
@@ -144,6 +195,9 @@ pub struct LibP2PConfig {
 	/// Kademlia configuration
 	#[serde(flatten)]
 	pub kademlia: KademliaConfig,
+	/// Identify configuration
+	#[serde(flatten)]
+	pub identify: IdentifyConfig,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<PeerAddress>,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 10s).
@@ -168,6 +222,7 @@ impl Default for LibP2PConfig {
 			ws_transport_enable: false,
 			autonat: Default::default(),
 			kademlia: Default::default(),
+			identify: Default::default(),
 			relays: Default::default(),
 			connection_idle_timeout: Duration::from_secs(10),
 			max_negotiating_inbound_streams: 128,
@@ -198,6 +253,23 @@ impl LibP2PConfig {
 			.with(Protocol::Udp(self.webrtc_port))
 			.with(Protocol::WebRTCDirect)
 	}
+}
+
+pub fn identify_config(
+	cfg: &LibP2PConfig,
+	public_key: libp2p::identity::PublicKey,
+) -> libp2p::identify::Config {
+	let mut identify_cfg =
+		libp2p::identify::Config::new(cfg.identify.protocol_name.clone(), public_key)
+			.with_interval(cfg.identify.interval)
+			.with_push_listen_addr_updates(cfg.identify.push_listen_addr_updates)
+			.with_push_listen_addr_updates(cfg.identify.push_listen_addr_updates);
+
+	if let Some(cache_size) = cfg.identify.cache_size {
+		identify_cfg = identify_cfg.with_cache_size(cache_size);
+	}
+
+	identify_cfg
 }
 
 pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {

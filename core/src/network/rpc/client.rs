@@ -315,7 +315,7 @@ impl<D: Database> Client<D> {
 
 	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
-		let subxt_client = SubxtRpcClient::from_url(host).await?;
+		let subxt_client = SubxtRpcClient::from_insecure_url(host).await?;
 		let online_client = AOnlineClient::from_rpc_client(subxt_client.clone()).await?;
 		let avail_client = AvailRpcClient::new(online_client, subxt_client);
 		let client = SDK::new_custom(avail_client)

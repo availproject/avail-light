@@ -7,11 +7,13 @@ edition = "2021"
 repository.workspace = true
 
 [dependencies]
+actix-web = "4.11.0"
 avail-light-core = { workspace = true }
 clap = { workspace = true }
 color-eyre = { workspace = true }
 libp2p = { workspace = true }
 serde = { workspace = true }
+serde_json = "1.0"
 statrs = "0.16.0"
 tokio = { workspace = true }
 tracing = { workspace = true }

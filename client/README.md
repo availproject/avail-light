@@ -206,40 +206,6 @@ sync_start_block = 0
 # Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the 
 # starting block at the point the LC is started and is only checked for new blocks. (default: false)
 sync_finality_enable = false
-# Time-to-live for DHT entries in seconds (default: 24h).
-# Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far below this value - not greater than 1hr.
-# Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
-record_ttl = 86400
-# Enables the automatic Kademlia mode switch from default client to server. (default: true).
-automatic_server_mode = true
-# Sets the (re-)publication interval of stored records, in seconds. This interval should be significantly shorter than the record TTL, ensure records do not expire prematurely. (default: 12h).
-# Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
-# This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
-publication_interval = 43200
-# Sets the (re-)replication interval for stored records, in seconds. This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications. (default: 3h).
-# Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
-# This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
-replication_interval = 10800
-# The replication factor determines to how many closest peers a record is replicated. (default: 5).
-replication_factor = 5
-# Sets the amount of time to keep connections alive when they're idle. (default: 30s).
-connection_idle_timeout = 10
-# Sets the timeout for a single Kademlia query. (default: 10s).
-query_timeout = 10
-# Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
-query_parallelism = 3
-# Sets the Kademlia caching strategy to use for successful lookups. If set to 0, caching is disabled. (default: 1).
-caching_max_peers = 1
-# Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
-disjoint_query_paths = false
-# The maximum number of records. (default: 2400000).
-max_kad_record_number = 2400000
-# The maximum size of record values, in bytes. (default: 8192).
-max_kad_record_size = 8192
-# The maximum number of provider records for which the local node is the provider. (default: 1024).
-max_kad_provided_keys = 1024
-# The timeout duration after which a pending entry becomes eligible for insertion on a full bucket. (default: 60s)
-kbucket_pending_timeout = 60
 ```
 
 ## Notes

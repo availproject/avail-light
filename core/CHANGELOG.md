@@ -1,6 +1,13 @@
 # Changelog
 
-## 1.2.7
+## 1.2.8
+
+- Added configurable random restarts to the maintenance phase
+- Exposed additional Identify protocol configuration, increased the timeouts between requests
+- Exposed additional AutoNat configurations, increased AutoNat server throttling
+- Allow insecure URLs to be used when creating RPC client
+
+## [1.2.7](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.7) - 2025-05-12
 
 - Add polynomial multiproof features on core
 - Changed the default AutoNat `only_global_ips` from `false` to `true` so the servers (and clients) discard AutoNat probes
