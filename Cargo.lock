@@ -1433,6 +1433,7 @@ version = "0.6.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 dependencies = [
  "binary-merkle-tree",
@@ -1472,6 +1473,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#8550c4a4a71ac75a758496528c716055ad363e12"
 >>>>>>> 2ecc1038 (merge changes from main)
+=======
+source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
+>>>>>>> dd0f2208 (sync changes from main and avail-core)
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -1776,6 +1780,7 @@ dependencies = [
 [[package]]
 name = "avail-rust"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.1.7"
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -1811,6 +1816,10 @@ source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integrat
 =======
 source = "git+https://github.com/availproject/avail-rust.git?branch=mmp-integration#0e23f21ff3bd7d3b9cf3ce64974a08a4df3de86a"
 >>>>>>> b76f812c (update lock file)
+=======
+version = "0.1.10"
+source = "git+https://github.com/availproject/avail-rust.git#43c295ee46b844b93bbbfc33af8fe7ef7cf9adc3"
+>>>>>>> dd0f2208 (sync changes from main and avail-core)
 dependencies = [
  "avail-core",
  "base58",
@@ -1842,7 +1851,6 @@ dependencies = [
  "kate-recovery",
  "log",
  "parity-scale-codec",
- "poly-multiproof",
  "primitive-types 0.13.1",
  "scale-info",
  "serde",
@@ -4603,12 +4611,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.101",
+<<<<<<< HEAD
 =======
  "syn 2.0.100",
 >>>>>>> cf577def (update avail rust changes)
 =======
  "syn 2.0.100",
 >>>>>>> 8a2c1f4b (Update Cargo.lock)
+=======
+>>>>>>> dd0f2208 (sync changes from main and avail-core)
  "unicode-xid",
 ]
 
@@ -8199,6 +8210,7 @@ version = "0.9.2"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#e72af841da52336910997ac50490badef7e17ed9"
@@ -8206,6 +8218,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#8550c4a4a71ac75a758496528c716055ad363e12"
 >>>>>>> 2ecc1038 (merge changes from main)
+=======
+source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
+>>>>>>> dd0f2208 (sync changes from main and avail-core)
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",
@@ -8309,6 +8324,7 @@ version = "0.10.0"
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 source = "git+https://github.com/availproject/avail-core?rev=53987ca475f531857a2ec2d471f2b1972dadb8fd#53987ca475f531857a2ec2d471f2b1972dadb8fd"
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#e72af841da52336910997ac50490badef7e17ed9"
@@ -8316,6 +8332,9 @@ source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#
 =======
 source = "git+https://github.com/availproject/avail-core?branch=mmp-integration#8550c4a4a71ac75a758496528c716055ad363e12"
 >>>>>>> 2ecc1038 (merge changes from main)
+=======
+source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
+>>>>>>> dd0f2208 (sync changes from main and avail-core)
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",
