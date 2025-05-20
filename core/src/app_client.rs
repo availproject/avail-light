@@ -84,7 +84,7 @@ trait Client {
 
 #[derive(Clone)]
 struct AppClient<T: Database> {
-	p2p_client: P2pClient,
+	p2p_client: Option<P2pClient>,
 	rpc_client: RpcClient<T>,
 }
 
@@ -191,9 +191,14 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
-		self.p2p_client
-			.fetch_rows_from_dht(block_number, dimensions, row_indexes)
-			.await
+		if let Some(p2p_client) = &self.p2p_client {
+			p2p_client
+				.fetch_rows_from_dht(block_number, dimensions, row_indexes)
+				.await
+		} else {
+			// If P2P client is not available, return empty rows
+			row_indexes.iter().map(|_| None).collect()
+		}
 	}
 
 	async fn get_kate_rows(
@@ -264,13 +269,20 @@ fn data_cell(
 
 async fn fetch_verified(
 	pp: Arc<PublicParameters>,
-	p2p_client: &P2pClient,
+	p2p_client: &Option<P2pClient>,
 	block_number: u32,
 	dimensions: Dimensions,
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
+	// If P2P client is not available, return empty fetched and all positions as unfetched
+	if p2p_client.is_none() {
+		return Ok((vec![], positions.to_vec()));
+	}
+
 	let (mut fetched, mut unfetched) = p2p_client
+		.as_ref()
+		.unwrap()
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
@@ -430,7 +442,7 @@ async fn process_block(
 pub async fn run(
 	cfg: AppClientConfig,
 	db: impl Database + Clone,
-	network_client: P2pClient,
+	network_client: Option<P2pClient>,
 	rpc_client: RpcClient<impl Database + Clone + Sync>,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,

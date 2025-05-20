@@ -28,8 +28,26 @@ use tracing::error;
 use tracing::info;
 use warp::{Filter, Rejection, Reply};
 
-use super::configuration::{APIConfig, SharedConfig};
-use super::types::WsClients;
+use super::{
+	configuration::{APIConfig, SharedConfig},
+	routes::{with_boxed_reply, BoxedAnyFilter},
+	types::WsClients,
+};
+
+// Helper function to create a route for when P2P is disabled
+fn p2p_disabled_routes() -> BoxedAnyFilter {
+	with_boxed_reply(
+		warp::path("v1")
+			.and(warp::path("p2p"))
+			.and(warp::path::tail())
+			.map(|_| {
+				warp::reply::with_status(
+					"P2P functionality is disabled in this client",
+					warp::http::StatusCode::NOT_FOUND,
+				)
+			}),
+	)
+}
 
 pub struct Server<T: Database> {
 	pub db: T,
@@ -39,14 +57,16 @@ pub struct Server<T: Database> {
 	pub node_client: rpc::Client<T>,
 	pub ws_clients: WsClients,
 	pub shutdown: Controller<String>,
-	pub p2p_client: p2p::Client,
+	pub p2p_client: Option<p2p::Client>,
 }
 
-fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
-	warp::head()
-		.or(warp::get())
-		.and(warp::path("health"))
-		.map(|_| warp::reply::with_status("", warp::http::StatusCode::OK))
+fn health_route() -> BoxedAnyFilter {
+	with_boxed_reply(
+		warp::head()
+			.or(warp::get())
+			.and(warp::path("health"))
+			.map(|_| warp::reply::with_status("", warp::http::StatusCode::OK)),
+	)
 }
 
 impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
@@ -63,18 +83,25 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 			self.ws_clients.clone(),
 			self.db.clone(),
 		);
-		let diagnostics_api = diagnostics::routes(self.p2p_client);
-
 		let cors = warp::cors()
 			.allow_any_origin()
 			.allow_header("content-type")
 			.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-		let routes = health_route()
-			.or(v1_api)
-			.or(v2_api)
-			.or(diagnostics_api)
-			.with(cors);
+		// Build base routes common to both configurations
+		let base_routes = health_route().or(v1_api).or(v2_api);
+
+		// Add P2P routes depending on whether P2P is enabled
+		let p2p_routes = if let Some(p2p_client) = &self.p2p_client {
+			// Create diagnostics routes with the p2p client
+			diagnostics::routes(p2p_client.clone())
+		} else {
+			// Use helper function to create routes for when P2P is disabled
+			p2p_disabled_routes()
+		};
+
+		// Combine all routes
+		let routes = base_routes.or(p2p_routes).with(cors);
 
 		let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 			.wrap_err("Unable to parse host address from config")

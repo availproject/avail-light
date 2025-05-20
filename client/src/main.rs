@@ -20,7 +20,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey, Uuid,
+		self, load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey,
+		Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -80,46 +81,58 @@ async fn run(
 
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-		cfg.libp2p.clone(),
-		cfg.project_name.clone(),
-		id_keys,
-		version,
-		&cfg.genesis_hash,
-		false,
-		shutdown.clone(),
-		#[cfg(feature = "rocksdb")]
-		db.clone(),
-	)
-	.await?;
+	// Initialize p2p components only if not in RPCOnly mode
+	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != types::NetworkMode::RPCOnly {
+		let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+			cfg.libp2p.clone(),
+			cfg.project_name.clone(),
+			id_keys,
+			version,
+			&cfg.genesis_hash,
+			false,
+			shutdown.clone(),
+			#[cfg(feature = "rocksdb")]
+			db.clone(),
+		)
+		.await?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+		spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let addrs = vec![cfg.libp2p.tcp_multiaddress()];
+		let addrs = vec![cfg.libp2p.tcp_multiaddress()];
 
-	// Start the TCP and WebRTC listeners
-	p2p_client
-		.start_listening(addrs)
-		.await
-		.wrap_err("Error starting listener.")?;
-	info!("TCP listener started on port {}", cfg.libp2p.port);
-
-	db.put(PeerIDKey, peer_id.to_string());
-
-	let p2p_clone = p2p_client.to_owned();
-	let cfg_clone = cfg.to_owned();
-	spawn_in_span(shutdown.with_cancel(async move {
-		info!("Bootstraping the DHT with bootstrap nodes...");
-		if let Err(error) = p2p_clone
-			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
+		// Start the TCP and WebRTC listeners
+		p2p_client
+			.start_listening(addrs)
 			.await
-		{
-			warn!("Bootstrap unsuccessful: {error:#}");
-		}
-	}));
+			.wrap_err("Error starting listener.")?;
+		info!("TCP listener started on port {}", cfg.libp2p.port);
+
+		db.put(PeerIDKey, peer_id.to_string());
+
+		let p2p_clone = p2p_client.to_owned();
+		let cfg_clone = cfg.to_owned();
+		spawn_in_span(shutdown.with_cancel(async move {
+			info!("Bootstraping the DHT with bootstrap nodes...");
+			if let Err(error) = p2p_clone
+				.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
+				.await
+			{
+				warn!("Bootstrap unsuccessful: {error:#}");
+			}
+		}));
+
+		(Some(p2p_client), p2p_event_receiver)
+	} else {
+		info!("P2P functionality disabled (NetworkMode::RPCOnly)");
+		// Create an unused channel to match type expectations
+		let (_, p2p_event_receiver) = mpsc::unbounded_channel::<P2pEvent>();
+		(None, p2p_event_receiver)
+	};
 
 	#[cfg(feature = "network-analysis")]
-	spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.libp2p.port, 10)));
+	if cfg.network_mode != NetworkMode::RPCOnly {
+		spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.libp2p.port, 10)));
+	}
 
 	let pp = Arc::new(couscous::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
@@ -209,7 +222,7 @@ async fn run(
 		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
-			p2p_client.clone(),
+			p2p_client.clone(), // This is now Option<P2pClient>
 			rpc_client.clone(),
 			app_id,
 			block_tx.subscribe(),
@@ -247,7 +260,7 @@ async fn run(
 		p2p_client.clone(),
 		rpc_client.clone(),
 		pp.clone(),
-		cfg.disable_rpc,
+		cfg.network_mode,
 	);
 
 	if cfg.sync_start_block.is_some() {
@@ -311,7 +324,7 @@ async fn run(
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
-	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.disable_rpc);
+	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.network_mode);
 	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
@@ -338,6 +351,7 @@ async fn run(
 			"client_alias",
 			cfg.client_alias.clone().unwrap_or("".to_string()),
 		),
+		("network_mode", cfg.network_mode.to_string()),
 	];
 
 	let mut metrics = telemetry::otlp::initialize(
@@ -415,6 +429,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	cfg.sync_finality_enable |= opts.finality_sync_enable;
 	cfg.app_id = opts.app_id.or(cfg.app_id);
 	cfg.libp2p.ws_transport_enable |= opts.ws_transport_enable;
+
+	if let Some(network_mode) = opts.network_mode {
+		cfg.network_mode = network_mode;
+	}
 	if let Some(secret_key) = &opts.private_key {
 		cfg.libp2p.secret_key = Some(SecretKey::Key {
 			key: secret_key.to_string(),

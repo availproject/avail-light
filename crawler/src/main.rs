@@ -10,7 +10,7 @@ use avail_light_core::{
 		otlp::{self, Metrics},
 		MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE,
 	},
-	types::{BlockVerified, ProjectName},
+	types::{BlockVerified, NetworkMode, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -79,39 +79,56 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using configuration: {config:?}");
 
-	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 	let partition = config.crawl_block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-		config.libp2p.clone(),
-		ProjectName::new("avail".to_string()),
-		p2p_keypair,
-		version,
-		&config.genesis_hash,
-		true,
-		shutdown.clone(),
-		#[cfg(feature = "rocksdb")]
-		db.clone(),
-	)
-	.await?;
+	// Initialize p2p components only if not in RPC-only mode
+	let (p2p_client, p2p_event_loop, p2p_event_receiver, p2p_peer_id) =
+		if !matches!(config.network_mode, NetworkMode::RPCOnly) {
+			let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+			let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+				config.libp2p.clone(),
+				ProjectName::new("avail".to_string()),
+				p2p_keypair,
+				version,
+				&config.genesis_hash,
+				true,
+				shutdown.clone(),
+				#[cfg(feature = "rocksdb")]
+				db.clone(),
+			)
+			.await?;
 
-	p2p_client
-		.start_listening(vec![config.libp2p.tcp_multiaddress()])
-		.await
-		.wrap_err("Error starting listeners.")?;
-	info!("TCP listener started on port {}", config.libp2p.port);
+			spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let bootstrap_p2p_client = p2p_client.clone();
-	spawn_in_span(shutdown.with_cancel(async move {
-		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bootstraps = &config.libp2p.bootstraps;
-		if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
-			warn!("Bootstrap unsuccessful: {error:#}");
-		}
-	}));
+			p2p_client
+				.start_listening(vec![config.libp2p.tcp_multiaddress()])
+				.await
+				.wrap_err("Error starting listeners.")?;
+			info!("TCP listener started on port {}", config.libp2p.port);
+
+			let bootstrap_p2p_client = p2p_client.clone();
+			spawn_in_span(shutdown.with_cancel(async move {
+				info!("Bootstraping the DHT with bootstrap nodes...");
+				let bootstraps = &config.libp2p.bootstraps;
+				if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
+					warn!("Bootstrap unsuccessful: {error:#}");
+				}
+			}));
+
+			(
+				Some(p2p_client),
+				Some(p2p_event_loop),
+				Some(p2p_event_receiver),
+				p2p_peer_id,
+			)
+		} else {
+			info!("Running in RPC-only mode, P2P client is disabled");
+			// Generate a random peer ID for metrics when P2P is disabled
+			let (_, p2p_peer_id) = p2p::generate_random_keypair();
+			(None, None, None, p2p_peer_id)
+		};
 
 	let (rpc_events_sender, _) = broadcast::channel(1000);
 	let (_, rpc_subscriptions) = rpc::init(
@@ -215,14 +232,19 @@ impl CrawlerState {
 
 	async fn handle_events(
 		&mut self,
-		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
+		mut p2p_receiver: Option<UnboundedReceiver<P2pEvent>>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut crawler_receiver: UnboundedReceiver<CrawlerEvent>,
 	) {
 		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
-				Some(p2p_event) = p2p_receiver.recv() => {
+				Some(p2p_event) = async {
+					match &mut p2p_receiver {
+						Some(receiver) => receiver.recv().await,
+						None => std::future::pending().await,
+					}
+				} => {
 					match p2p_event {
 						P2pEvent::Count => {
 							self.metrics.count(MetricCounter::EventLoopEvent);

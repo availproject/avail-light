@@ -174,6 +174,41 @@ pub enum Origin {
 	Other(String),
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkMode {
+	/// Use both P2P and RPC for data retrieval
+	Both,
+	/// Use only P2P for data retrieval (RPC disabled)
+	P2POnly,
+	/// Use only RPC for data retrieval (P2P disabled)
+	RPCOnly,
+}
+
+impl clap::ValueEnum for NetworkMode {
+	fn value_variants<'a>() -> &'a [Self] {
+		&[Self::Both, Self::P2POnly, Self::RPCOnly]
+	}
+
+	fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+		Some(match self {
+			Self::Both => clap::builder::PossibleValue::new("both"),
+			Self::P2POnly => clap::builder::PossibleValue::new("p2p_only"),
+			Self::RPCOnly => clap::builder::PossibleValue::new("rpc_only"),
+		})
+	}
+}
+
+impl std::fmt::Display for NetworkMode {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			NetworkMode::Both => write!(f, "both"),
+			NetworkMode::P2POnly => write!(f, "p2p_only"),
+			NetworkMode::RPCOnly => write!(f, "rpc_only"),
+		}
+	}
+}
+
 impl TryFrom<String> for Origin {
 	type Error = color_eyre::Report;
 
@@ -383,6 +418,7 @@ pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub app_id: Option<u32>,
+	pub network_mode: NetworkMode,
 }
 
 impl Default for SyncClientConfig {
@@ -391,6 +427,7 @@ impl Default for SyncClientConfig {
 			confidence: 99.9,
 			disable_rpc: false,
 			app_id: None,
+			network_mode: NetworkMode::Both,
 		}
 	}
 }
@@ -399,6 +436,7 @@ impl Default for SyncClientConfig {
 pub struct AppClientConfig {
 	pub disable_rpc: bool,
 	pub threshold: usize,
+	pub network_mode: NetworkMode,
 }
 
 impl Default for AppClientConfig {
@@ -406,6 +444,7 @@ impl Default for AppClientConfig {
 		Self {
 			disable_rpc: false,
 			threshold: 5000,
+			network_mode: NetworkMode::Both,
 		}
 	}
 }

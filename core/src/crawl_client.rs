@@ -65,7 +65,7 @@ impl Value for CrawlMetricValue {
 
 pub async fn run(
 	mut message_rx: broadcast::Receiver<rpc::OutputEvent>,
-	network_client: Client,
+	network_client: Option<Client>,
 	delay: u64,
 	mode: CrawlMode,
 	partition: Partition,

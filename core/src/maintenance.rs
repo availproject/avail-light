@@ -24,10 +24,27 @@ pub enum OutputEvent {
 
 pub async fn process_block(
 	block_number: u32,
-	p2p_client: &P2pClient,
+	p2p_client: Option<&P2pClient>,
 	maintenance_config: MaintenanceConfig,
 	event_sender: UnboundedSender<OutputEvent>,
 ) -> Result<()> {
+	// Early return if p2p_client is None
+	let Some(p2p_client) = p2p_client else {
+		debug!(
+			block_number,
+			"No P2P client available, skipping maintenance"
+		);
+		event_sender.send(OutputEvent::RecordStats {
+			connected_peers: 0,
+			block_confidence_treshold: maintenance_config.block_confidence_treshold,
+			replication_factor: maintenance_config.replication_factor,
+			query_timeout: maintenance_config.query_timeout.as_secs() as u32,
+		})?;
+		event_sender.send(OutputEvent::CountUps)?;
+		info!(block_number, "Maintenance skipped (no P2P client)");
+		return Ok(());
+	};
+
 	if cfg!(not(feature = "rocksdb")) && block_number % maintenance_config.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
 		match p2p_client.prune_expired_records(Instant::now()).await {
@@ -77,7 +94,7 @@ pub async fn process_block(
 }
 
 pub async fn run(
-	p2p_client: P2pClient,
+	p2p_client: Option<P2pClient>,
 	mut block_receiver: broadcast::Receiver<BlockVerified>,
 	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
@@ -85,6 +102,13 @@ pub async fn run(
 	restart: Arc<Mutex<bool>>,
 	restart_delay_sec: Option<u64>,
 ) {
+	// If p2p_client is not available, skip maintenance
+	if p2p_client.is_none() {
+		info!("Skipping maintenance - P2P client not available");
+		return;
+	}
+
+	let p2p_client = p2p_client.unwrap();
 	info!("Starting maintenance...");
 
 	let restart_delay = restart_delay_sec.map(Duration::from_secs);
@@ -108,7 +132,7 @@ pub async fn run(
 			Ok(block) => {
 				process_block(
 					block.block_num,
-					&p2p_client,
+					Some(&p2p_client),
 					static_config_params,
 					event_sender.clone(),
 				)

@@ -9,7 +9,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{BlockVerified, ClientChannels, IdentityConfig, Origin, ProjectName},
+	types::{BlockVerified, ClientChannels, IdentityConfig, NetworkMode, Origin, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -84,42 +84,59 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using configuration: {config:?}");
 
-	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 	let partition = config.fat.block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 	let identity_cfg = IdentityConfig::from_suri("//Alice".to_string(), None)?;
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-		config.libp2p.clone(),
-		ProjectName::new("avail".to_string()),
-		p2p_keypair,
-		version,
-		&config.genesis_hash,
-		true,
-		shutdown.clone(),
-		#[cfg(feature = "rocksdb")]
-		db.clone(),
-	)
-	.await?;
+	// Initialize p2p components only if not in RPC-only mode
+	let (p2p_client, p2p_event_loop, p2p_event_receiver, p2p_peer_id) =
+		if !matches!(config.network_mode, NetworkMode::RPCOnly) {
+			let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+			let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+				config.libp2p.clone(),
+				ProjectName::new("avail".to_string()),
+				p2p_keypair,
+				version,
+				&config.genesis_hash,
+				true,
+				shutdown.clone(),
+				#[cfg(feature = "rocksdb")]
+				db.clone(),
+			)
+			.await?;
 
-	let addrs = vec![config.libp2p.tcp_multiaddress()];
+			spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	p2p_client
-		.start_listening(addrs)
-		.await
-		.wrap_err("Listening on TCP not to fail.")?;
-	info!("TCP listener started on port {}", config.libp2p.port);
+			let addrs = vec![config.libp2p.tcp_multiaddress()];
 
-	let bootstrap_p2p_client = p2p_client.clone();
-	spawn_in_span(shutdown.with_cancel(async move {
-		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bootstraps = &config.libp2p.bootstraps;
-		if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
-			warn!("Bootstrap unsuccessful: {error:#}");
-		}
-	}));
+			p2p_client
+				.start_listening(addrs)
+				.await
+				.wrap_err("Listening on TCP not to fail.")?;
+			info!("TCP listener started on port {}", config.libp2p.port);
+
+			let bootstrap_p2p_client = p2p_client.clone();
+			spawn_in_span(shutdown.with_cancel(async move {
+				info!("Bootstraping the DHT with bootstrap nodes...");
+				let bootstraps = &config.libp2p.bootstraps;
+				if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
+					warn!("Bootstrap unsuccessful: {error:#}");
+				}
+			}));
+
+			(
+				Some(p2p_client),
+				Some(p2p_event_loop),
+				Some(p2p_event_receiver),
+				p2p_peer_id,
+			)
+		} else {
+			info!("Running in RPC-only mode, P2P client is disabled");
+			// Generate a random peer ID for metrics when P2P is disabled
+			let (_, p2p_peer_id) = p2p::generate_random_keypair();
+			(None, None, None, p2p_peer_id)
+		};
 
 	let (rpc_event_sender, rpc_event_receiver) = broadcast::channel(1000);
 	let (rpc_client, rpc_subscriptions) = rpc::init(
@@ -370,7 +387,7 @@ impl FatState {
 
 	async fn handle_events(
 		&mut self,
-		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
+		mut p2p_receiver: Option<UnboundedReceiver<P2pEvent>>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut fat_receiver: UnboundedReceiver<FatEvent>,
 		mut rpc_receiver: broadcast::Receiver<RpcEvent>,
@@ -378,7 +395,12 @@ impl FatState {
 		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
-				Some(p2p_event) = p2p_receiver.recv() => {
+				Some(p2p_event) = async {
+					match &mut p2p_receiver {
+						Some(receiver) => receiver.recv().await,
+						None => std::future::pending().await,
+					}
+				} => {
 					match p2p_event {
 						P2pEvent::Count => {
 							self.metrics.count(MetricCounter::EventLoopEvent)

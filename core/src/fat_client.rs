@@ -47,12 +47,12 @@ pub trait Client {
 
 #[derive(Clone)]
 pub struct FatClient<T: Database> {
-	p2p_client: P2pClient,
+	p2p_client: Option<P2pClient>,
 	rpc_client: RpcClient<T>,
 }
 
 pub fn new(
-	p2p_client: P2pClient,
+	p2p_client: Option<P2pClient>,
 	rpc_client: RpcClient<impl Database>,
 ) -> FatClient<impl Database> {
 	FatClient {
@@ -91,11 +91,23 @@ impl Default for Config {
 #[async_trait]
 impl<T: Database + Sync> Client for FatClient<T> {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()> {
-		self.p2p_client.insert_cells_into_dht(block, cells).await
+		match &self.p2p_client {
+			Some(p2p_client) => p2p_client.insert_cells_into_dht(block, cells).await,
+			None => {
+				debug!("P2P client not available, skipping insert_cells_into_dht");
+				Ok(())
+			},
+		}
 	}
 
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()> {
-		self.p2p_client.insert_rows_into_dht(block, rows).await
+		match &self.p2p_client {
+			Some(p2p_client) => p2p_client.insert_rows_into_dht(block, rows).await,
+			None => {
+				debug!("P2P client not available, skipping insert_rows_into_dht");
+				Ok(())
+			},
+		}
 	}
 
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {

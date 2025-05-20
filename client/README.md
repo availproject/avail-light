@@ -20,8 +20,8 @@
 
 1. **Light-client Mode**: The basic mode of operation and is always active no matter the mode selected. If an `App_ID` is not provided (or is =0), this mode will commence. On each header received the client does random sampling using two mechanisms:
 
-   1. DHT - client first tries to retrieve cells via Kademlia.
-   2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells. The cells not already found in the DHT will be uploaded.
+   1. DHT - client first tries to retrieve cells via Kademlia (can be disabled by setting `network_mode` to `rpc_only`).
+   2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells. The cells not already found in the DHT will be uploaded (can be disabled by setting `network_mode` to `p2p_only`).
 
 Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
 
@@ -123,6 +123,10 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 - `--identity`: Location of the identity file
 - `--app-id`: The `appID` parameter for the application client
 - `--port`: LibP2P listener port
+- `--network-mode <MODE>`: Select how the client fetches data. Possible values are:
+  - `both`: Use both P2P and RPC for data retrieval (default)
+  - `p2p_only`: Use only P2P for data retrieval (RPC disabled)
+  - `rpc_only`: Use only RPC for data retrieval (P2P disabled)
 - `--verbosity`: Log level. Possible values are:
   - `trace`
   - `debug`
@@ -193,7 +197,10 @@ log_format_json = true
 block_matrix_partition = "1/20"
 # Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 disable_proof_verification = false
+# Network mode: 'both' uses P2P and RPC, 'p2p_only' disables RPC, 'rpc_only' disables P2P (default: both)
+network_mode = "both"
 # Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
+# This is deprecated in favor of network_mode = "p2p_only"
 disable_rpc = false
 # Number of parallel queries for cell fetching via RPC from node (default: 8).
 query_proof_rpc_parallel_tasks = 8
