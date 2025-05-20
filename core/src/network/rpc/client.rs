@@ -554,10 +554,14 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
 		self.with_retries(|client| async move {
-			get_block_hash(&client.client, Some(block_number))
+			let opt = get_block_hash(&client.client, Some(block_number))
 				.await
-				.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-				.map_err(Into::into)
+				.map_err(|e| Report::msg(format!("{e:?}")))?;
+
+			let hash =
+				opt.ok_or_else(|| eyre!("no block hash found for block {}", block_number))?;
+
+			Ok(hash)
 		})
 		.await
 	}
