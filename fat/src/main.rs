@@ -79,6 +79,10 @@ async fn main() -> Result<()> {
 }
 
 async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
+	// Fat client requires P2P to function properly, so we should exit if P2P is disabled
+	if matches!(config.network_mode, NetworkMode::RPCOnly) {
+		return Err(eyre!("Fat client cannot run in RPC-only mode. Please enable P2P by setting network_mode to 'Both' or 'P2POnly'."));
+	}
 	let version = clap::crate_version!();
 	let rev = env!("GIT_COMMIT_HASH");
 	info!(version, rev, "Running {}", clap::crate_name!());
@@ -89,7 +93,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let identity_cfg = IdentityConfig::from_suri("//Alice".to_string(), None)?;
 
 	// Initialize p2p components only if not in RPC-only mode
-	let (p2p_client, p2p_event_loop, p2p_event_receiver, p2p_peer_id) =
+	let (p2p_client, p2p_event_receiver, p2p_peer_id) =
 		if !matches!(config.network_mode, NetworkMode::RPCOnly) {
 			let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
@@ -127,15 +131,15 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 			(
 				Some(p2p_client),
-				Some(p2p_event_loop),
 				Some(p2p_event_receiver),
 				p2p_peer_id,
 			)
 		} else {
 			info!("Running in RPC-only mode, P2P client is disabled");
 			// Generate a random peer ID for metrics when P2P is disabled
-			let (_, p2p_peer_id) = p2p::generate_random_keypair();
-			(None, None, None, p2p_peer_id)
+			let keypair = libp2p::identity::Keypair::generate_ed25519();
+			let p2p_peer_id = libp2p::PeerId::from(keypair.public());
+			(None, None, p2p_peer_id)
 		};
 
 	let (rpc_event_sender, rpc_event_receiver) = broadcast::channel(1000);
