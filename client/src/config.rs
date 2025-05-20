@@ -66,6 +66,8 @@ pub struct RuntimeConfig {
 	pub tracking_service_ping_interval: u64,
 	/// Don't update light client if update is available (default: false)
 	pub no_update: bool,
+	/// Maximum delay in seconds for the update or maintenance restart (default: 1 day)
+	pub max_restart_delay: u64,
 	/// Perform random maintenance restart
 	pub maintenance_restart: bool,
 }
@@ -141,6 +143,7 @@ impl Default for RuntimeConfig {
 			tracking_service_address: "http://127.0.0.1:8989".to_string(),
 			tracking_service_ping_interval: 10,
 			no_update: false,
+			max_restart_delay: 60 * 60 * 24,
 			maintenance_restart: false,
 		}
 	}
