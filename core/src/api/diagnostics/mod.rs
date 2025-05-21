@@ -1,69 +1,73 @@
 use libp2p::PeerId;
-use serde_json;
-use warp::Filter;
+use warp::{Filter, Rejection, Reply};
 
 pub mod p2p;
 use p2p::{dial_external_peer, get_peer_info, get_peer_multiaddr};
 
 use crate::{
-	api::routes::{with_boxed_reply, BoxedAnyFilter},
+	api::server::{handle_rejection, log_internal_server_error},
 	network::p2p::Client,
 };
 
-/// Create routes for P2P diagnostics endpoints
-pub fn routes(p2p_client: Client) -> BoxedAnyFilter {
-	let client_clone1 = p2p_client.clone();
-	let client_clone2 = p2p_client.clone();
-	let client_clone3 = p2p_client;
+// Define a type alias for the filter return type to ensure compatibility between routes and p2p_disabled_routes
+type P2PFilter = warp::filters::BoxedFilter<(Box<dyn Reply>,)>;
 
-	// Route for local peer info
-	let local_info = warp::path!("v1" / "p2p" / "local" / "info")
+fn p2p_local_info_route(
+	p2p_client: Client,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v1" / "p2p" / "local" / "info")
 		.and(warp::get())
-		.and(warp::any().map(move || client_clone1.clone()))
-		.then(|client| async move {
-			match get_peer_info(client).await {
-				Ok(info) => warp::reply::json(&info),
-				Err(_) => warp::reply::json(&serde_json::json!({
-					"error": "Failed to get peer info"
-				})),
-			}
-		});
+		.and(warp::any().map(move || p2p_client.clone()))
+		.then(get_peer_info)
+		.map(log_internal_server_error)
+}
 
-	// Route for dialing external peers
-	let peers_dial = warp::path!("v1" / "p2p" / "peers" / "dial")
+fn p2p_peers_dial_route(
+	p2p_client: Client,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v1" / "p2p" / "peers" / "dial")
 		.and(warp::post())
-		.and(warp::any().map(move || client_clone2.clone()))
+		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
-		.then(|client, body| async move {
-			match dial_external_peer(client, body).await {
-				Ok(_) => warp::reply::json(&serde_json::json!({
-					"success": true,
-					"message": "Successfully dialed peer"
-				})),
-				Err(_) => warp::reply::json(&serde_json::json!({
-					"success": false,
-					"message": "Failed to dial peer"
-				})),
-			}
-		});
+		.then(dial_external_peer)
+		.map(log_internal_server_error)
+}
 
-	// Route for getting peer multiaddress
-	let peer_multiaddr = warp::path!("v1" / "p2p" / "peers" / "multiaddress" / PeerId)
+fn p2p_peer_multiaddr_route(
+	p2p_client: Client,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v1" / "p2p" / "peers" / "multiaddress" / PeerId)
 		.and(warp::get())
-		.and(warp::any().map(move || client_clone3.clone()))
-		.then(|peer_id, client| async move {
-			match get_peer_multiaddr(peer_id, client).await {
-				Ok(_) => warp::reply::json(&serde_json::json!({
-					"peer_id": peer_id.to_string(),
-					"message": "Found peer multiaddresses"
-				})),
-				Err(_) => warp::reply::json(&serde_json::json!({
-					"peer_id": peer_id.to_string(),
-					"error": "Failed to get peer multiaddresses"
-				})),
-			}
-		});
+		.and(warp::any().map(move || p2p_client.clone()))
+		.then(get_peer_multiaddr)
+		.map(log_internal_server_error)
+}
 
-	// Combine all routes and box the result
-	with_boxed_reply(local_info.or(peers_dial).or(peer_multiaddr))
+#[allow(clippy::too_many_arguments)]
+pub fn routes(
+	p2p_client: Client,
+) -> P2PFilter {
+	p2p_local_info_route(p2p_client.clone())
+		.or(p2p_peers_dial_route(p2p_client.clone()))
+		.or(p2p_peer_multiaddr_route(p2p_client.clone()))
+		.recover(handle_rejection)
+		.boxed()
+		.map(|reply| Box::new(reply) as Box<dyn Reply>)
+		.boxed()
+}
+
+// Helper function to create a route for when P2P is disabled
+pub fn p2p_disabled_routes() -> P2PFilter {
+	warp::path("v1")
+		.and(warp::path("p2p"))
+		.and(warp::path::tail())
+		.map(|_| {
+			warp::reply::with_status(
+				"P2P functionality is disabled in this client",
+				warp::http::StatusCode::NOT_FOUND,
+			)
+		})
+		.boxed()
+		.map(|reply| Box::new(reply) as Box<dyn Reply>)
+		.boxed()
 }

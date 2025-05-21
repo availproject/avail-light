@@ -282,7 +282,7 @@ async fn fetch_verified(
 
 	let (mut fetched, mut unfetched) = p2p_client
 		.as_ref()
-		.unwrap()
+		.unwrap() // P2P client is confirmed present at this point
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
