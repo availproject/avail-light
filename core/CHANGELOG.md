@@ -2,6 +2,7 @@
 
 ## 1.2.8
 
+- Fixed default publication interval (set to 12h)
 - Added configurable random restarts to the maintenance phase
 - Exposed additional Identify protocol configuration, increased the timeouts between requests
 - Exposed additional AutoNat configurations, increased AutoNat server throttling
