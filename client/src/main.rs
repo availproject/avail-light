@@ -222,7 +222,7 @@ async fn run(
 		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
-			p2p_client.clone(), // This is now Option<P2pClient>
+			p2p_client.clone(),
 			rpc_client.clone(),
 			app_id,
 			block_tx.subscribe(),
@@ -307,6 +307,7 @@ async fn run(
 		.maintenance_restart
 		.then_some(delay_sec + cfg.maintenance_restart_delay);
 
+	// In RPC only mode maintenance provides stats only
 	let static_config_params: MaintenanceConfig = (&cfg).into();
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(

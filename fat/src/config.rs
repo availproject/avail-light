@@ -38,9 +38,6 @@ pub struct CliOpts {
 	/// Testnet or devnet selection.
 	#[arg(short, long, value_name = "network")]
 	pub network: Option<Network>,
-	/// Network mode: 'both' uses P2P and RPC, 'p2p_only' disables RPC, 'rpc_only' disables P2P
-	#[arg(long, value_name = "MODE")]
-	pub network_mode: Option<NetworkMode>,
 	/// fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[arg(long, value_parser = block_matrix_partition_format::parse)]
 	pub block_matrix_partition: Option<Partition>,
@@ -101,7 +98,7 @@ impl Default for Config {
 			log_format_json: false,
 			avail_path: "avail_path".to_string(),
 			client_alias: "fat".to_string(),
-			network_mode: NetworkMode::Both,
+			network_mode: NetworkMode::P2POnly,
 			libp2p: Default::default(),
 			rpc: Default::default(),
 			otel: Default::default(),
@@ -156,10 +153,6 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 
 	if let Some(http_port) = opts.http_server_port {
 		config.api.http_server_port = http_port;
-	}
-
-	if let Some(network_mode) = &opts.network_mode {
-		config.network_mode = *network_mode;
 	}
 
 	if config.libp2p.bootstraps.is_empty() {

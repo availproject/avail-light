@@ -41,9 +41,6 @@ pub struct CliOpts {
 	/// Testnet or devnet selection.
 	#[arg(short, long, value_name = "network")]
 	pub network: Option<Network>,
-	/// Network mode: 'both' uses P2P and RPC, 'p2p_only' disables RPC, 'rpc_only' disables P2P
-	#[arg(long, value_name = "MODE")]
-	pub network_mode: Option<NetworkMode>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,7 +87,7 @@ impl Default for Config {
 			log_format_json: false,
 			avail_path: "avail_path".to_string(),
 			client_alias: "crawler".to_string(),
-			network_mode: NetworkMode::Both,
+			network_mode: NetworkMode::P2POnly,
 			libp2p: Default::default(),
 			rpc: Default::default(),
 			otel: Default::default(),
@@ -120,10 +117,6 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 		config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		config.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		config.genesis_hash = network.genesis_hash().to_string();
-	}
-
-	if let Some(network_mode) = &opts.network_mode {
-		config.network_mode = *network_mode;
 	}
 
 	if config.libp2p.bootstraps.is_empty() {
