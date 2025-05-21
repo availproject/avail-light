@@ -44,9 +44,7 @@ fn p2p_peer_multiaddr_route(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes(
-	p2p_client: Client,
-) -> P2PFilter {
+pub fn routes(p2p_client: Client) -> P2PFilter {
 	p2p_local_info_route(p2p_client.clone())
 		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.or(p2p_peer_multiaddr_route(p2p_client.clone()))

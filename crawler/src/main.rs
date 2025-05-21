@@ -83,48 +83,41 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 
 	// Initialize p2p components only if not in RPC-only mode
-	let (p2p_client, p2p_event_receiver, p2p_peer_id) =
-		if !matches!(config.network_mode, NetworkMode::RPCOnly) {
-			let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
+	if matches!(config.network_mode, NetworkMode::RPCOnly) {
+		return Err(eyre!("Crawler cannot run in RPC-only mode. Please enable P2P by setting network_mode to 'Both' or 'P2POnly'."));
+	}
 
-			let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-				config.libp2p.clone(),
-				ProjectName::new("avail".to_string()),
-				p2p_keypair,
-				version,
-				&config.genesis_hash,
-				true,
-				shutdown.clone(),
-				#[cfg(feature = "rocksdb")]
-				db.clone(),
-			)
-			.await?;
+	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
-			spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+		config.libp2p.clone(),
+		ProjectName::new("avail".to_string()),
+		p2p_keypair,
+		version,
+		&config.genesis_hash,
+		true,
+		shutdown.clone(),
+		#[cfg(feature = "rocksdb")]
+		db.clone(),
+	)
+	.await?;
 
-			p2p_client
-				.start_listening(vec![config.libp2p.tcp_multiaddress()])
-				.await
-				.wrap_err("Error starting listeners.")?;
-			info!("TCP listener started on port {}", config.libp2p.port);
+	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-			let bootstrap_p2p_client = p2p_client.clone();
-			spawn_in_span(shutdown.with_cancel(async move {
-				info!("Bootstraping the DHT with bootstrap nodes...");
-				let bootstraps = &config.libp2p.bootstraps;
-				if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
-					warn!("Bootstrap unsuccessful: {error:#}");
-				}
-			}));
+	p2p_client
+		.start_listening(vec![config.libp2p.tcp_multiaddress()])
+		.await
+		.wrap_err("Error starting listeners.")?;
+	info!("TCP listener started on port {}", config.libp2p.port);
 
-			(Some(p2p_client), Some(p2p_event_receiver), p2p_peer_id)
-		} else {
-			info!("Running in RPC-only mode, P2P client is disabled");
-			// Generate a random peer ID for metrics when P2P is disabled
-			let keypair = libp2p::identity::Keypair::generate_ed25519();
-			let p2p_peer_id = libp2p::PeerId::from(keypair.public());
-			(None, None, p2p_peer_id)
-		};
+	let bootstrap_p2p_client = p2p_client.clone();
+	spawn_in_span(shutdown.with_cancel(async move {
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		let bootstraps = &config.libp2p.bootstraps;
+		if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
+			warn!("Bootstrap unsuccessful: {error:#}");
+		}
+	}));
 
 	let (rpc_events_sender, _) = broadcast::channel(1000);
 	let (_, rpc_subscriptions) = rpc::init(
@@ -177,7 +170,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let (crawler_sender, crawler_receiver) = mpsc::unbounded_channel::<CrawlerEvent>();
 	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
 		client_rpc_event_receiver,
-		p2p_client.clone(),
+		Some(p2p_client.clone()),
 		config.crawl_block_delay,
 		config.crawl_block_mode,
 		partition,
@@ -228,19 +221,14 @@ impl CrawlerState {
 
 	async fn handle_events(
 		&mut self,
-		mut p2p_receiver: Option<UnboundedReceiver<P2pEvent>>,
+		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut crawler_receiver: UnboundedReceiver<CrawlerEvent>,
 	) {
 		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
-				Some(p2p_event) = async {
-					match &mut p2p_receiver {
-						Some(receiver) => receiver.recv().await,
-						None => std::future::pending().await,
-					}
-				} => {
+				Some(p2p_event) = p2p_receiver.recv() => {
 					match p2p_event {
 						P2pEvent::Count => {
 							self.metrics.count(MetricCounter::EventLoopEvent);
