@@ -1,6 +1,8 @@
 use super::{protocol_name, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
-use crate::types::{duration_seconds_format, KademliaMode, PeerAddress, SecretKey};
+use crate::types::{
+	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress, SecretKey,
+};
 use libp2p::{kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
@@ -112,16 +114,16 @@ pub struct KademliaConfig {
 	/// Defines a period of time in which periodic bootstraps will be repeated in seconds. (default: 5 min)
 	#[serde(with = "duration_seconds_format")]
 	pub bootstrap_period: Duration,
-	/// Sets the (re-)publication interval of stored records in seconds. (default: 12h).
+	/// Sets the (re-)publication interval of stored records in seconds. (default: None).
 	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
 	/// This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
-	#[serde(with = "duration_seconds_format")]
-	pub publication_interval: Duration,
-	/// Sets the (re-)replication interval for stored records in seconds. (default: 3h).
+	#[serde(with = "option_duration_seconds_format")]
+	pub publication_interval: Option<Duration>,
+	/// Sets the (re-)replication interval for stored records in seconds. (default: None).
 	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
 	/// This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
-	#[serde(with = "duration_seconds_format")]
-	pub record_replication_interval: Duration,
+	#[serde(with = "option_duration_seconds_format")]
+	pub record_replication_interval: Option<Duration>,
 	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
 	pub record_replication_factor: NonZeroUsize,
 	/// Sets the Kademlia record store pruning interval in blocks (default: 180).
@@ -157,8 +159,8 @@ impl Default for KademliaConfig {
 		Self {
 			kad_record_ttl: Duration::from_secs(24 * 60 * 60),
 			bootstrap_period: Duration::from_secs(5 * 60),
-			publication_interval: Duration::from_secs(12 * 60 * 60),
-			record_replication_interval: Duration::from_secs(3 * 60 * 60),
+			publication_interval: None,
+			record_replication_interval: None,
 			record_replication_factor: NonZeroUsize::new(5).unwrap(),
 			store_pruning_interval: 180,
 			query_timeout: Duration::from_secs(10),
@@ -276,8 +278,6 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	// create Kademlia Config
 	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
 	kad_cfg
-		.set_publication_interval(Some(cfg.kademlia.publication_interval))
-		.set_replication_interval(Some(cfg.kademlia.record_replication_interval))
 		.set_replication_factor(cfg.kademlia.record_replication_factor)
 		.set_query_timeout(cfg.kademlia.query_timeout)
 		.set_parallelism(cfg.kademlia.query_parallelism)
@@ -288,6 +288,15 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 		.set_record_filtering(kad::StoreInserts::FilterBoth)
 		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_period))
 		.set_kbucket_pending_timeout(cfg.kademlia.kbucket_pending_timeout);
+
+	if let Some(interval) = cfg.kademlia.publication_interval {
+		kad_cfg.set_publication_interval(Some(interval));
+	}
+
+	if let Some(interval) = cfg.kademlia.record_replication_interval {
+		kad_cfg.set_replication_interval(Some(interval));
+	}
+
 	kad_cfg
 }
 
