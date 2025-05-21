@@ -157,7 +157,7 @@ impl Default for KademliaConfig {
 		Self {
 			kad_record_ttl: Duration::from_secs(24 * 60 * 60),
 			bootstrap_period: Duration::from_secs(5 * 60),
-			publication_interval: Default::default(),
+			publication_interval: Duration::from_secs(12 * 60 * 60),
 			record_replication_interval: Duration::from_secs(3 * 60 * 60),
 			record_replication_factor: NonZeroUsize::new(5).unwrap(),
 			store_pruning_interval: 180,
