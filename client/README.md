@@ -199,9 +199,6 @@ block_matrix_partition = "1/20"
 disable_proof_verification = false
 # Network mode: 'both' uses P2P and RPC, 'p2p_only' disables RPC, 'rpc_only' disables P2P (default: both)
 network_mode = "both"
-# Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
-# This is deprecated in favor of network_mode = "p2p_only"
-disable_rpc = false
 # Number of parallel queries for cell fetching via RPC from node (default: 8).
 query_proof_rpc_parallel_tasks = 8
 # Maximum number of cells per request for proof queries (default: 30).
