@@ -9,6 +9,9 @@ use crate::{
 	network::p2p::Client,
 };
 
+// Define a type alias for the filter return type to ensure compatibility between routes and p2p_disabled_routes
+type P2PFilter = warp::filters::BoxedFilter<(Box<dyn Reply>,)>;
+
 fn p2p_local_info_route(
 	p2p_client: Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -41,11 +44,28 @@ fn p2p_peer_multiaddr_route(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn routes(
-	p2p_client: Client,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+pub fn routes(p2p_client: Client) -> P2PFilter {
 	p2p_local_info_route(p2p_client.clone())
 		.or(p2p_peers_dial_route(p2p_client.clone()))
 		.or(p2p_peer_multiaddr_route(p2p_client.clone()))
 		.recover(handle_rejection)
+		.boxed()
+		.map(|reply| Box::new(reply) as Box<dyn Reply>)
+		.boxed()
+}
+
+// Helper function to create a route for when P2P is disabled
+pub fn p2p_disabled_routes() -> P2PFilter {
+	warp::path("v1")
+		.and(warp::path("p2p"))
+		.and(warp::path::tail())
+		.map(|_| {
+			warp::reply::with_status(
+				"P2P functionality is disabled in this client",
+				warp::http::StatusCode::NOT_FOUND,
+			)
+		})
+		.boxed()
+		.map(|reply| Box::new(reply) as Box<dyn Reply>)
+		.boxed()
 }

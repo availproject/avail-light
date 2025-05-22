@@ -1,4 +1,4 @@
-use avail_light_core::network::Network;
+use avail_light_core::{network::Network, types::NetworkMode};
 use clap::{command, ArgAction, Parser};
 use tracing::Level;
 
@@ -20,6 +20,9 @@ pub struct CliOpts {
 	/// Run a clean light client, deleting existing avail_path folder
 	#[arg(long)]
 	pub clean: bool,
+	/// Network mode: 'both' uses P2P and RPC, 'p2p_only' disables RPC, 'rpc_only' disables P2P
+	#[arg(long, value_name = "MODE")]
+	pub network_mode: Option<NetworkMode>,
 	/// Path to the avail_path, where RocksDB stores its data
 	#[arg(long)]
 	pub avail_path: Option<String>,

@@ -52,7 +52,7 @@ use crate::{
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
-	types::{AppClientConfig, BlockRange, BlockVerified},
+	types::{AppClientConfig, BlockRange, BlockVerified, NetworkMode},
 };
 
 #[async_trait]
@@ -84,7 +84,7 @@ trait Client {
 
 #[derive(Clone)]
 struct AppClient<T: Database> {
-	p2p_client: P2pClient,
+	p2p_client: Option<P2pClient>,
 	rpc_client: RpcClient<T>,
 }
 
@@ -191,9 +191,14 @@ impl<T: Database + Sync> Client for AppClient<T> {
 		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
-		self.p2p_client
-			.fetch_rows_from_dht(block_number, dimensions, row_indexes)
-			.await
+		if let Some(p2p_client) = &self.p2p_client {
+			p2p_client
+				.fetch_rows_from_dht(block_number, dimensions, row_indexes)
+				.await
+		} else {
+			// If P2P client is not available, return empty rows
+			row_indexes.iter().map(|_| None).collect()
+		}
 	}
 
 	async fn get_kate_rows(
@@ -264,12 +269,17 @@ fn data_cell(
 
 async fn fetch_verified(
 	pp: Arc<PublicParameters>,
-	p2p_client: &P2pClient,
+	p2p_client: &Option<P2pClient>,
 	block_number: u32,
 	dimensions: Dimensions,
 	commitments: &[[u8; COMMITMENT_SIZE]],
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
+	// If P2P client is not available, return empty fetched and all positions as unfetched
+	let Some(p2p_client) = p2p_client else {
+		return Ok((vec![], positions.to_vec()));
+	};
+
 	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
@@ -326,7 +336,7 @@ async fn process_block(
 		dht_missing_rows.len()
 	);
 
-	let rpc_rows = if cfg.disable_rpc {
+	let rpc_rows = if cfg.network_mode == NetworkMode::P2POnly {
 		vec![None; dht_rows.len()]
 	} else {
 		debug!(
@@ -430,7 +440,7 @@ async fn process_block(
 pub async fn run(
 	cfg: AppClientConfig,
 	db: impl Database + Clone,
-	network_client: P2pClient,
+	network_client: Option<P2pClient>,
 	rpc_client: RpcClient<impl Database + Clone + Sync>,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
@@ -533,7 +543,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
 		let cfg = AppClientConfig {
-			disable_rpc: true,
+			network_mode: NetworkMode::P2POnly,
 			..Default::default()
 		};
 		let pp = Arc::new(testnet::public_params(1024));
@@ -577,7 +587,7 @@ mod tests {
 				let dht_rows_clone = dht_fetched_rows.clone();
 				Box::pin(async move { dht_rows_clone })
 			});
-		if cfg.disable_rpc {
+		if cfg.network_mode == NetworkMode::P2POnly {
 			mock_client.expect_get_kate_rows().never();
 		}
 		mock_client
@@ -634,7 +644,7 @@ mod tests {
 				let dht_rows_clone = dht_rows.clone();
 				Box::pin(async move { dht_rows_clone })
 			});
-		if cfg.disable_rpc {
+		if cfg.network_mode == NetworkMode::P2POnly {
 			mock_client.expect_get_kate_rows().never();
 		} else {
 			mock_client

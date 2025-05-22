@@ -28,8 +28,10 @@ use tracing::error;
 use tracing::info;
 use warp::{Filter, Rejection, Reply};
 
-use super::configuration::{APIConfig, SharedConfig};
-use super::types::WsClients;
+use super::{
+	configuration::{APIConfig, SharedConfig},
+	types::WsClients,
+};
 
 pub struct Server<T: Database> {
 	pub db: T,
@@ -39,7 +41,7 @@ pub struct Server<T: Database> {
 	pub node_client: rpc::Client<T>,
 	pub ws_clients: WsClients,
 	pub shutdown: Controller<String>,
-	pub p2p_client: p2p::Client,
+	pub p2p_client: Option<p2p::Client>,
 }
 
 fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
@@ -63,18 +65,22 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 			self.ws_clients.clone(),
 			self.db.clone(),
 		);
-		let diagnostics_api = diagnostics::routes(self.p2p_client);
-
 		let cors = warp::cors()
 			.allow_any_origin()
 			.allow_header("content-type")
 			.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-		let routes = health_route()
-			.or(v1_api)
-			.or(v2_api)
-			.or(diagnostics_api)
-			.with(cors);
+		let base_routes = health_route().or(v1_api).or(v2_api);
+
+		// Add P2P routes depending on whether P2P is enabled
+		let p2p_routes = if let Some(p2p_client) = &self.p2p_client {
+			diagnostics::routes(p2p_client.clone())
+		} else {
+			diagnostics::p2p_disabled_routes()
+		};
+
+		// Combine all routes
+		let routes = base_routes.or(p2p_routes).with(cors);
 
 		let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 			.wrap_err("Unable to parse host address from config")

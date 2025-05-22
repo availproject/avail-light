@@ -116,13 +116,18 @@ pub async fn run(
 				.collect::<Vec<_>>();
 
 			let total = positions.len();
+
 			let fetched = network_client
 				.fetch_cells_from_dht(block_number, &positions)
 				.await
 				.0
 				.len();
 
-			let success_rate = fetched as f64 / total as f64;
+			let success_rate = if total > 0 {
+				fetched as f64 / total as f64
+			} else {
+				0.0
+			};
 			let partition = format!("{}/{}", partition.number, partition.fraction);
 			info!(
 				block_number,
@@ -135,19 +140,22 @@ pub async fn run(
 			}
 		}
 
-		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
+		if matches!(mode, CrawlMode::Rows | CrawlMode::Both) {
 			let dimensions = extension.dimensions;
 			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
 			let total = rows.len();
-			let fetched = network_client
-				.fetch_rows_from_dht(block_number, dimensions, &rows)
-				.await
-				.iter()
-				.step_by(2)
-				.flatten()
-				.count();
 
-			let success_rate = fetched as f64 / total as f64;
+			let fetched_rows = network_client
+				.fetch_rows_from_dht(block_number, dimensions, &rows)
+				.await;
+
+			let fetched = fetched_rows.iter().step_by(2).flatten().count();
+
+			let success_rate = if total > 0 {
+				fetched as f64 / total as f64
+			} else {
+				0.0
+			};
 			info!(
 				block_number,
 				success_rate, total, fetched, "Fetched block rows"

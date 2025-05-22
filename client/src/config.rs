@@ -6,7 +6,7 @@ use avail_light_core::{
 	telemetry::otlp::OtelConfig,
 	types::{
 		option_duration_seconds_format, tracing_level_format, AppClientConfig, MaintenanceConfig,
-		Origin, ProjectName, SyncClientConfig,
+		NetworkMode, Origin, ProjectName, SyncClientConfig,
 	},
 };
 use serde::{Deserialize, Serialize};
@@ -45,8 +45,8 @@ pub struct RuntimeConfig {
 	pub otel: OtelConfig,
 	pub total_memory_gb_threshold: f64,
 	pub num_cpus_threshold: usize,
-	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
-	pub disable_rpc: bool,
+	/// Network mode determining which communication methods to use (default: Both).
+	pub network_mode: NetworkMode,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 20).
 	#[serde(with = "option_duration_seconds_format")]
 	pub block_processing_delay: Option<Duration>,
@@ -78,8 +78,8 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		SyncClientConfig {
 			confidence: val.confidence,
-			disable_rpc: val.disable_rpc,
 			app_id: val.app_id,
+			network_mode: val.network_mode,
 		}
 	}
 }
@@ -87,8 +87,8 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 impl From<&RuntimeConfig> for AppClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		AppClientConfig {
-			disable_rpc: val.disable_rpc,
 			threshold: val.threshold,
+			network_mode: val.network_mode,
 		}
 	}
 }
@@ -134,7 +134,7 @@ impl Default for RuntimeConfig {
 			otel: Default::default(),
 			total_memory_gb_threshold: 16.0,
 			num_cpus_threshold: 4,
-			disable_rpc: false,
+			network_mode: NetworkMode::Both,
 			block_processing_delay: Some(Duration::from_secs(20)),
 			sync_start_block: None,
 			sync_finality_enable: false,

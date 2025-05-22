@@ -22,6 +22,8 @@ use tracing::{debug, info};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
+use crate::types::NetworkMode;
+
 use crate::{data::Database, proof};
 
 pub mod p2p;
@@ -68,10 +70,10 @@ impl FetchStats {
 }
 
 struct DHTWithRPCFallbackClient<T: Database> {
-	p2p_client: p2p::Client,
+	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<T>,
 	pp: Arc<PublicParameters>,
-	disable_rpc: bool,
+	network_mode: NetworkMode,
 }
 
 type Commitments = [[u8; COMMITMENT_SIZE]];
@@ -86,8 +88,17 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let (mut dht_fetched, mut unfetched) = self
-			.p2p_client
+		// If p2p_client is not available, return empty cells and all positions as unfetched
+		let Some(p2p_client) = &self.p2p_client else {
+			debug!(
+				block_number,
+				cells_total = positions.len(),
+				"P2P client not available, skipping DHT fetch"
+			);
+			return Ok((Vec::new(), positions.to_vec(), Duration::from_secs(0)));
+		};
+
+		let (mut dht_fetched, mut unfetched) = p2p_client
 			.fetch_cells_from_dht(block_number, positions)
 			.await;
 
@@ -171,11 +182,17 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		commitments: &Commitments,
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
-		let (dht_fetched, unfetched, dht_fetch_duration) = self
-			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
-			.await?;
+		// Skip P2P retrieval in RPC-only mode
+		let (dht_fetched, unfetched, dht_fetch_duration) = match self.network_mode {
+			NetworkMode::RPCOnly => (vec![], positions.to_vec(), Duration::from_secs(0)),
+			_ => {
+				self.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
+					.await?
+			},
+		};
 
-		if self.disable_rpc {
+		// Skip RPC retrieval in P2P-only mode
+		if self.network_mode == NetworkMode::P2POnly {
 			let stats =
 				FetchStats::new(positions.len(), dht_fetched.len(), dht_fetch_duration, None);
 			return Ok((dht_fetched, unfetched, stats));
@@ -191,12 +208,16 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			)
 			.await?;
 
-		if let Err(error) = self
-			.p2p_client
-			.insert_cells_into_dht(block_number, rpc_fetched.clone())
-			.await
-		{
-			debug!("Error inserting cells into DHT: {error}");
+		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
+		if matches!(self.network_mode, NetworkMode::Both) {
+			if let Some(p2p_client) = &self.p2p_client {
+				if let Err(error) = p2p_client
+					.insert_cells_into_dht(block_number, rpc_fetched.clone())
+					.await
+				{
+					debug!("Error inserting cells into DHT: {error}");
+				}
+			}
 		}
 
 		let stats = FetchStats::new(
@@ -215,16 +236,16 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 }
 
 pub fn new(
-	p2p_client: p2p::Client,
+	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<impl Database + Sync>,
 	pp: Arc<PublicParameters>,
-	disable_rpc: bool,
+	network_mode: NetworkMode,
 ) -> impl Client {
 	DHTWithRPCFallbackClient {
 		p2p_client,
 		rpc_client,
 		pp,
-		disable_rpc,
+		network_mode,
 	}
 }
 

@@ -84,10 +84,11 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using configuration: {config:?}");
 
-	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 	let partition = config.fat.block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 	let identity_cfg = IdentityConfig::from_suri("//Alice".to_string(), None)?;
+
+	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
 	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		config.libp2p.clone(),
@@ -184,7 +185,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
-		p2p_client: p2p_client.clone(),
+		p2p_client: Some(p2p_client.clone()),
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(config.api.clone())));
 

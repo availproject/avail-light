@@ -18,6 +18,7 @@ use avail_rust::{
 	Keypair,
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
+use clap::ValueEnum;
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
 use convert_case::{Case, Casing};
@@ -172,6 +173,27 @@ pub enum Origin {
 	FatClient,
 	External,
 	Other(String),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkMode {
+	#[value(name = "both")]
+	Both,
+	#[value(name = "p2p_only")]
+	P2POnly,
+	#[value(name = "rpc_only")]
+	RPCOnly,
+}
+
+impl std::fmt::Display for NetworkMode {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			NetworkMode::Both => write!(f, "both"),
+			NetworkMode::P2POnly => write!(f, "p2p_only"),
+			NetworkMode::RPCOnly => write!(f, "rpc_only"),
+		}
+	}
 }
 
 impl TryFrom<String> for Origin {
@@ -381,31 +403,31 @@ impl Delay {
 #[derive(Clone)]
 pub struct SyncClientConfig {
 	pub confidence: f64,
-	pub disable_rpc: bool,
 	pub app_id: Option<u32>,
+	pub network_mode: NetworkMode,
 }
 
 impl Default for SyncClientConfig {
 	fn default() -> Self {
 		Self {
 			confidence: 99.9,
-			disable_rpc: false,
 			app_id: None,
+			network_mode: NetworkMode::Both,
 		}
 	}
 }
 
 /// App client configuration (see [RuntimeConfig] for details)
 pub struct AppClientConfig {
-	pub disable_rpc: bool,
 	pub threshold: usize,
+	pub network_mode: NetworkMode,
 }
 
 impl Default for AppClientConfig {
 	fn default() -> Self {
 		Self {
-			disable_rpc: false,
 			threshold: 5000,
+			network_mode: NetworkMode::Both,
 		}
 	}
 }
