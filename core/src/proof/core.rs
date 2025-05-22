@@ -1,14 +1,15 @@
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{verify, Error};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "multiproof")))]
+#[allow(deprecated)]
 pub use avail_rust::kate_recovery::proof::{verify, Error};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
 	use avail_rust::{
 		avail_core::kate::COMMITMENT_SIZE,
-		kate_recovery::{data::Cell, matrix::Dimensions},
+		kate_recovery::{data::SingleCell, matrix::Dimensions},
 	};
 	use dusk_bytes::Serializable;
 	use dusk_plonk::{
@@ -43,7 +44,7 @@ mod wasm {
 		public_parameters: &PublicParameters,
 		dimensions: Dimensions,
 		commitment: &[u8; COMMITMENT_SIZE],
-		cell: &Cell,
+		cell: &SingleCell,
 	) -> Result<bool, Error> {
 		let width: u16 = dimensions.cols().into();
 		let commitment_to_witness = G1Affine::from_bytes(&cell.proof()).map(Commitment::from)?;
