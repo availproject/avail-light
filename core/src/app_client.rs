@@ -336,7 +336,7 @@ async fn process_block(
 		dht_missing_rows.len()
 	);
 
-	let rpc_rows = if cfg.network_mode == NetworkMode::RPCOnly {
+	let rpc_rows = if cfg.network_mode == NetworkMode::P2POnly {
 		vec![None; dht_rows.len()]
 	} else {
 		debug!(
@@ -543,7 +543,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
 		let cfg = AppClientConfig {
-			network_mode: NetworkMode::RPCOnly,
+			network_mode: NetworkMode::P2POnly,
 			..Default::default()
 		};
 		let pp = Arc::new(testnet::public_params(1024));
@@ -587,7 +587,7 @@ mod tests {
 				let dht_rows_clone = dht_fetched_rows.clone();
 				Box::pin(async move { dht_rows_clone })
 			});
-		if cfg.network_mode == NetworkMode::RPCOnly {
+		if cfg.network_mode == NetworkMode::P2POnly {
 			mock_client.expect_get_kate_rows().never();
 		}
 		mock_client
@@ -644,7 +644,7 @@ mod tests {
 				let dht_rows_clone = dht_rows.clone();
 				Box::pin(async move { dht_rows_clone })
 			});
-		if cfg.network_mode == NetworkMode::RPCOnly {
+		if cfg.network_mode == NetworkMode::P2POnly {
 			mock_client.expect_get_kate_rows().never();
 		} else {
 			mock_client
