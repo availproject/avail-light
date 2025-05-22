@@ -11,7 +11,7 @@ use avail_light_core::{
 	telemetry::otlp::OtelConfig,
 	types::{
 		block_matrix_partition_format, option_duration_seconds_format, tracing_level_format,
-		NetworkMode, PeerAddress, SecretKey,
+		PeerAddress, SecretKey,
 	},
 };
 use avail_rust::kate_recovery::matrix::Partition;
@@ -76,8 +76,6 @@ pub struct Config {
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0).
 	#[serde(with = "option_duration_seconds_format")]
 	pub block_processing_delay: Option<Duration>,
-	/// Network mode determining which communication methods to use (default: Both).
-	pub network_mode: NetworkMode,
 	#[serde(flatten)]
 	pub libp2p: LibP2PConfig,
 	#[serde(flatten)]
@@ -98,7 +96,6 @@ impl Default for Config {
 			log_format_json: false,
 			avail_path: "avail_path".to_string(),
 			client_alias: "fat".to_string(),
-			network_mode: NetworkMode::P2POnly,
 			libp2p: Default::default(),
 			rpc: Default::default(),
 			otel: Default::default(),

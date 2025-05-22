@@ -416,7 +416,6 @@ impl Delay {
 #[derive(Clone)]
 pub struct SyncClientConfig {
 	pub confidence: f64,
-	pub disable_rpc: bool,
 	pub app_id: Option<u32>,
 	pub network_mode: NetworkMode,
 }
@@ -425,7 +424,6 @@ impl Default for SyncClientConfig {
 	fn default() -> Self {
 		Self {
 			confidence: 99.9,
-			disable_rpc: false,
 			app_id: None,
 			network_mode: NetworkMode::Both,
 		}
@@ -434,7 +432,6 @@ impl Default for SyncClientConfig {
 
 /// App client configuration (see [RuntimeConfig] for details)
 pub struct AppClientConfig {
-	pub disable_rpc: bool,
 	pub threshold: usize,
 	pub network_mode: NetworkMode,
 }
@@ -442,7 +439,6 @@ pub struct AppClientConfig {
 impl Default for AppClientConfig {
 	fn default() -> Self {
 		Self {
-			disable_rpc: false,
 			threshold: 5000,
 			network_mode: NetworkMode::Both,
 		}

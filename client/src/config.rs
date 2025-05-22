@@ -78,7 +78,6 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		SyncClientConfig {
 			confidence: val.confidence,
-			disable_rpc: matches!(val.network_mode, NetworkMode::P2POnly),
 			app_id: val.app_id,
 			network_mode: val.network_mode,
 		}
@@ -88,7 +87,6 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 impl From<&RuntimeConfig> for AppClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		AppClientConfig {
-			disable_rpc: matches!(val.network_mode, NetworkMode::P2POnly),
 			threshold: val.threshold,
 			network_mode: val.network_mode,
 		}

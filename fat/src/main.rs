@@ -9,7 +9,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{BlockVerified, ClientChannels, IdentityConfig, NetworkMode, Origin, ProjectName},
+	types::{BlockVerified, ClientChannels, IdentityConfig, Origin, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -79,10 +79,6 @@ async fn main() -> Result<()> {
 }
 
 async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()> {
-	// Fat client requires P2P to function properly, so we should exit if P2P is disabled
-	if matches!(config.network_mode, NetworkMode::RPCOnly) {
-		return Err(eyre!("Fat client cannot run in RPC-only mode. Please enable P2P by setting network_mode to 'Both' or 'P2POnly'."));
-	}
 	let version = clap::crate_version!();
 	let rev = env!("GIT_COMMIT_HASH");
 	info!(version, rev, "Running {}", clap::crate_name!());
@@ -92,10 +88,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
 	let identity_cfg = IdentityConfig::from_suri("//Alice".to_string(), None)?;
 
-	// Initialize p2p components only if not in RPC-only mode
-	if matches!(config.network_mode, NetworkMode::RPCOnly) {
-		return Err(eyre!("Fat client cannot run in RPC-only mode. Please enable P2P by setting network_mode to 'Both' or 'P2POnly'."));
-	}
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
 	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(

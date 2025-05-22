@@ -315,7 +315,7 @@ mod tests {
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
 		let cfg = SyncClientConfig {
-			disable_rpc: true,
+			network_mode: types::NetworkMode::RPCOnly,
 			..Default::default()
 		};
 		let mut mock_network_client = network::MockClient::new();

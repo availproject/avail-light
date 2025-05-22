@@ -10,7 +10,7 @@ use avail_light_core::{
 		otlp::{self, Metrics},
 		MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE,
 	},
-	types::{BlockVerified, NetworkMode, ProjectName},
+	types::{BlockVerified, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -81,11 +81,6 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let partition = config.crawl_block_matrix_partition;
 	let partition_size = format!("{}/{}", partition.number, partition.fraction);
-
-	// Initialize p2p components only if not in RPC-only mode
-	if matches!(config.network_mode, NetworkMode::RPCOnly) {
-		return Err(eyre!("Crawler cannot run in RPC-only mode. Please enable P2P by setting network_mode to 'Both' or 'P2POnly'."));
-	}
 
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 

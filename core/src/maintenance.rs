@@ -101,11 +101,6 @@ pub async fn run(
 	restart: Arc<Mutex<bool>>,
 	restart_delay_sec: Option<u64>,
 ) {
-	// // If p2p_client is not available, skip maintenance
-	// if p2p_client.is_none() {
-	// 	info!("Skipping maintenance - P2P client not available");
-	// 	return;
-	// }
 	info!("Starting maintenance...");
 
 	let restart_delay = restart_delay_sec.map(Duration::from_secs);
