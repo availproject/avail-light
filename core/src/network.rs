@@ -89,19 +89,16 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		let begin = Instant::now();
 
 		// If p2p_client is not available, return empty cells and all positions as unfetched
-		if self.p2p_client.is_none() {
+		let Some(p2p_client) = &self.p2p_client else {
 			debug!(
 				block_number,
 				cells_total = positions.len(),
 				"P2P client not available, skipping DHT fetch"
 			);
 			return Ok((Vec::new(), positions.to_vec(), Duration::from_secs(0)));
-		}
+		};
 
-		let (mut dht_fetched, mut unfetched) = self
-			.p2p_client
-			.as_ref()
-			.unwrap()
+		let (mut dht_fetched, mut unfetched) = p2p_client
 			.fetch_cells_from_dht(block_number, positions)
 			.await;
 
@@ -195,7 +192,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		};
 
 		// Skip RPC retrieval in P2P-only mode
-		if matches!(self.network_mode, NetworkMode::P2POnly) {
+		if self.network_mode == NetworkMode::P2POnly {
 			let stats =
 				FetchStats::new(positions.len(), dht_fetched.len(), dht_fetch_duration, None);
 			return Ok((dht_fetched, unfetched, stats));

@@ -276,13 +276,11 @@ async fn fetch_verified(
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	// If P2P client is not available, return empty fetched and all positions as unfetched
-	if p2p_client.is_none() {
+	let Some(p2p_client) = p2p_client else {
 		return Ok((vec![], positions.to_vec()));
-	}
+	};
 
 	let (mut fetched, mut unfetched) = p2p_client
-		.as_ref()
-		.unwrap() // P2P client is confirmed present at this point
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 

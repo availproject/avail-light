@@ -65,7 +65,7 @@ impl Value for CrawlMetricValue {
 
 pub async fn run(
 	mut message_rx: broadcast::Receiver<rpc::OutputEvent>,
-	network_client: Option<Client>,
+	network_client: Client,
 	delay: u64,
 	mode: CrawlMode,
 	partition: Partition,
@@ -117,16 +117,11 @@ pub async fn run(
 
 			let total = positions.len();
 
-			// Handle the Option<Client>
-			let fetched = if let Some(client) = &network_client {
-				client
-					.fetch_cells_from_dht(block_number, &positions)
-					.await
-					.0
-					.len()
-			} else {
-				0 // No client available
-			};
+			let fetched = network_client
+				.fetch_cells_from_dht(block_number, &positions)
+				.await
+				.0
+				.len();
 
 			let success_rate = if total > 0 {
 				fetched as f64 / total as f64
@@ -150,14 +145,9 @@ pub async fn run(
 			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
 			let total = rows.len();
 
-			// Handle the Option<Client>
-			let fetched_rows = if let Some(client) = &network_client {
-				client
-					.fetch_rows_from_dht(block_number, dimensions, &rows)
-					.await
-			} else {
-				vec![None; dimensions.extended_rows() as usize] // Empty result when no client
-			};
+			let fetched_rows = network_client
+				.fetch_rows_from_dht(block_number, dimensions, &rows)
+				.await;
 
 			let fetched = fetched_rows.iter().step_by(2).flatten().count();
 

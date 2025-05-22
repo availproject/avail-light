@@ -189,7 +189,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(config.api.clone())));
 
-	let fat_client = fat_client::new(Some(p2p_client.clone()), rpc_client.clone());
+	let fat_client = fat_client::new(p2p_client.clone(), rpc_client.clone());
 	let (fat_sender, fat_receiver) = mpsc::unbounded_channel::<FatEvent>();
 	let fat = spawn_in_span(shutdown.with_cancel(fat_client::run(
 		fat_client,

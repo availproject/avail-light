@@ -18,6 +18,7 @@ use avail_rust::{
 	Keypair,
 };
 use base64::{engine::general_purpose, DecodeError, Engine};
+use clap::ValueEnum;
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
 use convert_case::{Case, Casing};
@@ -174,29 +175,15 @@ pub enum Origin {
 	Other(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkMode {
-	/// Use both P2P and RPC for data retrieval
+	#[value(name = "both")]
 	Both,
-	/// Use only P2P for data retrieval (RPC disabled)
+	#[value(name = "p2p_only")]
 	P2POnly,
-	/// Use only RPC for data retrieval (P2P disabled)
+	#[value(name = "rpc_only")]
 	RPCOnly,
-}
-
-impl clap::ValueEnum for NetworkMode {
-	fn value_variants<'a>() -> &'a [Self] {
-		&[Self::Both, Self::P2POnly, Self::RPCOnly]
-	}
-
-	fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-		Some(match self {
-			Self::Both => clap::builder::PossibleValue::new("both"),
-			Self::P2POnly => clap::builder::PossibleValue::new("p2p_only"),
-			Self::RPCOnly => clap::builder::PossibleValue::new("rpc_only"),
-		})
-	}
 }
 
 impl std::fmt::Display for NetworkMode {

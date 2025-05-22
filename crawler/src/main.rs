@@ -165,7 +165,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let (crawler_sender, crawler_receiver) = mpsc::unbounded_channel::<CrawlerEvent>();
 	let crawler = spawn_in_span(shutdown.with_cancel(crawl_client::run(
 		client_rpc_event_receiver,
-		Some(p2p_client.clone()),
+		p2p_client.clone(),
 		config.crawl_block_delay,
 		config.crawl_block_mode,
 		partition,
