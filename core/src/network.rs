@@ -124,7 +124,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from DHT"
 		);
 
-		dht_fetched.retain(|cell| verified.contains(&cell.position));
+		dht_fetched.retain(|cell| verified.contains(&cell.position()));
 		unfetched.append(&mut unverified);
 
 		Ok((dht_fetched, unfetched, fetch_elapsed))
@@ -167,7 +167,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -292,7 +292,7 @@ impl<T: Database> RPCClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
