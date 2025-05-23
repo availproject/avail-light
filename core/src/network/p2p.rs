@@ -295,7 +295,7 @@ async fn build_swarm(
 
 	let behaviour = |key: &identity::Keypair, relay_client| {
 		Ok(Behaviour {
-			ping: ping::Behaviour::new(ping::Config::new()),
+			ping: ping::Behaviour::new(ping::Config::new().with_interval(cfg.ping_interval)),
 			identify: identify::Behaviour::new(identify_cfg),
 			relay_client,
 			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
