@@ -1,7 +1,7 @@
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
 	kate_recovery::{
-		data::Cell,
+		data::{Cell, SingleCell},
 		matrix::{Dimensions, Position, RowIndex},
 	},
 };
@@ -52,7 +52,7 @@ impl DHTCell {
 	fn dht_record(&self, block: u32, ttl: Duration) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
-			value: self.0.content.to_vec(),
+			value: self.0.to_bytes(),
 			publisher: None,
 			expires: Instant::now().checked_add(ttl),
 		}
@@ -500,7 +500,7 @@ impl Client {
 					return None;
 				};
 
-				Some(Cell { position, content })
+				Some(Cell::SingleCell(SingleCell { position, content }))
 			},
 			Err(error) => {
 				trace!("Cell {reference} not found in the DHT: {error}");

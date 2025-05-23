@@ -23,7 +23,7 @@ use avail_rust::{
 			AppData, Percent,
 		},
 		commitments,
-		data::{Cell, DataCell},
+		data::{Cell, DataCell, SingleCell},
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -124,7 +124,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			fetched.len(),
 			unfetched.len()
 		);
-
+		let fetched: Vec<SingleCell> = fetched
+			.into_iter()
+			.map(SingleCell::try_from)
+			.map(|res| res.map_err(|e| eyre!(e)))
+			.collect::<Result<_, _>>()?;
 		let mut rng = ChaChaRng::from_seed(Default::default());
 		let missing_cells =
 			columns_positions(dimensions, &unfetched, Percent::from_percent(66), &mut rng);
@@ -138,6 +142,11 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
+		let missing_fetched: Vec<SingleCell> = missing_fetched
+			.into_iter()
+			.map(SingleCell::try_from)
+			.map(|res| res.map_err(|e| eyre!(e)))
+			.collect::<Result<_, _>>()?;
 
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
@@ -289,7 +298,7 @@ async fn fetch_verified(
 			.await
 			.wrap_err("Failed to verify fetched cells")?;
 
-	fetched.retain(|cell| verified.contains(&cell.position));
+	fetched.retain(|cell| verified.contains(&cell.position()));
 	unfetched.append(&mut unverified);
 
 	Ok((fetched, unfetched))
