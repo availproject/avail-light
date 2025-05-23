@@ -23,6 +23,7 @@ use avail_rust::{
 			AppData, Percent,
 		},
 		commitments,
+		commons::ArkPublicParams,
 		data::{Cell, DataCell, SingleCell},
 		matrix::{Dimensions, Position},
 	},
@@ -34,7 +35,6 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
@@ -60,7 +60,7 @@ use crate::{
 trait Client {
 	async fn reconstruct_rows_from_dht(
 		&self,
-		pp: Arc<PublicParameters>,
+		pp: Arc<ArkPublicParams>,
 		block_number: u32,
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
@@ -92,7 +92,7 @@ struct AppClient<T: Database> {
 impl<T: Database + Sync> Client for AppClient<T> {
 	async fn reconstruct_rows_from_dht(
 		&self,
-		pp: Arc<PublicParameters>,
+		pp: Arc<ArkPublicParams>,
 		block_number: u32,
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
@@ -277,7 +277,7 @@ fn data_cell(
 }
 
 async fn fetch_verified(
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	p2p_client: &Option<P2pClient>,
 	block_number: u32,
 	dimensions: Dimensions,
@@ -311,7 +311,7 @@ async fn process_block(
 	cfg: &AppClientConfig,
 	app_id: AppId,
 	block: &BlockVerified,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 ) -> Result<AppData> {
 	let Some(extension) = &block.extension else {
 		return Err(eyre!("Missing header extension"));
@@ -453,7 +453,7 @@ pub async fn run(
 	rpc_client: RpcClient<impl Database + Clone + Sync>,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<ApiData>,
 	shutdown: Controller<String>,
@@ -546,8 +546,9 @@ mod tests {
 		data,
 		types::{AppClientConfig, Extension},
 	};
-	use avail_rust::{avail_core::DataLookup, kate_recovery::testnet};
+	use avail_rust::avail_core::DataLookup;
 	use hex_literal::hex;
+	use kate::couscous;
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
@@ -555,7 +556,7 @@ mod tests {
 			network_mode: NetworkMode::P2POnly,
 			..Default::default()
 		};
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::multiproof_params());
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockClient::new();
 		let db = data::MemoryDB::default();
@@ -611,7 +612,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let cfg = AppClientConfig::default();
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::multiproof_params());
 		let dimensions: Dimensions = Dimensions::new(1, 16).unwrap();
 		let mut mock_client = MockClient::new();
 		let db = data::MemoryDB::default();

@@ -1,9 +1,9 @@
 use avail_rust::kate_recovery::{
+	commons::ArkPublicParams,
 	data::{Cell, SingleCell},
 	matrix::{Dimensions, Position},
 };
 use color_eyre::eyre;
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use itertools::{Either, Itertools};
 use std::sync::Arc;
@@ -17,14 +17,13 @@ mod core;
 
 use crate::utils::spawn_in_span;
 
-#[allow(deprecated)]
 async fn verify_proof(
-	public_parameters: Arc<PublicParameters>,
+	public_parameters: Arc<ArkPublicParams>,
 	dimensions: Dimensions,
 	commitment: [u8; 48],
 	cell: SingleCell,
 ) -> Result<(Position, bool), core::Error> {
-	core::verify(&public_parameters, dimensions, &commitment, &cell)
+	core::verify_v2(&public_parameters, dimensions, &commitment, &cell)
 		.map(|verified| (cell.position, verified))
 }
 
@@ -34,7 +33,7 @@ pub async fn verify(
 	dimensions: Dimensions,
 	cells: &[Cell],
 	commitments: &[[u8; 48]],
-	public_parameters: Arc<PublicParameters>,
+	public_parameters: Arc<ArkPublicParams>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
 	if cells.is_empty() {
 		return Ok((Vec::new(), Vec::new()));

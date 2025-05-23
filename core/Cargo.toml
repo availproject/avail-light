@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Internal deps
 dusk-plonk = { workspace = true }
+kate = { workspace = true }
 
 # 3rd-party
 async-stream = "0.3.5"
