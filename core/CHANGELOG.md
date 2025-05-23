@@ -2,6 +2,7 @@
 
 ## 1.2.8
 
+- Increase default `ping` protocol interval from 20 to 60 seconds
 - Added network mode configuration option that can disable the use of RCP or P2P cell fetching
 - Made replicaton and publicaton intervals optional
 - Added configurable random restarts to the maintenance phase
