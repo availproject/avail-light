@@ -12,7 +12,7 @@
 use async_trait::async_trait;
 use avail_rust::{
 	kate_recovery::{
-		data::{self, Cell},
+		data::{self, Cell, SingleCell},
 		matrix::{Dimensions, Partition, Position, RowIndex},
 	},
 	AvailHeader, H256,
@@ -204,11 +204,13 @@ pub async fn process_block(
 	))?;
 
 	if rpc_fetched.len() >= dimensions.cols().get().into() {
-		let data_cells = rpc_fetched
-			.iter()
-			.filter(|cell| !cell.position.is_extended())
-			.collect::<Vec<_>>();
+		let cells: Vec<SingleCell> = rpc_fetched
+			.into_iter()
+			.filter(|c| !c.position().is_extended())
+			.filter_map(|c| SingleCell::try_from(c).ok())
+			.collect();
 
+		let data_cells: Vec<&SingleCell> = cells.iter().collect();
 		let data_rows = data::rows(dimensions, &data_cells);
 
 		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
@@ -357,7 +359,7 @@ mod tests {
 	}
 
 	const DEFAULT_CELLS: [Cell; 4] = [
-		Cell {
+		Cell::SingleCell(SingleCell {
 			position: Position { row: 0, col: 2 },
 			content: [
 				183, 215, 10, 175, 218, 48, 236, 18, 30, 163, 215, 125, 205, 130, 176, 227, 133,
@@ -366,8 +368,8 @@ mod tests {
 				83, 193, 255, 17, 235, 98, 10, 88, 241, 25, 186, 3, 174, 139, 200, 128, 117, 255,
 				213, 200, 4, 46, 244, 219, 5, 131, 0,
 			],
-		},
-		Cell {
+		}),
+		Cell::SingleCell(SingleCell {
 			position: Position { row: 1, col: 1 },
 			content: [
 				172, 213, 85, 167, 89, 247, 11, 125, 149, 170, 217, 222, 86, 157, 11, 20, 154, 21,
@@ -376,8 +378,8 @@ mod tests {
 				180, 156, 219, 69, 155, 148, 49, 78, 25, 165, 147, 150, 253, 251, 174, 49, 215,
 				191, 142, 169, 70, 17, 86, 218, 0,
 			],
-		},
-		Cell {
+		}),
+		Cell::SingleCell(SingleCell {
 			position: Position { row: 0, col: 3 },
 			content: [
 				132, 180, 92, 81, 128, 83, 245, 59, 206, 224, 200, 137, 236, 113, 109, 216, 161,
@@ -386,8 +388,8 @@ mod tests {
 				105, 21, 241, 123, 211, 193, 6, 254, 125, 169, 108, 252, 85, 49, 31, 54, 53, 79,
 				196, 5, 122, 206, 127, 226, 224, 70, 0,
 			],
-		},
-		Cell {
+		}),
+		Cell::SingleCell(SingleCell {
 			position: Position { row: 1, col: 3 },
 			content: [
 				132, 180, 92, 81, 128, 83, 245, 59, 206, 224, 200, 137, 236, 113, 109, 216, 161,
@@ -396,7 +398,7 @@ mod tests {
 				105, 21, 241, 123, 211, 193, 6, 254, 125, 169, 108, 252, 85, 49, 31, 54, 53, 79,
 				196, 5, 122, 206, 127, 226, 224, 70, 0,
 			],
-		},
+		}),
 	];
 
 	#[tokio::test]

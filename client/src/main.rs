@@ -26,13 +26,14 @@ use avail_light_core::{
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::{account, avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
+use avail_rust::{account, avail_core::AppId};
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
 use config::RuntimeConfig;
+use kate::couscous;
 use libp2p::kad::{Mode, QueryStats, RecordKey};
 use std::{collections::HashMap, fs, path::Path, sync::Arc, time::Duration};
 use tokio::{
@@ -43,7 +44,7 @@ use tokio::{
 		Mutex,
 	},
 };
-use tracing::{error, info, span, trace, warn, Level};
+use tracing::{error, info, span, warn, Level};
 
 #[cfg(feature = "network-analysis")]
 use avail_light_core::network::p2p::analyzer;
@@ -134,12 +135,7 @@ async fn run(
 		spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.libp2p.port, 10)));
 	}
 
-	let pp = Arc::new(couscous::public_params());
-	let raw_pp = pp.to_raw_var_bytes();
-	let public_params_hash = hex::encode(blake2_128(&raw_pp));
-	let public_params_len = hex::encode(raw_pp).len();
-	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-
+	let pp = Arc::new(couscous::multiproof_params());
 	let (rpc_event_sender, rpc_event_receiver) = broadcast::channel(1000);
 	let (rpc_client, rpc_subscriptions) = rpc::init(
 		db.clone(),

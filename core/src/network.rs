@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
+		commons::ArkPublicParams,
 		data::Cell,
 		matrix::{Dimensions, Position},
 	},
@@ -9,7 +10,6 @@ use avail_rust::{
 };
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
-use dusk_plonk::prelude::PublicParameters;
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 #[cfg(not(target_arch = "wasm32"))]
@@ -72,7 +72,7 @@ impl FetchStats {
 struct DHTWithRPCFallbackClient<T: Database> {
 	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<T>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
 }
 
@@ -124,7 +124,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from DHT"
 		);
 
-		dht_fetched.retain(|cell| verified.contains(&cell.position));
+		dht_fetched.retain(|cell| verified.contains(&cell.position()));
 		unfetched.append(&mut unverified);
 
 		Ok((dht_fetched, unfetched, fetch_elapsed))
@@ -167,7 +167,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -238,7 +238,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 pub fn new(
 	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<impl Database + Sync>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
 ) -> impl Client {
 	DHTWithRPCFallbackClient {
@@ -251,7 +251,7 @@ pub fn new(
 
 struct RPCClient<T: Database> {
 	client: rpc::Client<T>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 }
 
 impl<T: Database> RPCClient<T> {
@@ -292,7 +292,7 @@ impl<T: Database> RPCClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -325,10 +325,7 @@ impl<T: Database + Sync> Client for RPCClient<T> {
 	}
 }
 
-pub fn new_rpc(
-	client: rpc::Client<impl Database + Sync>,
-	pp: Arc<PublicParameters>,
-) -> impl Client {
+pub fn new_rpc(client: rpc::Client<impl Database + Sync>, pp: Arc<ArkPublicParams>) -> impl Client {
 	RPCClient { client, pp }
 }
 

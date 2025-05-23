@@ -1,19 +1,19 @@
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{verify, Error};
+pub use wasm::{verify_v2, Error};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use avail_rust::kate_recovery::proof::{verify, Error};
+pub use avail_rust::kate_recovery::proof::{verify_v2, Error};
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
 	use avail_rust::{
 		avail_core::kate::COMMITMENT_SIZE,
-		kate_recovery::{data::Cell, matrix::Dimensions},
+		kate_recovery::{commons::ArkPublicParams, data::SingleCell, matrix::Dimensions},
 	};
 	use dusk_bytes::Serializable;
 	use dusk_plonk::{
 		bls12_381::G1Affine,
-		commitment_scheme::kzg10::{commitment::Commitment, proof::Proof, PublicParameters},
+		commitment_scheme::kzg10::{commitment::Commitment, proof::Proof},
 		fft::EvaluationDomain,
 		prelude::BlsScalar,
 	};
@@ -39,11 +39,11 @@ mod wasm {
 		InvalidPositionInDomain,
 	}
 
-	pub fn verify(
-		public_parameters: &PublicParameters,
+	pub fn verify_v2(
+		public_parameters: &ArkPublicParams,
 		dimensions: Dimensions,
 		commitment: &[u8; COMMITMENT_SIZE],
-		cell: &Cell,
+		cell: &SingleCell,
 	) -> Result<bool, Error> {
 		let width: u16 = dimensions.cols().into();
 		let commitment_to_witness = G1Affine::from_bytes(&cell.proof()).map(Commitment::from)?;
