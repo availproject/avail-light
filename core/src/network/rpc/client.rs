@@ -1,7 +1,10 @@
 use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail_core::AppId,
-	kate_recovery::{data::{Cell, SingleCell}, matrix::Position},
+	kate_recovery::{
+		data::{Cell, SingleCell},
+		matrix::Position,
+	},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
@@ -624,7 +627,8 @@ impl<D: Database> Client<D> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-				let rows = query_rows(&client.client.rpc_client, rows.to_vec(), Some(block_hash)).await?;
+				let rows =
+					query_rows(&client.client.rpc_client, rows.to_vec(), Some(block_hash)).await?;
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -685,7 +689,7 @@ impl<D: Database> Client<D> {
 		Ok(positions
 			.iter()
 			.zip(contents)
-			.map(|(&position, content)| Cell::SingleCell( SingleCell { position, content }))
+			.map(|(&position, content)| Cell::SingleCell(SingleCell { position, content }))
 			.collect::<Vec<_>>())
 	}
 

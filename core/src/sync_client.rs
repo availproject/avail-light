@@ -267,7 +267,10 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::{Cell, SingleCell}, matrix::Position},
+		kate_recovery::{
+			data::{Cell, SingleCell},
+			matrix::Position,
+		},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
@@ -360,7 +363,7 @@ mod tests {
 							120, 131, 62, 53, 0, 54, 72, 49, 196, 234, 239, 65, 25, 159, 245, 38,
 							193, 0,
 						],
-					}), 
+					}),
 					Cell::SingleCell(SingleCell {
 						position: Position { row: 0, col: 3 },
 						content: [
