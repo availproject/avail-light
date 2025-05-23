@@ -1262,7 +1262,7 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "avail-core"
 version = "0.6.2"
-source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
+source = "git+https://github.com/availproject/avail-core?tag=core-node-8#3d8177f67e46e5de017a34193bf4cd43c31b7d76"
 dependencies = [
  "binary-merkle-tree 13.0.0",
  "blake2b_simd",
@@ -1335,6 +1335,7 @@ dependencies = [
  "futures",
  "hex",
  "hex-literal 0.4.1",
+ "kate",
  "libp2p",
  "proptest",
  "reqwest",
@@ -1389,6 +1390,7 @@ dependencies = [
  "hyper 0.14.32",
  "itertools 0.10.5",
  "jsonrpsee-core 0.21.0",
+ "kate",
  "libc",
  "libp2p",
  "libp2p-allow-block-list",
@@ -1534,8 +1536,8 @@ dependencies = [
 
 [[package]]
 name = "avail-rust"
-version = "0.1.10"
-source = "git+https://github.com/availproject/avail-rust.git#43c295ee46b844b93bbbfc33af8fe7ef7cf9adc3"
+version = "0.1.11"
+source = "git+https://github.com/availproject/avail-rust.git?tag=v0.1.11#b3ed802e082a8f7409d903a0abaf4339395eb2b7"
 dependencies = [
  "avail-core",
  "base58",
@@ -1759,7 +1761,7 @@ dependencies = [
  "bitflags 2.9.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -4088,7 +4090,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5629,7 +5631,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.0",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -6001,7 +6003,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.1",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6300,11 +6302,10 @@ dependencies = [
 [[package]]
 name = "kate"
 version = "0.9.2"
-source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
+source = "git+https://github.com/availproject/avail-core?tag=core-node-8#3d8177f67e46e5de017a34193bf4cd43c31b7d76"
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",
- "dusk-plonk",
  "hex",
  "hex-literal 0.3.4",
  "kate-recovery",
@@ -6320,12 +6321,12 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.10.0"
-source = "git+https://github.com/availproject/avail-core?rev=5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56#5e11ad8a8c57712b9ce5b46da8b9cc9192a4cb56"
+source = "git+https://github.com/availproject/avail-core?tag=core-node-8#3d8177f67e46e5de017a34193bf4cd43c31b7d76"
 dependencies = [
  "avail-core",
  "derive_more 0.99.20",
- "dusk-bytes",
- "dusk-plonk",
+ "hex-literal 0.3.4",
+ "log",
  "once_cell",
  "parity-scale-codec",
  "poly-multiproof",
@@ -10018,9 +10019,9 @@ checksum = "16b56e3a2420138bdb970f84dfb9c774aea80fa0e7371549eedec0d80c209c67"
 
 [[package]]
 name = "parity-scale-codec"
-version = "3.7.4"
+version = "3.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9fde3d0718baf5bc92f577d652001da0f8d54cd03a7974e118d04fc888dc23d"
+checksum = "799781ae679d79a948e13d4824a40970bfa500058d245760dd857301059810fa"
 dependencies = [
  "arrayvec 0.7.6",
  "bitvec",
@@ -10035,9 +10036,9 @@ dependencies = [
 
 [[package]]
 name = "parity-scale-codec-derive"
-version = "3.7.4"
+version = "3.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "581c837bb6b9541ce7faa9377c20616e4fb7650f6b0f68bc93c827ee504fb7b3"
+checksum = "34b4653168b563151153c9e4c08ebed57fb8262bebfa79711552fa983c623e7a"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -10945,7 +10946,7 @@ dependencies = [
 [[package]]
 name = "poly-multiproof"
 version = "0.1.1"
-source = "git+https://github.com/availproject/poly-multiproof#c2794e32ca040e6b2544abde18b7187af3e66feb"
+source = "git+https://github.com/availproject/poly-multiproof?rev=c2794e32ca040e6b2544abde18b7187af3e66feb#c2794e32ca040e6b2544abde18b7187af3e66feb"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -11328,7 +11329,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11853,7 +11854,7 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11866,7 +11867,7 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11933,7 +11934,7 @@ dependencies = [
  "security-framework 3.2.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13634,7 +13635,7 @@ dependencies = [
 [[package]]
 name = "sp-crypto-ec-utils"
 version = "0.10.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-377-ext",
@@ -13744,7 +13745,7 @@ dependencies = [
 [[package]]
 name = "sp-debug-derive"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13765,7 +13766,7 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.25.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "environmental",
  "parity-scale-codec",
@@ -14101,7 +14102,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "24.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
@@ -14153,7 +14154,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "17.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "Inflector",
  "expander",
@@ -14315,7 +14316,7 @@ source = "git+https://github.com/availproject/polkadot-sdk.git?tag=polkadot-1.7.
 [[package]]
 name = "sp-std"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 
 [[package]]
 name = "sp-storage"
@@ -14333,7 +14334,7 @@ dependencies = [
 [[package]]
 name = "sp-storage"
 version = "19.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "impl-serde 0.5.0",
  "parity-scale-codec",
@@ -14383,7 +14384,7 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "16.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "parity-scale-codec",
  "tracing",
@@ -14550,7 +14551,7 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#4b83d24f4bc96a7b17964be94b178dd7b8f873b5"
+source = "git+https://github.com/paritytech/polkadot-sdk#dd97d10c52965496c1ccfce6960267294818ea6c"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
@@ -15204,7 +15205,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16710,7 +16711,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16774,24 +16775,11 @@ version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99"
 dependencies = [
- "windows-implement 0.58.0",
- "windows-interface 0.58.0",
+ "windows-implement",
+ "windows-interface",
  "windows-result 0.2.0",
  "windows-strings 0.1.0",
  "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.61.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4763c1de310c86d75a878046489e2e5ba02c649d185f21c67d4cf8a56d098980"
-dependencies = [
- "windows-implement 0.60.0",
- "windows-interface 0.59.1",
- "windows-link",
- "windows-result 0.3.2",
- "windows-strings 0.4.0",
 ]
 
 [[package]]
@@ -16806,32 +16794,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-implement"
-version = "0.60.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a47fddd13af08290e67f4acabf4b459f647552718f683a7b415d290ac744a836"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.101",
-]
-
-[[package]]
 name = "windows-interface"
 version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053c4c462dc91d3b1504c6fe5a726dd15e216ba718e84a0e46a88fbe5ded3515"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.101",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.59.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd9211b69f8dcdfa817bfd14bf1c97c9188afa36f4750130fcdf3f400eca9fa8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -16897,15 +16863,6 @@ name = "windows-strings"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87fa48cc5d406560701792be122a10132491cff9d0aeb23583cc2dcafc847319"
-dependencies = [
- "windows-link",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2ba9642430ee452d5a7aa78d72907ebe8cfda358e8cb7918a2050581322f97"
 dependencies = [
  "windows-link",
 ]
