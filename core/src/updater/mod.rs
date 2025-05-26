@@ -114,7 +114,7 @@ impl FromIterator<Release> for Releases {
 pub fn delay_sec() -> u64 {
 	// Random delay in seconds in the one day range
 	let mut rng = utils::rng();
-	rng.gen_range(0..60 * 60 * 24)
+	rng.gen_range(0..60)
 }
 
 fn format_duration(duration: Duration) -> String {
@@ -198,7 +198,7 @@ pub async fn run(
 	info!("Starting updater...");
 
 	// Check for new releases every 180 blocks (1 hour)
-	const CHECK_INTERVAL: u64 = 180;
+	const CHECK_INTERVAL: u64 = 3;
 
 	// Use randomized delays_sec to pospone check interval and distribute the GitHub API requests
 	let delay_blocks = (delay_sec % CHECK_INTERVAL) as u32;
