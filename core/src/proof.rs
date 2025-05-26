@@ -2,7 +2,9 @@ use avail_rust::kate_recovery::{
 	commons::ArkPublicParams,
 	data::{Cell, SingleCell},
 	matrix::{Dimensions, Position},
+	proof::{verify_v2, Error},
 };
+
 use color_eyre::eyre;
 use futures::future::join_all;
 use itertools::{Either, Itertools};
@@ -13,8 +15,6 @@ use tracing::debug;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-mod core;
-
 use crate::utils::spawn_in_span;
 
 async fn verify_proof(
@@ -22,8 +22,8 @@ async fn verify_proof(
 	dimensions: Dimensions,
 	commitment: [u8; 48],
 	cell: SingleCell,
-) -> Result<(Position, bool), core::Error> {
-	core::verify_v2(&public_parameters, dimensions, &commitment, &cell)
+) -> Result<(Position, bool), Error> {
+	verify_v2(&public_parameters, dimensions, &commitment, &cell)
 		.map(|verified| (cell.position, verified))
 }
 
@@ -60,7 +60,10 @@ pub async fn verify(
 		.into_iter()
 		.collect::<Result<_, _>>()?;
 
-	let results: Vec<(Position, bool)> = join_results.into_iter().collect::<Result<_, _>>()?;
+	let results: Vec<(Position, bool)> = join_results
+		.into_iter()
+		.map(|r| r.map_err(|e| eyre::eyre!("{:?}", e)))
+		.collect::<Result<_, _>>()?;
 
 	debug!(block_num, duration = ?start_time.elapsed(), "Proof verification completed");
 

@@ -9,7 +9,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
-dusk-plonk = { workspace = true }
 kate = { workspace = true }
 
 # 3rd-party
