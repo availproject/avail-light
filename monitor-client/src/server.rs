@@ -16,7 +16,8 @@ pub struct PeerInfo {
 	multiaddr: Vec<String>,
 	last_discovered: Option<u64>,
 	last_successful_dial: Option<u64>,
-	average_ping_ms: Option<u128>,
+	is_blacklisted: bool,
+	average_ping_ms: Option<Duration>,
 	last_ping_rtt: Option<Duration>,
 }
 
@@ -53,7 +54,6 @@ fn default_limit() -> usize {
 }
 
 pub struct AppState {
-	pub blacklist: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	pub server_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	pub pagination: PaginationConfig,
 }
@@ -63,13 +63,14 @@ async fn get_blacklisted_peers(
 	app_state: web::Data<AppState>,
 	pagination: web::Query<PaginationParams>,
 ) -> impl Responder {
-	let blacklist = app_state.blacklist.lock().await;
+	let server_list = app_state.server_list.lock().await;
 
 	let page = app_state.pagination.validate_page(pagination.page);
 	let limit = app_state.pagination.validate_limit(pagination.limit);
 
-	let peers: Vec<(String, PeerInfo)> = blacklist
+	let peers: Vec<(String, PeerInfo)> = server_list
 		.iter()
+		.filter(|(_, info)| info.is_blacklisted)
 		.map(|(peer_id, info)| {
 			let peer_id_str = peer_id.to_string();
 
@@ -86,6 +87,7 @@ async fn get_blacklisted_peers(
 						.unwrap_or_default()
 						.as_secs()
 				}),
+				is_blacklisted: info.is_blacklisted,
 				last_ping_rtt: None,
 				average_ping_ms: None,
 			};
@@ -111,17 +113,10 @@ async fn get_peers(
 	let limit = app_state.pagination.validate_limit(pagination.limit);
 
 	let server_list = app_state.server_list.lock().await;
-	let blacklist = app_state.blacklist.lock().await;
 
 	let server_peers: Vec<(String, PeerInfo)> = server_list
 		.iter()
 		.map(|(peer_id, info)| {
-			let is_blacklisted = blacklist.contains_key(peer_id);
-			let (avg_ping_ms, last_ping) = if is_blacklisted {
-				(None, None)
-			} else {
-				(info.avg_ping().map(|d| d.as_millis()), info.last_ping_rtt)
-			};
 			(
 				peer_id.to_string(),
 				PeerInfo {
@@ -137,8 +132,9 @@ async fn get_peers(
 							.unwrap_or_default()
 							.as_secs()
 					}),
-					average_ping_ms: avg_ping_ms,
-					last_ping_rtt: last_ping,
+					is_blacklisted: info.is_blacklisted,
+					average_ping_ms: info.avg_ping(),
+					last_ping_rtt: info.last_ping_rtt,
 				},
 			)
 		})
@@ -153,11 +149,14 @@ async fn get_peers(
 #[get("/peer_count")]
 async fn get_peer_count(app_state: web::Data<AppState>) -> impl Responder {
 	let server_list = app_state.server_list.lock().await;
-	let blacklist = app_state.blacklist.lock().await;
+	let blacklist_count = server_list
+		.values()
+		.filter(|info| info.is_blacklisted)
+		.count();
 
 	let counts = PeerCounts {
 		server_list_count: server_list.len(),
-		blacklist_count: blacklist.len(),
+		blacklist_count,
 	};
 
 	HttpResponse::Ok().json(counts)
