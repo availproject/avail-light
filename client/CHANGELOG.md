@@ -2,6 +2,7 @@
 
 ## 1.12.13
 
+- Fixed issue with restarting in docker on linux hosts
 - Exposed network mode CLI option
 - Exposed random restarts configuration (`false` by default)
 - Updated `avail-light-core` to 1.2.8
