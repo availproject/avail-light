@@ -2,6 +2,7 @@
 
 ## 1.12.13
 
+- Skiped inserts into the DHT when client is permanently in server mode
 - Fixed issue with restarting in docker on linux hosts
 - Exposed network mode CLI option
 - Exposed random restarts configuration (`false` by default)

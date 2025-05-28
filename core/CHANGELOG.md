@@ -2,6 +2,7 @@
 
 ## 1.2.8
 
+- Added flag to disable inserts into DHT on failed fetch
 - Improved updater logging
 - Increase default `ping` protocol interval from 20 to 60 seconds
 - Added network mode configuration option that can disable the use of RCP or P2P cell fetching
