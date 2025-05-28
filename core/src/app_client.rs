@@ -548,8 +548,8 @@ mod tests {
 		types::{AppClientConfig, Extension},
 	};
 	use avail_rust::avail_core::DataLookup;
+	use avail_rust::kate_recovery::testnet;
 	use hex_literal::hex;
-	use kate::couscous;
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
@@ -557,7 +557,8 @@ mod tests {
 			network_mode: NetworkMode::P2POnly,
 			..Default::default()
 		};
-		let pp = Arc::new(couscous::multiproof_params());
+		// If you want to use couscous pp instead, should update the corresponding commitments as well.
+		let pp = Arc::new(testnet::multiproof_params(1024, 1024));
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockClient::new();
 		let db = data::MemoryDB::default();
@@ -613,7 +614,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let cfg = AppClientConfig::default();
-		let pp = Arc::new(couscous::multiproof_params());
+		let pp = Arc::new(testnet::multiproof_params(1024, 1024));
 		let dimensions: Dimensions = Dimensions::new(1, 16).unwrap();
 		let mut mock_client = MockClient::new();
 		let db = data::MemoryDB::default();
