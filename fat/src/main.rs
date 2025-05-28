@@ -184,7 +184,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
-		p2p_client: p2p_client.clone(),
+		p2p_client: Some(p2p_client.clone()),
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(config.api.clone())));
 
