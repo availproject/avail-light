@@ -2,12 +2,9 @@
 
 ## 1.12.13
 
-<<<<<<< HEAD
 - Skiped inserts into the DHT when client is permanently in server mode
 - Fixed issue with restarting in docker on linux hosts
 - Exposed network mode CLI option
-=======
->>>>>>> fa8c2462 (rebase with avail-rust PR changes)
 - Exposed random restarts configuration (`false` by default)
 - Updated `avail-light-core` to 1.2.8
 

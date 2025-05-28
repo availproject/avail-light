@@ -2,20 +2,11 @@
 
 ## 1.2.8
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 - Added flag to disable inserts into DHT on failed fetch
 - Improved updater logging
-=======
-<<<<<<< HEAD
-- Update avail-rust to latest version
->>>>>>> 3480b039 (feat: multiproof das query support, wasm build fixes)
 - Increase default `ping` protocol interval from 20 to 60 seconds
 - Added network mode configuration option that can disable the use of RCP or P2P cell fetching
 - Made replicaton and publicaton intervals optional
-=======
-- Fixed default publication interval (set to 12h)
->>>>>>> fa8c2462 (rebase with avail-rust PR changes)
 - Added configurable random restarts to the maintenance phase
 - Exposed additional Identify protocol configuration, increased the timeouts between requests
 - Exposed additional AutoNat configurations, increased AutoNat server throttling

@@ -72,7 +72,6 @@ struct DHTWithRPCFallbackClient<T: Database> {
 	rpc_client: rpc::Client<T>,
 	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
-	insert_into_dht: bool,
 }
 
 type Commitments = [[u8; COMMITMENT_SIZE]];
@@ -222,7 +221,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			.await?;
 
 		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
-		if self.network_mode == NetworkMode::Both && self.insert_into_dht {
+		if matches!(self.network_mode, NetworkMode::Both) {
 			if let Some(p2p_client) = &self.p2p_client {
 				if let Err(error) = p2p_client
 					.insert_cells_into_dht(block_number, rpc_fetched.clone())
@@ -253,14 +252,12 @@ pub fn new(
 	rpc_client: rpc::Client<impl Database + Sync>,
 	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
-	insert_into_dht: bool,
 ) -> impl Client {
 	DHTWithRPCFallbackClient {
 		p2p_client,
 		rpc_client,
 		pp,
 		network_mode,
-		insert_into_dht,
 	}
 }
 

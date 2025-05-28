@@ -223,7 +223,7 @@ pub async fn run(
 				continue;
 			}
 			if started_at.elapsed() >= delay {
-				info!("Updating the light client...");
+				info!("Updating the Avail Light Client...");
 
 				let asset = release.target_asset()?;
 
@@ -249,29 +249,29 @@ pub async fn run(
 						.show_progress(true)
 						.download_to(&mut archive)
 					{
-						error!("Failed to download the light client: {error:#}");
+						error!("Failed to download the Avail Light Client: {error:#}");
 					}
 				})
 				.await?;
 
-				info!("Downloaded new version from {}", asset.url);
+				info!("Downloaded new version of the Avail Light Client");
 
 				let asset_name = asset.target.bin_name();
 
 				// extract to current directory
 				extract_archive(&archive_path, asset_name)?;
 
-				info!("Extracted new version of {asset_name}");
+				debug!("Extracted new version of the Avail Light Client: {asset_name}");
 
 				let bin = current_dir.as_path().join(PathBuf::from(asset_name));
 				self_replace::self_replace(bin)?;
 
-				info!("Replaced new version of the light client");
+				debug!("Replaced new version of the Avail Light Client");
 
 				let mut restart = restart.lock().await;
 				*restart = true;
 
-				let message = "Light client updated, stopping...".to_string();
+				let message = "Avail Light Client update is available, stopping...".to_string();
 				if let Err(error) = shutdown.trigger_shutdown(message) {
 					error!("{error:#}");
 				}
