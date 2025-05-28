@@ -20,8 +20,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		self, load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey,
-		Uuid,
+		load_or_init_suri, Delay, IdentityConfig, KademliaMode, MaintenanceConfig, NetworkMode,
+		PeerAddress, SecretKey, Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -82,7 +82,7 @@ async fn run(
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	// Initialize p2p components only if not in RPCOnly mode
-	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != types::NetworkMode::RPCOnly {
+	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
 		let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 			cfg.libp2p.clone(),
 			cfg.project_name.clone(),
@@ -254,6 +254,9 @@ async fn run(
 		)));
 	}
 
+	let insert_into_dht = cfg.libp2p.kademlia.automatic_server_mode
+		|| cfg.libp2p.kademlia.operation_mode == KademliaMode::Client;
+
 	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
 	let sync_network_client = network::new(
@@ -261,6 +264,7 @@ async fn run(
 		rpc_client.clone(),
 		pp.clone(),
 		cfg.network_mode,
+		insert_into_dht,
 	);
 
 	if cfg.sync_start_block.is_some() {
@@ -325,7 +329,13 @@ async fn run(
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
-	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.network_mode);
+	let light_network_client = network::new(
+		p2p_client,
+		rpc_client,
+		pp,
+		cfg.network_mode,
+		insert_into_dht,
+	);
 	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
