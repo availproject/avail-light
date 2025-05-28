@@ -1,48 +1,10 @@
 use avail_rust::kate_recovery::{
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 	commons::ArkPublicParams,
-	data::{Cell, SingleCell},
-=======
-	data::CellVariant,
->>>>>>> b2cc124a (multiproofs: Part II)
-=======
-	data::CellType,
->>>>>>> 47071951 (rename cell variant)
-=======
 	data::Cell,
->>>>>>> 23e1a765 (rename CellType)
 	matrix::{Dimensions, Position},
-	proof::{verify_v2, Error},
-};
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-use color_eyre::eyre;
-=======
-#[cfg(feature = "multiproof")]
-use avail_rust::{
-	kate_recovery::data::GCellBlock,
-	primitives::kate::{GMultiProof, GProof},
-	rpc::kate::{generate_pmp, verify_multi_proof},
-	U256,
 };
 use color_eyre::eyre;
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-<<<<<<< HEAD
-#[cfg(not(feature = "multiproof"))]
->>>>>>> b2cc124a (multiproofs: Part II)
-use futures::future::join_all;
-#[cfg(not(feature = "multiproof"))]
-use itertools::{Either, Itertools};
-=======
-use color_eyre::eyre;
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
->>>>>>> 8bd2c48f (optimize pmp init)
-=======
 use std::sync::Arc;
->>>>>>> 73dd1331 (update proof for fat client)
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
 use tracing::debug;
@@ -50,7 +12,10 @@ use tracing::debug;
 use web_time::Instant;
 #[cfg(not(feature = "multiproof"))]
 use {
-	avail_rust::kate_recovery::data::SingleCell,
+	avail_rust::kate_recovery::{
+		data::SingleCell,
+		proof::{verify_v2, Error},
+	},
 	futures::future::join_all,
 	itertools::{Either, Itertools},
 };
@@ -61,46 +26,21 @@ use {
 		BlstMSMEngine, M1NoPrecomp, U256,
 	},
 	tokio::sync::OnceCell,
-	tracing::info,
-	tracing::warn,
+	tracing::{info, warn},
 };
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 #[cfg(not(feature = "multiproof"))]
 use crate::utils::spawn_in_span;
 
-<<<<<<< HEAD
-use crate::utils::spawn_in_span;
-
-=======
-=======
->>>>>>> 23e1a765 (rename CellType)
-=======
 #[cfg(not(feature = "multiproof"))]
-use crate::utils::spawn_in_span;
-
->>>>>>> 73dd1331 (update proof for fat client)
-mod core;
-
-#[cfg(not(feature = "multiproof"))]
-<<<<<<< HEAD
->>>>>>> b2cc124a (multiproofs: Part II)
-=======
 #[allow(deprecated)]
->>>>>>> 2ecc1038 (merge changes from main)
 async fn verify_proof(
 	public_parameters: Arc<ArkPublicParams>,
 	dimensions: Dimensions,
 	commitment: [u8; 48],
 	cell: SingleCell,
-<<<<<<< HEAD
 ) -> Result<(Position, bool), Error> {
 	verify_v2(&public_parameters, dimensions, &commitment, &cell)
-=======
-) -> Result<(Position, bool), core::Error> {
-	core::verify(&public_parameters, dimensions, &commitment, &cell)
->>>>>>> 23e1a765 (rename CellType)
 		.map(|verified| (cell.position, verified))
 }
 
@@ -115,37 +55,14 @@ pub async fn verify(
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
 	if cells.is_empty() {
 		return Ok((Vec::new(), Vec::new()));
-<<<<<<< HEAD
-<<<<<<< HEAD
 	}
 
-=======
-	};
->>>>>>> b2cc124a (multiproofs: Part II)
-=======
-	}
-
->>>>>>> 23e1a765 (rename CellType)
 	let start_time = Instant::now();
 
 	let tasks = cells
 		.iter()
-<<<<<<< HEAD
-<<<<<<< HEAD
 		.filter_map(|cell_type| {
 			SingleCell::try_from(cell_type.clone()).ok().map(|cell| {
-=======
-		.filter_map(|cell_variant| {
-			Cell::try_from(cell_variant.clone()).ok().map(|cell| {
->>>>>>> b2cc124a (multiproofs: Part II)
-=======
-		.filter_map(|cell_type| {
-<<<<<<< HEAD
-			Cell::try_from(cell_type.clone()).ok().map(|cell| {
->>>>>>> 8bd2c48f (optimize pmp init)
-=======
-			SingleCell::try_from(cell_type.clone()).ok().map(|cell| {
->>>>>>> 23e1a765 (rename CellType)
 				spawn_in_span(verify_proof(
 					public_parameters.clone(),
 					dimensions,
@@ -186,7 +103,7 @@ pub async fn verify(
 	dimensions: Dimensions,
 	cells: &[Cell],
 	commitments: &[[u8; 48]],
-	_public_parameters: Arc<PublicParameters>,
+	_public_parameters: Arc<ArkPublicParams>,
 ) -> eyre::Result<(Vec<Position>, Vec<Position>)> {
 	if cells.is_empty() {
 		return Ok((Vec::new(), Vec::new()));
@@ -219,7 +136,9 @@ pub async fn verify(
 	}
 
 	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
-	let is_verified = verify_multi_proof(&pmp, &proof_pairs, &commitments, cols.into()).await?;
+	let is_verified = verify_multi_proof(&pmp, &proof_pairs, &commitments, cols.into())
+		.await
+		.map_err(|e| eyre::eyre!("{:?}", e))?;
 
 	debug!(
 		block_num,

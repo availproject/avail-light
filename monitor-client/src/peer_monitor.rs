@@ -16,6 +16,7 @@ pub struct PeerMonitor {
 	p2p_client: Client,
 	interval: Interval,
 	server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
+	server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	config: Config,
 }
 impl PeerMonitor {
@@ -23,12 +24,14 @@ impl PeerMonitor {
 		p2p_client: Client,
 		interval: Interval,
 		server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
+		server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 		config: Config,
 	) -> Self {
 		Self {
 			interval,
 			p2p_client,
 			server_monitor_list,
+			server_black_list,
 			config,
 		}
 	}
@@ -38,19 +41,10 @@ impl PeerMonitor {
 
 		loop {
 			self.interval.tick().await;
-
-			let blacklisted_count = self
-				.server_monitor_list
-				.lock()
-				.await
-				.values()
-				.filter(|info| info.is_blacklisted)
-				.count();
-
 			info!(
 				"Total peers: {}. Blacklisted peers: {}.",
 				self.server_monitor_list.lock().await.len(),
-				blacklisted_count
+				self.server_black_list.lock().await.len()
 			);
 			if let Err(e) = self.process_peers().await {
 				warn!("Error processing peers: {}", e);
@@ -66,6 +60,7 @@ impl PeerMonitor {
 
 		for peer_id in peer_ids {
 			let p2p_client = self.p2p_client.clone();
+			let server_black_list = self.server_black_list.clone();
 			let server_monitor_list = self.server_monitor_list.clone();
 			let config = self.config.clone();
 
@@ -81,7 +76,14 @@ impl PeerMonitor {
 				};
 
 				// TODO: Handle the result
-				_ = check_peer_connectivity(&config, p2p_client, &peer_id, &mut cloned_info).await;
+				_ = check_peer_connectivity(
+					&config,
+					p2p_client,
+					server_black_list,
+					&peer_id,
+					&mut cloned_info,
+				)
+				.await;
 
 				let mut server_list = server_monitor_list.lock().await;
 				if let Some(info) = server_list.get_mut(&peer_id) {
@@ -99,6 +101,7 @@ impl PeerMonitor {
 async fn check_peer_connectivity(
 	config: &Config,
 	p2p_client: Client,
+	server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	peer_id: &PeerId,
 	info: &mut ServerInfo,
 ) -> Result<()> {
@@ -110,27 +113,27 @@ async fn check_peer_connectivity(
 		Ok(_) => {
 			trace!("✅ Successfully dialed peer {}", peer_id);
 
+			let mut black_list = server_black_list.lock().await;
 			// If server is blacklisted and returns a successful dial:
 			// 1. Increase the success counter by 1
 			// 2. Reset the fail counter
 			// If the success counter goes over the threshold, remove the peer from the blacklist
-			if info.is_blacklisted {
-				info.success_counter += 1;
+			if let Some(black_list_info) = black_list.get_mut(peer_id) {
+				black_list_info.success_counter += 1;
+				black_list_info.failed_counter = 0;
 
-				if info.success_counter >= config.success_threshold {
-					info.is_blacklisted = false;
-					info.success_counter = 0; // Reset after unmarking
+				if black_list_info.success_counter == config.success_threshold {
+					black_list.remove(peer_id);
 					debug!(
-						"Peer {} unmarked as blacklisted after {} successful dials",
-						peer_id, config.success_threshold
+						"Peer {} removed from blacklist after 3 successful dials",
+						peer_id
 					);
 				}
-			} else {
-				// For non-blacklisted peers, just increment the success counter and reset the failure counter
-				info.success_counter = info.success_counter.saturating_add(1);
 			}
 
-			// Every successful dial resets the fail counter for all peers
+			// Every successful dial resets the fail counter
+			// TODO: Bounded counter might be a better approach here
+			info.success_counter = info.success_counter.saturating_add(1);
 			info.failed_counter = 0;
 			info.last_successful_dial = Some(SystemTime::now())
 		},
@@ -139,12 +142,15 @@ async fn check_peer_connectivity(
 			// On every fail success counter is reset
 			info.failed_counter = info.failed_counter.saturating_add(1);
 			info.success_counter = 0;
-			if info.failed_counter >= config.fail_threshold {
+			if info.failed_counter == config.fail_threshold {
 				debug!(
-                    "⚠️ Peer {} has been unreachable for {} consecutive attempts, marking as blacklisted!",
-                    peer_id, config.fail_threshold
-                );
-				info.is_blacklisted = true;
+					"⚠️ Peer {} has been unreachable for 3 consecutive attempts!",
+					peer_id
+				);
+				server_black_list
+					.lock()
+					.await
+					.insert(*peer_id, info.clone());
 			}
 		},
 	}

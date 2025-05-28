@@ -1,10 +1,6 @@
 [package]
 name = "avail-light-core"
-<<<<<<< HEAD
 version = "1.2.8"
-=======
-version = "1.2.7"
->>>>>>> 50ce68f4 (increase dependency level)
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -21,7 +17,7 @@ async-trait = { workspace = true }
 base64 = "0.21.0"
 better-panic = "0.3.0"
 chrono = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true }
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 convert_case = "0.6.0"
 derive_more = { version = "1", features = ["from", "display"] }

@@ -5,44 +5,22 @@ use avail_rust::{
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
-		kate::{query_multi_proof, query_rows},
-		state::get_runtime_version,
-		system::version,
-	},
-<<<<<<< HEAD
-	rpc::{
-		chain::{get_block_hash, get_finalized_head},
 		kate::{query_proof, query_rows},
 		state::get_runtime_version,
 		system::version,
 	},
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 	sp_core::{bytes::from_hex, crypto, ed25519::Public},
 	subxt::{
 		self,
-		backend::legacy::rpc_methods::{RuntimeVersion, StorageKey},
+		backend::{
+			legacy::rpc_methods::{RuntimeVersion, StorageKey},
+			rpc::RpcClient as SubxtRpcClient,
+		},
 		rpc_params,
 		tx::SubmittableExtrinsic,
 		utils::AccountId32,
 	},
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-	AvailHeader, Keypair, Nonce, Options, H256, SDK, U256,
-=======
-	AvailHeader, Keypair, Nonce, Options, WaitFor, H256, SDK, U256,
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-	AvailHeader, Keypair, Nonce, Options, H256, SDK, U256,
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-=======
-	AvailHeader, Keypair, Nonce, Options, H256, SDK, U256,
->>>>>>> 078599ad (update rpc client)
-=======
-	AvailHeader, Keypair, Options, H256, SDK, U256,
->>>>>>> cf577def (update avail rust changes)
+	AOnlineClient, AvailHeader, Client as AvailRpcClient, Keypair, Options, H256, SDK, U256,
 };
 #[cfg(feature = "multiproof")]
 use avail_rust::{
@@ -55,7 +33,9 @@ use color_eyre::{
 	Report, Result,
 };
 use futures::{Stream, TryStreamExt};
-use std::{iter::Iterator, pin::Pin, sync::Arc, time::Duration};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+use std::{iter::Iterator, pin::Pin, sync::Arc};
 #[cfg(not(target_arch = "wasm32"))]
 use thiserror::Error;
 #[cfg(target_arch = "wasm32")]
@@ -335,36 +315,15 @@ impl<D: Database> Client<D> {
 
 	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
 	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
-<<<<<<< HEAD
 		let subxt_client = SubxtRpcClient::from_insecure_url(host).await?;
 		let online_client = AOnlineClient::from_rpc_client(subxt_client.clone()).await?;
 		let avail_client = AvailRpcClient::new(online_client, subxt_client);
 		let client = SDK::new_custom(avail_client)
 			.await
-			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{:?}", e))))?;
+			.map_err(|e| Report::msg(e.to_string()))?;
 
 		// Verify genesis hash
-<<<<<<< HEAD
-<<<<<<< HEAD
 		let genesis_hash = client.client.online_client.genesis_hash();
-=======
-		let client = SDK::new(host)
-			.await
-			.map_err(|e| Report::msg(ClientCreationError::SdkFailure(eyre!("{:?}", e))))?;
-
-		// Verify genesis hash
-<<<<<<< HEAD
-		let genesis_hash = client.online_client.genesis_hash();
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-		let genesis_hash = client.online_client.genesis_hash();
->>>>>>> 078599ad (update rpc client)
-=======
-		let genesis_hash = client.tx.balances.client.online_client.genesis_hash();
->>>>>>> cf577def (update avail rust changes)
-=======
-		let genesis_hash = client.client.online_client.genesis_hash();
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 		info!("Genesis hash for {}: {:?}", host, genesis_hash);
 
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
@@ -378,53 +337,11 @@ impl<D: Database> Client<D> {
 		}
 
 		// Fetch system and runtime information
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 078599ad (update rpc client)
-		let system_version = version(&client.rpc_client)
-			.await
-			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
-
-<<<<<<< HEAD
-		let runtime_version = client.client.online_client.runtime_version();
-=======
-		let system_version = String::new();
-		
-		// TODO
-		// client
-		// 	.online_client
-		// 	.version()
-		// 	.await
-		// 	.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(e.into())))?;
-=======
-		let system_version = version(&client.rpc_client)
-			.await
-			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-
-		let runtime_version = client.online_client.runtime_version();
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-		let runtime_version = client.online_client.runtime_version();
->>>>>>> 078599ad (update rpc client)
-=======
-		let system_version = version(&client.tx.balances.client)
-			.await
-			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
-
-		let runtime_version = client.tx.balances.client.online_client.runtime_version();
->>>>>>> cf577def (update avail rust changes)
-=======
 		let system_version = version(&client.client)
 			.await
 			.map_err(|e| Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e))))?;
 
 		let runtime_version = client.client.online_client.runtime_version();
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 
 		// Create Node variant
 		let node = Node::new(
@@ -571,7 +488,6 @@ impl<D: Database> Client<D> {
 		#[cfg(not(target_arch = "wasm32"))]
 		let timeout_in = Duration::from_secs(30);
 
-<<<<<<< HEAD
 		let headers_stream = client
 			.client
 			.online_client
@@ -581,21 +497,6 @@ impl<D: Database> Client<D> {
 			.map_ok(|(header, _)| Subscription::Header(header))
 			.inspect_ok(|_| info!("Received header on the stream"))
 			.inspect_err(|error| warn!(%error, "Received error on headers stream"));
-=======
-		// Create fused Avail Header subscription
-		let headers: SubscriptionStream = Box::pin(
-			client
-				.online_client
-				.backend()
-				.stream_finalized_block_headers()
-				.await?
-				.map_ok(|(header, _)| Subscription::Header(header))
-				.inspect_ok(|_| info!("Received header on the stream"))
-				.inspect_err(|error| warn!(%error, "Received error on headers stream"))
-				.timeout(timeout_in)
-				.fuse(),
-		);
->>>>>>> 2aa1a027 (update avail-rust deps)
 
 		// Create fused Avail Header subscription
 		#[cfg(not(target_arch = "wasm32"))]
@@ -618,28 +519,10 @@ impl<D: Database> Client<D> {
 
 		#[cfg(not(target_arch = "wasm32"))]
 		// Create fused GrandpaJustification subscription
-<<<<<<< HEAD
 		let justifications: SubscriptionStream =
 			Box::pin(justifications_stream.timeout(timeout_in).fuse());
 		#[cfg(target_arch = "wasm32")]
 		let justifications: SubscriptionStream = Box::pin(justifications_stream.fuse());
-=======
-		let justifications: SubscriptionStream = Box::pin(
-			client
-				.rpc_client
-				.subscribe(
-					"grandpa_subscribeJustifications",
-					rpc_params![],
-					"grandpa_unsubscribeJustifications",
-				)
-				.await?
-				.map_ok(Subscription::Justification)
-				.inspect_ok(|_| info!("Received justification on the stream"))
-				.inspect_err(|error| warn!(%error, "Received error on justifications stream"))
-				.timeout(timeout_in)
-				.fuse(),
-		);
->>>>>>> 2aa1a027 (update avail-rust deps)
 
 		let mut last_stream = 0;
 		let mut per_stream_count = 0;
@@ -670,10 +553,6 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 		self.with_retries(|client| async move {
 			let opt = get_block_hash(&client.client, Some(block_number))
 				.await
@@ -685,48 +564,13 @@ impl<D: Database> Client<D> {
 			Ok(hash)
 		})
 		.await
-<<<<<<< HEAD
-=======
-		// self.with_retries(|client| async move {
-		// 	client
-		// 		.rpc_client
-		// 		.get_block_hash(block_number.into())
-		// 		.await
-		// 		.map_err(Into::into)
-		// })
-		// .await TODO
-
-		Ok(H256::random())
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.with_retries(|client| async move {
 			client
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-				.client
-=======
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 078599ad (update rpc client)
-				.online_client
-=======
-				.tx.balances.client.online_client
->>>>>>> cf577def (update avail rust changes)
-=======
-				.tx
-				.balances
-=======
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 				.client
 				.online_client
->>>>>>> 52a80d25 (build error fixes)
 				.backend()
 				.block_header(block_hash)
 				.await?
@@ -747,26 +591,9 @@ impl<D: Database> Client<D> {
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
 		let res = self
 			.with_retries(|client| async move {
-<<<<<<< HEAD
-<<<<<<< HEAD
-				client
-<<<<<<< HEAD
-<<<<<<< HEAD
-					.client
-=======
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 078599ad (update rpc client)
-					.online_client
-=======
-				client.
-					tx.balances.client.online_client
->>>>>>> cf577def (update avail rust changes)
-=======
 				client
 					.client
 					.online_client
->>>>>>> 52a80d25 (build error fixes)
 					.runtime_api()
 					.at(block_hash)
 					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
@@ -782,10 +609,6 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let head = self
 			.with_retries(|client| async move {
 				get_finalized_head(&client.client)
@@ -794,21 +617,6 @@ impl<D: Database> Client<D> {
 					.map_err(Into::into)
 			})
 			.await?;
-<<<<<<< HEAD
-=======
-		// let head = self
-		// 	.with_retries(|client| async move {
-		// 		client
-		// 			.rpc
-		// 			.chain
-		// 			.get_finalized_head()
-		// 			.await
-		// 			.map_err(Into::into)
-		// 	})
-		// 	.await?; TODO
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 
 		Ok(head)
 	}
@@ -818,42 +626,13 @@ impl<D: Database> Client<D> {
 		self.get_header_by_hash(finalized_hash).await
 	}
 
-	pub async fn request_kate_rows(
-		&self,
-		rows: Vec<u32>,
-		block_hash: H256,
-	) -> Result<Vec<Vec<u8>>> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-		let rows = Rows::try_from(rows).unwrap();
+	pub async fn request_kate_rows(&self, rows: Rows, block_hash: H256) -> Result<Vec<Vec<u8>>> {
 		self.with_retries(|client| {
 			let rows = rows.clone();
 			async move {
-<<<<<<< HEAD
-<<<<<<< HEAD
-				let rows = query_rows(&client.tx.balances.client.rpc_client, rows.to_vec(), Some(block_hash))
-					.await
-<<<<<<< HEAD
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))?;
-=======
-					.unwrap();
->>>>>>> 078599ad (update rpc client)
-=======
-				let rows = query_rows(
-					&client.tx.balances.client.rpc_client,
-					rows.to_vec(),
-					Some(block_hash),
-				)
-				.await
-				.unwrap();
->>>>>>> 52a80d25 (build error fixes)
-=======
 				let rows = query_rows(&client.client.rpc_client, rows.to_vec(), Some(block_hash))
 					.await
 					.unwrap();
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 				Ok(rows
 					.iter()
 					.map(|row| {
@@ -865,38 +644,6 @@ impl<D: Database> Client<D> {
 			}
 		})
 		.await
-<<<<<<< HEAD
-=======
-		// let rows = Rows::try_from(rows).unwrap();
-		// self.with_retries(|client| {
-		// 	let rows = rows.clone();
-		// 	async move {
-		// 		let rows = client
-		// 			.rpc_client
-		// 			.kate
-		// 			.query_rows(rows.to_vec(), Some(block_hash))
-		// 			.await
-		// 			.map_err(|error| subxt::Error::Other(format!("{error}")))?;
-		// 		Ok(rows
-		// 			.iter()
-		// 			.map(|row| {
-		// 				row.iter()
-		// 					.flat_map(|cell| {
-		// 						let mut bytes = [0u8; 32];
-		// 						cell.to_big_endian(&mut bytes);
-		// 						bytes.to_vec()
-		// 					})
-		// 					.collect()
-		// 			})
-		// 			.collect())
-		// 	}
-		// })
-		// .await
-
-		Ok(vec![vec![]])
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 	}
 
 	#[cfg(feature = "multiproof")]
@@ -958,38 +705,13 @@ impl<D: Database> Client<D> {
 				return Err(eyre!("Invalid proof length"));
 			}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-			let mut result = [0u8; 80];
-			scalar.to_big_endian();
-			result[..48].copy_from_slice(&proof);
-=======
->>>>>>> b303aab9 (push pmp api on LC)
-=======
 			let mut result = [0u8; 80];
 			result[..48].copy_from_slice(&proof);
 
 			let scalar_bytes = scalar.to_big_endian();
 			result[48..].copy_from_slice(&scalar_bytes);
->>>>>>> 75b002df (fix: update concat content)
 			Ok(result)
 		}
-=======
-		// 	let mut result = [0u8; 80];
-		// 	scalar.to_big_endian(&mut result[48..]);
-		// 	result[..48].copy_from_slice(&proof);
-		// 	Ok(result)
-		// }
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-			let mut result = [0u8; 80];
-			scalar.to_big_endian();
-			result[..48].copy_from_slice(&proof);
-			Ok(result)
-		}
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 
 		let cells: Cells = positions
 			.iter()
@@ -1001,58 +723,6 @@ impl<D: Database> Client<D> {
 			.try_into()
 			.map_err(|_| eyre!("Failed to convert to cells"))?;
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-		let proofs: Vec<(GRawScalar, GProof)> = self
-=======
-		let proofs: Vec<(Vec<GRawScalar>, GProof)> = self
->>>>>>> b303aab9 (push pmp api on LC)
-			.with_retries(|client| {
-				let cells = cells.clone();
-				async move {
-					query_multi_proof(&client.rpc_client, cells.to_vec(), Some(block_hash))
-						.await
-						.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-						.map_err(Into::into)
-				}
-			})
-			.await
-			.map_err(Report::from)?;
-<<<<<<< HEAD
-=======
-		// let proofs: Vec<(GRawScalar, GProof)> = self
-		// 	.with_retries(|client| {
-		// 		let cells = cells.clone();
-		// 		async move {
-		// 			client
-		// 				.rpc
-		// 				.kate
-		// 				.query_proof(cells.to_vec(), Some(block_hash))
-		// 				.await
-		// 				.map_err(|error| subxt::Error::Other(format!("{error}")))
-		// 				.map_err(Into::into)
-		// 		}
-		// 	})
-		// 	.await
-		// 	.map_err(Report::from)?;
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-=======
-		// let proofs: Vec<(Vec<GRawScalar>, GProof)> = self
-		// 	.with_retries(|client| {
-		// 		let cells: avail_rust::sp_core::bounded::BoundedVec<avail_rust::Cell, avail_rust::sp_core::ConstU32<64>> = cells.clone();
-		// 		async move { Ok(query_proof(&client.tx.balances.client.rpc_client, cells.to_vec(), Some(block_hash)).await) }
-		// 	})
-		// 	.await??;
-		let proofs = vec![];
->>>>>>> 078599ad (update rpc client)
-=======
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
@@ -1063,7 +733,6 @@ impl<D: Database> Client<D> {
 				}
 			})
 			.await?;
->>>>>>> 099a8410 (bring changes from main)
 
 		let contents = proofs
 			.into_iter()
@@ -1077,98 +746,23 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let ver = self
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-			.with_retries(|client| async move {
-				version(&client.rpc_client)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
-<<<<<<< HEAD
-=======
-			.with_retries(|client| async move { Ok(version(&client.rpc_client).await) })
-=======
-			.with_retries(|client| async move { Ok(version(&client.tx.balances.client).await) })
->>>>>>> cf577def (update avail rust changes)
-			.await?
-			.unwrap();
->>>>>>> 078599ad (update rpc client)
-=======
 			.with_retries(|client| async move { version(&client.client).await.map_err(Into::into) })
 			.await?;
->>>>>>> 099a8410 (bring changes from main)
 
-		Ok(ver)
 		Ok(ver)
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let ver = self
 			.with_retries(|client| async move {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-				get_runtime_version(&client.rpc_client, None)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
-=======
-				Ok(get_runtime_version(&client.rpc_client, None).await)
-=======
-				Ok(get_runtime_version(&client.tx.balances.client, None).await)
->>>>>>> cf577def (update avail rust changes)
-			})
-			.await?
-			.unwrap();
->>>>>>> 078599ad (update rpc client)
-=======
 				get_runtime_version(&client.client, None)
 					.await
 					.map_err(Into::into)
 			})
 			.await?;
->>>>>>> 099a8410 (bring changes from main)
 
 		Ok(ver)
-=======
-		// let res = self
-		// 	.with_retries(
-		// 		|client| async move { client.rpc.system.version().await.map_err(Into::into) },
-		// 	)
-		// 	.await?; TODO
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-
-		Ok(ver)
-	}
-
-	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
-<<<<<<< HEAD
-		self.with_retries(|client| async move { Ok(client.online_client.runtime_version()) })
-			.await
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-		let ver = self
-			.with_retries(|client| async move {
-				get_runtime_version(&client.rpc_client, None)
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
-
-		Ok(ver)
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {
@@ -1177,10 +771,6 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let res = self
 			.with_retries(|client| {
 				let set_id_key = avail::storage().grandpa().current_set_id();
@@ -1197,26 +787,6 @@ impl<D: Database> Client<D> {
 			})
 			.await?
 			.ok_or_else(|| eyre!("The set_id should exist"))?;
-<<<<<<< HEAD
-=======
-		// let res = self
-		// 	.with_retries(|client| {
-		// 		let set_id_key = avail::storage().grandpa().current_set_id();
-		// 		async move {
-		// 			client
-		// 				.api
-		// 				.storage()
-		// 				.at(block_hash)
-		// 				.fetch(&set_id_key)
-		// 				.await
-		// 				.map_err(Into::into)
-		// 		}
-		// 	})
-		// 	.await?
-		// 	.ok_or_else(|| eyre!("The set_id should exist"))?;
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 
 		Ok(res)
 	}
@@ -1234,10 +804,6 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 		let res = self
 			.with_retries(|client| {
 				let validators_key = avail::storage().session().validators();
@@ -1252,28 +818,7 @@ impl<D: Database> Client<D> {
 						.map_err(Into::into)
 				}
 			})
-			.await
-			.map_err(Report::from)?;
-<<<<<<< HEAD
-=======
-		// let res = self
-		// 	.with_retries(|client| {
-		// 		let validators_key = avail::storage().session().validators();
-		// 		async move {
-		// 			client
-		// 				.api
-		// 				.storage()
-		// 				.at(block_hash)
-		// 				.fetch(&validators_key)
-		// 				.await
-		// 				.map_err(Into::into)
-		// 		}
-		// 	})
-		// 	.await
-		// 	.map_err(Report::from)?;
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
+			.await?;
 
 		Ok(res)
 	}
@@ -1285,44 +830,14 @@ impl<D: Database> Client<D> {
 		app_id: AppId,
 	) -> Result<SubmitResponse> {
 		let data = Arc::new(data);
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 		self.with_retries(|client| {
 			let data = data.0.clone();
 			async move {
 				let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
 				let options = Options::new().nonce(nonce).app_id(app_id.0);
 				let tx = client.tx.data_availability.submit_data(data);
-<<<<<<< HEAD
 
-<<<<<<< HEAD
-				let data_submission = tx.execute_and_watch_inclusion(signer, Some(options)).await;
-<<<<<<< HEAD
-
-				let submit_response = match data_submission {
-					Ok(success) => Ok(SubmitResponse {
-						block_hash: success.block_hash,
-						hash: success.tx_hash,
-						index: success.tx_index,
-					}),
-					Err(error) => Err(eyre!("{:?}", error)),
-				};
-=======
-		// self.with_retries(|client| {
-		// 	let data = Data { 0: data.0.clone() };
-		// 	async move {
-		// 		let nonce = self.db.get(SignerNonceKey).unwrap_or(0);
-=======
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-
-				let data_submission = tx.execute_and_watch_inclusion(signer, Some(options)).await;
-=======
->>>>>>> 078599ad (update rpc client)
-=======
 				let data_submission = tx.execute_and_watch_inclusion(signer, options).await;
->>>>>>> cf577def (update avail rust changes)
 
 				let submit_response = match data_submission {
 					Ok(success) => Ok(SubmitResponse {
@@ -1333,19 +848,7 @@ impl<D: Database> Client<D> {
 					Err(error) => Err(eyre!("{:?}", error)),
 				};
 
-<<<<<<< HEAD
-		// 		let submit_response = match data_submission {
-		// 			Ok(success) => Ok(SubmitResponse {
-		// 				block_hash: success.block_hash,
-		// 				hash: success.tx_hash,
-		// 				index: success.tx_index,
-		// 			}),
-		// 			Err(error) => Err(eyre!("{error}")),
-		// 		};
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
 				self.db.put(SignerNonceKey, nonce + 1);
->>>>>>> 97de53dd (point to mmp version of avail-rust)
 
 				submit_response
 			}
@@ -1358,38 +861,8 @@ impl<D: Database> Client<D> {
 		tx_bytes: Vec<u8>,
 	) -> Result<SubmitResponse> {
 		self.with_retries(|client| {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-			let extrinsic =
-				SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
-=======
-			let extrinsic = SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-			let extrinsic =
-				SubmittableExtrinsic::from_bytes(client.online_client.clone(), tx_bytes.clone());
->>>>>>> 97de53dd (point to mmp version of avail-rust)
-=======
-			let extrinsic: SubmittableExtrinsic<_, _> =
-<<<<<<< HEAD
-				SubmittableExtrinsic::from_bytes(client.online_client, tx_bytes.clone());
->>>>>>> 078599ad (update rpc client)
-=======
-				SubmittableExtrinsic::from_bytes(client.tx.balances.client.online_client, tx_bytes.clone());
->>>>>>> cf577def (update avail rust changes)
-=======
-			let extrinsic: SubmittableExtrinsic<_, _> = SubmittableExtrinsic::from_bytes(
-				client.tx.balances.client.online_client,
-				tx_bytes.clone(),
-			);
->>>>>>> 52a80d25 (build error fixes)
-=======
 			let extrinsic: SubmittableExtrinsic<_, _> =
 				SubmittableExtrinsic::from_bytes(client.client.online_client, tx_bytes.clone());
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 			async move {
 				let tx_in_block = extrinsic
 					.submit_and_watch()
@@ -1419,23 +892,7 @@ impl<D: Database> Client<D> {
 	) -> Result<Vec<StorageKey>> {
 		let key = &key;
 		self.with_retries(|client| async move {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-			let storage = client.client.storage().at(hash);
-=======
-			let storage = client.online_client.storage().at(hash);
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-			let storage = client.online_client.storage().at(hash);
->>>>>>> 078599ad (update rpc client)
-=======
-			let storage = client.tx.balances.client.online_client.storage().at(hash);
->>>>>>> cf577def (update avail rust changes)
-=======
 			let storage = client.client.online_client.storage().at(hash);
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 			let raw_keys = storage.fetch_raw_keys(key.to_vec()).await?;
 			raw_keys
 				.take(count)
@@ -1458,29 +915,8 @@ impl<D: Database> Client<D> {
 					.key_owner(KeyTypeId(crypto::key_types::GRANDPA.0), public_key.0);
 				async move {
 					client
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-						.client
-=======
-						.online_client
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-						.online_client
->>>>>>> 078599ad (update rpc client)
-=======
-						.tx.balances.client.online_client
->>>>>>> cf577def (update avail rust changes)
-=======
-						.tx
-						.balances
-=======
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 						.client
 						.online_client
->>>>>>> 52a80d25 (build error fixes)
 						.storage()
 						.at(block_hash)
 						.fetch(&session_key_key_owner)
@@ -1500,36 +936,12 @@ impl<D: Database> Client<D> {
 		let params = params.as_ref().map(String::as_bytes);
 		let res: WrappedProof = self
 			.with_retries(|client| async move {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 				let api = client
-=======
-				let api = client
-<<<<<<< HEAD
-					.tx
-					.balances
->>>>>>> 52a80d25 (build error fixes)
-=======
->>>>>>> eb7feb18 (rebase avail-rust changes to latest release)
 					.client
 					.online_client
 					.runtime_api()
 					.at_latest()
 					.await?;
-<<<<<<< HEAD
-=======
-				let api = client.online_client.runtime_api().at_latest().await?;
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-				let api = client.online_client.runtime_api().at_latest().await?;
->>>>>>> 078599ad (update rpc client)
-=======
-				let api = client.tx.balances.client.online_client.runtime_api().at_latest().await?;
->>>>>>> cf577def (update avail rust changes)
-=======
->>>>>>> 52a80d25 (build error fixes)
 				api.call_raw("grandpa_proveFinality", params)
 					.await
 					.map_err(Into::into)
@@ -1541,33 +953,12 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 		let gen_hash = self
 			.current_client()
 			.await
 			.client
 			.online_client
 			.genesis_hash();
-=======
-		let gen_hash = self.current_client().await.online_client.genesis_hash();
->>>>>>> 2aa1a027 (update avail-rust deps)
-=======
-		let gen_hash = self.current_client().await.online_client.genesis_hash();
->>>>>>> 078599ad (update rpc client)
-=======
-		let gen_hash = self.current_client().await.tx.balances.client.online_client.genesis_hash();
->>>>>>> cf577def (update avail rust changes)
-=======
-		let gen_hash = self
-			.current_client()
-			.await
-			.client
-			.online_client
-			.genesis_hash();
->>>>>>> 52a80d25 (build error fixes)
 
 		Ok(gen_hash)
 	}

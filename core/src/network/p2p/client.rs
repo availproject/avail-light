@@ -7,22 +7,7 @@ use avail_rust::kate_recovery::{
 #[cfg(not(feature = "multiproof"))]
 use avail_rust::{
 	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
-<<<<<<< HEAD
-<<<<<<< HEAD
-	kate_recovery::{
-<<<<<<< HEAD
-		data::{Cell, SingleCell},
-=======
-		data::{Cell, CellVariant},
->>>>>>> 0f719b80 (multiproofs: Part I)
-		matrix::{Dimensions, Position, RowIndex},
-	},
-=======
-	kate_recovery::data::Cell,
->>>>>>> b2cc124a (multiproofs: Part II)
-=======
 	kate_recovery::data::SingleCell,
->>>>>>> 23e1a765 (rename CellType)
 };
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -71,15 +56,7 @@ impl DHTCell {
 	fn dht_record(&self, block: u32, ttl: Duration) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
-<<<<<<< HEAD
-<<<<<<< HEAD
 			value: self.0.to_bytes(),
-=======
-			value: self.0.data().to_vec(),
->>>>>>> 0f719b80 (multiproofs: Part I)
-=======
-			value: self.0.to_bytes(),
->>>>>>> b2cc124a (multiproofs: Part II)
 			publisher: None,
 			expires: Instant::now().checked_add(ttl),
 		}
@@ -528,22 +505,7 @@ impl Client {
 						return None;
 					};
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-				Some(Cell::SingleCell(SingleCell { position, content }))
-=======
-					return Some(CellVariant::Cell(Cell { position, content }));
-=======
-					return Some(CellType::Cell(Cell { position, content }));
->>>>>>> 47071951 (rename cell variant)
-=======
-					Some(CellType::Cell(Cell { position, content }))
->>>>>>> ccd58916 (fmt and clippy changes)
-=======
 					Some(Cell::SingleCell(SingleCell { position, content }))
->>>>>>> 23e1a765 (rename CellType)
 				}
 
 				#[cfg(feature = "multiproof")]
@@ -566,7 +528,6 @@ impl Client {
 
 					Some(Cell::MultiProofCell(mcell))
 				}
->>>>>>> b2cc124a (multiproofs: Part II)
 			},
 			Err(error) => {
 				trace!("Cell {reference} not found in the DHT: {error}");

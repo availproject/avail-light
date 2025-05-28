@@ -2,24 +2,8 @@ use async_trait::async_trait;
 use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 		commons::ArkPublicParams,
 		data::Cell,
-=======
-		data::{Cell, CellVariant},
->>>>>>> 0f719b80 (multiproofs: Part I)
-=======
-		data::CellVariant,
->>>>>>> b2cc124a (multiproofs: Part II)
-=======
-		data::CellType,
->>>>>>> 47071951 (rename cell variant)
-=======
-		data::Cell,
->>>>>>> 23e1a765 (rename CellType)
 		matrix::{Dimensions, Position},
 	},
 	H256,
@@ -38,9 +22,7 @@ use tracing::{debug, info};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use crate::types::NetworkMode;
-
-use crate::{data::Database, proof};
+use crate::{data::Database, proof, types::NetworkMode};
 
 pub mod p2p;
 pub mod rpc;
@@ -105,7 +87,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		// If p2p_client is not available, return empty cells and all positions as unfetched
 		let Some(p2p_client) = &self.p2p_client else {
 			debug!(
 				block_number,
@@ -213,9 +194,6 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		dimensions: Dimensions,
 		commitments: &Commitments,
 		positions: &[Position],
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
 		// Skip P2P retrieval in RPC-only mode
 		let (dht_fetched, unfetched, dht_fetch_duration) = match self.network_mode {
@@ -225,18 +203,6 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 					.await?
 			},
 		};
-=======
-	) -> Result<(Vec<CellVariant>, Vec<Position>, FetchStats)> {
-=======
-	) -> Result<(Vec<CellType>, Vec<Position>, FetchStats)> {
->>>>>>> 47071951 (rename cell variant)
-=======
-	) -> Result<(Vec<Cell>, Vec<Position>, FetchStats)> {
->>>>>>> 23e1a765 (rename CellType)
-		let (dht_fetched, unfetched, dht_fetch_duration) = self
-			.fetch_verified_from_dht(block_number, dimensions, commitments, positions)
-			.await?;
->>>>>>> b2cc124a (multiproofs: Part II)
 
 		// Skip RPC retrieval in P2P-only mode
 		if self.network_mode == NetworkMode::P2POnly {
@@ -255,7 +221,6 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			)
 			.await?;
 
-<<<<<<< HEAD
 		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
 		if self.network_mode == NetworkMode::Both && self.insert_into_dht {
 			if let Some(p2p_client) = &self.p2p_client {
@@ -266,17 +231,6 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 					debug!("Error inserting cells into DHT: {error}");
 				}
 			}
-=======
-		if let Err(error) = self
-			.p2p_client
-			.insert_cells_into_dht(
-				block_number,
-				rpc_fetched.clone().into_iter().collect::<Vec<Cell>>(),
-			)
-			.await
-		{
-			debug!("Error inserting cells into DHT: {error}");
->>>>>>> 0f719b80 (multiproofs: Part I)
 		}
 
 		let stats = FetchStats::new(
