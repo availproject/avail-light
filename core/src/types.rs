@@ -22,6 +22,7 @@ use clap::ValueEnum;
 use codec::{Decode, Encode, Input};
 use color_eyre::{eyre::eyre, Report, Result};
 use convert_case::{Case, Casing};
+use derive_more::derive::Display;
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
@@ -175,25 +176,20 @@ pub enum Origin {
 	Other(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, ValueEnum)]
-#[serde(rename_all = "snake_case")]
+#[derive(Serialize, Deserialize, Debug, Display, Clone, Copy, PartialEq, ValueEnum)]
 pub enum NetworkMode {
+	#[serde(rename = "both")]
 	#[value(name = "both")]
+	#[display("both")]
 	Both,
-	#[value(name = "p2p_only")]
+	#[serde(rename = "p2p-only")]
+	#[value(name = "p2p-only")]
+	#[display("p2p-only")]
 	P2POnly,
-	#[value(name = "rpc_only")]
+	#[serde(rename = "rpc-only")]
+	#[value(name = "rpc-only")]
+	#[display("rpc-only")]
 	RPCOnly,
-}
-
-impl std::fmt::Display for NetworkMode {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			NetworkMode::Both => write!(f, "both"),
-			NetworkMode::P2POnly => write!(f, "p2p_only"),
-			NetworkMode::RPCOnly => write!(f, "rpc_only"),
-		}
-	}
 }
 
 impl TryFrom<String> for Origin {
