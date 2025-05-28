@@ -18,6 +18,8 @@ use color_eyre::{
 	Result,
 };
 use futures::Future;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
@@ -204,15 +206,15 @@ pub fn rng() -> rand::rngs::StdRng {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn restart() {
-	let current_exe = std::env::current_exe().unwrap();
-
+pub fn restart(current_exe: PathBuf) {
 	#[cfg(unix)]
 	{
 		use std::os::unix::process::CommandExt;
-		_ = std::process::Command::new(current_exe)
+		let error = std::process::Command::new(current_exe)
 			.args(std::env::args().skip(1))
 			.exec();
+		error!("Restarting light client failed: {error}");
+		std::process::exit(1);
 	}
 
 	#[cfg(windows)]

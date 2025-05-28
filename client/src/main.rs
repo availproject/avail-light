@@ -792,6 +792,7 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.on_user_signal("User signaled shutdown".to_string()));
 
+	let current_exe = std::env::current_exe()?;
 	let restart = Arc::new(Mutex::new(false));
 	if let Err(error) = run(
 		cfg,
@@ -811,8 +812,8 @@ pub async fn main() -> Result<()> {
 	let reason = shutdown.completed_shutdown().await;
 
 	if *restart.lock().await {
-		info!("Restarting Light Client...");
-		utils::restart();
+		info!("Restarting the light client at {}", current_exe.display());
+		utils::restart(current_exe);
 	}
 
 	// we are not logging error here since expectation is
