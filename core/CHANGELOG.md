@@ -2,7 +2,7 @@
 
 ## 1.2.8
 
-- Update avail-rust to latest version
+- Remove dusk-plonk dependencies from core
 - Added flag to disable inserts into DHT on failed fetch
 - Improved updater logging
 - Increase default `ping` protocol interval from 20 to 60 seconds

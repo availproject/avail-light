@@ -20,7 +20,7 @@ use avail_rust::{
 	kate_recovery::{
 		com::{
 			app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns,
-			AppData, Percent,
+			AppData,
 		},
 		commitments,
 		commons::ArkPublicParams,
@@ -130,8 +130,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			.map(|res| res.map_err(|e| eyre!(e)))
 			.collect::<Result<_, _>>()?;
 		let mut rng = ChaChaRng::from_seed(Default::default());
-		let missing_cells =
-			columns_positions(dimensions, &unfetched, Percent::from_percent(66), &mut rng);
+		let missing_cells = columns_positions(dimensions, &unfetched, 66u8, &mut rng);
 
 		let (missing_fetched, _) = fetch_verified(
 			pp,
