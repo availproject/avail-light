@@ -216,7 +216,10 @@ pub async fn run(
 	let mut newer_release: Option<Release> = None;
 
 	loop {
-		let block_num = block_receiver.recv().await.map(|block| block.block_num)?;
+		let Ok(BlockVerified { block_num, .. }) = block_receiver.recv().await else {
+			info!("Block receiver is closed, stopping updater...");
+			return Ok(());
+		};
 
 		if let Some(release) = newer_release.as_ref() {
 			if no_update {
