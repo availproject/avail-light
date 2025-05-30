@@ -39,13 +39,11 @@ pub async fn publish<T: Clone + TryInto<Option<PublishMessage>>>(
 	<T as TryInto<Option<PublishMessage>>>::Error: Display,
 {
 	loop {
-		let message = match receiver.recv().await {
-			Ok(value) => value,
-			Err(error) => {
-				error!(?topic, "Cannot receive message: {error}");
-				return;
-			},
+		let Ok(message) = receiver.recv().await else {
+			info!(?topic, "Receiver is closed, stopping publisher...");
+			return;
 		};
+
 		let message: Option<PublishMessage> = match message.try_into() {
 			Ok(Some(message)) => Some(message),
 			Ok(None) => continue, // Silently skip
