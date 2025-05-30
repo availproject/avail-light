@@ -22,8 +22,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		self, load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, PeerAddress, SecretKey,
-		Uuid,
+		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, NetworkMode, PeerAddress,
+		SecretKey, Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -85,7 +85,7 @@ async fn run(
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 
 	// Initialize p2p components only if not in RPCOnly mode
-	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != types::NetworkMode::RPCOnly {
+	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
 		let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 			cfg.libp2p.clone(),
 			cfg.project_name.clone(),
