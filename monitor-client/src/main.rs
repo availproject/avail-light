@@ -25,7 +25,7 @@ use tokio::{
 	sync::{mpsc::UnboundedReceiver, Mutex},
 	time,
 };
-use tracing::{debug, error, info, trace};
+use tracing::{error, info, trace};
 use types::ServerInfo;
 
 mod bootstrap_monitor;
@@ -39,10 +39,7 @@ mod types;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	// Contains blacklisted peers
 	let server_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>> =
-		Arc::new(Mutex::new(HashMap::default()));
-	let server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>> =
 		Arc::new(Mutex::new(HashMap::default()));
 
 	info!("Starting Avail monitors...");
@@ -111,17 +108,9 @@ async fn main() -> Result<()> {
 
 	// Start event handler to track discovered peers
 	let server_list_clone = server_list.clone();
-	let server_black_list_clone = server_black_list.clone();
 	let bootstrap_peers_clone = bootstrap_peers.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
-		if let Err(e) = handle_events(
-			p2p_events,
-			server_list_clone,
-			server_black_list_clone,
-			bootstrap_peers_clone,
-		)
-		.await
-		{
+		if let Err(e) = handle_events(p2p_events, server_list_clone, bootstrap_peers_clone).await {
 			error!("Event handler error: {e}");
 		}
 	}));
@@ -153,7 +142,6 @@ async fn main() -> Result<()> {
 		p2p_client.clone(),
 		peer_monitor_interval,
 		server_list.clone(),
-		server_black_list.clone(),
 		config_clone,
 	);
 	info!("Starting monitor part");
@@ -164,7 +152,6 @@ async fn main() -> Result<()> {
 	}));
 
 	let app_state = web::Data::new(AppState {
-		blacklist: server_black_list.clone(),
 		server_list: server_list.clone(),
 		pagination: config.pagination,
 	});
@@ -196,7 +183,6 @@ async fn main() -> Result<()> {
 pub async fn handle_events(
 	mut p2p_receiver: UnboundedReceiver<OutputEvent>,
 	server_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
-	server_black_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	bootstrap_peers: HashSet<PeerId>,
 ) -> Result<()> {
 	loop {
@@ -207,7 +193,6 @@ pub async fn handle_events(
 						trace!("Discovered {} peers", peers.len());
 
 						let mut servers = server_list.lock().await;
-						let mut black_list = server_black_list.lock().await;
 
 						for (peer_id, addresses) in peers {
 							if bootstrap_peers.contains(&peer_id) {
@@ -221,24 +206,13 @@ pub async fn handle_events(
 								.cloned()
 								.collect();
 
-							if globally_reachable_addresses.is_empty() {
-								debug!("Peer {} has no globally reachable addresses, adding to blacklist", peer_id);
-								black_list.entry(peer_id).or_insert_with(ServerInfo::default);
-								continue;
-							}
-
-							// A new global address just appeared for the peer that previously had none
-							if let Some(peer) = black_list.get(&peer_id) {
-								if peer.multiaddr.is_empty() {
-									trace!("Peer {} now has globally reachable addresses, removing from blacklist", peer_id);
-									black_list.remove(&peer_id);
-								}
-							}
+							let is_blacklisted = globally_reachable_addresses.is_empty();
 
 							match servers.get_mut(&peer_id) {
 								Some(info) => {
 									info.multiaddr = globally_reachable_addresses;
 									info.last_discovered = Some(SystemTime::now());
+									info.is_blacklisted = is_blacklisted;
 									// We don't reset counters here because even though the addresses might be new, servers can still continue to fail (if they started failing previously)
 								},
 								None => {
@@ -250,6 +224,7 @@ pub async fn handle_events(
 										last_successful_dial: None,
 										last_ping_rtt: None,
 										ping_records: VecDeque::with_capacity(20),
+										is_blacklisted,
 									};
 									servers.insert(peer_id, server_info);
 								}
@@ -257,7 +232,6 @@ pub async fn handle_events(
 						}
 
 						info!("Total peers in server monitor list: {}", servers.len());
-						info!("Total peers in blacklist: {}", black_list.len());
 					},
 					OutputEvent::Ping { peer, rtt } => {
 						let mut servers = server_list.lock().await;

@@ -56,7 +56,7 @@ pub struct RuntimeVersion {
 	transaction_version: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Extension {
 	pub dimensions: Dimensions,
 	pub lookup: DataLookup,
@@ -64,7 +64,7 @@ pub struct Extension {
 }
 
 /// Light to app client channel message struct
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,

@@ -19,7 +19,9 @@ pub struct ServerInfo {
 	pub last_discovered: Option<SystemTime>,
 	pub last_ping_rtt: Option<Duration>,
 	pub ping_records: VecDeque<f64>,
+	pub is_blacklisted: bool,
 }
+
 impl ServerInfo {
 	pub fn update_ping_stats(&mut self, rtt: Duration) {
 		self.last_ping_rtt = Some(rtt);
@@ -56,7 +58,6 @@ impl ServerInfo {
 		Some(Duration::from_secs_f64(max_ms / 1000.0))
 	}
 
-	#[allow(dead_code)]
 	pub fn avg_ping(&self) -> Option<Duration> {
 		if self.ping_records.is_empty() {
 			return None;
