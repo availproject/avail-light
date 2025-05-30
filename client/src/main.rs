@@ -42,7 +42,7 @@ use tokio::{
 	select,
 	sync::{
 		broadcast,
-		mpsc::{self, UnboundedReceiver},
+		mpsc::{self, UnboundedReceiver, UnboundedSender},
 		Mutex,
 	},
 };
@@ -61,6 +61,142 @@ static GLOBAL: Jemalloc = Jemalloc;
 mod cli;
 mod config;
 mod tracking;
+
+/// Initialize and start P2P client with all necessary components
+async fn init_and_start_p2p_client(
+	cfg: &RuntimeConfig,
+	id_keys: libp2p::identity::Keypair,
+	peer_id: libp2p::PeerId,
+	version: &str,
+	shutdown: Controller<String>,
+	#[cfg(feature = "rocksdb")] db: DB,
+) -> Result<(
+	p2p::Client,
+	avail_light_core::network::p2p::EventLoop,
+	UnboundedReceiver<P2pEvent>,
+)> {
+	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+		cfg.libp2p.clone(),
+		cfg.project_name.clone(),
+		id_keys,
+		version,
+		&cfg.genesis_hash,
+		false,
+		shutdown.clone(),
+		#[cfg(feature = "rocksdb")]
+		db.clone(),
+	)
+	.await?;
+
+	let addrs = vec![cfg.libp2p.tcp_multiaddress()];
+
+	// Start the TCP and WebRTC listeners
+	p2p_client
+		.start_listening(addrs)
+		.await
+		.wrap_err("Error starting listener.")?;
+	info!("TCP listener started on port {}", cfg.libp2p.port);
+
+	db.put(PeerIDKey, peer_id.to_string());
+
+	let p2p_clone = p2p_client.to_owned();
+	let cfg_clone = cfg.to_owned();
+	spawn_in_span(shutdown.with_cancel(async move {
+		info!("Bootstrapping the DHT with bootstrap nodes...");
+		if let Err(error) = p2p_clone
+			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
+			.await
+		{
+			warn!("Bootstrap unsuccessful: {error:#}");
+		}
+	}));
+
+	Ok((p2p_client, p2p_event_loop, p2p_event_receiver))
+}
+
+/// P2P restart manager that periodically restarts the P2P event loop
+#[allow(clippy::too_many_arguments)]
+async fn p2p_restart_manager(
+	cfg: RuntimeConfig,
+	id_keys: libp2p::identity::Keypair,
+	peer_id: libp2p::PeerId,
+	version: String,
+	restart_interval: Duration,
+	app_shutdown: Controller<String>, // Global shutdown controller
+	#[cfg(feature = "rocksdb")] db: DB,
+	event_tx: UnboundedSender<P2pEvent>,
+	mut current_shutdown: Controller<String>,
+) {
+	let mut interval = tokio::time::interval(restart_interval);
+	interval.tick().await;
+
+	loop {
+		select! {
+			_ = interval.tick() => {
+				info!("Starting P2P client restart process...");
+
+				// Trigger shutdown of the current event loop
+				let _ = current_shutdown.trigger_shutdown("P2P client periodic restart".to_string());
+
+				// Wait a bit for graceful shutdown
+				// TODO
+				tokio::time::sleep(Duration::from_secs(5)).await;
+
+				// Create a new shutdown controller for the next restart cycle
+				let new_shutdown = Controller::<String>::new();
+
+				// Restart the P2P client
+				match init_and_start_p2p_client(
+					&cfg,
+					id_keys.clone(),
+					peer_id,
+					&version,
+					new_shutdown.clone(),
+					#[cfg(feature = "rocksdb")]
+					db.clone(),
+				).await {
+					Ok((_, event_loop, receiver)) => {
+						info!("P2P client restarted successfully");
+
+						// Start the new event loop
+						spawn_in_span(new_shutdown.with_cancel(event_loop.run()));
+
+						// Forward events from new receiver to the main event channel
+						let event_tx_clone = event_tx.clone();
+						let app_shutdown_clone = app_shutdown.clone();
+						spawn_in_span(app_shutdown_clone.with_cancel(async move {
+							forward_p2p_events(receiver, event_tx_clone).await;
+						}));
+
+						// Update current shutdown for next restart
+						current_shutdown = new_shutdown;
+					}
+					Err(error) => {
+						error!("Failed to restart P2P client: {error:#}");
+						// Continue with the next restart attempt
+					}
+				}
+			}
+			_ = app_shutdown.triggered_shutdown() => {
+				info!("P2P restart manager shutting down");
+				break;
+			}
+		}
+	}
+}
+
+/// Forward P2P events from receiver to sender
+/// Without forwarding new clients tx channels would not have a consumer
+async fn forward_p2p_events(
+	mut receiver: UnboundedReceiver<P2pEvent>,
+	sender: UnboundedSender<P2pEvent>,
+) {
+	while let Some(event) = receiver.recv().await {
+		if sender.send(event).is_err() {
+			break;
+		}
+	}
+}
 
 /// Light Client for Avail Blockchain
 async fn run(
@@ -86,45 +222,75 @@ async fn run(
 
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
-		let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-			cfg.libp2p.clone(),
-			cfg.project_name.clone(),
-			id_keys,
-			version,
-			&cfg.genesis_hash,
-			false,
-			shutdown.clone(),
-			#[cfg(feature = "rocksdb")]
-			db.clone(),
-		)
-		.await?;
+		if let Some(restart_delay) = cfg.p2p_client_restart_delay {
+			info!(
+				"P2P client restart enabled with interval: {:?}",
+				restart_delay
+			);
 
-		spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+			// Create event multiplexer channel for handling restarts
+			let (event_tx, p2p_event_receiver) = mpsc::unbounded_channel::<P2pEvent>();
 
-		let addrs = vec![cfg.libp2p.tcp_multiaddress()];
+			// Create initial shutdown controller for the first event loop
+			let initial_shutdown = Controller::<String>::new();
 
-		// Start the TCP and WebRTC listeners
-		p2p_client
-			.start_listening(addrs)
-			.await
-			.wrap_err("Error starting listener.")?;
-		info!("TCP listener started on port {}", cfg.libp2p.port);
+			// Initial P2P client startup
+			let (p2p_client, event_loop, initial_receiver) = init_and_start_p2p_client(
+				&cfg,
+				id_keys.clone(),
+				peer_id,
+				version,
+				initial_shutdown.clone(),
+				#[cfg(feature = "rocksdb")]
+				db.clone(),
+			)
+			.await?;
 
-		db.put(PeerIDKey, peer_id.to_string());
+			// Start the initial event loop
+			spawn_in_span(initial_shutdown.with_cancel(event_loop.run()));
 
-		let p2p_clone = p2p_client.to_owned();
-		let cfg_clone = cfg.to_owned();
-		spawn_in_span(shutdown.with_cancel(async move {
-			info!("Bootstraping the DHT with bootstrap nodes...");
-			if let Err(error) = p2p_clone
-				.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-				.await
-			{
-				warn!("Bootstrap unsuccessful: {error:#}");
-			}
-		}));
+			// Forward events from initial receiver
+			let event_tx_clone = event_tx.clone();
+			spawn_in_span(shutdown.with_cancel(async move {
+				forward_p2p_events(initial_receiver, event_tx_clone).await;
+			}));
 
-		(Some(p2p_client), p2p_event_receiver)
+			// Start the restart manager
+			let restart_cfg = cfg.clone();
+			let restart_version = version.to_string();
+
+			spawn_in_span(shutdown.with_cancel(p2p_restart_manager(
+				restart_cfg,
+				id_keys.clone(),
+				peer_id,
+				restart_version,
+				restart_delay,
+				shutdown.clone(),
+				#[cfg(feature = "rocksdb")]
+				db.clone(),
+				event_tx,
+				initial_shutdown,
+			)));
+
+			(Some(p2p_client), p2p_event_receiver)
+		} else {
+			// No restart - use direct approach
+			let (p2p_client, event_loop, p2p_event_receiver) = init_and_start_p2p_client(
+				&cfg,
+				id_keys.clone(),
+				peer_id,
+				version,
+				shutdown.clone(),
+				#[cfg(feature = "rocksdb")]
+				db.clone(),
+			)
+			.await?;
+
+			// Start the event loop
+			spawn_in_span(shutdown.with_cancel(event_loop.run()));
+
+			(Some(p2p_client), p2p_event_receiver)
+		}
 	} else {
 		info!("P2P functionality disabled (NetworkMode::RPCOnly)");
 		// Create an unused channel to match type expectations
@@ -477,6 +643,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	cfg.tracking_service_enable = opts.tracking_service_enable;
 	cfg.operator_address = opts.operator_address.clone();
+
+	if let Some(p2p_client_restart_delay) = opts.p2p_client_restart_delay {
+		cfg.p2p_client_restart_delay = Some(Duration::from_secs(p2p_client_restart_delay));
+	}
 
 	Ok(cfg)
 }

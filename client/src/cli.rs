@@ -76,4 +76,6 @@ pub struct CliOpts {
 	pub tracking_service_ping_interval: Option<u64>,
 	#[arg(long, default_value = "false")]
 	pub no_update: bool,
+	#[arg(long)]
+	pub p2p_client_restart_delay: Option<u64>,
 }
