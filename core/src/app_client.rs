@@ -20,10 +20,11 @@ use avail_rust::{
 	kate_recovery::{
 		com::{
 			app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns,
-			AppData, Percent,
+			AppData,
 		},
 		commitments,
-		data::{Cell, DataCell},
+		commons::ArkPublicParams,
+		data::{Cell, DataCell, SingleCell},
 		matrix::{Dimensions, Position},
 	},
 	primitives::kate::{MaxRows, Rows},
@@ -34,7 +35,6 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
-use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
@@ -60,7 +60,7 @@ use crate::{
 trait Client {
 	async fn reconstruct_rows_from_dht(
 		&self,
-		pp: Arc<PublicParameters>,
+		pp: Arc<ArkPublicParams>,
 		block_number: u32,
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
@@ -92,7 +92,7 @@ struct AppClient<T: Database> {
 impl<T: Database + Sync> Client for AppClient<T> {
 	async fn reconstruct_rows_from_dht(
 		&self,
-		pp: Arc<PublicParameters>,
+		pp: Arc<ArkPublicParams>,
 		block_number: u32,
 		dimensions: Dimensions,
 		commitments: &[[u8; COMMITMENT_SIZE]],
@@ -124,10 +124,13 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			fetched.len(),
 			unfetched.len()
 		);
-
+		let fetched: Vec<SingleCell> = fetched
+			.into_iter()
+			.map(SingleCell::try_from)
+			.map(|res| res.map_err(|e| eyre!(e)))
+			.collect::<Result<_, _>>()?;
 		let mut rng = ChaChaRng::from_seed(Default::default());
-		let missing_cells =
-			columns_positions(dimensions, &unfetched, Percent::from_percent(66), &mut rng);
+		let missing_cells = columns_positions(dimensions, &unfetched, 66u8, &mut rng);
 
 		let (missing_fetched, _) = fetch_verified(
 			pp,
@@ -138,6 +141,12 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
+
+		let missing_fetched: Vec<SingleCell> = missing_fetched
+			.into_iter()
+			.map(SingleCell::try_from)
+			.map(|res| res.map_err(|e| eyre!(e)))
+			.collect::<Result<_, _>>()?;
 
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
@@ -268,7 +277,7 @@ fn data_cell(
 }
 
 async fn fetch_verified(
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	p2p_client: &Option<P2pClient>,
 	block_number: u32,
 	dimensions: Dimensions,
@@ -289,7 +298,7 @@ async fn fetch_verified(
 			.await
 			.wrap_err("Failed to verify fetched cells")?;
 
-	fetched.retain(|cell| verified.contains(&cell.position));
+	fetched.retain(|cell| verified.contains(&cell.position()));
 	unfetched.append(&mut unverified);
 
 	Ok((fetched, unfetched))
@@ -302,7 +311,7 @@ async fn process_block(
 	cfg: &AppClientConfig,
 	app_id: AppId,
 	block: &BlockVerified,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 ) -> Result<AppData> {
 	let Some(extension) = &block.extension else {
 		return Err(eyre!("Missing header extension"));
@@ -444,7 +453,7 @@ pub async fn run(
 	rpc_client: RpcClient<impl Database + Clone + Sync>,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<ApiData>,
 	shutdown: Controller<String>,
@@ -537,7 +546,8 @@ mod tests {
 		data,
 		types::{AppClientConfig, Extension},
 	};
-	use avail_rust::{avail_core::DataLookup, kate_recovery::testnet};
+	use avail_rust::avail_core::DataLookup;
+	use avail_rust::kate_recovery::testnet;
 	use hex_literal::hex;
 
 	#[tokio::test]
@@ -546,7 +556,8 @@ mod tests {
 			network_mode: NetworkMode::P2POnly,
 			..Default::default()
 		};
-		let pp = Arc::new(testnet::public_params(1024));
+		// If you want to use couscous pp instead, should update the corresponding commitments as well.
+		let pp = Arc::new(testnet::multiproof_params(1024, 1024));
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockClient::new();
 		let db = data::MemoryDB::default();
@@ -602,7 +613,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let cfg = AppClientConfig::default();
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(testnet::multiproof_params(1024, 1024));
 		let dimensions: Dimensions = Dimensions::new(1, 16).unwrap();
 		let mut mock_client = MockClient::new();
 		let db = data::MemoryDB::default();

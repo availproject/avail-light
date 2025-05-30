@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.9]
+
+- Remove dusk-plonk dependencies from core
+
 ## [1.2.8](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.8) - 2025-05-30
 
 - Added flag to disable inserts into DHT on failed fetch

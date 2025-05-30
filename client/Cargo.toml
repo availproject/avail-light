@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-client"
-version = "1.12.13"
+version = "1.13.0"
 build = "../build.rs"
 edition = "2021"
 description = "Avail network p2p Light Client"
@@ -9,6 +9,7 @@ description = "Avail network p2p Light Client"
 # Internal deps
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
+kate = { workspace = true }
 
 better-panic = "0.3.0"
 chrono = { workspace = true }

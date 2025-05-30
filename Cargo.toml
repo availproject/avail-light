@@ -19,8 +19,8 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.5", default-features = false }
-dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
+avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.12", default-features = false }
+kate = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
 avail-light-core = { path = "./core", default-features = false }
 
 anyhow = "1.0.71"
