@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
+#[cfg(feature = "multiproof")]
+use avail_light_core::proof::get_or_init_pmp;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
@@ -20,19 +22,20 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		load_or_init_suri, Delay, IdentityConfig, KademliaMode, MaintenanceConfig, NetworkMode,
-		PeerAddress, SecretKey, Uuid,
+		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, NetworkMode, PeerAddress,
+		SecretKey, Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::{account, avail_core::AppId, kate_recovery::couscous, sp_core::blake2_128};
+use avail_rust::{account, avail_core::AppId};
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
 };
 use config::RuntimeConfig;
+use kate::couscous;
 use libp2p::kad::{Mode, QueryStats, RecordKey};
 use std::{collections::HashMap, fs, path::Path, sync::Arc, time::Duration};
 use tokio::{
@@ -43,7 +46,7 @@ use tokio::{
 		Mutex,
 	},
 };
-use tracing::{error, info, span, trace, warn, Level};
+use tracing::{error, info, span, warn, Level};
 
 #[cfg(feature = "network-analysis")]
 use avail_light_core::network::p2p::analyzer;
@@ -129,17 +132,15 @@ async fn run(
 		(None, p2p_event_receiver)
 	};
 
+	#[cfg(feature = "multiproof")]
+	spawn_in_span(get_or_init_pmp());
+
 	#[cfg(feature = "network-analysis")]
 	if cfg.network_mode != NetworkMode::RPCOnly {
 		spawn_in_span(shutdown.with_cancel(analyzer::start_traffic_analyzer(cfg.libp2p.port, 10)));
 	}
 
-	let pp = Arc::new(couscous::public_params());
-	let raw_pp = pp.to_raw_var_bytes();
-	let public_params_hash = hex::encode(blake2_128(&raw_pp));
-	let public_params_len = hex::encode(raw_pp).len();
-	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-
+	let pp = Arc::new(couscous::multiproof_params());
 	let (rpc_event_sender, rpc_event_receiver) = broadcast::channel(1000);
 	let (rpc_client, rpc_subscriptions) = rpc::init(
 		db.clone(),
@@ -254,9 +255,6 @@ async fn run(
 		)));
 	}
 
-	let insert_into_dht = cfg.libp2p.kademlia.automatic_server_mode
-		|| cfg.libp2p.kademlia.operation_mode == KademliaMode::Client;
-
 	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
 	let sync_network_client = network::new(
@@ -264,7 +262,6 @@ async fn run(
 		rpc_client.clone(),
 		pp.clone(),
 		cfg.network_mode,
-		insert_into_dht,
 	);
 
 	if cfg.sync_start_block.is_some() {
@@ -329,13 +326,7 @@ async fn run(
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
-	let light_network_client = network::new(
-		p2p_client,
-		rpc_client,
-		pp,
-		cfg.network_mode,
-		insert_into_dht,
-	);
+	let light_network_client = network::new(p2p_client, rpc_client, pp, cfg.network_mode);
 	let (lc_sender, lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	spawn_in_span(shutdown.with_cancel(light_client::run(
 		db.clone(),
@@ -802,7 +793,6 @@ pub async fn main() -> Result<()> {
 	// spawn a task to watch for ctrl-c signals from user to trigger the shutdown
 	spawn_in_span(shutdown.on_user_signal("User signaled shutdown".to_string()));
 
-	let current_exe = std::env::current_exe()?;
 	let restart = Arc::new(Mutex::new(false));
 	if let Err(error) = run(
 		cfg,
@@ -822,8 +812,8 @@ pub async fn main() -> Result<()> {
 	let reason = shutdown.completed_shutdown().await;
 
 	if *restart.lock().await {
-		info!("Restarting the light client at {}", current_exe.display());
-		utils::restart(current_exe);
+		info!("Restarting Light Client...");
+		utils::restart();
 	}
 
 	// we are not logging error here since expectation is

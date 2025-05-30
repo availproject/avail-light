@@ -2,6 +2,7 @@
 
 ## [1.2.8](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.8) - 2025-05-30
 
+- Remove dusk-plonk dependencies from core
 - Added flag to disable inserts into DHT on failed fetch
 - Improved updater logging
 - Increase default `ping` protocol interval from 20 to 60 seconds
@@ -14,6 +15,7 @@
 
 ## [1.2.7](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.7) - 2025-05-12
 
+- Add polynomial multiproof features on core
 - Changed the default AutoNat `only_global_ips` from `false` to `true` so the servers (and clients) discard AutoNat probes
   from the private-only peers
 - Updated the default AutoNat configuration with increased timeouts

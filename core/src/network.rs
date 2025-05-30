@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use avail_rust::{
 	avail_core::kate::COMMITMENT_SIZE,
 	kate_recovery::{
+		commons::ArkPublicParams,
 		data::Cell,
 		matrix::{Dimensions, Position},
 	},
@@ -9,7 +10,6 @@ use avail_rust::{
 };
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
-use dusk_plonk::prelude::PublicParameters;
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,9 +22,7 @@ use tracing::{debug, info};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use crate::types::NetworkMode;
-
-use crate::{data::Database, proof};
+use crate::{data::Database, proof, types::NetworkMode};
 
 pub mod p2p;
 pub mod rpc;
@@ -72,9 +70,8 @@ impl FetchStats {
 struct DHTWithRPCFallbackClient<T: Database> {
 	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<T>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
-	insert_into_dht: bool,
 }
 
 type Commitments = [[u8; COMMITMENT_SIZE]];
@@ -89,7 +86,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		// If p2p_client is not available, return empty cells and all positions as unfetched
 		let Some(p2p_client) = &self.p2p_client else {
 			debug!(
 				block_number,
@@ -104,7 +100,6 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			.await;
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, mut unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -125,7 +120,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from DHT"
 		);
 
-		dht_fetched.retain(|cell| verified.contains(&cell.position));
+		dht_fetched.retain(|cell| verified.contains(&cell.position()));
 		unfetched.append(&mut unverified);
 
 		Ok((dht_fetched, unfetched, fetch_elapsed))
@@ -141,13 +136,29 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.rpc_client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.rpc_client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.rpc_client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -168,7 +179,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -210,7 +221,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 			.await?;
 
 		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
-		if self.network_mode == NetworkMode::Both && self.insert_into_dht {
+		if matches!(self.network_mode, NetworkMode::Both) {
 			if let Some(p2p_client) = &self.p2p_client {
 				if let Err(error) = p2p_client
 					.insert_cells_into_dht(block_number, rpc_fetched.clone())
@@ -239,22 +250,20 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 pub fn new(
 	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<impl Database + Sync>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
-	insert_into_dht: bool,
 ) -> impl Client {
 	DHTWithRPCFallbackClient {
 		p2p_client,
 		rpc_client,
 		pp,
 		network_mode,
-		insert_into_dht,
 	}
 }
 
 struct RPCClient<T: Database> {
 	client: rpc::Client<T>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 }
 
 impl<T: Database> RPCClient<T> {
@@ -268,13 +277,29 @@ impl<T: Database> RPCClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
-		let mut fetched = self
-			.client
-			.request_kate_proof(block_hash, positions)
-			.await?;
+		let mut fetched: Vec<Cell> = {
+			#[cfg(not(feature = "multiproof"))]
+			{
+				self.client
+					.request_kate_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::SingleCell)
+					.collect()
+			}
+
+			#[cfg(feature = "multiproof")]
+			{
+				self.client
+					.request_kate_multi_proof(block_hash, positions)
+					.await?
+					.into_iter()
+					.map(Cell::MultiProofCell)
+					.collect()
+			}
+		};
 
 		let fetch_elapsed = begin.elapsed();
-
 		let (verified, unverified) = proof::verify(
 			block_number,
 			dimensions,
@@ -295,7 +320,7 @@ impl<T: Database> RPCClient<T> {
 			"Cells fetched from RPC"
 		);
 
-		fetched.retain(|cell| verified.contains(&cell.position));
+		fetched.retain(|cell| verified.contains(&cell.position()));
 		Ok((fetched, unverified, fetch_elapsed))
 	}
 }
@@ -328,10 +353,7 @@ impl<T: Database + Sync> Client for RPCClient<T> {
 	}
 }
 
-pub fn new_rpc(
-	client: rpc::Client<impl Database + Sync>,
-	pp: Arc<PublicParameters>,
-) -> impl Client {
+pub fn new_rpc(client: rpc::Client<impl Database + Sync>, pp: Arc<ArkPublicParams>) -> impl Client {
 	RPCClient { client, pp }
 }
 

@@ -9,6 +9,7 @@ description = "Avail network p2p Light Client"
 # Internal deps
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
+kate = { workspace = true }
 
 better-panic = "0.3.0"
 chrono = { workspace = true }
@@ -40,3 +41,4 @@ test-case = "3.2.1"
 network-analysis = ["avail-light-core/network-analysis"]
 rocksdb = ["avail-light-core/rocksdb"]
 default = ["rocksdb"]
+multiproof = ["avail-light-core/multiproof"]

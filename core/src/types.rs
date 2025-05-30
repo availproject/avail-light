@@ -56,7 +56,7 @@ pub struct RuntimeVersion {
 	transaction_version: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Extension {
 	pub dimensions: Dimensions,
 	pub lookup: DataLookup,
@@ -64,7 +64,7 @@ pub struct Extension {
 }
 
 /// Light to app client channel message struct
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,
@@ -688,6 +688,8 @@ impl TryFrom<String> for ProjectName {
 const INVALID_PROJECT_NAME: &str = r#"
 Project name must only contain alphanumeric characters.
 "#;
+
+pub const MULTI_PROOF_CELL_DIMS: (u16, u16) = (16, 64);
 
 #[cfg(test)]
 mod tests {
