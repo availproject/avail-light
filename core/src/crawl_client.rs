@@ -2,8 +2,9 @@ use crate::{
 	network::{p2p::Client, rpc},
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
+	utils::extract_kate,
 };
-use avail_rust::kate_recovery::matrix::Partition;
+use avail_rust::kate_recovery::matrix::{Dimensions, Partition, Position};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
@@ -82,18 +83,34 @@ pub async fn run(
 		..
 	}) = message_rx.recv().await
 	{
-		let block = match types::BlockVerified::try_from((header, None)) {
+		let block = match types::BlockVerified::try_from((header.clone(), None)) {
 			Ok(block) => block,
 			Err(error) => {
 				error!("Header is not valid: {error}");
 				continue;
 			},
 		};
-
 		let Some(extension) = &block.extension else {
 			info!("Skipping block without header extension");
 			continue;
 		};
+
+		let Some((rows, cols, _, _)) = extract_kate(&header.extension) else {
+			info!("Skipping block without header extension");
+			continue;
+		};
+		let Some(dimensions) = Dimensions::new(rows, cols) else {
+			info!(
+				block.block_num,
+				"Skipping block with invalid dimensions {rows}x{cols}",
+			);
+			continue;
+		};
+
+		if dimensions.cols().get() <= 2 {
+			error!(block.block_num, "More than 2 columns are required");
+			continue;
+		}
 
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
@@ -110,10 +127,41 @@ pub async fn run(
 		let start = Instant::now();
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let positions = extension
-				.dimensions
-				.iter_extended_partition_positions(&partition)
-				.collect::<Vec<_>>();
+			let positions: Vec<Position> = {
+				#[cfg(feature = "multiproof")]
+				{
+					let Some(multiproof_cell_dims) =
+						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
+					else {
+						info!(
+							block_number,
+							"Skipping block with invalid multiproof cell dimensions",
+						);
+						return Ok(());
+					};
+
+					let Some(target_multiproof_grid_dims) =
+						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+					else {
+						info!(
+							block_number,
+							"Skipping block with invalid target multiproof grid dimensions",
+						);
+						return Ok(());
+					};
+
+					target_multiproof_grid_dims
+						.iter_mcell_partition_positions(&partition)
+						.collect()
+				}
+
+				#[cfg(not(feature = "multiproof"))]
+				{
+					dimensions
+						.iter_extended_partition_positions(&partition)
+						.collect()
+				}
+			};
 
 			let total = positions.len();
 			let fetched = network_client

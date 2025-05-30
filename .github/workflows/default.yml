@@ -74,3 +74,12 @@ jobs:
           target: wasm32-unknown-unknown
       - run: cargo build --package avail-light-core --target wasm32-unknown-unknown
 
+  multiproof:
+    name: multiproof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+      - run: cargo build --package avail-light-core --features multiproof
