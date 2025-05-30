@@ -125,6 +125,7 @@ async fn run(
 			let restart_version = version.to_string();
 
 			spawn_in_span(shutdown.with_cancel(p2p_restart_manager(
+				Some(p2p_client.clone()),
 				restart_cfg.libp2p,
 				restart_cfg.project_name,
 				restart_cfg.genesis_hash,
