@@ -1,5 +1,4 @@
 use avail_rust::{
-	primitives::block::grandpa::AuthorityId,
 	sp_core::ed25519::{self, Public},
 	AvailHeader,
 };
@@ -123,16 +122,10 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				));
 
 				// search the header logs for validator set change
-				let mut new_auths = filter_auth_set_changes(&header);
+				let new_auths = filter_auth_set_changes(&header);
 				// if the event exists, send the new auths over the message channel.
 				if !new_auths.is_empty() {
-					// TODO: Handle this in a proper fashion
-					assert!(
-						new_auths.len() == 1,
-						"There should be only one valset change!"
-					);
-					let auths: Vec<(AuthorityId, u64)> = new_auths.pop().unwrap();
-					let new_valset = auths
+					let new_valset = new_auths
 						.into_iter()
 						.map(|(a, _)| ed25519::Public::from_raw(a.0 .0 .0))
 						.collect::<Vec<Public>>();
