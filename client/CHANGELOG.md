@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.13
+## [1.12.13](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.13) - 2025-05-30
 
 - Skiped inserts into the DHT when client is permanently in server mode
 - Fixed issue with restarting in docker on linux hosts
