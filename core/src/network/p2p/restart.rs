@@ -5,7 +5,7 @@ use tokio::{
 	select,
 	sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
 	data::{Database, PeerIDKey, DB},
@@ -71,6 +71,7 @@ pub async fn init_and_start_p2p_client(
 /// P2P restart manager that periodically restarts the P2P event loop
 #[allow(clippy::too_many_arguments)]
 pub async fn p2p_restart_manager(
+	mut p2p_client: Option<Client>,
 	libp2p_cfg: LibP2PConfig,
 	project_name: ProjectName,
 	genesis_hash: String,
@@ -90,6 +91,13 @@ pub async fn p2p_restart_manager(
 		select! {
 			_ = interval.tick() => {
 				info!("Starting P2P client restart process...");
+
+				if let Some(client) = p2p_client.take() {
+					info!("Stopping listener");
+					if let Err(e) = client.stop_listening().await {
+						warn!("Error stopping listeners during restart: {e}");
+					}
+				}
 
 				// Trigger shutdown of the current event loop
 				let _ = current_shutdown.trigger_shutdown("P2P client periodic restart".to_string());
@@ -111,10 +119,10 @@ pub async fn p2p_restart_manager(
 					new_shutdown.clone(),
 					db.clone(),
 				).await {
-					Ok((_, receiver)) => {
+					Ok((new_p2p_client, receiver)) => {
 						info!("P2P client restarted successfully");
 
-
+						p2p_client = Some(new_p2p_client);
 						// Forward events from new receiver to the main event channel
 						let event_tx_clone = event_tx.clone();
 						let app_shutdown_clone = app_shutdown.clone();
