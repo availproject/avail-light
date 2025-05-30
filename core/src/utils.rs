@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
-use tracing::{error, Instrument, Level, Subscriber};
+use tracing::{error, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
 pub fn spawn_in_span<F>(future: F) -> JoinHandle<F::Output>
@@ -100,16 +100,16 @@ pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> eyre::Result<Op
 		.map_err(|e| eyre!("Invalid DataLookup: {}", e))
 }
 
-pub fn filter_auth_set_changes(header: &AvailHeader) -> Vec<Vec<(AuthorityId, u64)>> {
-	let new_auths = header
+pub fn filter_auth_set_changes(header: &AvailHeader) -> Vec<(AuthorityId, u64)> {
+	const FRNK: [u8; 4] = *b"FRNK";
+
+	let mut forced_valset = header
 		.digest
 		.logs
 		.iter()
 		.filter_map(|e| match &e {
-			// UGHHH, why won't the b"FRNK" just work
-			substrate::DigestItem::Consensus([b'F', b'R', b'N', b'K'], data) => {
+			substrate::DigestItem::Consensus(FRNK, data) => {
 				match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
-					Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
 					Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
 					_ => None,
 				}
@@ -117,7 +117,40 @@ pub fn filter_auth_set_changes(header: &AvailHeader) -> Vec<Vec<(AuthorityId, u6
 			_ => None,
 		})
 		.collect::<Vec<_>>();
-	new_auths
+
+	if !forced_valset.is_empty() {
+		assert!(
+			forced_valset.len() == 1,
+			"There should be only one forced valset change per header!"
+		);
+		warn!("Forced validator set change occurred, prioritizing to any co-occurring scheduled validator set change.");
+		return forced_valset.pop().unwrap();
+	}
+
+	let mut scheduled_valset = header
+		.digest
+		.logs
+		.iter()
+		.filter_map(|e| match &e {
+			substrate::DigestItem::Consensus(FRNK, data) => {
+				match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
+					Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
+					_ => None,
+				}
+			},
+			_ => None,
+		})
+		.collect::<Vec<_>>();
+
+	if !scheduled_valset.is_empty() {
+		assert!(
+			scheduled_valset.len() == 1,
+			"There should be only one scheduled valset change per header!"
+		);
+		return scheduled_valset.pop().unwrap();
+	};
+
+	vec![]
 }
 
 pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {

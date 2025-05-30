@@ -298,7 +298,7 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 		trace!("Proof in block: {}", p_h.number);
 		curr_block_num += 1;
 
-		validator_set = next_validator_set[0]
+		validator_set = next_validator_set
 			.iter()
 			.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
 			.collect();
