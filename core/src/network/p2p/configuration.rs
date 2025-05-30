@@ -291,16 +291,9 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
 		.set_record_filtering(kad::StoreInserts::FilterBoth)
 		.set_periodic_bootstrap_interval(Some(cfg.kademlia.bootstrap_period))
-		.set_kbucket_pending_timeout(cfg.kademlia.kbucket_pending_timeout);
-
-	if let Some(interval) = cfg.kademlia.publication_interval {
-		kad_cfg.set_publication_interval(Some(interval));
-	}
-
-	if let Some(interval) = cfg.kademlia.record_replication_interval {
-		kad_cfg.set_replication_interval(Some(interval));
-	}
-
+		.set_kbucket_pending_timeout(cfg.kademlia.kbucket_pending_timeout)
+		.set_publication_interval(cfg.kademlia.publication_interval)
+		.set_replication_interval(cfg.kademlia.record_replication_interval);
 	kad_cfg
 }
 

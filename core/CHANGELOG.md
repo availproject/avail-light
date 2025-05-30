@@ -2,6 +2,7 @@
 
 ## [1.2.9]
 
+- Fix issue with publication and replication intervals in None case
 - Remove dusk-plonk dependencies from core
 
 ## [1.2.8](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.8) - 2025-05-30
