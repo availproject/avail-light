@@ -2,9 +2,7 @@ use avail_rust::kate_recovery::{
 	commons::ArkPublicParams,
 	data::Cell,
 	matrix::{Dimensions, Position},
-	proof::{verify_v2, Error},
 };
-
 use color_eyre::eyre;
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
