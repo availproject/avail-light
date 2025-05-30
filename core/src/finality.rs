@@ -40,6 +40,26 @@ pub fn check_finality(
 	validator_set: &ValidatorSet,
 	justification: &GrandpaJustification,
 ) -> Result<()> {
+	// Make sure the validator set contains only unique validators
+	let mut validator_set_clone = validator_set.clone();
+	validator_set_clone.validator_set.sort();
+	validator_set_clone.validator_set.dedup();
+
+	// Make sure the justification ALSO contains only unique signers
+	let mut justification_clone = justification.clone();
+	justification_clone
+		.commit
+		.precommits
+		.sort_by(|a, b| a.id.cmp(&b.id));
+	justification_clone
+		.commit
+		.precommits
+		.dedup_by(|a, b| a.id.eq(&b.id));
+
+	// Shadow the original args
+	let validator_set = &validator_set_clone;
+	let justification = &justification_clone;
+
 	let ancestry_map: HashMap<H256, H256> = justification
 		.votes_ancestries
 		.iter()
