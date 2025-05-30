@@ -1,9 +1,10 @@
 use color_eyre::{eyre::WrapErr, Result};
 use libp2p::{identity::Keypair, PeerId};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
 	select,
 	sync::mpsc::{UnboundedReceiver, UnboundedSender},
+	sync::Mutex,
 };
 use tracing::{error, info, warn};
 
@@ -71,7 +72,7 @@ pub async fn init_and_start_p2p_client(
 /// P2P restart manager that periodically restarts the P2P event loop
 #[allow(clippy::too_many_arguments)]
 pub async fn p2p_restart_manager(
-	mut p2p_client: Option<Client>,
+	p2p_client: Arc<Mutex<Option<Client>>>,
 	libp2p_cfg: LibP2PConfig,
 	project_name: ProjectName,
 	genesis_hash: String,
@@ -92,10 +93,13 @@ pub async fn p2p_restart_manager(
 			_ = interval.tick() => {
 				info!("Starting P2P client restart process...");
 
-				if let Some(client) = p2p_client.take() {
-					info!("Stopping listener");
-					if let Err(e) = client.stop_listening().await {
-						warn!("Error stopping listeners during restart: {e}");
+				{
+					let mut client_guard = p2p_client.lock().await;
+					if let Some(client) = client_guard.take() {
+						info!("Stopping listener");
+						if let Err(e) = client.stop_listening().await {
+							warn!("Error stopping listeners during restart: {e}");
+						}
 					}
 				}
 
@@ -122,7 +126,8 @@ pub async fn p2p_restart_manager(
 					Ok((new_p2p_client, receiver)) => {
 						info!("P2P client restarted successfully");
 
-						p2p_client = Some(new_p2p_client);
+						// Update the shared client reference
+						*p2p_client.lock().await = Some(new_p2p_client);
 						// Forward events from new receiver to the main event channel
 						let event_tx_clone = event_tx.clone();
 						let app_shutdown_clone = app_shutdown.clone();

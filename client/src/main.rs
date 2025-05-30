@@ -102,7 +102,7 @@ async fn run(
 			let initial_shutdown = Controller::<String>::new();
 
 			// Initial P2P client startup
-			let (p2p_client, initial_receiver) = init_and_start_p2p_client(
+			let (initial_p2p_client, initial_receiver) = init_and_start_p2p_client(
 				&cfg.libp2p,
 				cfg.project_name.clone(),
 				&cfg.genesis_hash,
@@ -113,6 +113,9 @@ async fn run(
 				db.clone(),
 			)
 			.await?;
+
+			// Create shared mutable client reference
+			let p2p_client = Arc::new(Mutex::new(Some(initial_p2p_client)));
 
 			// Forward events from initial receiver
 			let event_tx_clone = event_tx.clone();
@@ -125,7 +128,7 @@ async fn run(
 			let restart_version = version.to_string();
 
 			spawn_in_span(shutdown.with_cancel(p2p_restart_manager(
-				Some(p2p_client.clone()),
+				p2p_client.clone(),
 				restart_cfg.libp2p,
 				restart_cfg.project_name,
 				restart_cfg.genesis_hash,
@@ -139,7 +142,7 @@ async fn run(
 				initial_shutdown,
 			)));
 
-			(Some(p2p_client), p2p_event_receiver)
+			(p2p_client, p2p_event_receiver)
 		} else {
 			// No restart - use direct approach
 			let (p2p_client, p2p_event_receiver) = init_and_start_p2p_client(
@@ -154,13 +157,13 @@ async fn run(
 			)
 			.await?;
 
-			(Some(p2p_client), p2p_event_receiver)
+			(Arc::new(Mutex::new(Some(p2p_client))), p2p_event_receiver)
 		}
 	} else {
 		info!("P2P functionality disabled (NetworkMode::RPCOnly)");
 		// Create an unused channel to match type expectations
 		let (_, p2p_event_receiver) = mpsc::unbounded_channel::<P2pEvent>();
-		(None, p2p_event_receiver)
+		(Arc::new(Mutex::new(None)), p2p_event_receiver)
 	};
 
 	#[cfg(feature = "multiproof")]
@@ -243,18 +246,19 @@ async fn run(
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
-		p2p_client: p2p_client.clone(),
+		p2p_client: p2p_client.lock().await.clone(),
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(cfg.api.clone())));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
-	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
+	let data_rx = if let Some(app_id) = cfg.app_id.map(AppId) {
 		let (data_tx, data_rx) = broadcast::channel::<ApiData>(1 << 7);
+		let app_p2p_client = p2p_client.lock().await.clone();
 		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
-			p2p_client.clone(),
+			app_p2p_client,
 			rpc_client.clone(),
 			app_id,
 			block_tx.subscribe(),
@@ -263,8 +267,10 @@ async fn run(
 			data_tx,
 			shutdown.clone(),
 		)));
-		data_rx
-	});
+		Some(data_rx)
+	} else {
+		None
+	};
 
 	spawn_in_span(shutdown.with_cancel(api::v2::publish(
 		api::types::Topic::HeaderVerified,
@@ -291,8 +297,9 @@ async fn run(
 
 	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
+	let sync_p2p_client = p2p_client.lock().await.clone();
 	let sync_network_client = network::new(
-		p2p_client.clone(),
+		sync_p2p_client,
 		rpc_client.clone(),
 		pp.clone(),
 		cfg.network_mode,
@@ -361,8 +368,9 @@ async fn run(
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
+	let light_p2p_client = p2p_client.lock().await.clone();
 	let light_network_client = network::new(
-		p2p_client,
+		light_p2p_client,
 		rpc_client,
 		pp,
 		cfg.network_mode,
