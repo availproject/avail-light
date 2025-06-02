@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+.env
+.DS_Store
+config*.yaml
+avail_*
+debug.plist
+/identity.toml
+db/
+/.config/
