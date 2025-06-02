@@ -170,7 +170,11 @@ pub async fn run(
 				.0
 				.len();
 
-			let success_rate = fetched as f64 / total as f64;
+			let success_rate = if total > 0 {
+				fetched as f64 / total as f64
+			} else {
+				0.0
+			};
 			let partition = format!("{}/{}", partition.number, partition.fraction);
 			info!(
 				block_number,
