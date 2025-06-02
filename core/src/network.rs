@@ -87,6 +87,7 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 	) -> Result<(Vec<Cell>, Vec<Position>, Duration)> {
 		let begin = Instant::now();
 
+		// If p2p_client is not available, return empty cells and all positions as unfetched
 		let Some(p2p_client) = &self.p2p_client else {
 			debug!(
 				block_number,
