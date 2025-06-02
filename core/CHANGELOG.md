@@ -2,7 +2,7 @@
 
 ## [1.2.9]
 
-- Add polynomial multiproof feature to core
+- Add polynomial multiproof features to core
 - Fix issue with publication and replication intervals in None case
 - Remove dusk-plonk dependencies from core
 
