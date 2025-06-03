@@ -276,7 +276,7 @@ pub fn new(
 
 #[cfg(target_arch = "wasm32")]
 pub fn new(
-	p2p_client: Option<p2p::Client>,
+	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
 	rpc_client: rpc::Client<impl Database + Sync>,
 	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
