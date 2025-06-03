@@ -2,7 +2,9 @@
 
 ## Compile
 
-`wasm-pack build --target web --dev`
+`wasm-pack build --target web --release`
+
+NOTE: on MacOS builds, use clang from LLVM installation due the issue with `blst` crate.
 
 ## Run page
 

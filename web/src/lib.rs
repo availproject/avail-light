@@ -1,21 +1,19 @@
 #![cfg(target_arch = "wasm32")]
-use std::sync::Arc;
-use web_time::Instant;
-
 use avail_light_core::api::configuration::SharedConfig;
 use avail_light_core::api::types::{PublishMessage, Request, Topic};
 use avail_light_core::api::v2::transactions::Submitter;
 use avail_light_core::light_client::{self, OutputEvent as LcEvent};
 use avail_light_core::network::{self, p2p, rpc, Network};
 use avail_light_core::shutdown::Controller;
-use avail_light_core::types::{Delay, PeerAddress};
+use avail_light_core::types::{Delay, NetworkMode, PeerAddress};
 use avail_light_core::utils::spawn_in_span;
 use avail_light_core::{api, data};
-use avail_rust::kate_recovery::couscous;
 use avail_rust::SDK;
 use clap::ValueEnum;
+use kate::couscous;
 use libp2p::Multiaddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::sync::OnceCell;
 use tokio::sync::{
 	broadcast,
@@ -26,6 +24,7 @@ use tracing::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use web_sys::js_sys;
 use web_time::Duration;
+use web_time::Instant;
 
 #[tokio::main(flavor = "current_thread")]
 #[wasm_bindgen(start)]
@@ -76,7 +75,7 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	// let client_id = Uuid::new_v4();
 	// let execution_id = Uuid::new_v4();
 
-	let pp = Arc::new(couscous::public_params());
+	let pp = Arc::new(couscous::multiproof_params());
 
 	let cfg_rpc = rpc::configuration::RPCConfig {
 		full_node_ws: network.full_node_ws(),
@@ -119,7 +118,13 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	.await
 	.unwrap();
 
-	let network_client = network::new(p2p_client.clone(), rpc_client, pp, false);
+	let network_client = network::new(
+		Some(p2p_client.clone()),
+		rpc_client,
+		pp,
+		NetworkMode::RPCOnly,
+		false,
+	);
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	// and shut it down, without delays
@@ -288,7 +293,7 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 	let sdk = SDK::new(&endpoint).await.unwrap();
 	let db = data::DB::default();
 	let shutdown = Controller::new();
-	let pp = Arc::new(couscous::public_params());
+	let pp = Arc::new(couscous::multiproof_params());
 
 	info!("Fetching the latest block...");
 
