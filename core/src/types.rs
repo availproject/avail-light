@@ -689,7 +689,9 @@ const INVALID_PROJECT_NAME: &str = r#"
 Project name must only contain alphanumeric characters.
 "#;
 
-pub const MULTI_PROOF_CELL_DIMS: (u16, u16) = (16, 64);
+pub fn multi_proof_dimensions() -> Dimensions {
+	Dimensions::new(16, 64).expect("Failed to generate dimensions for 16×64 non-extended matrix")
+}
 
 #[cfg(test)]
 mod tests {

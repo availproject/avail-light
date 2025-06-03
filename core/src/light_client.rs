@@ -32,6 +32,8 @@ use tracing::{error, info};
 #[cfg(target_arch = "wasm32")]
 use {tokio_with_wasm::alias as tokio, web_time::Instant};
 
+#[cfg(feature = "multiproof")]
+use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	network::{
@@ -42,9 +44,6 @@ use crate::{
 	types::{self, BlockRange, ClientChannels, Delay},
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
-
-#[cfg(feature = "multiproof")]
-use crate::types::MULTI_PROOF_CELL_DIMS;
 
 #[derive(Debug)]
 pub enum OutputEvent {
@@ -113,16 +112,7 @@ pub async fn process_block(
 			let positions = {
 				#[cfg(feature = "multiproof")]
 				{
-					let Some(multiproof_cell_dims) =
-						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
-					else {
-						info!(
-							block_number,
-							"Skipping block with invalid multiproof cell dimensions",
-						);
-						return Ok(None);
-					};
-
+					let multiproof_cell_dims = multi_proof_dimensions();
 					let Some(target_multiproof_grid_dims) =
 						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
 					else {

@@ -31,7 +31,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
 #[cfg(feature = "multiproof")]
-use crate::types::MULTI_PROOF_CELL_DIMS;
+use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{BlockHeaderKey, Database},
 	network::{
@@ -176,16 +176,7 @@ pub async fn process_block(
 	let positions: Vec<Position> = {
 		#[cfg(feature = "multiproof")]
 		{
-			let Some(multiproof_cell_dims) =
-				Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
-			else {
-				info!(
-					block_number,
-					"Skipping block with invalid multiproof cell dimensions",
-				);
-				return Ok(());
-			};
-
+			let multiproof_cell_dims = multi_proof_dimensions();
 			let Some(target_multiproof_grid_dims) =
 				generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
 			else {

@@ -1,10 +1,13 @@
+#[cfg(feature = "multiproof")]
+use crate::types::multi_proof_dimensions;
 use crate::{
 	network::{p2p::Client, rpc},
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
-	utils::extract_kate,
 };
-use avail_rust::kate_recovery::matrix::{Dimensions, Partition, Position};
+use avail_rust::kate_recovery::matrix::{Partition, Position};
+#[cfg(feature = "multiproof")]
+use avail_rust::utils::generate_multiproof_grid_dims;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
@@ -95,18 +98,7 @@ pub async fn run(
 			continue;
 		};
 
-		let Some((rows, cols, _, _)) = extract_kate(&header.extension) else {
-			info!("Skipping block without header extension");
-			continue;
-		};
-		let Some(dimensions) = Dimensions::new(rows, cols) else {
-			info!(
-				block.block_num,
-				"Skipping block with invalid dimensions {rows}x{cols}",
-			);
-			continue;
-		};
-
+		let dimensions = extension.dimensions;
 		if dimensions.cols().get() <= 2 {
 			error!(block.block_num, "More than 2 columns are required");
 			continue;
@@ -130,24 +122,15 @@ pub async fn run(
 			let positions: Vec<Position> = {
 				#[cfg(feature = "multiproof")]
 				{
-					let Some(multiproof_cell_dims) =
-						Dimensions::new(MULTI_PROOF_CELL_DIMS.0, MULTI_PROOF_CELL_DIMS.1)
-					else {
-						info!(
-							block_number,
-							"Skipping block with invalid multiproof cell dimensions",
-						);
-						return Ok(());
-					};
-
+					let multiproof_cell_dims = multi_proof_dimensions();
 					let Some(target_multiproof_grid_dims) =
 						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
 					else {
-						info!(
+						error!(
 							block_number,
 							"Skipping block with invalid target multiproof grid dimensions",
 						);
-						return Ok(());
+						continue;
 					};
 
 					target_multiproof_grid_dims
