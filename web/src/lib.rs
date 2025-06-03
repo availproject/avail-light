@@ -18,6 +18,7 @@ use tokio::sync::OnceCell;
 use tokio::sync::{
 	broadcast,
 	mpsc::{self, UnboundedSender},
+	Mutex,
 };
 use tokio_with_wasm::alias as tokio;
 use tracing::{error, info, warn};
@@ -118,6 +119,7 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	.await
 	.unwrap();
 
+	let p2p_client = Arc::new(Mutex::new(Some(p2p_client)));
 	let network_client = network::new(
 		p2p_client.clone(),
 		rpc_client,
@@ -222,17 +224,22 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	let bootstrap_p2p_client = p2p_client.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		let bs_result = bootstrap_p2p_client
-			.clone()
-			.bootstrap_on_startup(&bootstraps)
-			.await;
-		match bs_result {
-			Ok(_) => {
-				info!("Bootstrap done.");
-			},
-			Err(e) => {
-				warn!("Bootstrap process: {e:?}.");
-			},
+		let client_guard = bootstrap_p2p_client.lock().await;
+		if let Some(p2p_client) = client_guard.as_ref() {
+			let bs_result = p2p_client
+				.clone()
+				.bootstrap_on_startup(&bootstraps)
+				.await;
+			match bs_result {
+				Ok(_) => {
+					info!("Bootstrap done.");
+				},
+				Err(e) => {
+					warn!("Bootstrap process: {e:?}.");
+				},
+			}
+		} else {
+			warn!("No P2P client available for bootstrap");
 		}
 	}));
 
