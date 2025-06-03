@@ -18,6 +18,8 @@ use std::{str::FromStr, sync::Arc};
 use strum::Display;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::sync::Mutex;
 use tracing::{debug, info};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
@@ -68,6 +70,9 @@ impl FetchStats {
 }
 
 struct DHTWithRPCFallbackClient<T: Database> {
+	#[cfg(not(target_arch = "wasm32"))]
+	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
+	#[cfg(target_arch = "wasm32")]
 	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<T>,
 	pp: Arc<ArkPublicParams>,
@@ -88,6 +93,22 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		let begin = Instant::now();
 
 		// If p2p_client is not available, return empty cells and all positions as unfetched
+		#[cfg(not(target_arch = "wasm32"))]
+		let p2p_client = {
+			let client_guard = self.p2p_client.lock().await;
+			if let Some(client) = client_guard.as_ref() {
+				client.clone()
+			} else {
+				debug!(
+					block_number,
+					cells_total = positions.len(),
+					"P2P client not available, skipping DHT fetch"
+				);
+				return Ok((Vec::new(), positions.to_vec(), Duration::from_secs(0)));
+			}
+		};
+		
+		#[cfg(target_arch = "wasm32")]
 		let Some(p2p_client) = &self.p2p_client else {
 			debug!(
 				block_number,
@@ -224,6 +245,20 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 
 		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
 		if self.network_mode == NetworkMode::Both && self.insert_into_dht {
+			#[cfg(not(target_arch = "wasm32"))]
+			{
+				let client_guard = self.p2p_client.lock().await;
+				if let Some(p2p_client) = client_guard.as_ref() {
+					if let Err(error) = p2p_client
+						.insert_cells_into_dht(block_number, rpc_fetched.clone())
+						.await
+					{
+						debug!("Error inserting cells into DHT: {error}");
+					}
+				}
+			}
+			
+			#[cfg(target_arch = "wasm32")]
 			if let Some(p2p_client) = &self.p2p_client {
 				if let Err(error) = p2p_client
 					.insert_cells_into_dht(block_number, rpc_fetched.clone())
@@ -249,6 +284,24 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 	}
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn new(
+	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
+	rpc_client: rpc::Client<impl Database + Sync>,
+	pp: Arc<PublicParameters>,
+	network_mode: NetworkMode,
+	insert_into_dht: bool,
+) -> impl Client {
+	DHTWithRPCFallbackClient {
+		p2p_client,
+		rpc_client,
+		pp,
+		network_mode,
+		insert_into_dht,
+	}
+}
+
+#[cfg(target_arch = "wasm32")]
 pub fn new(
 	p2p_client: Option<p2p::Client>,
 	rpc_client: rpc::Client<impl Database + Sync>,

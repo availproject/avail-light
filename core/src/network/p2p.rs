@@ -259,7 +259,6 @@ pub async fn init(
 	let (event_sender, event_receiver) = mpsc::unbounded_channel();
 	// create EventLoop
 	let event_loop = EventLoop::new(cfg, swarm, is_fat, command_receiver, event_sender, shutdown);
-	info!("AFTER BUILD SWARM!");
 
 	Ok((client, event_loop, event_receiver))
 }

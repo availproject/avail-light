@@ -135,12 +135,13 @@ impl Client {
 	pub async fn stop_listening(&self) -> Result<()> {
 		let listener_ids = self.listeners.lock().await.clone();
 		let result = self
-			.execute_sync(|_| {
+			.execute_sync(|response_sender| {
 				Box::new(move |context: &mut EventLoop| {
 					listener_ids.into_iter().for_each(|listener_id| {
 						// `remove_listener` is infallible
 						context.swarm.remove_listener(listener_id);
 					});
+					let _ = response_sender.send(Ok(()));
 					Ok(())
 				})
 			})

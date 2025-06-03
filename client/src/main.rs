@@ -297,9 +297,8 @@ async fn run(
 
 	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
-	let sync_p2p_client = p2p_client.lock().await.clone();
 	let sync_network_client = network::new(
-		sync_p2p_client,
+		p2p_client.clone(),
 		rpc_client.clone(),
 		pp.clone(),
 		cfg.network_mode,
@@ -368,9 +367,8 @@ async fn run(
 		rpc_event_receiver: client_rpc_event_receiver,
 	};
 
-	let light_p2p_client = p2p_client.lock().await.clone();
 	let light_network_client = network::new(
-		light_p2p_client,
+		p2p_client.clone(),
 		rpc_client,
 		pp,
 		cfg.network_mode,

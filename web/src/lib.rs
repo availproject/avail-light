@@ -119,7 +119,7 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	.unwrap();
 
 	let network_client = network::new(
-		Some(p2p_client.clone()),
+		p2p_client.clone(),
 		rpc_client,
 		pp,
 		NetworkMode::RPCOnly,

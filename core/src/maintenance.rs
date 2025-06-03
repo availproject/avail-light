@@ -28,12 +28,12 @@ pub async fn process_block(
 	maintenance_config: MaintenanceConfig,
 	event_sender: UnboundedSender<OutputEvent>,
 ) -> Result<()> {
-	// Lock and check if client exists
-	let client_guard = p2p_client.lock().await;
-	let p2p_client = match &*client_guard {
-		Some(client) => client.clone(),
-		None => {
-			drop(client_guard); // Release lock early
+	// Check if client exists
+	let p2p_client = {
+		let client_guard = p2p_client.lock().await;
+		if let Some(client) = client_guard.as_ref() {
+			client.clone()
+		} else {
 			debug!(
 				block_number,
 				"No P2P client available, skipping p2p maintenance"
@@ -48,7 +48,6 @@ pub async fn process_block(
 			return Ok(());
 		}
 	};
-	drop(client_guard); // Release lock before doing async operations
 
 	if cfg!(not(feature = "rocksdb")) && block_number % maintenance_config.pruning_interval == 0 {
 		info!(block_number, "Pruning...");
