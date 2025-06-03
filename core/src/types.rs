@@ -690,7 +690,7 @@ Project name must only contain alphanumeric characters.
 "#;
 
 pub fn multi_proof_dimensions() -> Dimensions {
-	Dimensions::new(16, 64).expect("Failed to generate dimensions for 16×64 non-extended matrix")
+	Dimensions::new(16, 64).expect("Failed to generate dimensions for non-extended matrix")
 }
 
 #[cfg(test)]
