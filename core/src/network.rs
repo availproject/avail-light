@@ -260,7 +260,7 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 pub fn new(
 	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
 	rpc_client: rpc::Client<impl Database + Sync>,
-	pp: Arc<PublicParameters>,
+	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
 	insert_into_dht: bool,
 ) -> impl Client {
