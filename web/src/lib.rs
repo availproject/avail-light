@@ -226,10 +226,7 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 		info!("Bootstraping the DHT with bootstrap nodes...");
 		let client_guard = bootstrap_p2p_client.lock().await;
 		if let Some(p2p_client) = client_guard.as_ref() {
-			let bs_result = p2p_client
-				.clone()
-				.bootstrap_on_startup(&bootstraps)
-				.await;
+			let bs_result = p2p_client.clone().bootstrap_on_startup(&bootstraps).await;
 			match bs_result {
 				Ok(_) => {
 					info!("Bootstrap done.");
