@@ -510,15 +510,7 @@ impl Client {
 
 				#[cfg(feature = "multiproof")]
 				{
-					let bytes: Vec<u8> = peer_record
-						.record
-						.value
-						.try_into()
-						.map_err(|e| {
-							debug!("Cannot convert cell {reference} into Vec<u8>: {e}");
-						})
-						.ok()?;
-
+					let bytes: Vec<u8> = peer_record.record.value;
 					let mcell =
 						MultiProofCell::from_bytes(position, &bytes)
 							.map_err(|e| {

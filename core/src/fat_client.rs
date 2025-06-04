@@ -10,10 +10,10 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
+#[cfg(feature = "multiproof")]
+use avail_rust::kate_recovery::data::MultiProofCell;
 #[cfg(not(feature = "multiproof"))]
 use avail_rust::kate_recovery::data::{self, SingleCell};
-#[cfg(feature = "multiproof")]
-use avail_rust::{kate_recovery::data::MultiProofCell, utils::generate_multiproof_grid_dims};
 use avail_rust::{
 	kate_recovery::{
 		data::Cell,
@@ -30,8 +30,6 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{BlockHeaderKey, Database},
 	network::{
@@ -39,7 +37,9 @@ use crate::{
 		rpc::{Client as RpcClient, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
-	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
+	types::{
+		block_matrix_partition_format, iter_partition_cells, BlockVerified, ClientChannels, Delay,
+	},
 	utils::{blake2_256, extract_kate},
 };
 
@@ -173,32 +173,8 @@ pub async fn process_block(
 	// when this process started
 	db.put(BlockHeaderKey(block_number), header.clone());
 
-	let positions: Vec<Position> = {
-		#[cfg(feature = "multiproof")]
-		{
-			let multiproof_cell_dims = multi_proof_dimensions();
-			let Some(target_multiproof_grid_dims) =
-				generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
-			else {
-				info!(
-					block_number,
-					"Skipping block with invalid target multiproof grid dimensions",
-				);
-				return Ok(());
-			};
-
-			target_multiproof_grid_dims
-				.iter_mcell_partition_positions(&cfg.block_matrix_partition)
-				.collect()
-		}
-
-		#[cfg(not(feature = "multiproof"))]
-		{
-			dimensions
-				.iter_extended_partition_positions(&cfg.block_matrix_partition)
-				.collect()
-		}
-	};
+	let partition = cfg.block_matrix_partition;
+	let positions = iter_partition_cells(partition, dimensions);
 
 	let begin = Instant::now();
 	let get_kate_proof = |&n| client.get_kate_proof(header_hash, n);
@@ -448,7 +424,7 @@ mod tests {
 	async fn process_block_successful() {
 		let db = data::MemoryDB::default();
 		let mut mock_client = MockClient::new();
-		let cell_variants: Vec<Cell> = DEFAULT_CELLS.into_iter().map(Into::into).collect();
+		let cell_variants: Vec<Cell> = DEFAULT_CELLS.into_iter().collect();
 
 		mock_client.expect_get_kate_proof().returning(move |_, _| {
 			Box::pin({

@@ -14,8 +14,6 @@
 //! # Notes
 //!
 //! In case RPC is disabled, RPC calls will be skipped.
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{
 		AchievedSyncConfidenceKey, BlockHeaderKey, Database, IsSyncedKey, LatestSyncKey,
@@ -30,8 +28,6 @@ use crate::{
 };
 
 use async_trait::async_trait;
-#[cfg(feature = "multiproof")]
-use avail_rust::utils::generate_multiproof_grid_dims;
 use avail_rust::{
 	kate_recovery::{commitments, matrix::Dimensions},
 	AvailHeader, H256,
@@ -157,28 +153,7 @@ async fn process_block(
 
 			// now this is in `u64`
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-			let positions = {
-				#[cfg(feature = "multiproof")]
-				{
-					let multiproof_cell_dims = multi_proof_dimensions();
-					let Some(target_multiproof_grid_dims) =
-						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
-					else {
-						info!(
-							block_number,
-							"Skipping block with invalid target multiproof grid dimensions",
-						);
-						return Ok(());
-					};
-
-					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
-				}
-
-				#[cfg(not(feature = "multiproof"))]
-				{
-					rpc::generate_random_cells(dimensions, cell_count)
-				}
-			};
+			let positions = rpc::generate_random_cells(dimensions, cell_count);
 
 			let (fetched, unfetched, _fetch_stats) = network_client
 				.fetch_verified(

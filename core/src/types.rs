@@ -10,6 +10,7 @@ use avail_rust::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use avail_rust::{
+	kate_recovery::matrix::{Partition, Position},
 	sp_core::crypto::{self, Ss58Codec},
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
@@ -96,10 +97,19 @@ impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {
 			return Ok(block);
 		};
 
+		let dimensions = Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
+
+		#[cfg(feature = "multiproof")]
+		let multiproof_dimensions =
+			Dimensions::new(16, 64).expect("Failed to generate dimensions for non-extended matrix");
+		#[cfg(feature = "multiproof")]
+		let dimensions =
+			avail_rust::utils::generate_multiproof_grid_dims(multiproof_dimensions, dimensions)
+				.ok_or_else(|| eyre!("Invalid multiproof dimensions"))?;
+
 		if !lookup.is_empty() {
 			block.extension = Some(Extension {
-				dimensions: Dimensions::new(rows, cols)
-					.ok_or_else(|| eyre!("Invalid dimensions"))?,
+				dimensions,
 				lookup,
 				commitments: commitments::from_slice(&commitment)?,
 			});
@@ -689,8 +699,17 @@ const INVALID_PROJECT_NAME: &str = r#"
 Project name must only contain alphanumeric characters.
 "#;
 
-pub fn multi_proof_dimensions() -> Dimensions {
-	Dimensions::new(16, 64).expect("Failed to generate dimensions for non-extended matrix")
+#[cfg(not(target_arch = "wasm32"))]
+pub fn iter_partition_cells(partition: Partition, dimensions: Dimensions) -> Vec<Position> {
+	if cfg!(feature = "multiproof") {
+		dimensions
+			.iter_mcell_partition_positions(&partition)
+			.collect()
+	} else {
+		dimensions
+			.iter_extended_partition_positions(&partition)
+			.collect()
+	}
 }
 
 #[cfg(test)]

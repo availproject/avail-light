@@ -1,13 +1,9 @@
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	network::{p2p::Client, rpc},
 	telemetry::{otlp::Record, MetricName, Value},
-	types::{self, BlockVerified, Delay, Origin},
+	types::{self, iter_partition_cells, BlockVerified, Delay, Origin},
 };
-use avail_rust::kate_recovery::matrix::{Partition, Position};
-#[cfg(feature = "multiproof")]
-use avail_rust::utils::generate_multiproof_grid_dims;
+use avail_rust::kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
@@ -119,33 +115,7 @@ pub async fn run(
 		let start = Instant::now();
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let positions: Vec<Position> = {
-				#[cfg(feature = "multiproof")]
-				{
-					let multiproof_cell_dims = multi_proof_dimensions();
-					let Some(target_multiproof_grid_dims) =
-						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
-					else {
-						error!(
-							block_number,
-							"Skipping block with invalid target multiproof grid dimensions",
-						);
-						continue;
-					};
-
-					target_multiproof_grid_dims
-						.iter_mcell_partition_positions(&partition)
-						.collect()
-				}
-
-				#[cfg(not(feature = "multiproof"))]
-				{
-					dimensions
-						.iter_extended_partition_positions(&partition)
-						.collect()
-				}
-			};
-
+			let positions = iter_partition_cells(partition, dimensions);
 			let total = positions.len();
 			let fetched = network_client
 				.fetch_cells_from_dht(block_number, &positions)
