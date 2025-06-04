@@ -33,9 +33,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
-        # TODO: Enable avail-light-web once issue with rocksdb feature being applied
-        # accross the workspace is resolved
-      - run: cargo clippy --workspace --exclude avail-light-web -- -D warnings
+      - run: cargo clippy --workspace -- -D warnings
 
   test:
     name: cargo test
@@ -44,9 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: arduino/setup-protoc@v2
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        # TODO: Enable avail-light-web once issue with rocksdb feature being applied
-        # accross the workspace is resolved
-      - run: cargo test --workspace --benches --tests --exclude avail-light-web
+      - run: cargo test --workspace --benches --tests --no-default-features
         env:
           RUSTFLAGS: "-C instrument-coverage"
           LLVM_PROFILE_FILE: "profile-%p-%m.profraw"

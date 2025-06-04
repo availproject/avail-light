@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["console_error_panic_hook"]
 
-[dependencies]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
 clap = { workspace = true }
