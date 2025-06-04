@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
+#[cfg(feature = "multiproof")]
+use avail_light_core::proof::get_or_init_pmp;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
@@ -129,6 +131,9 @@ async fn run(
 		let (_, p2p_event_receiver) = mpsc::unbounded_channel::<P2pEvent>();
 		(None, p2p_event_receiver)
 	};
+
+	#[cfg(feature = "multiproof")]
+	spawn_in_span(get_or_init_pmp());
 
 	#[cfg(feature = "network-analysis")]
 	if cfg.network_mode != NetworkMode::RPCOnly {

@@ -141,7 +141,6 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
-
 		let missing_fetched: Vec<SingleCell> = missing_fetched
 			.into_iter()
 			.map(SingleCell::try_from)

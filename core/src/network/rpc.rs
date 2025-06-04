@@ -223,22 +223,33 @@ pub async fn init<T: Database + Clone>(
 
 /// Generates random cell positions for sampling
 pub fn generate_random_cells(dimensions: Dimensions, cell_count: u32) -> Vec<Position> {
-	let max_cells = dimensions.extended_size();
+	let (max_cells, row_limit) = {
+		#[cfg(feature = "multiproof")]
+		{
+			(dimensions.size(), dimensions.rows().get().into())
+		}
+		#[cfg(not(feature = "multiproof"))]
+		{
+			(dimensions.extended_size(), dimensions.extended_rows())
+		}
+	};
+
 	let count = if max_cells < cell_count {
 		debug!("Max cells count {max_cells} is lesser than cell_count {cell_count}");
 		max_cells
 	} else {
 		cell_count
 	};
+
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
-	while (indices.len() as u16) < count as u16 {
+	while (indices.len() as u32) < count {
 		let col = rng.gen_range(0..dimensions.cols().into());
-		let row = rng.gen_range(0..dimensions.extended_rows());
+		let row = rng.gen_range(0..row_limit);
 		indices.insert(Position { row, col });
 	}
 
-	indices.into_iter().collect::<Vec<_>>()
+	indices.into_iter().collect()
 }
 
 /* @note: fn to take the number of cells needs to get equal to or greater than

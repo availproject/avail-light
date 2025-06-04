@@ -1,9 +1,13 @@
+#[cfg(feature = "multiproof")]
+use crate::types::multi_proof_dimensions;
 use crate::{
 	network::{p2p::Client, rpc},
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
 };
-use avail_rust::kate_recovery::matrix::Partition;
+use avail_rust::kate_recovery::matrix::{Partition, Position};
+#[cfg(feature = "multiproof")]
+use avail_rust::utils::generate_multiproof_grid_dims;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
@@ -82,18 +86,23 @@ pub async fn run(
 		..
 	}) = message_rx.recv().await
 	{
-		let block = match types::BlockVerified::try_from((header, None)) {
+		let block = match types::BlockVerified::try_from((header.clone(), None)) {
 			Ok(block) => block,
 			Err(error) => {
 				error!("Header is not valid: {error}");
 				continue;
 			},
 		};
-
 		let Some(extension) = &block.extension else {
 			info!("Skipping block without header extension");
 			continue;
 		};
+
+		let dimensions = extension.dimensions;
+		if dimensions.cols().get() <= 2 {
+			error!(block.block_num, "More than 2 columns are required");
+			continue;
+		}
 
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
@@ -110,13 +119,34 @@ pub async fn run(
 		let start = Instant::now();
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let positions = extension
-				.dimensions
-				.iter_extended_partition_positions(&partition)
-				.collect::<Vec<_>>();
+			let positions: Vec<Position> = {
+				#[cfg(feature = "multiproof")]
+				{
+					let multiproof_cell_dims = multi_proof_dimensions();
+					let Some(target_multiproof_grid_dims) =
+						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+					else {
+						error!(
+							block_number,
+							"Skipping block with invalid target multiproof grid dimensions",
+						);
+						continue;
+					};
+
+					target_multiproof_grid_dims
+						.iter_mcell_partition_positions(&partition)
+						.collect()
+				}
+
+				#[cfg(not(feature = "multiproof"))]
+				{
+					dimensions
+						.iter_extended_partition_positions(&partition)
+						.collect()
+				}
+			};
 
 			let total = positions.len();
-
 			let fetched = network_client
 				.fetch_cells_from_dht(block_number, &positions)
 				.await
@@ -140,22 +170,19 @@ pub async fn run(
 			}
 		}
 
-		if matches!(mode, CrawlMode::Rows | CrawlMode::Both) {
+		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
 			let dimensions = extension.dimensions;
 			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
 			let total = rows.len();
-
-			let fetched_rows = network_client
+			let fetched = network_client
 				.fetch_rows_from_dht(block_number, dimensions, &rows)
-				.await;
+				.await
+				.iter()
+				.step_by(2)
+				.flatten()
+				.count();
 
-			let fetched = fetched_rows.iter().step_by(2).flatten().count();
-
-			let success_rate = if total > 0 {
-				fetched as f64 / total as f64
-			} else {
-				0.0
-			};
+			let success_rate = fetched as f64 / total as f64;
 			info!(
 				block_number,
 				success_rate, total, fetched, "Fetched block rows"
