@@ -73,7 +73,7 @@ pub struct RuntimeConfig {
 	/// Delay maintenance restart to allow fixed uptime (default: 1h)
 	pub maintenance_restart_delay: u64,
 	/// P2P client maintenance restart period. By default, it doesn't restart. (default: None)
-	pub p2p_client_restart_delay: Option<Duration>,
+	pub p2p_client_restart_interval: Option<Duration>,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -150,7 +150,7 @@ impl Default for RuntimeConfig {
 			max_restart_delay: 60 * 60 * 24,
 			maintenance_restart: false,
 			maintenance_restart_delay: 60 * 60,
-			p2p_client_restart_delay: None,
+			p2p_client_restart_interval: None,
 		}
 	}
 }

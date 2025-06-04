@@ -77,5 +77,5 @@ pub struct CliOpts {
 	#[arg(long, default_value = "false")]
 	pub no_update: bool,
 	#[arg(long)]
-	pub p2p_client_restart_delay: Option<u64>,
+	pub p2p_client_restart_interval: Option<u64>,
 }

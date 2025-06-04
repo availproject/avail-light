@@ -89,7 +89,7 @@ async fn run(
 
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
-		if let Some(restart_delay) = cfg.p2p_client_restart_delay {
+		if let Some(restart_delay) = cfg.p2p_client_restart_interval {
 			info!(
 				"P2P client restart enabled with interval: {:?}",
 				restart_delay
@@ -515,8 +515,8 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	cfg.tracking_service_enable = opts.tracking_service_enable;
 	cfg.operator_address = opts.operator_address.clone();
 
-	if let Some(p2p_client_restart_delay) = opts.p2p_client_restart_delay {
-		cfg.p2p_client_restart_delay = Some(Duration::from_secs(p2p_client_restart_delay));
+	if let Some(p2p_client_restart_interval) = opts.p2p_client_restart_interval {
+		cfg.p2p_client_restart_interval = Some(Duration::from_secs(p2p_client_restart_interval));
 	}
 
 	Ok(cfg)
