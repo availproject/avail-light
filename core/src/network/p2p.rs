@@ -308,7 +308,7 @@ async fn build_swarm(
 	{
 		use libp2p_webrtc_websys as webrtc;
 		swarm = tokio_swarm
-			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(&key)))?
+			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(key)))?
 			.with_relay_client(noise::Config::new, yamux::Config::default)?
 			.with_behaviour(behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))

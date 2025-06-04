@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
 		&config.genesis_hash,
 		true,
 		shutdown.clone(),
+		#[cfg(feature = "rocksdb")]
 		db.clone(),
 	)
 	.await?;
