@@ -256,25 +256,6 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		Ok((fetched, unfetched, stats))
 	}
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn new(
-	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
-	rpc_client: rpc::Client<impl Database + Sync>,
-	pp: Arc<ArkPublicParams>,
-	network_mode: NetworkMode,
-	insert_into_dht: bool,
-) -> impl Client {
-	DHTWithRPCFallbackClient {
-		p2p_client,
-		rpc_client,
-		pp,
-		network_mode,
-		insert_into_dht,
-	}
-}
-
-#[cfg(target_arch = "wasm32")]
 pub fn new(
 	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
 	rpc_client: rpc::Client<impl Database + Sync>,
