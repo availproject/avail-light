@@ -30,7 +30,7 @@ pub async fn init_and_start_p2p_client(
 	shutdown: Controller<String>,
 	db: DB,
 ) -> Result<(Client, UnboundedReceiver<OutputEvent>)> {
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+	let (mut p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		libp2p_cfg.clone(),
 		project_name,
 		id_keys,
@@ -95,7 +95,7 @@ pub async fn p2p_restart_manager(
 
 				{
 					let mut client_guard = p2p_client.lock().await;
-					if let Some(client) = client_guard.take() {
+					if let Some(mut client) = client_guard.take() {
 						info!("Stopping listener");
 						if let Err(e) = client.stop_listening().await {
 							warn!("Error stopping listeners during restart: {e}");
