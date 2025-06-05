@@ -99,6 +99,7 @@ impl TryFrom<(&AvailHeader, Option<f64>)> for BlockVerified {
 		};
 
 		let dimensions = Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
+		block.target_grid_dimensions = Some(dimensions);
 
 		#[cfg(feature = "multiproof")]
 		{
@@ -110,8 +111,6 @@ impl TryFrom<(&AvailHeader, Option<f64>)> for BlockVerified {
 			.ok_or_else(|| eyre!("Invalid multiproof dimensions"))?;
 			block.target_grid_dimensions = Some(multiproof_dimensions);
 		}
-
-		block.target_grid_dimensions = Some(dimensions);
 
 		if !lookup.is_empty() {
 			block.extension = Some(Extension {
