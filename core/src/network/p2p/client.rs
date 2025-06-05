@@ -20,11 +20,11 @@ use libp2p::{
 	swarm::dial_opts::{DialOpts, PeerCondition},
 	Multiaddr, PeerId,
 };
+use std::num::NonZeroUsize;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
-use std::{num::NonZeroUsize, sync::Arc};
 use sysinfo::System;
-use tokio::sync::{mpsc::UnboundedSender, oneshot, Mutex};
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
 use tracing::{debug, info, trace, warn};
@@ -44,7 +44,7 @@ pub struct Client {
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
 	ttl: Duration,
-	listeners: Arc<Mutex<Vec<ListenerId>>>,
+	listeners: Vec<ListenerId>,
 }
 
 struct DHTCell(Cell);
@@ -90,7 +90,7 @@ impl Client {
 			command_sender: sender,
 			dht_parallelization_limit,
 			ttl,
-			listeners: Arc::new(Mutex::new(vec![])),
+			listeners: vec![],
 		}
 	}
 
@@ -109,8 +109,8 @@ impl Client {
 	}
 
 	/// Starts listening on provided multiaddresses and saves the listener IDs
-	pub async fn start_listening(&self, addrs: Vec<Multiaddr>) -> Result<Vec<ListenerId>> {
-		self.listeners.lock().await.clear();
+	pub async fn start_listening(&mut self, addrs: Vec<Multiaddr>) -> Result<Vec<ListenerId>> {
+		self.listeners.clear();
 		let listeners = self
 			.execute_sync(|response_sender| {
 				Box::new(move |context: &mut EventLoop| {
@@ -128,12 +128,12 @@ impl Client {
 			})
 			.await?;
 
-		self.listeners.lock().await.extend(&listeners);
+		self.listeners.extend(&listeners);
 		Ok(listeners)
 	}
 
-	pub async fn stop_listening(&self) -> Result<()> {
-		let listener_ids = self.listeners.lock().await.clone();
+	pub async fn stop_listening(&mut self) -> Result<()> {
+		let listener_ids = self.listeners.clone();
 		let result = self
 			.execute_sync(|response_sender| {
 				Box::new(move |context: &mut EventLoop| {
@@ -146,7 +146,7 @@ impl Client {
 				})
 			})
 			.await;
-		self.listeners.lock().await.clear();
+		self.listeners.clear();
 		result
 	}
 
