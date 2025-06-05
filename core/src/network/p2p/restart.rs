@@ -106,8 +106,7 @@ pub async fn p2p_restart_manager(
 				// Trigger shutdown of the current event loop
 				let _ = current_shutdown.trigger_shutdown("P2P client periodic restart".to_string());
 
-				// Wait a bit for graceful shutdown
-				tokio::time::sleep(Duration::from_secs(5)).await;
+				_ = current_shutdown.completed_shutdown().await;
 
 				// Create a new shutdown controller for the next restart cycle
 				let new_shutdown = Controller::<String>::new();
