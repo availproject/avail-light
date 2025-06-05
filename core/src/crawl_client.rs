@@ -82,7 +82,7 @@ pub async fn run(
 		..
 	}) = message_rx.recv().await
 	{
-		let block = match types::BlockVerified::try_from((header.clone(), None)) {
+		let block = match types::BlockVerified::try_from((&header, None)) {
 			Ok(block) => block,
 			Err(error) => {
 				error!("Header is not valid: {error}");
@@ -94,8 +94,7 @@ pub async fn run(
 			continue;
 		};
 
-		let dimensions = extension.dimensions;
-		if dimensions.cols().get() <= 2 {
+		if extension.dimensions.cols().get() <= 2 {
 			error!(block.block_num, "More than 2 columns are required");
 			continue;
 		}
@@ -115,7 +114,9 @@ pub async fn run(
 		let start = Instant::now();
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let positions = iter_partition_cells(partition, dimensions);
+			let target_grid_dimensions =
+				block.target_grid_dimensions.unwrap_or(extension.dimensions);
+			let positions = iter_partition_cells(partition, target_grid_dimensions);
 			let total = positions.len();
 			let fetched = network_client
 				.fetch_cells_from_dht(block_number, &positions)
