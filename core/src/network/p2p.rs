@@ -41,6 +41,8 @@ mod kad_mem_providers;
 mod kad_mem_store;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod restart;
 
 pub use kad_mem_store::MemoryStoreConfig;
 #[cfg(feature = "rocksdb")]
@@ -62,6 +64,8 @@ pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
 use libp2p_allow_block_list as allow_block_list;
+#[cfg(not(target_arch = "wasm32"))]
+pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager};
 
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.1.1";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";

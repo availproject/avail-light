@@ -84,7 +84,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	let (p2p_keypair, p2p_peer_id) = p2p::identity(&config.libp2p, db.clone())?;
 
-	let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
+	let (mut p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
 		config.libp2p.clone(),
 		ProjectName::new("avail".to_string()),
 		p2p_keypair,

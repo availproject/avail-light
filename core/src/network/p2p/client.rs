@@ -44,6 +44,7 @@ pub struct Client {
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
 	ttl: Duration,
+	listeners: Vec<ListenerId>,
 }
 
 struct DHTCell(Cell);
@@ -89,6 +90,7 @@ impl Client {
 			command_sender: sender,
 			dht_parallelization_limit,
 			ttl,
+			listeners: vec![],
 		}
 	}
 
@@ -106,22 +108,46 @@ impl Client {
 			.wrap_err("sender should not be dropped")?
 	}
 
-	pub async fn start_listening(&self, addrs: Vec<Multiaddr>) -> Result<Vec<ListenerId>> {
-		self.execute_sync(|response_sender| {
-			Box::new(move |context: &mut EventLoop| {
-				let results: Result<Vec<ListenerId>, _> = addrs
-					.into_iter()
-					.map(|addr| context.swarm.listen_on(addr))
-					.collect();
-				response_sender
-					.send(results.map_err(Into::into))
-					.map_err(|e| {
-						eyre!("Encountered error while sending Start Listening response: {e:?}")
-					})?;
-				Ok(())
+	/// Starts listening on provided multiaddresses and saves the listener IDs
+	pub async fn start_listening(&mut self, addrs: Vec<Multiaddr>) -> Result<Vec<ListenerId>> {
+		self.listeners.clear();
+		let listeners = self
+			.execute_sync(|response_sender| {
+				Box::new(move |context: &mut EventLoop| {
+					let results: Result<Vec<ListenerId>, _> = addrs
+						.into_iter()
+						.map(|addr| context.swarm.listen_on(addr))
+						.collect();
+					response_sender
+						.send(results.map_err(Into::into))
+						.map_err(|e| {
+							eyre!("Encountered error while sending Start Listening response: {e:?}")
+						})?;
+					Ok(())
+				})
 			})
-		})
-		.await
+			.await?;
+
+		self.listeners.extend(&listeners);
+		Ok(listeners)
+	}
+
+	pub async fn stop_listening(&mut self) -> Result<()> {
+		let listener_ids = self.listeners.clone();
+		let result = self
+			.execute_sync(|response_sender| {
+				Box::new(move |context: &mut EventLoop| {
+					listener_ids.into_iter().for_each(|listener_id| {
+						// `remove_listener` is infallible
+						context.swarm.remove_listener(listener_id);
+					});
+					let _ = response_sender.send(Ok(()));
+					Ok(())
+				})
+			})
+			.await;
+		self.listeners.clear();
+		result
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {

@@ -448,7 +448,7 @@ mod tests {
 	async fn process_block_successful() {
 		let db = data::MemoryDB::default();
 		let mut mock_client = MockClient::new();
-		let cell_variants: Vec<Cell> = DEFAULT_CELLS.into_iter().map(Into::into).collect();
+		let cell_variants: Vec<Cell> = DEFAULT_CELLS.into_iter().collect();
 
 		mock_client.expect_get_kate_proof().returning(move |_, _| {
 			Box::pin({
