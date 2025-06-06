@@ -1,5 +1,6 @@
 use color_eyre::{eyre::WrapErr, Result};
 use libp2p::{identity::Keypair, PeerId};
+use rand::Rng;
 use std::{sync::Arc, time::Duration};
 use tokio::{
 	select,
@@ -13,7 +14,7 @@ use crate::{
 	network::p2p::{self, Client, OutputEvent},
 	shutdown::Controller,
 	types::ProjectName,
-	utils::spawn_in_span,
+	utils::{self, spawn_in_span},
 };
 
 use super::configuration::LibP2PConfig;
@@ -85,7 +86,10 @@ pub async fn p2p_restart_manager(
 	event_tx: UnboundedSender<OutputEvent>,
 	mut current_shutdown: Controller<String>,
 ) {
-	let mut interval = tokio::time::interval(restart_interval);
+	// Randomize restart intervals
+	let randomized_duration = randomize_duration(restart_interval);
+
+	let mut interval = tokio::time::interval(randomized_duration);
 	interval.tick().await;
 
 	loop {
@@ -160,5 +164,36 @@ pub async fn forward_p2p_events(
 		if sender.send(event).is_err() {
 			break;
 		}
+	}
+}
+
+pub fn randomize_duration(max: Duration) -> Duration {
+	let mut rng = utils::rng();
+	Duration::from_secs(rng.gen_range(0..max.as_secs()))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_randomize_duration_happy_path() {
+		let max_duration = Duration::from_secs(100);
+
+		for _ in 0..100 {
+			let result = randomize_duration(max_duration);
+
+			assert!(result >= Duration::from_secs(0));
+			assert!(result < max_duration);
+		}
+	}
+
+	#[test]
+	fn test_randomize_duration_one_second() {
+		let max_duration = Duration::from_secs(1);
+		let result = randomize_duration(max_duration);
+
+		// Result should be 0 (the only valid value in range 0..1)
+		assert_eq!(result, Duration::from_secs(0));
 	}
 }

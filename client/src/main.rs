@@ -89,17 +89,17 @@ async fn run(
 
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
-		if let Some(restart_delay) = cfg.p2p_client_restart_interval {
+		if let Some(restart_interval) = cfg.p2p_client_restart_interval {
 			info!(
 				"P2P client restart enabled with interval: {:?}",
-				restart_delay
+				restart_interval
 			);
 
 			// Create event multiplexer channel for handling restarts
-			let (event_tx, p2p_event_receiver) = mpsc::unbounded_channel::<P2pEvent>();
+			let (p2p_event_tx, p2p_event_rx) = mpsc::unbounded_channel::<P2pEvent>();
 
 			// Create initial shutdown controller for the first event loop
-			let initial_shutdown = Controller::<String>::new();
+			let p2p_shutdown_controller = Controller::<String>::new();
 
 			// Initial P2P client startup
 			let (initial_p2p_client, initial_receiver) = init_and_start_p2p_client(
@@ -109,16 +109,15 @@ async fn run(
 				id_keys.clone(),
 				peer_id,
 				version,
-				initial_shutdown.clone(),
+				p2p_shutdown_controller.clone(),
 				db.clone(),
 			)
 			.await?;
 
-			// Create shared mutable client reference
 			let p2p_client = Arc::new(Mutex::new(Some(initial_p2p_client)));
 
 			// Forward events from initial receiver
-			let event_tx_clone = event_tx.clone();
+			let event_tx_clone = p2p_event_tx.clone();
 			spawn_in_span(shutdown.with_cancel(async move {
 				forward_p2p_events(initial_receiver, event_tx_clone).await;
 			}));
@@ -135,14 +134,14 @@ async fn run(
 				id_keys.clone(),
 				peer_id,
 				restart_version,
-				restart_delay,
+				restart_interval,
 				shutdown.clone(),
 				db.clone(),
-				event_tx,
-				initial_shutdown,
+				p2p_event_tx,
+				p2p_shutdown_controller,
 			)));
 
-			(p2p_client, p2p_event_receiver)
+			(p2p_client, p2p_event_rx)
 		} else {
 			// No restart - use direct approach
 			let (p2p_client, p2p_event_receiver) = init_and_start_p2p_client(
