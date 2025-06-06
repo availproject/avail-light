@@ -9,9 +9,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
+avail-core = { workspace = true }
 kate = { workspace = true }
 kate-recovery = { workspace = true }
-avail-core = { workspace = true }
 sp-core = { workspace = true }
 
 # 3rd-party
