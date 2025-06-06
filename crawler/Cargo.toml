@@ -8,7 +8,6 @@ repository.workspace = true
 
 [dependencies]
 avail-light-core = { workspace = true, features = ["crawl"] }
-avail-rust.workspace = true
 clap.workspace = true
 color-eyre.workspace = true
 confy.workspace = true

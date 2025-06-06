@@ -8,9 +8,7 @@ use color_eyre::eyre;
 #[cfg(feature = "multiproof")]
 use kate::couscous::multiproof_params;
 #[cfg(feature = "multiproof")]
-use kate::pmp::ark_bls12_381::Bls12_381;
-#[cfg(feature = "multiproof")]
-use kate::pmp::msm::blst::BlstMSMEngine;
+use kate::pmp::{ark_bls12_381::Bls12_381, method1::M1NoPrecomp, msm::blst::BlstMSMEngine};
 #[cfg(feature = "multiproof")]
 use kate_recovery::proof::verify_multi_proof;
 use std::sync::Arc;
@@ -160,7 +158,7 @@ pub async fn verify(
 #[cfg(feature = "multiproof")]
 pub async fn get_or_init_pmp() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine> {
 	PMP.get_or_init(|| async {
-		let pmp = generate_pmp().await;
+		let pmp = multiproof_params();
 		info!("PMP initialized successfully");
 		pmp
 	})

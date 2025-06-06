@@ -17,8 +17,6 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-#[cfg(feature = "multiproof")]
-use avail_rust::utils::generate_multiproof_grid_dims;
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::Result;
@@ -56,6 +54,17 @@ pub enum OutputEvent {
 	RecordRPCFetched(f64),
 	RecordRPCFetchDuration(f64),
 	RecordBlockConfidence(f64),
+}
+
+#[cfg(feature = "multiproof")]
+fn generate_multiproof_grid_dims(grid: Dimensions, target: Dimensions) -> Option<Dimensions> {
+	let cols = core::cmp::min(grid.cols(), target.cols());
+	let rows = core::cmp::min(grid.rows(), target.rows());
+	if grid.cols().get() % cols != 0 || grid.rows().get() % rows != 0 {
+		return None;
+	}
+
+	Dimensions::new(rows, cols)
 }
 
 pub async fn process_block(

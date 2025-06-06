@@ -1352,6 +1352,7 @@ dependencies = [
  "avail-rust",
  "clap",
  "color-eyre",
+ "kate-recovery",
  "tokio",
 ]
 
@@ -1439,7 +1440,6 @@ name = "avail-light-crawler"
 version = "0.2.0"
 dependencies = [
  "avail-light-core",
- "avail-rust",
  "clap",
  "color-eyre",
  "confy 0.5.1",

@@ -24,6 +24,7 @@ kate = { git = "https://github.com/availproject/avail-core", default-features = 
 avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
 kate-recovery = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
 avail-light-core = { path = "./core", default-features = false }
+sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12", default-features = false, features = ["serde"] }
 
 anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
