@@ -6,8 +6,6 @@ use avail_rust::{
 	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
 	AvailHeader, H256,
 };
-use kate_recovery::{com::AppData, commitments};
-
 use codec::Encode;
 #[cfg(not(target_arch = "wasm32"))]
 use color_eyre::eyre::eyre;
@@ -15,6 +13,7 @@ use color_eyre::{eyre::WrapErr, Report, Result};
 use derive_more::From;
 #[cfg(not(target_arch = "wasm32"))]
 use hyper::{http, StatusCode};
+use kate_recovery::{com::AppData, commitments};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 #[cfg(not(target_arch = "wasm32"))]
