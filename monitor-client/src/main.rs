@@ -1,4 +1,4 @@
-use crate::server::{get_blacklisted_peers, get_peer_count, get_peers};
+use crate::server::{get_blacklisted_peers, get_peer_by_id, get_peer_count, get_peers};
 use actix_web::{web, App, HttpServer};
 use avail_light_core::{
 	data,
@@ -163,11 +163,9 @@ async fn main() -> Result<()> {
 			.service(get_blacklisted_peers)
 			.service(get_peers)
 			.service(get_peer_count)
+			.service(get_peer_by_id)
 	})
-	.bind(SocketAddr::from((
-		Ipv4Addr::UNSPECIFIED,
-		config.http_port.unwrap(),
-	)))?;
+	.bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, config.http_port)))?;
 
 	match server.run().await {
 		Ok(_) => {
