@@ -136,7 +136,7 @@ pub async fn verify(
 	}
 
 	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
-	let is_verified = verify_multi_proof(&pmp, &proof_pairs, &commitments, cols.into())
+	let is_verified = verify_multi_proof(pmp, &proof_pairs, &commitments, cols.into())
 		.await
 		.map_err(|e| eyre::eyre!("{:?}", e))?;
 
