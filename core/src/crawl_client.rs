@@ -5,8 +5,6 @@ use crate::{
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
 };
-#[cfg(feature = "multiproof")]
-use avail_rust::utils::generate_multiproof_grid_dims;
 use kate_recovery::matrix::{Partition, Position};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -124,7 +122,10 @@ pub async fn run(
 				{
 					let multiproof_cell_dims = multi_proof_dimensions();
 					let Some(target_multiproof_grid_dims) =
-						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+						crate::utils::generate_multiproof_grid_dims(
+							multiproof_cell_dims,
+							dimensions,
+						)
 					else {
 						error!(
 							block_number,

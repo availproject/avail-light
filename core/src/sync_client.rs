@@ -30,8 +30,6 @@ use crate::{
 };
 
 use async_trait::async_trait;
-#[cfg(feature = "multiproof")]
-use avail_rust::utils::generate_multiproof_grid_dims;
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{
@@ -160,7 +158,10 @@ async fn process_block(
 				{
 					let multiproof_cell_dims = multi_proof_dimensions();
 					let Some(target_multiproof_grid_dims) =
-						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+						crate::utils::generate_multiproof_grid_dims(
+							multiproof_cell_dims,
+							dimensions,
+						)
 					else {
 						info!(
 							block_number,

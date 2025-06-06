@@ -56,17 +56,6 @@ pub enum OutputEvent {
 	RecordBlockConfidence(f64),
 }
 
-#[cfg(feature = "multiproof")]
-fn generate_multiproof_grid_dims(grid: Dimensions, target: Dimensions) -> Option<Dimensions> {
-	let cols = core::cmp::min(grid.cols(), target.cols());
-	let rows = core::cmp::min(grid.rows(), target.rows());
-	if grid.cols().get() % cols != 0 || grid.rows().get() % rows != 0 {
-		return None;
-	}
-
-	Dimensions::new(rows, cols)
-}
-
 pub async fn process_block(
 	db: impl Database,
 	network_client: &impl network::Client,
@@ -121,7 +110,10 @@ pub async fn process_block(
 				{
 					let multiproof_cell_dims = multi_proof_dimensions();
 					let Some(target_multiproof_grid_dims) =
-						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+						crate::utils::generate_multiproof_grid_dims(
+							multiproof_cell_dims,
+							dimensions,
+						)
 					else {
 						info!(
 							block_number,

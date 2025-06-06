@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 kate = { workspace = true }
 kate-recovery = { workspace = true }
 avail-core = { workspace = true }
+sp-core = { workspace = true }
 
 # 3rd-party
 async-stream = "0.3.5"

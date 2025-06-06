@@ -18,7 +18,6 @@ use avail_core::{
 };
 use avail_rust::{
 	primitives::kate::{MaxRows, Rows},
-	sp_core::Get,
 	H256,
 };
 use color_eyre::{
@@ -37,6 +36,7 @@ use kate_recovery::{
 use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
+use sp_core::Get;
 use std::{
 	collections::{HashMap, HashSet},
 	ops::Range,

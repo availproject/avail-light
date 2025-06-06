@@ -3,16 +3,14 @@ use crate::network::rpc::OutputEvent;
 use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_rust::{
-	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec,
-	sp_core::{bytes, ed25519},
-	AvailHeader, H256,
+	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec, AvailHeader, H256,
 };
+use sp_core::{bytes, ed25519};
 
 use kate_recovery::{commitments, matrix::Dimensions};
 
 #[cfg(not(target_arch = "wasm32"))]
 use avail_rust::{
-	sp_core::crypto::{self, Ss58Codec},
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
 		SecretString, SecretUri,
@@ -28,6 +26,8 @@ use derive_more::derive::Display;
 use libp2p::kad::Mode as KadMode;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
+use sp_core::crypto::{self, Ss58Codec};
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 #[cfg(not(target_arch = "wasm32"))]
