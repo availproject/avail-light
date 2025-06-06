@@ -1,12 +1,14 @@
 use actix_web::{get, web, HttpResponse, Responder};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
 	collections::HashMap,
 	sync::Arc,
 	time::{Duration, SystemTime},
 };
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::{config::PaginationConfig, types::ServerInfo};
 
@@ -144,6 +146,49 @@ async fn get_peers(
 
 	let response = paginate_as_array(sorted_peers, page, limit, "/peers");
 	HttpResponse::Ok().json(response)
+}
+
+#[get("/peers/{peer_id}")]
+async fn get_peer_by_id(app_state: web::Data<AppState>, path: web::Path<String>) -> impl Responder {
+	let peer_id_str = path.into_inner();
+
+	let peer_id = match peer_id_str.parse::<PeerId>() {
+		Ok(id) => id,
+		Err(e) => {
+			warn!("Unable to parse peer ID: {:?}", e);
+			return HttpResponse::BadRequest().json(json!({
+				"error": "Invalid peer ID format"
+			}));
+		},
+	};
+
+	let server_list = app_state.server_list.lock().await;
+
+	if let Some(info) = server_list.get(&peer_id) {
+		let peer_info = PeerInfo {
+			peer_id: peer_id_str,
+			multiaddr: info.multiaddr.iter().map(|addr| addr.to_string()).collect(),
+			last_discovered: info.last_discovered.map(|time| {
+				time.duration_since(SystemTime::UNIX_EPOCH)
+					.unwrap_or_default()
+					.as_secs()
+			}),
+			last_successful_dial: info.last_successful_dial.map(|time| {
+				time.duration_since(SystemTime::UNIX_EPOCH)
+					.unwrap_or_default()
+					.as_secs()
+			}),
+			is_blacklisted: info.is_blacklisted,
+			last_ping_rtt: info.last_ping_rtt,
+			average_ping_ms: info.avg_ping(),
+		};
+
+		return HttpResponse::Ok().json(peer_info);
+	}
+
+	HttpResponse::NotFound().json(json!({
+		"error": "Peer not found"
+	}))
 }
 
 #[get("/peer_count")]

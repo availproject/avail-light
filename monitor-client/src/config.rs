@@ -37,7 +37,10 @@ pub struct CliOpts {
 	pub seed: Option<String>,
 	/// P2P port
 	#[arg(short, long)]
-	pub port: Option<u16>,
+	pub p2p_port: Option<u16>,
+	/// REST server port
+	#[arg(short, long)]
+	pub http_port: Option<u16>,
 	/// RocksDB store location
 	#[arg(long, default_value = "./db")]
 	pub db_path: String,
@@ -112,7 +115,7 @@ pub struct Config {
 	pub libp2p: LibP2PConfig,
 	pub fail_threshold: usize,
 	pub success_threshold: usize,
-	pub http_port: Option<u16>,
+	pub http_port: u16,
 	pub pagination: PaginationConfig,
 }
 
@@ -129,7 +132,7 @@ impl Default for Config {
 			peer_monitor_interval: 30,
 			fail_threshold: 3,
 			success_threshold: 3,
-			http_port: Some(3030),
+			http_port: 8090,
 			pagination: PaginationConfig::default(),
 		}
 	}
@@ -154,8 +157,12 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 		})
 	}
 
-	if let Some(port) = opts.port {
-		config.libp2p.port = port;
+	if let Some(p2p_port) = opts.p2p_port {
+		config.libp2p.port = p2p_port;
+	}
+
+	if let Some(http_port) = opts.http_port {
+		config.http_port = http_port;
 	}
 
 	if let Some(connection_idle_timeout) = opts.connection_idle_timeout {
