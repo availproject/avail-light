@@ -17,7 +17,7 @@ use avail_rust::kate_recovery::data::{self, SingleCell};
 use avail_rust::{
 	kate_recovery::{
 		data::Cell,
-		matrix::{Dimensions, Partition, Position, RowIndex},
+		matrix::{Partition, Position, RowIndex},
 	},
 	AvailHeader, H256,
 };
@@ -38,7 +38,8 @@ use crate::{
 	},
 	shutdown::Controller,
 	types::{
-		block_matrix_partition_format, iter_partition_cells, BlockVerified, ClientChannels, Delay,
+		self, block_matrix_partition_format, iter_partition_cells, BlockVerified, ClientChannels,
+		Delay,
 	},
 	utils::{blake2_256, extract_kate},
 };
@@ -150,7 +151,7 @@ pub async fn process_block(
 		info!(block_number, "Skipping block without header extension");
 		return Ok(());
 	};
-	let Some(dimensions) = Dimensions::new(rows, cols) else {
+	let Some(dimensions) = types::new_dimensions(rows, cols) else {
 		info!(
 			block_number,
 			"Skipping block with invalid dimensions {rows}x{cols}",

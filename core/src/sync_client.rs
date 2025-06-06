@@ -23,15 +23,12 @@ use crate::{
 		self,
 		rpc::{self, Client as RpcClient},
 	},
-	types::{BlockRange, BlockVerified, SyncClientConfig},
+	types::{self, BlockRange, BlockVerified, SyncClientConfig},
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
 use async_trait::async_trait;
-use avail_rust::{
-	kate_recovery::{commitments, matrix::Dimensions},
-	AvailHeader, H256,
-};
+use avail_rust::{kate_recovery::commitments, AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -147,7 +144,7 @@ async fn process_block(
 		},
 		Some((rows, cols, _, commitment)) => {
 			let dimensions =
-				Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
+				types::new_dimensions(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
 
 			let commitments = commitments::from_slice(&commitment)?;
 

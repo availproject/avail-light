@@ -17,10 +17,7 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-use avail_rust::{
-	kate_recovery::{commitments, matrix::Dimensions},
-	AvailHeader, H256,
-};
+use avail_rust::{kate_recovery::commitments, AvailHeader, H256};
 use codec::Encode;
 use color_eyre::Result;
 #[cfg(not(target_arch = "wasm32"))]
@@ -90,7 +87,7 @@ pub async fn process_block(
 			return Ok(None);
 		},
 		Some((rows, cols, _, commitment)) => {
-			let Some(dimensions) = Dimensions::new(rows, cols) else {
+			let Some(dimensions) = types::new_dimensions(rows, cols) else {
 				info!(
 					block_number,
 					"Skipping block with invalid dimensions {rows}x{cols}",

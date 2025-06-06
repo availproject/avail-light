@@ -78,6 +78,16 @@ pub struct ClientChannels {
 	pub rpc_event_receiver: broadcast::Receiver<OutputEvent>,
 }
 
+pub fn new_dimensions(rows: u16, cols: u16) -> Option<Dimensions> {
+	let dimensions = Dimensions::new(rows, cols)?;
+	#[cfg(feature = "multiproof")]
+	let multiproof_dimensions = Dimensions::new(16, 64)?;
+	#[cfg(feature = "multiproof")]
+	let dimensions =
+		avail_rust::utils::generate_multiproof_grid_dims(multiproof_dimensions, dimensions)?;
+	Some(dimensions)
+}
+
 impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {
 	type Error = Report;
 	fn try_from((header, confidence): (AvailHeader, Option<f64>)) -> Result<Self, Self::Error> {
@@ -97,15 +107,8 @@ impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {
 			return Ok(block);
 		};
 
-		let dimensions = Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
-
-		#[cfg(feature = "multiproof")]
-		let multiproof_dimensions =
-			Dimensions::new(16, 64).expect("Failed to generate dimensions for non-extended matrix");
-		#[cfg(feature = "multiproof")]
 		let dimensions =
-			avail_rust::utils::generate_multiproof_grid_dims(multiproof_dimensions, dimensions)
-				.ok_or_else(|| eyre!("Invalid multiproof dimensions"))?;
+			new_dimensions(rows, cols).ok_or_else(|| eyre!("Invalid grid dimensions"))?;
 
 		if !lookup.is_empty() {
 			block.extension = Some(Extension {
