@@ -341,7 +341,7 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 
 	let network_client = network::new_rpc(rpc_client, pp);
 
-	let block_verified =
+	let confidence =
 		light_client::process_block(db, &network_client, 99.9, header, received_at, lc_sender)
 			.await
 			.unwrap()
