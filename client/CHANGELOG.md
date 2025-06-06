@@ -3,6 +3,7 @@
 ## [1.13.0]
 
 - Updated `avail-light-core` to 1.2.9
+- Added new configs for AutoNAT and Relay service mode behaviours
 
 ## [1.12.13](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.13) - 2025-05-30
 
