@@ -9,7 +9,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
+avail-core = { workspace = true }
 kate = { workspace = true }
+kate-recovery = { workspace = true }
+sp-core = { workspace = true }
 
 # 3rd-party
 async-stream = "0.3.5"

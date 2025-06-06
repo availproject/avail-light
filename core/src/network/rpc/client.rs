@@ -1,7 +1,6 @@
+use avail_core::AppId;
 use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
-	avail_core::AppId,
-	kate_recovery::{data::SingleCell, matrix::Position},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
@@ -9,7 +8,6 @@ use avail_rust::{
 		state::get_runtime_version,
 		system::version,
 	},
-	sp_core::{bytes::from_hex, crypto, ed25519::Public},
 	subxt::{
 		self,
 		backend::{
@@ -23,11 +21,12 @@ use avail_rust::{
 	AOnlineClient, AvailHeader, Client as AvailRpcClient, Keypair, Options, H256, SDK, U256,
 };
 #[cfg(feature = "multiproof")]
-use avail_rust::{
-	kate_recovery::data::{GCellBlock, MultiProofCell},
-	primitives::kate::GMultiProof,
-	rpc::kate::query_multi_proof,
-};
+use avail_rust::{primitives::kate::GMultiProof, rpc::kate::query_multi_proof};
+#[cfg(feature = "multiproof")]
+use kate_recovery::data::{GCellBlock, MultiProofCell};
+use kate_recovery::{data::SingleCell, matrix::Position};
+use sp_core::{bytes::from_hex, crypto, ed25519::Public};
+
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,

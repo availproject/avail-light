@@ -1,12 +1,12 @@
 use crate::shutdown::Controller;
+use avail_core::{
+	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
+};
 use avail_rust::{
 	avail::runtime_types::{
 		avail_core::header::extension::{v3, HeaderExtension},
 		da_control::pallet::Call,
 		da_runtime::RuntimeCall,
-	},
-	avail_core::{
-		compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 	},
 	primitives::block::grandpa::{AuthorityId, ConsensusLog},
 	subxt::config::substrate,
@@ -25,6 +25,9 @@ use tokio::task::JoinHandle;
 use tokio_with_wasm::alias as tokio;
 use tracing::{error, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
+
+#[cfg(feature = "multiproof")]
+use kate_recovery::matrix::Dimensions;
 
 pub fn spawn_in_span<F>(future: F) -> JoinHandle<F::Output>
 where
@@ -222,7 +225,7 @@ pub fn blake2_256(data: &[u8]) -> [u8; 32] {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn blake2_256(data: &[u8]) -> [u8; 32] {
-	avail_rust::sp_core::blake2_256(data)
+	sp_core::blake2_256(data)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -258,4 +261,18 @@ pub fn restart(current_exe: PathBuf) {
 			.expect("Failed to restart");
 		std::process::exit(0);
 	}
+}
+
+#[cfg(feature = "multiproof")]
+pub(crate) fn generate_multiproof_grid_dims(
+	grid: Dimensions,
+	target: Dimensions,
+) -> Option<Dimensions> {
+	let cols = core::cmp::min(grid.cols(), target.cols());
+	let rows = core::cmp::min(grid.rows(), target.rows());
+	if grid.cols().get() % cols != 0 || grid.rows().get() % rows != 0 {
+		return None;
+	}
+
+	Dimensions::new(rows, cols)
 }

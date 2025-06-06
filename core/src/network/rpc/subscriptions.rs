@@ -1,9 +1,7 @@
-use avail_rust::{
-	sp_core::ed25519::{self, Public},
-	AvailHeader,
-};
+use avail_rust::AvailHeader;
 use codec::Encode;
 use color_eyre::{eyre::eyre, Result};
+use sp_core::ed25519::{self, Public};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;

@@ -1,14 +1,14 @@
+#[cfg(not(feature = "multiproof"))]
+use avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE};
 #[cfg(feature = "multiproof")]
-use avail_rust::kate_recovery::data::MultiProofCell;
-use avail_rust::kate_recovery::{
+use kate_recovery::data::MultiProofCell;
+#[cfg(not(feature = "multiproof"))]
+use kate_recovery::data::SingleCell;
+use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position, RowIndex},
 };
-#[cfg(not(feature = "multiproof"))]
-use avail_rust::{
-	avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE},
-	kate_recovery::data::SingleCell,
-};
+
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,

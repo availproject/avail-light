@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 use crate::cli::CliOpts;
+use avail_core::AppId;
 #[cfg(feature = "multiproof")]
 use avail_light_core::proof::get_or_init_pmp;
 use avail_light_core::{
@@ -28,7 +29,7 @@ use avail_light_core::{
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::{account, avail_core::AppId};
+use avail_rust::account;
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},

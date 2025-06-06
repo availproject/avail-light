@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use avail_rust::{avail_core::AppId, Keypair};
+use avail_core::AppId;
+use avail_rust::Keypair;
 use color_eyre::Result;
 
 use crate::{

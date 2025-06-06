@@ -1,9 +1,8 @@
+use avail_core::kate::COMMITMENT_SIZE;
 use avail_rust::{
 	avail::runtime_types::avail_core::{
 		data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension,
 	},
-	avail_core::kate::COMMITMENT_SIZE,
-	kate_recovery::{com::AppData, commitments},
 	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
 	AvailHeader, H256,
 };
@@ -14,6 +13,7 @@ use color_eyre::{eyre::WrapErr, Report, Result};
 use derive_more::From;
 #[cfg(not(target_arch = "wasm32"))]
 use hyper::{http, StatusCode};
+use kate_recovery::{com::AppData, commitments};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 #[cfg(not(target_arch = "wasm32"))]

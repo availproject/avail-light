@@ -17,14 +17,10 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-#[cfg(feature = "multiproof")]
-use avail_rust::utils::generate_multiproof_grid_dims;
-use avail_rust::{
-	kate_recovery::{commitments, matrix::Dimensions},
-	AvailHeader, H256,
-};
+use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::Result;
+use kate_recovery::{commitments, matrix::Dimensions};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
@@ -114,7 +110,10 @@ pub async fn process_block(
 				{
 					let multiproof_cell_dims = multi_proof_dimensions();
 					let Some(target_multiproof_grid_dims) =
-						generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
+						crate::utils::generate_multiproof_grid_dims(
+							multiproof_cell_dims,
+							dimensions,
+						)
 					else {
 						info!(
 							block_number,
@@ -303,11 +302,11 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::Cell, matrix::Position},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
 	use hex_literal::hex;
+	use kate_recovery::{data::Cell, matrix::Position};
 	use test_case::test_case;
 	use tokio::sync::mpsc;
 

@@ -1,15 +1,13 @@
 use async_trait::async_trait;
-use avail_rust::{
-	avail_core::kate::COMMITMENT_SIZE,
-	kate_recovery::{
-		commons::ArkPublicParams,
-		data::Cell,
-		matrix::{Dimensions, Position},
-	},
-	H256,
-};
+use avail_core::kate::COMMITMENT_SIZE;
+use avail_rust::H256;
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
+use kate_recovery::{
+	commons::ArkPublicParams,
+	data::Cell,
+	matrix::{Dimensions, Position},
+};
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 #[cfg(not(target_arch = "wasm32"))]

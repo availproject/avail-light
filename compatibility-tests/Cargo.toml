@@ -8,6 +8,7 @@ description = "Avail Light compatibility tests"
 # Internal deps
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
+kate-recovery = { workspace = true }
 
 clap = { workspace = true }
 color-eyre = { workspace = true }

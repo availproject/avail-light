@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-#[cfg(not(target_arch = "wasm32"))]
-use avail_rust::sp_core::ed25519;
-use avail_rust::{sp_core::ed25519::Public, H256};
+use avail_rust::H256;
 use codec::Encode;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
+use sp_core::ed25519;
+use sp_core::ed25519::Public;
 use tracing::{info, warn};
 
 use crate::{
@@ -22,7 +23,7 @@ pub struct ValidatorSet {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn verify_signature(public_key: [u8; 32], signature: [u8; 64], message: Vec<u8>) -> bool {
-	<ed25519::Pair as avail_rust::sp_core::Pair>::verify(
+	<ed25519::Pair as sp_core::Pair>::verify(
 		&ed25519::Signature(signature),
 		message,
 		&ed25519::Public(public_key),
@@ -158,16 +159,14 @@ fn confirm_ancestry(
 mod tests {
 	use super::{check_finality, ValidatorSet};
 	use crate::types::{Commit, GrandpaJustification, Precommit, SignerMessage};
-	use avail_rust::{
-		sp_core::{
-			ed25519::{self, Public, Signature},
-			Pair as PairT,
-		},
-		AvailHeader,
-	};
+	use avail_rust::AvailHeader;
 	use codec::Encode;
 	use hex::FromHex;
 	use serde::{Deserialize, Serialize};
+	use sp_core::{
+		ed25519::{self, Public, Signature},
+		Pair as PairT,
+	};
 	use std::fs::File;
 	use test_case::test_case;
 
