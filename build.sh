@@ -2,7 +2,6 @@
 set -x
 set -e
 
-
 cargo check
 cargo check --features "multiproof"
 
@@ -19,6 +18,5 @@ cd relay && cargo check && cd ./..
 cargo test --no-run
 
 rustup target add wasm32-unknown-unknown
-# cargo check --target wasm32-unknown-unknown
 cd core && cargo check --target wasm32-unknown-unknown && cargo check --target wasm32-unknown-unknown --features "multiproof" && cd ./..
 cd web && cargo check --target wasm32-unknown-unknown && cd ./..
