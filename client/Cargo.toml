@@ -7,9 +7,9 @@ description = "Avail network p2p Light Client"
 
 [dependencies]
 # Internal deps
+avail-core = { workspace = true }
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
-avail-core = { workspace = true }
 kate = { workspace = true }
 
 better-panic = "0.3.0"
