@@ -1,33 +1,39 @@
-use avail_rust::kate_recovery::{
+use kate_recovery::{
 	commons::ArkPublicParams,
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 
 use color_eyre::eyre;
+#[cfg(feature = "multiproof")]
+use kate::couscous::multiproof_params;
+#[cfg(feature = "multiproof")]
+use kate::pmp::ark_bls12_381::Bls12_381;
+#[cfg(feature = "multiproof")]
+use kate::pmp::msm::blst::BlstMSMEngine;
+#[cfg(feature = "multiproof")]
+use kate_recovery::proof::verify_multi_proof;
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
 use tracing::debug;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+#[cfg(feature = "multiproof")]
+use {
+	avail_rust::U256,
+	tokio::sync::OnceCell,
+	tracing::{info, warn},
+};
+
 #[cfg(not(feature = "multiproof"))]
 use {
-	avail_rust::kate_recovery::{
+	futures::future::join_all,
+	itertools::{Either, Itertools},
+	kate_recovery::{
 		data::SingleCell,
 		proof::{verify_v2, Error},
 	},
-	futures::future::join_all,
-	itertools::{Either, Itertools},
-};
-#[cfg(feature = "multiproof")]
-use {
-	avail_rust::{
-		kate_recovery::proof::verify_multi_proof, rpc::kate::generate_pmp, Bls12_381,
-		BlstMSMEngine, M1NoPrecomp, U256,
-	},
-	tokio::sync::OnceCell,
-	tracing::{info, warn},
 };
 
 #[cfg(not(feature = "multiproof"))]

@@ -1,13 +1,15 @@
 //! Shared light client structs and enums.
 use crate::network::rpc::OutputEvent;
 use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
+use avail_core::DataLookup;
 use avail_rust::{
 	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec,
-	avail_core::DataLookup,
-	kate_recovery::{commitments, matrix::Dimensions},
 	sp_core::{bytes, ed25519},
 	AvailHeader, H256,
 };
+
+use kate_recovery::{commitments, matrix::Dimensions};
+
 #[cfg(not(target_arch = "wasm32"))]
 use avail_rust::{
 	sp_core::crypto::{self, Ss58Codec},
@@ -302,7 +304,7 @@ pub mod duration_millis_format {
 }
 
 pub mod block_matrix_partition_format {
-	use avail_rust::kate_recovery::matrix::Partition;
+	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
 
 	pub fn parse(value: &str) -> Result<Partition, String> {

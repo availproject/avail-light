@@ -21,6 +21,8 @@ repository = "https://github.com/availproject/avail-light"
 # Internal deps
 avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.12", default-features = false }
 kate = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
+avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
+kate-recovery = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
 avail-light-core = { path = "./core", default-features = false }
 
 anyhow = "1.0.71"

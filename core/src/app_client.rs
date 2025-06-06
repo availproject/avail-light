@@ -12,21 +12,11 @@
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 use async_trait::async_trait;
+use avail_core::{
+	kate::{CHUNK_SIZE, COMMITMENT_SIZE, EXTENSION_FACTOR},
+	AppId,
+};
 use avail_rust::{
-	avail_core::{
-		kate::{CHUNK_SIZE, COMMITMENT_SIZE, EXTENSION_FACTOR},
-		AppId,
-	},
-	kate_recovery::{
-		com::{
-			app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns,
-			AppData,
-		},
-		commitments,
-		commons::ArkPublicParams,
-		data::{Cell, DataCell, SingleCell},
-		matrix::{Dimensions, Position},
-	},
 	primitives::kate::{MaxRows, Rows},
 	sp_core::Get,
 	H256,
@@ -34,6 +24,15 @@ use avail_rust::{
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Result,
+};
+use kate_recovery::{
+	com::{
+		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, AppData,
+	},
+	commitments,
+	commons::ArkPublicParams,
+	data::{Cell, DataCell, SingleCell},
+	matrix::{Dimensions, Position},
 };
 use mockall::automock;
 use rand::SeedableRng as _;
@@ -545,9 +544,9 @@ mod tests {
 		data,
 		types::{AppClientConfig, Extension},
 	};
-	use avail_rust::avail_core::DataLookup;
-	use avail_rust::kate_recovery::testnet;
+	use avail_core::DataLookup;
 	use hex_literal::hex;
+	use kate_recovery::testnet;
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {

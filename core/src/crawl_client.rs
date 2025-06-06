@@ -5,9 +5,9 @@ use crate::{
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, BlockVerified, Delay, Origin},
 };
-use avail_rust::kate_recovery::matrix::{Partition, Position};
 #[cfg(feature = "multiproof")]
 use avail_rust::utils::generate_multiproof_grid_dims;
+use kate_recovery::matrix::{Partition, Position};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};

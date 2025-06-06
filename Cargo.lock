@@ -1317,6 +1317,7 @@ dependencies = [
 name = "avail-light-client"
 version = "1.13.0"
 dependencies = [
+ "avail-core",
  "avail-light-core",
  "avail-rust",
  "better-panic",
@@ -1361,6 +1362,7 @@ dependencies = [
  "async-std",
  "async-stream",
  "async-trait",
+ "avail-core",
  "avail-rust",
  "base64 0.21.7",
  "better-panic",
@@ -1382,6 +1384,7 @@ dependencies = [
  "itertools 0.10.5",
  "jsonrpsee-core 0.21.0",
  "kate",
+ "kate-recovery",
  "libc",
  "libp2p",
  "libp2p-allow-block-list",
@@ -1440,6 +1443,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "confy 0.5.1",
+ "kate-recovery",
  "libp2p",
  "serde",
  "tokio",
@@ -1452,10 +1456,10 @@ name = "avail-light-fat"
 version = "1.12.8"
 dependencies = [
  "avail-light-core",
- "avail-rust",
  "clap",
  "color-eyre",
  "confy 0.5.1",
+ "kate-recovery",
  "libp2p",
  "serde",
  "tokio",

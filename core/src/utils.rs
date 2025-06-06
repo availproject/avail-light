@@ -1,12 +1,12 @@
 use crate::shutdown::Controller;
+use avail_core::{
+	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
+};
 use avail_rust::{
 	avail::runtime_types::{
 		avail_core::header::extension::{v3, HeaderExtension},
 		da_control::pallet::Call,
 		da_runtime::RuntimeCall,
-	},
-	avail_core::{
-		compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 	},
 	primitives::block::grandpa::{AuthorityId, ConsensusLog},
 	subxt::config::substrate,

@@ -1,11 +1,8 @@
-use avail_rust::{
-	kate_recovery::matrix::{Dimensions, Position},
-	sp_core::bytes::from_hex,
-	AvailHeader, H256,
-};
+use avail_rust::{sp_core::bytes::from_hex, AvailHeader, H256};
 use codec::{Decode, Encode};
 use color_eyre::{eyre::eyre, Result};
 use configuration::RPCConfig;
+use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use serde::{de, Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]

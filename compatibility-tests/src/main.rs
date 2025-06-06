@@ -6,9 +6,10 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 };
-use avail_rust::{kate_recovery::matrix::Position, primitives::kate::Rows};
 use clap::Parser;
 use color_eyre::Result;
+use kate::Rows;
+use kate_recovery::matrix::Position;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
