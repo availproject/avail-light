@@ -6,7 +6,8 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 };
-use avail_rust::primitives::kate::Rows;
+use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_core::rpc::kate::Rows;
 use clap::Parser;
 use color_eyre::Result;
 use kate_recovery::matrix::Position;

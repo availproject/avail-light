@@ -1,4 +1,3 @@
-use avail_rust::AppUncheckedExtrinsic;
 use color_eyre::Report;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -25,7 +24,7 @@ pub struct ConfidenceResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Extrinsics {
-	Encoded(Vec<AppUncheckedExtrinsic>),
+	Encoded(Vec<Vec<u8>>),
 	Decoded(Vec<String>),
 }
 

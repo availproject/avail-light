@@ -2,16 +2,11 @@ use crate::shutdown::Controller;
 use avail_core::{
 	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 };
-use avail_rust::{
-	avail::runtime_types::{
-		avail_core::header::extension::{v3, HeaderExtension},
-		da_control::pallet::Call,
-		da_runtime::RuntimeCall,
-	},
-	primitives::block::grandpa::{AuthorityId, ConsensusLog},
-	subxt::config::substrate,
-	AppUncheckedExtrinsic, AvailHeader, H256,
-};
+use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_client::ext::subxt_core::config::substrate;
+use avail_rust_client::prelude::{avail, OpaqueTransaction, RuntimeCall, H256};
+use avail_rust_core::{grandpa::AuthorityId, grandpa::ConsensusLog};
+use avail_rust_core::{header::HeaderExtension, header::V3HeaderExtension, AvailHeader};
 use codec::Decode;
 use color_eyre::{
 	eyre::{self, eyre, WrapErr},
@@ -38,11 +33,14 @@ where
 }
 
 pub fn decode_app_data(data: &[u8]) -> Result<Option<Vec<u8>>> {
-	let extrisic: AppUncheckedExtrinsic =
-		<_ as Decode>::decode(&mut &data[..]).wrap_err("Couldn't decode AvailExtrinsic")?;
+	use avail::data_availability::tx::Call;
+	let opaque = OpaqueTransaction::try_from(data).wrap_err("Couldn't decode AvailExtrinsic")?;
+	let Ok(runtime_call) = RuntimeCall::try_from(&opaque.call) else {
+		return Ok(None);
+	};
 
-	match extrisic.function {
-		RuntimeCall::DataAvailability(Call::submit_data { data, .. }) => Ok(Some(data.0)),
+	match runtime_call {
+		RuntimeCall::DataAvailability(Call::SubmitData(data)) => Ok(Some(data.data)),
 		_ => Ok(None),
 	}
 }
@@ -58,7 +56,7 @@ pub trait OptionalExtension {
 
 impl OptionalExtension for HeaderExtension {
 	fn option(&self) -> Option<&Self> {
-		let HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) = self;
+		let HeaderExtension::V3(V3HeaderExtension { app_lookup, .. }) = self;
 		(app_lookup.size > 0).then_some(self)
 	}
 }
@@ -68,7 +66,7 @@ impl OptionalExtension for HeaderExtension {
 /// Extract fields from extension header
 pub(crate) fn extract_kate(extension: &HeaderExtension) -> Option<(u16, u16, H256, Vec<u8>)> {
 	match &extension.option()? {
-		HeaderExtension::V3(v3::HeaderExtension {
+		HeaderExtension::V3(V3HeaderExtension {
 			commitment: kate, ..
 		}) => Some((
 			kate.rows,
@@ -87,14 +85,14 @@ pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> eyre::Result<Op
 	};
 
 	let compact = match &extension {
-		HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) => app_lookup,
+		HeaderExtension::V3(V3HeaderExtension { app_lookup, .. }) => app_lookup,
 	};
 
 	let size = compact.size;
 	let index = compact
 		.index
 		.iter()
-		.map(|item| DataLookupItem::new(AppId(item.app_id.0), item.start))
+		.map(|item| DataLookupItem::new(AppId(item.app_id), item.start))
 		.collect::<Vec<_>>();
 
 	let compact = CompactDataLookup::new(size, index);

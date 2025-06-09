@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use avail_rust::{
-	subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32},
-	AvailHeader, H256,
-};
+use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_client::ext::subxt_rpcs::methods::legacy::StorageKey;
+use avail_rust_client::prelude::AccountId;
+use avail_rust_client::prelude::H256;
+use avail_rust_core::AvailHeader;
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, Context},
@@ -38,12 +39,12 @@ pub trait Client {
 	) -> Result<Vec<StorageKey>>;
 	async fn get_genesis_hash(&self) -> Result<H256>;
 	async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64>;
-	async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>>;
+	async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId>>>;
 	async fn get_session_key_owner_at(
 		&self,
 		block_hash: H256,
 		public_key: ed25519::Public,
-	) -> Result<Option<AccountId32>>;
+	) -> Result<Option<AccountId>>;
 	async fn get_block_hash(&self, block_number: u32) -> Result<H256>;
 	async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader>;
 	async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof>;
@@ -88,7 +89,7 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 			.wrap_err("Finality Sync Client failed to fetch Set ID at provided Block Hash")
 	}
 
-	async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
+	async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId>>> {
 		self.rpc_client
 			.get_validator_set_at(block_hash)
 			.await
@@ -99,7 +100,7 @@ impl<T: Database + Sync> Client for SyncFinality<T> {
 		&self,
 		block_hash: H256,
 		public_key: ed25519::Public,
-	) -> Result<Option<AccountId32>> {
+	) -> Result<Option<AccountId>> {
 		self.rpc_client
 			.get_session_key_owner_at(block_hash, public_key)
 			.await
@@ -300,7 +301,7 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 
 		validator_set = next_validator_set
 			.iter()
-			.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
+			.map(|a| ed25519::Public::from_raw(a.0 .0))
 			.collect();
 		set_id += 1;
 		client.store_checkpoint(FinalitySyncCheckpoint {

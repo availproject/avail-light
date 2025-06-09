@@ -2,21 +2,21 @@
 use crate::network::rpc::OutputEvent;
 use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
-use avail_rust::{
-	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec, AvailHeader, H256,
-};
+use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_client::prelude::H256;
+use avail_rust_core::AvailHeader;
+use bounded_collections::bounded_vec::BoundedVec;
 use sp_core::{bytes, ed25519};
 
 use kate_recovery::{commitments, matrix::Dimensions};
 
 #[cfg(not(target_arch = "wasm32"))]
-use avail_rust::{
-	subxt_signer::{
-		bip39::{Language, Mnemonic},
-		SecretString, SecretUri,
-	},
-	Keypair,
+use avail_rust::subxt_signer::{
+	bip39::{Language, Mnemonic},
+	SecretString,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use avail_rust_client::prelude::{Keypair, SecretUri};
 use base64::{engine::general_purpose, DecodeError, Engine};
 use clap::ValueEnum;
 use codec::{Decode, Encode, Input};
@@ -618,11 +618,12 @@ impl Encode for Uuid {
 #[serde(try_from = "String", into = "String")]
 pub struct Base64(pub Vec<u8>);
 
-impl From<Base64> for BoundedVec<u8> {
+// TODO
+/* impl From<Base64> for BoundedVec<u8> {
 	fn from(val: Base64) -> Self {
 		BoundedVec(val.0)
 	}
-}
+} */
 
 impl From<Base64> for Vec<u8> {
 	fn from(val: Base64) -> Self {

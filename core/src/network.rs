@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use avail_core::kate::COMMITMENT_SIZE;
-use avail_rust::H256;
+use avail_rust_client::prelude::H256;
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{

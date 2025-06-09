@@ -9,13 +9,10 @@ use crate::{
 	types::{BlockRange, Mode},
 	utils::calculate_confidence,
 };
-use avail_rust::{
-	avail::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
-	AppUncheckedExtrinsic,
-};
+use avail_rust_client::prelude::RuntimeCall;
+use avail_rust_client::prelude::{avail::data_availability::tx::Call, OpaqueTransaction};
 use base64::{engine::general_purpose, Engine};
-use codec::Decode;
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::eyre::WrapErr;
 use num::{BigUint, FromPrimitive};
 use tracing::{debug, info};
 
@@ -97,56 +94,57 @@ pub fn appdata(
 	db: impl Database,
 	app_id: Option<u32>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
-	fn decode_app_data_to_extrinsics(
-		data: Option<Vec<Vec<u8>>>,
-	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
-		let xts = data.map(|e| {
-			e.iter()
-				.enumerate()
-				.map(|(i, raw)| {
-					<_ as Decode>::decode(&mut &raw[..])
-						.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
-				})
-				.collect::<Result<Vec<_>>>()
-		});
-		match xts {
-			Some(Ok(s)) => Ok(Some(s)),
-			Some(Err(e)) => Err(e),
-			None => Ok(None),
+	info!("Got request for AppData for block {block_num}");
+	let app_id = app_id.unwrap_or(0u32);
+	let raw_exts = db.get(AppDataKey(app_id, block_num));
+	let Some(raw_exts) = raw_exts else {
+		let res = get_achived_confidence(&db)
+			.filter(|range| block_num == range.last)
+			.map_or(ClientResponse::NotFound, |_| ClientResponse::InProcess);
+		debug!("Returning AppData: {res:?}");
+		return res;
+	};
+
+	let decode = query.decode.unwrap_or(false);
+	let mut decoded: Vec<String> = Vec::with_capacity(raw_exts.len());
+	let mut encoded: Vec<Vec<u8>> = Vec::with_capacity(raw_exts.len());
+	for (i, raw_ext) in raw_exts.into_iter().enumerate() {
+		let opaque = match OpaqueTransaction::try_from(&raw_ext)
+			.wrap_err(format!("Couldn't decode AvailExtrinsic num {i}"))
+		{
+			Ok(ok) => ok,
+			Err(report) => {
+				let res = ClientResponse::Error(report);
+				debug!("Returning AppData: {res:?}");
+				return res;
+			},
+		};
+
+		if decode {
+			let Ok(RuntimeCall::DataAvailability(Call::SubmitData(data))) =
+				RuntimeCall::try_from(&opaque.call)
+			else {
+				continue;
+			};
+			let data = general_purpose::STANDARD.encode(data.data.as_slice());
+			decoded.push(data);
+		} else {
+			encoded.push(raw_ext);
 		}
 	}
-	info!("Got request for AppData for block {block_num}");
-	let decode = query.decode.unwrap_or(false);
-	let res = match decode_app_data_to_extrinsics(
-		db.get(AppDataKey(app_id.unwrap_or(0u32), block_num)),
-	) {
-		Ok(Some(data)) => {
-			if !decode {
-				ClientResponse::Normal(ExtrinsicsDataResponse {
-					block: block_num,
-					extrinsics: Extrinsics::Encoded(data),
-				})
-			} else {
-				let xts = data
-					.iter()
-					.flat_map(|xt| match &xt.function {
-						RuntimeCall::DataAvailability(Call::submit_data { data, .. }) => Some(data),
-						_ => None,
-					})
-					.map(|data| general_purpose::STANDARD.encode(data.0.as_slice()))
-					.collect::<Vec<_>>();
-				ClientResponse::Normal(ExtrinsicsDataResponse {
-					block: block_num,
-					extrinsics: Extrinsics::Decoded(xts),
-				})
-			}
-		},
 
-		Ok(None) => get_achived_confidence(&db)
-			.filter(|range| block_num == range.last)
-			.map_or(ClientResponse::NotFound, |_| ClientResponse::InProcess),
-		Err(e) => ClientResponse::Error(e),
+	let res = if decode {
+		ClientResponse::Normal(ExtrinsicsDataResponse {
+			block: block_num,
+			extrinsics: Extrinsics::Decoded(decoded),
+		})
+	} else {
+		ClientResponse::Normal(ExtrinsicsDataResponse {
+			block: block_num,
+			extrinsics: Extrinsics::Encoded(encoded),
+		})
 	};
+
 	debug!("Returning AppData: {res:?}");
 	res
 }

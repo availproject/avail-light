@@ -17,7 +17,9 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-use avail_rust::{AvailHeader, H256};
+use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_client::prelude::H256;
+use avail_rust_core::AvailHeader;
 use codec::Encode;
 use color_eyre::Result;
 use kate_recovery::{commitments, matrix::Dimensions};

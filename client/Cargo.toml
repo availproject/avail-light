@@ -10,6 +10,7 @@ description = "Avail network p2p Light Client"
 avail-core = { workspace = true }
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
+avail-rust-client = { workspace = true, features = ["native"] }
 kate = { workspace = true }
 
 better-panic = "0.3.0"
