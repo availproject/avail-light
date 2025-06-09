@@ -1317,6 +1317,7 @@ dependencies = [
 name = "avail-light-client"
 version = "1.13.0"
 dependencies = [
+ "avail-core",
  "avail-light-core",
  "avail-rust",
  "better-panic",
@@ -1351,6 +1352,7 @@ dependencies = [
  "avail-rust",
  "clap",
  "color-eyre",
+ "kate-recovery",
  "tokio",
 ]
 
@@ -1361,6 +1363,7 @@ dependencies = [
  "async-std",
  "async-stream",
  "async-trait",
+ "avail-core",
  "avail-rust",
  "base64 0.21.7",
  "better-panic",
@@ -1371,7 +1374,6 @@ dependencies = [
  "confy 0.5.1",
  "convert_case 0.6.0",
  "derive_more 1.0.0",
- "dusk-bytes",
  "ed25519-compact",
  "flate2",
  "futures",
@@ -1382,6 +1384,7 @@ dependencies = [
  "itertools 0.10.5",
  "jsonrpsee-core 0.21.0",
  "kate",
+ "kate-recovery",
  "libc",
  "libp2p",
  "libp2p-allow-block-list",
@@ -1407,6 +1410,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "sp-core 28.0.0",
  "strip-ansi-escapes",
  "strum 0.26.3",
  "sysinfo",
@@ -1436,10 +1440,10 @@ name = "avail-light-crawler"
 version = "0.2.0"
 dependencies = [
  "avail-light-core",
- "avail-rust",
  "clap",
  "color-eyre",
  "confy 0.5.1",
+ "kate-recovery",
  "libp2p",
  "serde",
  "tokio",
@@ -1452,10 +1456,10 @@ name = "avail-light-fat"
 version = "1.12.8"
 dependencies = [
  "avail-light-core",
- "avail-rust",
  "clap",
  "color-eyre",
  "confy 0.5.1",
+ "kate-recovery",
  "libp2p",
  "serde",
  "tokio",
@@ -3525,17 +3529,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive-hex"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b6618553c32cd1c1f4fbdb9418cc035f3168422f24406ebb08576f6db5ed6ec"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "derive-syn-parse"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3789,15 +3782,6 @@ name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
-
-[[package]]
-name = "dusk-bytes"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5d209b92f0741edf1d99369bd4c1a1ef2fd0a85e885220f9e3fb0df3c61337f"
-dependencies = [
- "derive-hex",
-]
 
 [[package]]
 name = "dyn-clonable"

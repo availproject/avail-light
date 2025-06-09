@@ -85,7 +85,7 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 		let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 			.wrap_err("Unable to parse host address from config")
 			.unwrap();
-		info!("RPC running on http://{host}:{port}");
+		info!("Web server running on http://{host}:{port}");
 		// warp graceful shutdown expects a signal that is [`Future<Output = ()>`]
 		let shutdown_signal = self.shutdown.triggered_shutdown().map(|_| ());
 		let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, shutdown_signal);

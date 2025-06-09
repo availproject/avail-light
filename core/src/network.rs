@@ -1,15 +1,13 @@
 use async_trait::async_trait;
-use avail_rust::{
-	avail_core::kate::COMMITMENT_SIZE,
-	kate_recovery::{
-		commons::ArkPublicParams,
-		data::Cell,
-		matrix::{Dimensions, Position},
-	},
-	H256,
-};
+use avail_core::kate::COMMITMENT_SIZE;
+use avail_rust::H256;
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
+use kate_recovery::{
+	commons::ArkPublicParams,
+	data::Cell,
+	matrix::{Dimensions, Position},
+};
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 #[cfg(not(target_arch = "wasm32"))]
@@ -17,7 +15,9 @@ use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
 use strum::Display;
 #[cfg(not(target_arch = "wasm32"))]
-use tokio::time::Instant;
+use tokio::{sync::Mutex, time::Instant};
+#[cfg(target_arch = "wasm32")]
+use tokio_with_wasm::alias::sync::Mutex;
 use tracing::{debug, info};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
@@ -68,7 +68,7 @@ impl FetchStats {
 }
 
 struct DHTWithRPCFallbackClient<T: Database> {
-	p2p_client: Option<p2p::Client>,
+	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
 	rpc_client: rpc::Client<T>,
 	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
@@ -88,13 +88,18 @@ impl<T: Database> DHTWithRPCFallbackClient<T> {
 		let begin = Instant::now();
 
 		// If p2p_client is not available, return empty cells and all positions as unfetched
-		let Some(p2p_client) = &self.p2p_client else {
-			debug!(
-				block_number,
-				cells_total = positions.len(),
-				"P2P client not available, skipping DHT fetch"
-			);
-			return Ok((Vec::new(), positions.to_vec(), Duration::from_secs(0)));
+		let p2p_client = {
+			let client_guard = self.p2p_client.lock().await;
+			if let Some(client) = client_guard.as_ref() {
+				client.clone()
+			} else {
+				debug!(
+					block_number,
+					cells_total = positions.len(),
+					"P2P client not available, skipping DHT fetch"
+				);
+				return Ok((Vec::new(), positions.to_vec(), Duration::from_secs(0)));
+			}
 		};
 
 		let (mut dht_fetched, mut unfetched) = p2p_client
@@ -224,7 +229,8 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 
 		// If p2p_client is available and not in RPC-only mode, try to insert the cells into DHT
 		if self.network_mode == NetworkMode::Both && self.insert_into_dht {
-			if let Some(p2p_client) = &self.p2p_client {
+			let client_guard = self.p2p_client.lock().await;
+			if let Some(p2p_client) = client_guard.as_ref() {
 				if let Err(error) = p2p_client
 					.insert_cells_into_dht(block_number, rpc_fetched.clone())
 					.await
@@ -248,9 +254,8 @@ impl<T: Database + Sync> Client for DHTWithRPCFallbackClient<T> {
 		Ok((fetched, unfetched, stats))
 	}
 }
-
 pub fn new(
-	p2p_client: Option<p2p::Client>,
+	p2p_client: Arc<Mutex<Option<p2p::Client>>>,
 	rpc_client: rpc::Client<impl Database + Sync>,
 	pp: Arc<ArkPublicParams>,
 	network_mode: NetworkMode,
@@ -440,4 +445,16 @@ impl Network {
 		let prefix = &genesis_hash[..std::cmp::min(6, genesis_hash.len())];
 		format!("{}:{}", network, prefix)
 	}
+}
+
+// Defines the Service mode as a ValueEnum for clap
+// currently used for: AutoNAT and Relay
+#[derive(Clone, Debug, PartialEq, ValueEnum)]
+pub enum ServiceMode {
+	/// Service disabled
+	Disabled,
+	/// Client only mode
+	Client,
+	/// Server only mode
+	Server,
 }

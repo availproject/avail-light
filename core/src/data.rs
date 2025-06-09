@@ -2,9 +2,10 @@ use crate::{
 	network::rpc::Node as RpcNode,
 	types::{BlockRange, Uuid},
 };
-use avail_rust::{sp_core::ed25519, AvailHeader};
+use avail_rust::AvailHeader;
 use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use sp_core::ed25519;
 
 mod keys;
 use keys::*;

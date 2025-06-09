@@ -14,9 +14,9 @@ use avail_light_core::{
 		PeerAddress, SecretKey,
 	},
 };
-use avail_rust::kate_recovery::matrix::Partition;
 use clap::{command, Parser};
 use color_eyre::{eyre::eyre, Result};
+use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use tracing::Level;
 

@@ -17,9 +17,10 @@
 //! In case delay is configured, block processing is delayed for configured time.
 //! In case RPC is disabled, RPC calls will be skipped.
 
-use avail_rust::{kate_recovery::commitments, AvailHeader, H256};
+use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::Result;
+use kate_recovery::{commitments, matrix::Dimensions};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
@@ -287,11 +288,11 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{data::Cell, matrix::Position},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
 	use hex_literal::hex;
+	use kate_recovery::{data::Cell, matrix::Position};
 	use test_case::test_case;
 	use tokio::sync::mpsc;
 

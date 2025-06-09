@@ -9,7 +9,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
+avail-core = { workspace = true }
 kate = { workspace = true }
+kate-recovery = { workspace = true }
+sp-core = { workspace = true }
 
 # 3rd-party
 async-stream = "0.3.5"
@@ -21,7 +24,6 @@ clap = { workspace = true, features = ["derive"] }
 codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
 convert_case = "0.6.0"
 derive_more = { version = "1", features = ["from", "display"] }
-dusk-bytes = "0.1.7"
 futures = { workspace = true }
 getrandom = { version = "0.2.15", features = ["js"] }
 hex = { workspace = true }

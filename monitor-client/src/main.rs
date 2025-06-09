@@ -1,4 +1,4 @@
-use crate::server::{get_blacklisted_peers, get_peer_count, get_peers};
+use crate::server::{get_blacklisted_peers, get_peer_by_id, get_peer_count, get_peers};
 use actix_web::{web, App, HttpServer};
 use avail_light_core::{
 	data,
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
 	let (p2p_keypair, _) = p2p::identity(&config.libp2p, db.clone())?;
 
-	let (p2p_client, p2p_event_loop, p2p_events) = p2p::init(
+	let (mut p2p_client, p2p_event_loop, p2p_events) = p2p::init(
 		config.libp2p.clone(),
 		ProjectName::new("avail".to_string()),
 		p2p_keypair,
@@ -163,11 +163,9 @@ async fn main() -> Result<()> {
 			.service(get_blacklisted_peers)
 			.service(get_peers)
 			.service(get_peer_count)
+			.service(get_peer_by_id)
 	})
-	.bind(SocketAddr::from((
-		Ipv4Addr::UNSPECIFIED,
-		config.http_port.unwrap(),
-	)))?;
+	.bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, config.http_port)))?;
 
 	match server.run().await {
 		Ok(_) => {

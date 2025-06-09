@@ -28,9 +28,13 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use avail_rust::{kate_recovery::commitments, AvailHeader, H256};
+use avail_rust::{AvailHeader, H256};
 use codec::Encode;
-use color_eyre::{eyre::WrapErr, Result};
+use color_eyre::{
+	eyre::{eyre, WrapErr},
+	Result,
+};
+use kate_recovery::{commitments, matrix::Dimensions};
 use mockall::automock;
 use std::{ops::Range, time::Instant};
 use tokio::sync::broadcast;
@@ -279,14 +283,14 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::{
-			data::{Cell, SingleCell},
-			matrix::Position,
-		},
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
 	use hex_literal::hex;
+	use kate_recovery::{
+		data::{Cell, SingleCell},
+		matrix::Position,
+	};
 	use mockall::predicate::eq;
 
 	fn default_header() -> AvailHeader {

@@ -10,20 +10,18 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
-#[cfg(feature = "multiproof")]
-use avail_rust::kate_recovery::data::MultiProofCell;
-#[cfg(not(feature = "multiproof"))]
-use avail_rust::kate_recovery::data::{self, SingleCell};
-use avail_rust::{
-	kate_recovery::{
-		data::Cell,
-		matrix::{Partition, Position, RowIndex},
-	},
-	AvailHeader, H256,
-};
+use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;
+#[cfg(feature = "multiproof")]
+use kate_recovery::data::MultiProofCell;
+#[cfg(not(feature = "multiproof"))]
+use kate_recovery::data::{self, SingleCell};
+use kate_recovery::{
+	data::Cell,
+	matrix::{Dimensions, Partition, Position, RowIndex},
+};
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -336,11 +334,11 @@ mod tests {
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
 			kate_commitment::v3::KateCommitment,
 		},
-		kate_recovery::data::SingleCell,
 		subxt::config::substrate::Digest,
 		AvailHeader,
 	};
 	use hex_literal::hex;
+	use kate_recovery::data::SingleCell;
 	use tokio::sync::mpsc;
 
 	fn default_header() -> AvailHeader {

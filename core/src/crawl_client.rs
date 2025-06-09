@@ -3,7 +3,7 @@ use crate::{
 	telemetry::{otlp::Record, MetricName, Value},
 	types::{self, iter_partition_cells, BlockVerified, Delay, Origin},
 };
-use avail_rust::kate_recovery::matrix::Partition;
+use kate_recovery::matrix::{Partition, Position};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
