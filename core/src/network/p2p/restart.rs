@@ -87,7 +87,7 @@ pub async fn p2p_restart_manager(
 	mut current_shutdown: Controller<String>,
 ) {
 	// Randomize restart intervals
-	let randomized_duration = randomize_duration(restart_interval);
+	let mut randomized_duration = randomize_duration(restart_interval);
 
 	let mut interval = tokio::time::interval(randomized_duration);
 	interval.tick().await;
@@ -146,6 +146,8 @@ pub async fn p2p_restart_manager(
 						// Continue with the next restart attempt
 					}
 				}
+				randomized_duration = randomize_duration(restart_interval);
+				interval = tokio::time::interval(randomized_duration);
 			}
 			_ = app_shutdown.triggered_shutdown() => {
 				info!("P2P restart manager shutting down");
@@ -169,7 +171,10 @@ pub async fn forward_p2p_events(
 
 pub fn randomize_duration(max: Duration) -> Duration {
 	let mut rng = utils::rng();
-	Duration::from_secs(rng.gen_range(0..max.as_secs()))
+	// 1 minute minimum
+	let min_secs = 60;
+	let max_secs = max.as_secs().max(min_secs);
+	Duration::from_secs(rng.gen_range(min_secs..max_secs))
 }
 
 #[cfg(test)]
@@ -186,14 +191,5 @@ mod tests {
 			assert!(result >= Duration::from_secs(0));
 			assert!(result < max_duration);
 		}
-	}
-
-	#[test]
-	fn test_randomize_duration_one_second() {
-		let max_duration = Duration::from_secs(1);
-		let result = randomize_duration(max_duration);
-
-		// Result should be 0 (the only valid value in range 0..1)
-		assert_eq!(result, Duration::from_secs(0));
 	}
 }
