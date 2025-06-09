@@ -66,25 +66,23 @@ pub struct AutoNATConfig {
 	/// Client configuration:
 	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
-	pub autonat_retry_interval: Duration,
+	pub retry_interval: Duration,
 	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 900 sec)
 	#[serde(with = "duration_seconds_format")]
-	pub autonat_refresh_interval: Duration,
+	pub refresh_interval: Duration,
 	/// AutoNat on init delay before starting the fist probe. (default: 15 sec)
 	#[serde(with = "duration_seconds_format")]
-	pub autonat_boot_delay: Duration,
+	pub boot_delay: Duration,
 	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 90 sec)
 	#[serde(with = "duration_seconds_format")]
-	pub autonat_throttle: Duration,
-	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address. (default: true)
-	pub autonat_only_global_ips: bool,
-
-	/// Server configuration:
-	/// Max total dial requests done in `[Config::throttle_clients_period`]. (default: 5)
+	pub throttle: Duration,
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: true)
+	pub only_global_ips: bool,
+	/// Max total dial requests done for the throttle period. (default: 30)
 	pub throttle_clients_global_max: usize,
-	/// Max dial requests done in `[Config::throttle_clients_period`] for a peer. (default: 10)
+	/// Max dial requests done in throttle period for a peer. (default: 3)
 	pub throttle_clients_peer_max: usize,
-	/// Period for throttling clients requests. (default: 1s)
+	/// Period for throttling clients requests. (default: 1 sec)
 	#[serde(with = "duration_seconds_format")]
 	pub throttle_clients_period: Duration,
 }
@@ -92,13 +90,13 @@ pub struct AutoNATConfig {
 impl Default for AutoNATConfig {
 	fn default() -> Self {
 		Self {
-			autonat_retry_interval: Duration::from_secs(90),
-			autonat_refresh_interval: Duration::from_secs(15 * 60),
-			autonat_boot_delay: Duration::from_secs(15),
-			autonat_throttle: Duration::from_secs(90),
-			autonat_only_global_ips: true,
-			throttle_clients_global_max: 5,
-			throttle_clients_peer_max: 1,
+			retry_interval: Duration::from_secs(90),
+			refresh_interval: Duration::from_secs(15 * 60),
+			boot_delay: Duration::from_secs(15),
+			throttle: Duration::from_secs(90),
+			only_global_ips: true,
+			throttle_clients_global_max: 30,
+			throttle_clients_peer_max: 3,
 			throttle_clients_period: Duration::from_secs(1),
 		}
 	}
@@ -309,7 +307,7 @@ impl LibP2PConfig {
 	}
 }
 
-/// creates Identify Config
+/// Creates Identify Config
 pub fn identify_config(
 	cfg: &LibP2PConfig,
 	public_key: libp2p::identity::PublicKey,
@@ -327,19 +325,19 @@ pub fn identify_config(
 	identify_cfg
 }
 
-/// creates AutoNAT Config
+/// Creates AutoNAT Config
 pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 	autonat::Config {
-		retry_interval: cfg.autonat.autonat_retry_interval,
-		refresh_interval: cfg.autonat.autonat_refresh_interval,
-		boot_delay: cfg.autonat.autonat_boot_delay,
-		throttle_server_period: cfg.autonat.autonat_throttle,
-		only_global_ips: cfg.autonat.autonat_only_global_ips,
+		retry_interval: cfg.autonat.retry_interval,
+		refresh_interval: cfg.autonat.refresh_interval,
+		boot_delay: cfg.autonat.boot_delay,
+		throttle_server_period: cfg.autonat.throttle,
+		only_global_ips: cfg.autonat.only_global_ips,
 		..Default::default()
 	}
 }
 
-/// creates Kademlia Config
+/// Creates Kademlia Config
 pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
 	kad_cfg
