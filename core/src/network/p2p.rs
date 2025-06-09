@@ -4,16 +4,16 @@ use color_eyre::{
 	Report, Result,
 };
 use configuration::{auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig};
-#[cfg(not(target_arch = "wasm32"))]
-use libp2p::tcp;
 use libp2p::{
 	autonat, identify,
 	identity::{self, ed25519, Keypair},
 	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
-	noise, ping,
+	ping,
 	swarm::{behaviour::toggle::Toggle, NetworkBehaviour},
-	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
+	Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::{noise, tcp, yamux};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
 use semver::Version;
