@@ -30,11 +30,8 @@ use crate::{
 use async_trait::async_trait;
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
-use color_eyre::{
-	eyre::{eyre, WrapErr},
-	Result,
-};
-use kate_recovery::{commitments, matrix::Dimensions};
+use color_eyre::{eyre::WrapErr, Result};
+use kate_recovery::commitments;
 use mockall::automock;
 use std::{ops::Range, time::Instant};
 use tokio::sync::broadcast;

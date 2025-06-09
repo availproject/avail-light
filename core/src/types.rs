@@ -5,6 +5,8 @@ use avail_core::DataLookup;
 use avail_rust::{
 	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec, AvailHeader, H256,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use kate_recovery::matrix::{Partition, Position};
 use sp_core::{bytes, ed25519};
 
 use kate_recovery::{commitments, matrix::Dimensions};
@@ -104,7 +106,7 @@ impl TryFrom<(&AvailHeader, Option<f64>)> for BlockVerified {
 
 		#[cfg(feature = "multiproof")]
 		{
-			let multiproof_dimensions = avail_rust::utils::generate_multiproof_grid_dims(
+			let multiproof_dimensions = crate::utils::generate_multiproof_grid_dims(
 				Dimensions::new(16, 64)
 					.expect("Failed to generate dimensions for non-extended matrix"),
 				dimensions,

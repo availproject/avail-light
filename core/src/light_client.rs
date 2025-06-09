@@ -20,7 +20,7 @@
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::Result;
-use kate_recovery::{commitments, matrix::Dimensions};
+use kate_recovery::commitments;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;

@@ -20,7 +20,7 @@ use kate_recovery::data::MultiProofCell;
 use kate_recovery::data::{self, SingleCell};
 use kate_recovery::{
 	data::Cell,
-	matrix::{Dimensions, Partition, Position, RowIndex},
+	matrix::{Partition, Position, RowIndex},
 };
 use mockall::automock;
 use serde::{Deserialize, Serialize};

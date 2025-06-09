@@ -13,7 +13,6 @@ cd crawler && cargo check && cargo check --features "multiproof" && cd ./..
 cd data && cargo check && cargo check --features "multiproof" && cd ./..
 cd fat && cargo check && cargo check --features "multiproof" && cd ./..
 cd monitor-client && cargo check && cd ./..
-cd relay && cargo check && cd ./..
 
 cargo test --no-run
 
