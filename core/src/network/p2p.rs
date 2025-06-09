@@ -3,17 +3,17 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use configuration::{identify_config, kad_config, LibP2PConfig};
-#[cfg(not(target_arch = "wasm32"))]
-use libp2p::tcp;
+use configuration::{auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig};
 use libp2p::{
-	autonat, dcutr, identify,
+	autonat, identify,
 	identity::{self, ed25519, Keypair},
-	kad::{self, GetClosestPeersResult, Mode, PeerRecord, QueryStats, Record, RecordKey},
-	noise, ping, relay,
-	swarm::NetworkBehaviour,
-	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
+	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
+	ping,
+	swarm::{behaviour::toggle::Toggle, NetworkBehaviour},
+	Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p::{noise, tcp, yamux};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
 use semver::Version;
@@ -170,10 +170,12 @@ impl AgentVersion {
 	}
 }
 
+pub type ClosestPeers = Vec<(PeerId, Vec<libp2p::Multiaddr>)>;
+
 #[derive(Debug)]
 pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	GetClosestPeer(oneshot::Sender<Result<GetClosestPeersResult>>),
+	GetClosestPeer(oneshot::Sender<Result<ClosestPeers>>),
 }
 
 type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
@@ -181,14 +183,21 @@ type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
 // Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
-pub struct Behaviour {
-	kademlia: kad::Behaviour<Store>,
-	identify: identify::Behaviour,
-	ping: ping::Behaviour,
-	auto_nat: autonat::Behaviour,
-	relay_client: relay::client::Behaviour,
-	dcutr: dcutr::Behaviour,
-	blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
+pub struct ConfigurableBehaviour {
+	#[behaviour(optional)]
+	kademlia: Toggle<kad::Behaviour<Store>>,
+
+	#[behaviour(optional)]
+	identify: Toggle<identify::Behaviour>,
+
+	#[behaviour(optional)]
+	ping: Toggle<ping::Behaviour>,
+
+	#[behaviour(optional)]
+	auto_nat: Toggle<autonat::Behaviour>,
+
+	#[behaviour(optional)]
+	blocked_peers: Toggle<allow_block_list::Behaviour<BlockedPeers>>,
 }
 
 #[derive(Debug)]
@@ -270,74 +279,104 @@ async fn build_swarm(
 	genesis_hash: &str,
 	id_keys: &Keypair,
 	kad_store: Store,
-) -> Result<Swarm<Behaviour>> {
-	// create Identify Protocol Config
-	let identify_cfg = identify_config(cfg, id_keys.public())
-		.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
-
-	// create AutoNAT Client Config
-	let autonat_cfg = autonat::Config {
-		retry_interval: cfg.autonat.autonat_retry_interval,
-		refresh_interval: cfg.autonat.autonat_refresh_interval,
-		boot_delay: cfg.autonat.autonat_boot_delay,
-		throttle_server_period: cfg.autonat.autonat_throttle,
-		only_global_ips: cfg.autonat.autonat_only_global_ips,
-		..Default::default()
-	};
-
-	// build the Swarm, connecting the lower transport logic with the
-	// higher layer network behaviour logic
+) -> Result<Swarm<ConfigurableBehaviour>> {
+	// initialize SwarmBuilder
 	#[cfg(not(target_arch = "wasm32"))]
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_tokio();
-
 	#[cfg(target_arch = "wasm32")]
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_wasm_bindgen();
 
-	let mut swarm;
+	// create behaviour closure that uses the configuration to
+	// determine which components to enable
+	let make_behaviour = move |key: &identity::Keypair| {
+		let kademlia = if cfg.behaviour.enable_kademlia {
+			let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
+			Some(kad::Behaviour::with_config(
+				key.public().to_peer_id(),
+				kad_store,
+				kad_cfg,
+			))
+		} else {
+			None
+		};
 
-	let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
+		let identify = if cfg.behaviour.enable_identify {
+			// create Identify Protocol Config
+			let identify_cfg = identify_config(cfg, id_keys.public())
+				.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
 
-	let behaviour = |key: &identity::Keypair, relay_client| {
-		Ok(Behaviour {
-			ping: ping::Behaviour::new(ping::Config::new().with_interval(cfg.ping_interval)),
-			identify: identify::Behaviour::new(identify_cfg),
-			relay_client,
-			dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
-			kademlia: kad::Behaviour::with_config(key.public().to_peer_id(), kad_store, kad_cfg),
-			auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
-			blocked_peers: allow_block_list::Behaviour::default(),
+			Some(identify::Behaviour::new(identify_cfg))
+		} else {
+			None
+		};
+
+		let ping = if cfg.behaviour.enable_ping {
+			Some(ping::Behaviour::new(ping::Config::new()))
+		} else {
+			None
+		};
+
+		let auto_nat = match cfg.behaviour.auto_nat_mode {
+			AutoNatMode::Disabled => None,
+			_ => {
+				let autonat_cfg = auto_nat_config(cfg);
+				Some(autonat::Behaviour::new(
+					key.public().to_peer_id(),
+					autonat_cfg,
+				))
+			},
+		};
+
+		let blocked_peers = if cfg.behaviour.enable_blocked_peers {
+			Some(allow_block_list::Behaviour::default())
+		} else {
+			None
+		};
+
+		Ok(ConfigurableBehaviour {
+			ping: ping.into(),
+			identify: identify.into(),
+			kademlia: kademlia.into(),
+			auto_nat: auto_nat.into(),
+			blocked_peers: blocked_peers.into(),
 		})
 	};
+
+	// build swarm with appropriate transport
+	let mut swarm;
 	#[cfg(target_arch = "wasm32")]
 	{
 		use libp2p_webrtc_websys as webrtc;
-		swarm = tokio_swarm
-			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(key)))?
-			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(behaviour)?
+		let builder = tokio_swarm
+			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(&key)))?;
+
+		swarm = builder
+			.with_behaviour(make_behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	}
 
 	#[cfg(not(target_arch = "wasm32"))]
 	if cfg.ws_transport_enable {
-		swarm = tokio_swarm
+		let builder = tokio_swarm
 			.with_websocket(noise::Config::new, yamux::Config::default)
-			.await?
-			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(behaviour)?
+			.await?;
+
+		swarm = builder
+			.with_behaviour(make_behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	} else {
-		swarm = tokio_swarm
+		let builder = tokio_swarm
 			.with_tcp(
 				tcp::Config::default().nodelay(false),
 				noise::Config::new,
 				yamux::Config::default,
 			)?
-			.with_dns()?
-			.with_relay_client(noise::Config::new, yamux::Config::default)?
-			.with_behaviour(behaviour)?
+			.with_dns()?;
+
+		swarm = builder
+			.with_behaviour(make_behaviour)?
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	}
@@ -349,10 +388,9 @@ async fn build_swarm(
 	// Because the identify protocol doesn't allow us to change
 	// agent data on the fly, we're forced to use static Kad modes
 	// instead of relying on dynamic changes
-	swarm
-		.behaviour_mut()
-		.kademlia
-		.set_mode(Some(cfg.kademlia.operation_mode.into()));
+	if let Some(kad) = swarm.behaviour_mut().kademlia.as_mut() {
+		kad.set_mode(Some(cfg.kademlia.operation_mode.into()))
+	}
 
 	Ok(swarm)
 }

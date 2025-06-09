@@ -1,9 +1,10 @@
 use super::{protocol_name, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
+use crate::network::ServiceMode;
 use crate::types::{
 	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress, SecretKey,
 };
-use libp2p::{kad, multiaddr::Protocol, Multiaddr};
+use libp2p::{autonat, kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -14,6 +15,49 @@ use std::{
 };
 #[cfg(target_arch = "wasm32")]
 use web_time::Duration;
+
+/// Defines lip2p AutoNAT mode options
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum AutoNatMode {
+	/// AutoNAT disabled
+	Disabled,
+	/// AutoNAT client only mode
+	Client,
+	/// AutoNAT server only mode
+	Server,
+}
+
+impl From<ServiceMode> for AutoNatMode {
+	fn from(mode: ServiceMode) -> Self {
+		match mode {
+			ServiceMode::Disabled => AutoNatMode::Disabled,
+			ServiceMode::Client => AutoNatMode::Client,
+			ServiceMode::Server => AutoNatMode::Server,
+		}
+	}
+}
+
+/// Define a configuration struct for Behaviour components
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BehaviourConfig {
+	pub enable_kademlia: bool,
+	pub enable_identify: bool,
+	pub enable_ping: bool,
+	pub auto_nat_mode: AutoNatMode,
+	pub enable_blocked_peers: bool,
+}
+
+impl Default for BehaviourConfig {
+	fn default() -> Self {
+		Self {
+			enable_kademlia: true,
+			enable_identify: true,
+			enable_ping: true,
+			auto_nat_mode: AutoNatMode::Client,
+			enable_blocked_peers: true,
+		}
+	}
+}
 
 /// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -200,6 +244,9 @@ pub struct LibP2PConfig {
 	/// Identify configuration
 	#[serde(flatten)]
 	pub identify: IdentifyConfig,
+	/// Swarm behaviour config
+	#[serde(flatten)]
+	pub behaviour: BehaviourConfig,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<PeerAddress>,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 10s).
@@ -228,6 +275,7 @@ impl Default for LibP2PConfig {
 			autonat: Default::default(),
 			kademlia: Default::default(),
 			identify: Default::default(),
+			behaviour: Default::default(),
 			relays: Default::default(),
 			connection_idle_timeout: Duration::from_secs(10),
 			max_negotiating_inbound_streams: 128,
@@ -261,6 +309,7 @@ impl LibP2PConfig {
 	}
 }
 
+/// creates Identify Config
 pub fn identify_config(
 	cfg: &LibP2PConfig,
 	public_key: libp2p::identity::PublicKey,
@@ -278,8 +327,20 @@ pub fn identify_config(
 	identify_cfg
 }
 
+/// creates AutoNAT Config
+pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
+	autonat::Config {
+		retry_interval: cfg.autonat.autonat_retry_interval,
+		refresh_interval: cfg.autonat.autonat_refresh_interval,
+		boot_delay: cfg.autonat.autonat_boot_delay,
+		throttle_server_period: cfg.autonat.autonat_throttle,
+		only_global_ips: cfg.autonat.autonat_only_global_ips,
+		..Default::default()
+	}
+}
+
+/// creates Kademlia Config
 pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
-	// create Kademlia Config
 	let mut kad_cfg = kad::Config::new(protocol_name(genesis_hash));
 	kad_cfg
 		.set_replication_factor(cfg.kademlia.record_replication_factor)
