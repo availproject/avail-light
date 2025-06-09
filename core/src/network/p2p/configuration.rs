@@ -37,27 +37,6 @@ impl From<ServiceMode> for AutoNatMode {
 	}
 }
 
-/// Defines lip2p Relay mode options
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum RelayMode {
-	/// AutoNAT disabled
-	Disabled,
-	/// AutoNAT client only mode
-	Client,
-	/// AutoNAT server only mode
-	Server,
-}
-
-impl From<ServiceMode> for RelayMode {
-	fn from(mode: ServiceMode) -> Self {
-		match mode {
-			ServiceMode::Disabled => RelayMode::Disabled,
-			ServiceMode::Client => RelayMode::Client,
-			ServiceMode::Server => RelayMode::Server,
-		}
-	}
-}
-
 /// Define a configuration struct for Behaviour components
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BehaviourConfig {
@@ -65,8 +44,6 @@ pub struct BehaviourConfig {
 	pub enable_identify: bool,
 	pub enable_ping: bool,
 	pub auto_nat_mode: AutoNatMode,
-	pub relay_mode: RelayMode,
-	pub enable_dcutr: bool,
 	pub enable_blocked_peers: bool,
 }
 
@@ -77,8 +54,6 @@ impl Default for BehaviourConfig {
 			enable_identify: true,
 			enable_ping: true,
 			auto_nat_mode: AutoNatMode::Client,
-			relay_mode: RelayMode::Disabled,
-			enable_dcutr: false,
 			enable_blocked_peers: true,
 		}
 	}

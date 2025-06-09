@@ -1,10 +1,8 @@
 use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
-use itertools::Either;
 use libp2p::{
 	autonat::{self, NatStatus},
 	core::ConnectedPoint,
-	dcutr,
 	identify::{self, Info},
 	kad::{
 		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
@@ -555,25 +553,6 @@ impl EventLoop {
 						};
 					},
 				}
-			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Relay(behaviour)) => {
-				match behaviour {
-					Either::Left(clint_event) => {
-						trace! {"Relay Client Event: {clint_event:#?}"};
-					},
-					Either::Right(server_event) => {
-						trace! {"Relay Server Event: {server_event:#?}"};
-					},
-				}
-			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Dcutr(dcutr::Event {
-				remote_peer_id,
-				result,
-			})) => match result {
-				Ok(_) => trace!("Hole punching succeeded with: {remote_peer_id:#?}"),
-				Err(err) => {
-					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
-				},
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(ping::Event {
 				peer,

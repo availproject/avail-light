@@ -3,17 +3,14 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use configuration::{
-	auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig, RelayMode,
-};
-use itertools::Either;
+use configuration::{auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig};
 #[cfg(not(target_arch = "wasm32"))]
 use libp2p::tcp;
 use libp2p::{
-	autonat, dcutr, identify,
+	autonat, identify,
 	identity::{self, ed25519, Keypair},
 	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
-	noise, ping, relay,
+	noise, ping,
 	swarm::{behaviour::toggle::Toggle, NetworkBehaviour},
 	yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
@@ -200,12 +197,6 @@ pub struct ConfigurableBehaviour {
 	auto_nat: Toggle<autonat::Behaviour>,
 
 	#[behaviour(optional)]
-	relay: Toggle<Either<relay::client::Behaviour, relay::Behaviour>>,
-
-	#[behaviour(optional)]
-	dcutr: Toggle<dcutr::Behaviour>,
-
-	#[behaviour(optional)]
 	blocked_peers: Toggle<allow_block_list::Behaviour<BlockedPeers>>,
 }
 
@@ -295,82 +286,61 @@ async fn build_swarm(
 	#[cfg(target_arch = "wasm32")]
 	let tokio_swarm = SwarmBuilder::with_existing_identity(id_keys.clone()).with_wasm_bindgen();
 
-	// check if we need relay client
-	let needs_relay_client = cfg.behaviour.relay_mode.clone() == RelayMode::Client;
-
 	// create behaviour closure that uses the configuration to
 	// determine which components to enable
-	let make_behaviour =
-		move |key: &identity::Keypair, relay_client_opt: Option<relay::client::Behaviour>| {
-			let kademlia = if cfg.behaviour.enable_kademlia {
-				let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
-				Some(kad::Behaviour::with_config(
-					key.public().to_peer_id(),
-					kad_store,
-					kad_cfg,
-				))
-			} else {
-				None
-			};
-
-			let identify = if cfg.behaviour.enable_identify {
-				// create Identify Protocol Config
-				let identify_cfg = identify_config(cfg, id_keys.public())
-					.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
-
-				Some(identify::Behaviour::new(identify_cfg))
-			} else {
-				None
-			};
-
-			let ping = if cfg.behaviour.enable_ping {
-				Some(ping::Behaviour::new(ping::Config::new()))
-			} else {
-				None
-			};
-
-			let auto_nat = match cfg.behaviour.auto_nat_mode {
-				AutoNatMode::Disabled => None,
-				_ => {
-					let autonat_cfg = auto_nat_config(cfg);
-					Some(autonat::Behaviour::new(
-						key.public().to_peer_id(),
-						autonat_cfg,
-					))
-				},
-			};
-
-			let relay = match cfg.behaviour.relay_mode {
-				RelayMode::Disabled => None,
-				RelayMode::Client => relay_client_opt.map(Either::Left),
-				RelayMode::Server => Some(Either::Right(relay::Behaviour::new(
-					key.public().to_peer_id(),
-					relay::Config::default(),
-				))),
-			};
-
-			let dcutr = if cfg.behaviour.enable_dcutr {
-				Some(dcutr::Behaviour::new(key.public().to_peer_id()))
-			} else {
-				None
-			};
-
-			let blocked_peers = if cfg.behaviour.enable_blocked_peers {
-				Some(allow_block_list::Behaviour::default())
-			} else {
-				None
-			};
-
-			Ok(ConfigurableBehaviour {
-				ping: ping.into(),
-				identify: identify.into(),
-				relay: relay.into(),
-				dcutr: dcutr.into(),
-				kademlia: kademlia.into(),
-				auto_nat: auto_nat.into(),
-				blocked_peers: blocked_peers.into(),
-			})
+	let make_behaviour = move |key: &identity::Keypair| {
+		let kademlia = if cfg.behaviour.enable_kademlia {
+			let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
+			Some(kad::Behaviour::with_config(
+				key.public().to_peer_id(),
+				kad_store,
+				kad_cfg,
+			))
+		} else {
+			None
 		};
+
+		let identify = if cfg.behaviour.enable_identify {
+			// create Identify Protocol Config
+			let identify_cfg = identify_config(cfg, id_keys.public())
+				.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
+
+			Some(identify::Behaviour::new(identify_cfg))
+		} else {
+			None
+		};
+
+		let ping = if cfg.behaviour.enable_ping {
+			Some(ping::Behaviour::new(ping::Config::new()))
+		} else {
+			None
+		};
+
+		let auto_nat = match cfg.behaviour.auto_nat_mode {
+			AutoNatMode::Disabled => None,
+			_ => {
+				let autonat_cfg = auto_nat_config(cfg);
+				Some(autonat::Behaviour::new(
+					key.public().to_peer_id(),
+					autonat_cfg,
+				))
+			},
+		};
+
+		let blocked_peers = if cfg.behaviour.enable_blocked_peers {
+			Some(allow_block_list::Behaviour::default())
+		} else {
+			None
+		};
+
+		Ok(ConfigurableBehaviour {
+			ping: ping.into(),
+			identify: identify.into(),
+			kademlia: kademlia.into(),
+			auto_nat: auto_nat.into(),
+			blocked_peers: blocked_peers.into(),
+		})
+	};
 
 	// build swarm with appropriate transport
 	let mut swarm;
@@ -380,22 +350,10 @@ async fn build_swarm(
 		let builder = tokio_swarm
 			.with_other_transport(|key| webrtc::Transport::new(webrtc::Config::new(&key)))?;
 
-		if needs_relay_client {
-			// Handle possible error from with_relay_client explicitly
-			let relay_builder = builder
-				.with_relay_client(noise::Config::new, yamux::Config::default)
-				.map_err(|e| eyre!("Failed to create relay client: {}", e))?;
-
-			swarm = relay_builder
-				.with_behaviour(|key, relay_client| make_behaviour(key, Some(relay_client)))?
-				.with_swarm_config(|c| generate_config(c, cfg))
-				.build();
-		} else {
-			swarm = builder
-				.with_behaviour(|key| make_behaviour(key, None))?
-				.with_swarm_config(|c| generate_config(c, cfg))
-				.build();
-		}
+		swarm = builder
+			.with_behaviour(make_behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
+			.build();
 	}
 
 	#[cfg(not(target_arch = "wasm32"))]
@@ -404,22 +362,10 @@ async fn build_swarm(
 			.with_websocket(noise::Config::new, yamux::Config::default)
 			.await?;
 
-		if needs_relay_client {
-			// Handle possible error from with_relay_client explicitly
-			let relay_builder = builder
-				.with_relay_client(noise::Config::new, yamux::Config::default)
-				.map_err(|e| eyre!("Failed to create relay client: {}", e))?;
-
-			swarm = relay_builder
-				.with_behaviour(|key, relay_client| make_behaviour(key, Some(relay_client)))?
-				.with_swarm_config(|c| generate_config(c, cfg))
-				.build();
-		} else {
-			swarm = builder
-				.with_behaviour(|key| make_behaviour(key, None))?
-				.with_swarm_config(|c| generate_config(c, cfg))
-				.build();
-		}
+		swarm = builder
+			.with_behaviour(make_behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
+			.build();
 	} else {
 		let builder = tokio_swarm
 			.with_tcp(
@@ -429,22 +375,10 @@ async fn build_swarm(
 			)?
 			.with_dns()?;
 
-		if needs_relay_client {
-			// Handle possible error from with_relay_client explicitly
-			let relay_builder = builder
-				.with_relay_client(noise::Config::new, yamux::Config::default)
-				.map_err(|e| eyre!("Failed to create relay client: {}", e))?;
-
-			swarm = relay_builder
-				.with_behaviour(|key, relay_client| make_behaviour(key, Some(relay_client)))?
-				.with_swarm_config(|c| generate_config(c, cfg))
-				.build();
-		} else {
-			swarm = builder
-				.with_behaviour(|key| make_behaviour(key, None))?
-				.with_swarm_config(|c| generate_config(c, cfg))
-				.build();
-		}
+		swarm = builder
+			.with_behaviour(make_behaviour)?
+			.with_swarm_config(|c| generate_config(c, cfg))
+			.build();
 	}
 
 	info!("Local peerID: {}", swarm.local_peer_id());
