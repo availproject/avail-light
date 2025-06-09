@@ -8,13 +8,16 @@ use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
 		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
-		MultiAddressKey, PeerIDKey, SignerNonceKey, DB,
+		MultiAddressKey, SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
 	maintenance::{self, OutputEvent as MaintenanceEvent},
 	network::{
 		self,
-		p2p::{self, extract_block_num, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		p2p::{
+			self, extract_block_num, forward_p2p_events, init_and_start_p2p_client,
+			p2p_restart_manager, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
+		},
 		rpc::{self, OutputEvent as RpcEvent},
 		Network,
 	},
@@ -87,50 +90,80 @@ async fn run(
 
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
-		let (p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-			cfg.libp2p.clone(),
-			cfg.project_name.clone(),
-			id_keys,
-			version,
-			&cfg.genesis_hash,
-			false,
-			shutdown.clone(),
-			#[cfg(feature = "rocksdb")]
-			db.clone(),
-		)
-		.await?;
+		if let Some(restart_interval) = cfg.p2p_client_restart_interval {
+			info!(
+				"P2P client restart enabled with interval: {:?}",
+				restart_interval
+			);
 
-		spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+			// Create event multiplexer channel for handling restarts
+			let (p2p_event_tx, p2p_event_rx) = mpsc::unbounded_channel::<P2pEvent>();
 
-		let addrs = vec![cfg.libp2p.tcp_multiaddress()];
+			// Create initial shutdown controller for the first event loop
+			let p2p_shutdown_controller = Controller::<String>::new();
 
-		// Start the TCP and WebRTC listeners
-		p2p_client
-			.start_listening(addrs)
-			.await
-			.wrap_err("Error starting listener.")?;
-		info!("TCP listener started on port {}", cfg.libp2p.port);
+			// Initial P2P client startup
+			let (initial_p2p_client, initial_receiver) = init_and_start_p2p_client(
+				&cfg.libp2p,
+				cfg.project_name.clone(),
+				&cfg.genesis_hash,
+				id_keys.clone(),
+				peer_id,
+				version,
+				p2p_shutdown_controller.clone(),
+				db.clone(),
+			)
+			.await?;
 
-		db.put(PeerIDKey, peer_id.to_string());
+			let p2p_client = Arc::new(Mutex::new(Some(initial_p2p_client)));
 
-		let p2p_clone = p2p_client.to_owned();
-		let cfg_clone = cfg.to_owned();
-		spawn_in_span(shutdown.with_cancel(async move {
-			info!("Bootstraping the DHT with bootstrap nodes...");
-			if let Err(error) = p2p_clone
-				.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-				.await
-			{
-				warn!("Bootstrap unsuccessful: {error:#}");
-			}
-		}));
+			// Forward events from initial receiver
+			let event_tx_clone = p2p_event_tx.clone();
+			spawn_in_span(shutdown.with_cancel(async move {
+				forward_p2p_events(initial_receiver, event_tx_clone).await;
+			}));
 
-		(Some(p2p_client), p2p_event_receiver)
+			// Start the restart manager
+			let restart_cfg = cfg.clone();
+			let restart_version = version.to_string();
+
+			spawn_in_span(shutdown.with_cancel(p2p_restart_manager(
+				p2p_client.clone(),
+				restart_cfg.libp2p,
+				restart_cfg.project_name,
+				restart_cfg.genesis_hash,
+				id_keys.clone(),
+				peer_id,
+				restart_version,
+				restart_interval,
+				shutdown.clone(),
+				db.clone(),
+				p2p_event_tx,
+				p2p_shutdown_controller,
+			)));
+
+			(p2p_client, p2p_event_rx)
+		} else {
+			// No restart - use direct approach
+			let (p2p_client, p2p_event_receiver) = init_and_start_p2p_client(
+				&cfg.libp2p,
+				cfg.project_name.clone(),
+				&cfg.genesis_hash,
+				id_keys.clone(),
+				peer_id,
+				version,
+				shutdown.clone(),
+				db.clone(),
+			)
+			.await?;
+
+			(Arc::new(Mutex::new(Some(p2p_client))), p2p_event_receiver)
+		}
 	} else {
 		info!("P2P functionality disabled (NetworkMode::RPCOnly)");
 		// Create an unused channel to match type expectations
 		let (_, p2p_event_receiver) = mpsc::unbounded_channel::<P2pEvent>();
-		(None, p2p_event_receiver)
+		(Arc::new(Mutex::new(None)), p2p_event_receiver)
 	};
 
 	#[cfg(feature = "multiproof")]
@@ -213,18 +246,19 @@ async fn run(
 		node_client: rpc_client.clone(),
 		ws_clients: ws_clients.clone(),
 		shutdown: shutdown.clone(),
-		p2p_client: p2p_client.clone(),
+		p2p_client: p2p_client.lock().await.clone(),
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(cfg.api.clone())));
 
 	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
 
-	let data_rx = cfg.app_id.map(AppId).map(|app_id| {
+	let data_rx = if let Some(app_id) = cfg.app_id.map(AppId) {
 		let (data_tx, data_rx) = broadcast::channel::<ApiData>(1 << 7);
+		let app_p2p_client = p2p_client.lock().await.clone();
 		spawn_in_span(shutdown.with_cancel(avail_light_core::app_client::run(
 			(&cfg).into(),
 			db.clone(),
-			p2p_client.clone(),
+			app_p2p_client,
 			rpc_client.clone(),
 			app_id,
 			block_tx.subscribe(),
@@ -233,8 +267,10 @@ async fn run(
 			data_tx,
 			shutdown.clone(),
 		)));
-		data_rx
-	});
+		Some(data_rx)
+	} else {
+		None
+	};
 
 	spawn_in_span(shutdown.with_cancel(api::v2::publish(
 		api::types::Topic::HeaderVerified,
@@ -332,7 +368,7 @@ async fn run(
 	};
 
 	let light_network_client = network::new(
-		p2p_client,
+		p2p_client.clone(),
 		rpc_client,
 		pp,
 		cfg.network_mode,
@@ -478,6 +514,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	cfg.tracking_service_enable = opts.tracking_service_enable;
 	cfg.operator_address = opts.operator_address.clone();
+
+	if let Some(p2p_client_restart_interval) = opts.p2p_client_restart_interval {
+		cfg.p2p_client_restart_interval = Some(Duration::from_secs(p2p_client_restart_interval));
+	}
 
 	Ok(cfg)
 }
