@@ -2,10 +2,11 @@
 
 ## [1.2.9]
 
-- Move computation of dimensions to block verified
-- Add polynomial multiproof features to core
-- Fix issue with publication and replication intervals in None case
-- Remove dusk-plonk dependencies from core
+- Moved computation of dimensions to block verified
+- Added p2p client restart capability
+- Added polynomial multiproof features to core
+- Fixed issue with publication and replication intervals in None case
+- Removed dusk-plonk dependencies from core
 - Behaviour struct can now be pre-configured based on the client needs
 
 ## [1.2.8](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.8) - 2025-05-30
