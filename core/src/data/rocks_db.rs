@@ -4,7 +4,7 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use color_eyre::eyre::Result;
-use rocksdb::{ColumnFamilyDescriptor, Options};
+use rocksdb::{ColumnFamilyDescriptor, DBCompressionType, Options};
 use std::sync::Arc;
 
 use super::RecordKey;
@@ -28,6 +28,9 @@ impl RocksDB {
 		let mut kademlia_store_cf_opts = Options::default();
 		kademlia_store_cf_opts
 			.set_compaction_filter_factory(ExpirationCompactionFilterFactory::default());
+		kademlia_store_cf_opts.set_compression_type(DBCompressionType::Lz4);
+		kademlia_store_cf_opts.set_optimize_filters_for_hits(true);
+
 		let cf_opts = vec![
 			ColumnFamilyDescriptor::new(APP_STATE_CF, Options::default()),
 			ColumnFamilyDescriptor::new(KADEMLIA_STORE_CF, kademlia_store_cf_opts),

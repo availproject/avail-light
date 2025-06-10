@@ -2,6 +2,7 @@
 
 ## [1.2.9]
 
+- Enhanced kademlia rocksdb store column-family options
 - Moved computation of dimensions to block verified
 - Added p2p client restart capability
 - Added polynomial multiproof features to core
