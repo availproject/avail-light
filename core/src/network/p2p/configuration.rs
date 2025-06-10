@@ -39,6 +39,7 @@ impl From<ServiceMode> for AutoNatMode {
 
 /// Define a configuration struct for Behaviour components
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BehaviourConfig {
 	pub enable_kademlia: bool,
 	pub enable_identify: bool,
@@ -193,6 +194,7 @@ pub struct KademliaConfig {
 	/// Sets the automatic Kademlia server mode switch (default: true)
 	pub automatic_server_mode: bool,
 	/// Sets the timeout duration after which a pending entry becomes eligible for insertion on a full bucket. (default: 60s)
+	#[serde(with = "duration_seconds_format")]
 	pub kbucket_pending_timeout: Duration,
 }
 
