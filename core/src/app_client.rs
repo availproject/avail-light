@@ -589,6 +589,7 @@ mod tests {
 				.to_vec(),
 			}),
 			confidence: None,
+			target_grid_dimensions: Some(dimensions),
 		};
 		mock_client
 			.expect_fetch_rows_from_dht()
@@ -646,6 +647,7 @@ mod tests {
 				.to_vec(),
 			}),
 			confidence: None,
+			target_grid_dimensions: Some(dimensions),
 		};
 		mock_client
 			.expect_fetch_rows_from_dht()

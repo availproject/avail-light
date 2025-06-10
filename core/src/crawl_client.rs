@@ -1,11 +1,9 @@
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	network::{p2p::Client, rpc},
 	telemetry::{otlp::Record, MetricName, Value},
-	types::{self, BlockVerified, Delay, Origin},
+	types::{self, iter_partition_cells, BlockVerified, Delay, Origin},
 };
-use kate_recovery::matrix::{Partition, Position};
+use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
@@ -84,7 +82,7 @@ pub async fn run(
 		..
 	}) = message_rx.recv().await
 	{
-		let block = match types::BlockVerified::try_from((header.clone(), None)) {
+		let block = match types::BlockVerified::try_from((&header, None)) {
 			Ok(block) => block,
 			Err(error) => {
 				error!("Header is not valid: {error}");
@@ -96,8 +94,7 @@ pub async fn run(
 			continue;
 		};
 
-		let dimensions = extension.dimensions;
-		if dimensions.cols().get() <= 2 {
+		if extension.dimensions.cols().get() <= 2 {
 			error!(block.block_num, "More than 2 columns are required");
 			continue;
 		}
@@ -117,36 +114,9 @@ pub async fn run(
 		let start = Instant::now();
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
-			let positions: Vec<Position> = {
-				#[cfg(feature = "multiproof")]
-				{
-					let multiproof_cell_dims = multi_proof_dimensions();
-					let Some(target_multiproof_grid_dims) =
-						crate::utils::generate_multiproof_grid_dims(
-							multiproof_cell_dims,
-							dimensions,
-						)
-					else {
-						error!(
-							block_number,
-							"Skipping block with invalid target multiproof grid dimensions",
-						);
-						continue;
-					};
-
-					target_multiproof_grid_dims
-						.iter_mcell_partition_positions(&partition)
-						.collect()
-				}
-
-				#[cfg(not(feature = "multiproof"))]
-				{
-					dimensions
-						.iter_extended_partition_positions(&partition)
-						.collect()
-				}
-			};
-
+			let target_grid_dimensions =
+				block.target_grid_dimensions.unwrap_or(extension.dimensions);
+			let positions = iter_partition_cells(partition, target_grid_dimensions);
 			let total = positions.len();
 			let fetched = network_client
 				.fetch_cells_from_dht(block_number, &positions)

@@ -5,6 +5,8 @@ use avail_core::DataLookup;
 use avail_rust::{
 	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec, AvailHeader, H256,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use kate_recovery::matrix::{Partition, Position};
 use sp_core::{bytes, ed25519};
 
 use kate_recovery::{commitments, matrix::Dimensions};
@@ -60,9 +62,9 @@ pub struct RuntimeVersion {
 
 #[derive(Clone)]
 pub struct Extension {
-	pub dimensions: Dimensions,
 	pub lookup: DataLookup,
 	pub commitments: Vec<[u8; 48]>,
+	pub dimensions: Dimensions,
 }
 
 /// Light to app client channel message struct
@@ -72,22 +74,23 @@ pub struct BlockVerified {
 	pub block_num: u32,
 	pub extension: Option<Extension>,
 	pub confidence: Option<f64>,
+	pub target_grid_dimensions: Option<Dimensions>,
 }
-
 pub struct ClientChannels {
 	pub block_sender: broadcast::Sender<BlockVerified>,
 	pub rpc_event_receiver: broadcast::Receiver<OutputEvent>,
 }
 
-impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {
+impl TryFrom<(&AvailHeader, Option<f64>)> for BlockVerified {
 	type Error = Report;
-	fn try_from((header, confidence): (AvailHeader, Option<f64>)) -> Result<Self, Self::Error> {
+	fn try_from((header, confidence): (&AvailHeader, Option<f64>)) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 		let mut block = BlockVerified {
 			header_hash: hash,
 			block_num: header.number,
-			extension: None,
 			confidence,
+			extension: None,
+			target_grid_dimensions: None,
 		};
 
 		let Some((rows, cols, _, commitment)) = extract_kate(&header.extension) else {
@@ -98,12 +101,25 @@ impl TryFrom<(AvailHeader, Option<f64>)> for BlockVerified {
 			return Ok(block);
 		};
 
+		let dimensions = Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
+		block.target_grid_dimensions = Some(dimensions);
+
+		#[cfg(feature = "multiproof")]
+		{
+			let multiproof_dimensions = crate::utils::generate_multiproof_grid_dims(
+				Dimensions::new(16, 64)
+					.expect("Failed to generate dimensions for non-extended matrix"),
+				dimensions,
+			)
+			.ok_or_else(|| eyre!("Invalid multiproof dimensions"))?;
+			block.target_grid_dimensions = Some(multiproof_dimensions);
+		}
+
 		if !lookup.is_empty() {
 			block.extension = Some(Extension {
-				dimensions: Dimensions::new(rows, cols)
-					.ok_or_else(|| eyre!("Invalid dimensions"))?,
 				lookup,
 				commitments: commitments::from_slice(&commitment)?,
+				dimensions,
 			});
 		}
 
@@ -691,8 +707,17 @@ const INVALID_PROJECT_NAME: &str = r#"
 Project name must only contain alphanumeric characters.
 "#;
 
-pub fn multi_proof_dimensions() -> Dimensions {
-	Dimensions::new(16, 64).expect("Failed to generate dimensions for non-extended matrix")
+#[cfg(not(target_arch = "wasm32"))]
+pub fn iter_partition_cells(partition: Partition, dimensions: Dimensions) -> Vec<Position> {
+	if cfg!(feature = "multiproof") {
+		dimensions
+			.iter_mcell_partition_positions(&partition)
+			.collect()
+	} else {
+		dimensions
+			.iter_extended_partition_positions(&partition)
+			.collect()
+	}
 }
 
 #[cfg(test)]

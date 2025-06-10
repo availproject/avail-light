@@ -2,6 +2,7 @@
 
 ## [1.2.9]
 
+- Move computation of dimensions to block verified
 - Add polynomial multiproof features to core
 - Fix issue with publication and replication intervals in None case
 - Remove dusk-plonk dependencies from core

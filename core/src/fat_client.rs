@@ -20,7 +20,7 @@ use kate_recovery::data::MultiProofCell;
 use kate_recovery::data::{self, SingleCell};
 use kate_recovery::{
 	data::Cell,
-	matrix::{Dimensions, Partition, Position, RowIndex},
+	matrix::{Partition, Position, RowIndex},
 };
 use mockall::automock;
 use serde::{Deserialize, Serialize};
@@ -28,8 +28,6 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info};
 
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{BlockHeaderKey, Database},
 	network::{
@@ -37,8 +35,10 @@ use crate::{
 		rpc::{Client as RpcClient, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
-	types::{block_matrix_partition_format, BlockVerified, ClientChannels, Delay},
-	utils::{blake2_256, extract_kate},
+	types::{
+		block_matrix_partition_format, iter_partition_cells, BlockVerified, ClientChannels, Delay,
+	},
+	utils::blake2_256,
 };
 
 #[async_trait]
@@ -135,7 +135,7 @@ pub async fn process_block(
 	header: &AvailHeader,
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
-) -> Result<()> {
+) -> Result<Option<BlockVerified>> {
 	event_sender.send(OutputEvent::CountSessionBlocks)?;
 	event_sender.send(OutputEvent::RecordBlockHeight(header.number))?;
 
@@ -144,21 +144,22 @@ pub async fn process_block(
 	let block_delay = received_at.elapsed().as_secs();
 	info!(block_number, block_delay, "Processing finalized block",);
 
-	let Some((rows, cols, _, _)) = extract_kate(&header.extension) else {
-		info!(block_number, "Skipping block without header extension");
-		return Ok(());
-	};
-	let Some(dimensions) = Dimensions::new(rows, cols) else {
-		info!(
-			block_number,
-			"Skipping block with invalid dimensions {rows}x{cols}",
-		);
-		return Ok(());
+	let Ok(block_verified) = BlockVerified::try_from((header, None)) else {
+		error!("Cannot create verified block from header");
+		return Ok(None);
 	};
 
-	if dimensions.cols().get() <= 2 {
+	let Some(extension) = &block_verified.extension else {
+		info!(
+			block_number,
+			"Skipping block: no valid extension (cannot derive dimensions)"
+		);
+		return Ok(None);
+	};
+
+	if extension.dimensions.cols().get() <= 2 {
 		error!(block_number, "More than 2 columns are required");
-		return Ok(());
+		return Ok(None);
 	}
 
 	// push latest mined block's header into column family specified
@@ -171,32 +172,11 @@ pub async fn process_block(
 	// when this process started
 	db.put(BlockHeaderKey(block_number), header.clone());
 
-	let positions: Vec<Position> = {
-		#[cfg(feature = "multiproof")]
-		{
-			let multiproof_cell_dims = multi_proof_dimensions();
-			let Some(target_multiproof_grid_dims) =
-				crate::utils::generate_multiproof_grid_dims(multiproof_cell_dims, dimensions)
-			else {
-				info!(
-					block_number,
-					"Skipping block with invalid target multiproof grid dimensions",
-				);
-				return Ok(());
-			};
-
-			target_multiproof_grid_dims
-				.iter_mcell_partition_positions(&cfg.block_matrix_partition)
-				.collect()
-		}
-
-		#[cfg(not(feature = "multiproof"))]
-		{
-			dimensions
-				.iter_extended_partition_positions(&cfg.block_matrix_partition)
-				.collect()
-		}
-	};
+	let partition = cfg.block_matrix_partition;
+	let target_grid_dimensions = block_verified
+		.target_grid_dimensions
+		.unwrap_or(extension.dimensions);
+	let positions = iter_partition_cells(partition, target_grid_dimensions);
 
 	let begin = Instant::now();
 	let get_kate_proof = |&n| client.get_kate_proof(header_hash, n);
@@ -243,7 +223,7 @@ pub async fn process_block(
 	))?;
 
 	#[cfg(not(feature = "multiproof"))]
-	if rpc_fetched.len() >= dimensions.cols().get() as usize {
+	if rpc_fetched.len() >= extension.dimensions.cols().get() as usize {
 		let cells: Vec<SingleCell> = rpc_fetched
 			.into_iter()
 			.filter(|c| !c.position().is_extended())
@@ -251,7 +231,7 @@ pub async fn process_block(
 			.collect();
 
 		let data_cells: Vec<&SingleCell> = cells.iter().collect();
-		let data_rows = data::rows(dimensions, &data_cells);
+		let data_rows = data::rows(extension.dimensions, &data_cells);
 
 		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
 			debug!("Error inserting rows into DHT: {e}");
@@ -262,7 +242,7 @@ pub async fn process_block(
 		info!("No rows has been inserted into DHT since partition size is less than one row.")
 	}
 
-	Ok(())
+	Ok(Some(block_verified))
 }
 
 /// Runs the fat client.
@@ -314,7 +294,7 @@ pub async fn run(
 				tokio::time::sleep(seconds).await;
 			}
 
-			if let Err(error) = process_block(
+			let process_block_result = process_block(
 				&client,
 				db.clone(),
 				&cfg,
@@ -322,16 +302,16 @@ pub async fn run(
 				received_at,
 				event_sender,
 			)
-			.await
-			{
-				error!("Cannot process block: {error}");
-				let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
-				return;
-			};
+			.await;
 
-			let Ok(client_msg) = BlockVerified::try_from((header, None)) else {
-				error!("Cannot create message from header");
-				continue;
+			let client_msg = match process_block_result {
+				Ok(Some(blk_verified)) => blk_verified,
+				Ok(None) => continue,
+				Err(error) => {
+					error!("Cannot process block: {error}");
+					let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
+					return;
+				},
 			};
 
 			// Notify dht-based application client

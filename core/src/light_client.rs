@@ -20,7 +20,7 @@
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::Result;
-use kate_recovery::{commitments, matrix::Dimensions};
+use kate_recovery::commitments;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
@@ -28,8 +28,6 @@ use tracing::{error, info};
 #[cfg(target_arch = "wasm32")]
 use {tokio_with_wasm::alias as tokio, web_time::Instant};
 
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
 	network::{
@@ -37,7 +35,7 @@ use crate::{
 		rpc::{self, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
-	types::{self, BlockRange, ClientChannels, Delay},
+	types::{self, BlockRange, BlockVerified, ClientChannels, Delay},
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
@@ -63,7 +61,7 @@ pub async fn process_block(
 	header: AvailHeader,
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
-) -> Result<Option<f64>> {
+) -> Result<Option<BlockVerified>> {
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 
@@ -75,7 +73,8 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let (required, verified, unverified) = match extract_kate(&header.extension) {
+	let (mut block_verified, required, verified, unverified) = match extract_kate(&header.extension)
+	{
 		None => {
 			info!("Skipping block without header extension");
 			// get current currently stored Achieved Confidence
@@ -89,47 +88,32 @@ pub async fn process_block(
 
 			return Ok(None);
 		},
-		Some((rows, cols, _, commitment)) => {
-			let Some(dimensions) = Dimensions::new(rows, cols) else {
+		Some((_, _, _, commitment)) => {
+			let Ok(block_verified) = types::BlockVerified::try_from((&header, Some(confidence)))
+			else {
+				error!("Cannot create verified block from header");
+				return Ok(None);
+			};
+
+			let Some(extension) = &block_verified.extension else {
 				info!(
 					block_number,
-					"Skipping block with invalid dimensions {rows}x{cols}",
+					"Skipping block: no valid extension (cannot derive dimensions)"
 				);
 				return Ok(None);
 			};
 
-			if dimensions.cols().get() <= 2 {
-				error!(block_number, "more than 2 columns is required");
+			if extension.dimensions.cols().get() <= 2 {
+				error!(block_number, "More than 2 columns are required");
 				return Ok(None);
 			}
 
 			let commitments = commitments::from_slice(&commitment)?;
 			let cell_count = rpc::cell_count_for_confidence(confidence);
-			let positions = {
-				#[cfg(feature = "multiproof")]
-				{
-					let multiproof_cell_dims = multi_proof_dimensions();
-					let Some(target_multiproof_grid_dims) =
-						crate::utils::generate_multiproof_grid_dims(
-							multiproof_cell_dims,
-							dimensions,
-						)
-					else {
-						info!(
-							block_number,
-							"Skipping block with invalid target multiproof grid dimensions",
-						);
-						return Ok(None);
-					};
-
-					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
-				}
-
-				#[cfg(not(feature = "multiproof"))]
-				{
-					rpc::generate_random_cells(dimensions, cell_count)
-				}
-			};
+			let target_grid_dimensions = block_verified
+				.target_grid_dimensions
+				.unwrap_or(extension.dimensions);
+			let positions = rpc::generate_random_cells(target_grid_dimensions, cell_count);
 
 			info!(
 				block_number,
@@ -142,7 +126,7 @@ pub async fn process_block(
 				.fetch_verified(
 					block_number,
 					header_hash,
-					dimensions,
+					extension.dimensions,
 					&commitments,
 					&positions,
 				)
@@ -161,7 +145,12 @@ pub async fn process_block(
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
 				event_sender.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))?;
 			}
-			(positions.len(), fetched.len(), unfetched.len())
+			(
+				block_verified,
+				positions.len(),
+				fetched.len(),
+				unfetched.len(),
+			)
 		},
 	};
 
@@ -190,6 +179,7 @@ pub async fn process_block(
 		confidence
 	);
 	event_sender.send(OutputEvent::RecordBlockConfidence(confidence))?;
+	block_verified.confidence = Some(confidence);
 
 	// push latest mined block's header into column family specified
 	// for keeping block headers, to be used
@@ -201,7 +191,7 @@ pub async fn process_block(
 	// when this process started
 	db.put(BlockHeaderKey(block_number), header);
 
-	Ok(Some(confidence))
+	Ok(Some(block_verified))
 }
 
 /// Runs light client.
@@ -263,18 +253,14 @@ pub async fn run(
 			)
 			.await;
 
-			let confidence = match process_block_result {
-				Ok(confidence) => confidence,
+			let client_msg = match process_block_result {
+				Ok(Some(blk_verified)) => blk_verified,
+				Ok(None) => continue,
 				Err(error) => {
 					error!("Cannot process block: {error}");
 					let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
 					return;
 				},
-			};
-
-			let Ok(client_msg) = types::BlockVerified::try_from((header, confidence)) else {
-				error!("Cannot create message from header");
-				continue;
 			};
 
 			// Notify dht-based application client

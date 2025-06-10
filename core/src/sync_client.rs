@@ -14,8 +14,6 @@
 //! # Notes
 //!
 //! In case RPC is disabled, RPC calls will be skipped.
-#[cfg(feature = "multiproof")]
-use crate::types::multi_proof_dimensions;
 use crate::{
 	data::{
 		AchievedSyncConfidenceKey, BlockHeaderKey, Database, IsSyncedKey, LatestSyncKey,
@@ -32,11 +30,8 @@ use crate::{
 use async_trait::async_trait;
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
-use color_eyre::{
-	eyre::{eyre, WrapErr},
-	Result,
-};
-use kate_recovery::{commitments, matrix::Dimensions};
+use color_eyre::{eyre::WrapErr, Result};
+use kate_recovery::commitments;
 use mockall::automock;
 use std::{ops::Range, time::Instant};
 use tokio::sync::broadcast;
@@ -139,56 +134,52 @@ async fn process_block(
 
 	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
 
-	let (required, verified, unverified) = match extract_kate(&header.extension) {
+	let (required, verified, unverified, mut block_verified) = match extract_kate(&header.extension)
+	{
 		None => {
 			info!("Skipping block without header extension");
 
 			return Ok(());
 		},
-		Some((rows, cols, _, commitment)) => {
-			let dimensions =
-				Dimensions::new(rows, cols).ok_or_else(|| eyre!("Invalid dimensions"))?;
+		Some((_, _, _, commitment)) => {
+			let block_verified = BlockVerified::try_from((&header, None))
+				.wrap_err("converting to message failed")?;
+			let Some(extension) = &block_verified.extension else {
+				info!(
+					block_number,
+					"Skipping block: no valid extension (cannot derive dimensions)"
+				);
+				return Ok(());
+			};
 
+			if extension.dimensions.cols().get() <= 2 {
+				error!(block_number, "More than 2 columns are required");
+				return Ok(());
+			}
+			let target_grid_dimensions = block_verified
+				.target_grid_dimensions
+				.unwrap_or(extension.dimensions);
 			let commitments = commitments::from_slice(&commitment)?;
 
 			// now this is in `u64`
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-			let positions = {
-				#[cfg(feature = "multiproof")]
-				{
-					let multiproof_cell_dims = multi_proof_dimensions();
-					let Some(target_multiproof_grid_dims) =
-						crate::utils::generate_multiproof_grid_dims(
-							multiproof_cell_dims,
-							dimensions,
-						)
-					else {
-						info!(
-							block_number,
-							"Skipping block with invalid target multiproof grid dimensions",
-						);
-						return Ok(());
-					};
-
-					rpc::generate_random_cells(target_multiproof_grid_dims, cell_count)
-				}
-
-				#[cfg(not(feature = "multiproof"))]
-				{
-					rpc::generate_random_cells(dimensions, cell_count)
-				}
-			};
+			let positions = rpc::generate_random_cells(target_grid_dimensions, cell_count);
 
 			let (fetched, unfetched, _fetch_stats) = network_client
 				.fetch_verified(
 					block_number,
 					header_hash,
-					dimensions,
+					extension.dimensions,
 					&commitments,
 					&positions,
 				)
 				.await?;
-			(positions.len(), fetched.len(), unfetched.len())
+			(
+				positions.len(),
+				fetched.len(),
+				unfetched.len(),
+				block_verified,
+			)
 		},
 	};
 
@@ -201,10 +192,9 @@ async fn process_block(
 	client.store_verified_cell_count(verified.try_into()?, block_number);
 
 	let confidence = Some(calculate_confidence(verified as u32));
-	let client_msg =
-		BlockVerified::try_from((header, confidence)).wrap_err("converting to message failed")?;
+	block_verified.confidence = confidence;
 
-	if let Err(error) = block_verified_sender.send(client_msg) {
+	if let Err(error) = block_verified_sender.send(block_verified) {
 		error!("Cannot send block verified message: {error}");
 	}
 
