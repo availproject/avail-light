@@ -2,8 +2,9 @@
 
 ## [1.13.0]
 
-- Updated `avail-light-core` to 1.2.9
+- Disabled DHT put
 - Added new configs for AutoNAT service mode behaviour
+- Updated `avail-light-core` to 1.2.9
 
 ## [1.12.13](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.12.13) - 2025-05-30
 

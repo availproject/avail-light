@@ -26,8 +26,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		load_or_init_suri, Delay, IdentityConfig, KademliaMode, MaintenanceConfig, NetworkMode,
-		PeerAddress, SecretKey, Uuid,
+		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, NetworkMode, PeerAddress,
+		SecretKey, Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -292,8 +292,10 @@ async fn run(
 		)));
 	}
 
-	let insert_into_dht = cfg.libp2p.kademlia.automatic_server_mode
-		|| cfg.libp2p.kademlia.operation_mode == KademliaMode::Client;
+	// NOTE: Disable DHT insertion until we optimize the network
+	// let insert_into_dht = cfg.libp2p.kademlia.automatic_server_mode
+	// 	|| cfg.libp2p.kademlia.operation_mode == KademliaMode::Client;
+	let insert_into_dht = false;
 
 	let sync_client = SyncClient::new(db.clone(), rpc_client.clone());
 
