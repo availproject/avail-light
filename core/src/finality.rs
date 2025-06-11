@@ -78,44 +78,36 @@ pub fn check_finality(
 		.precommits
 		.iter()
 		.partition_map(|precommit| {
-			// Try multiple set_id values to handle forced validator set changes.
-			// Forced changes can cause set_id mismatches between local tracking and
-			// actual signatures, especially after emergency validator set transitions.
-			// This retry mechanism handles common cases where justifications were signed
-			// with a different set_id than what the light client expects.
+			// Try multiple set_id values to handle forced validator set changes
 			let candidate_set_ids = [
-				validator_set.set_id,                   // Current set_id
-				validator_set.set_id.saturating_sub(1), // Previous set_id
-				validator_set.set_id + 1,               // Next set_id (edge case)
+				validator_set.set_id,
+				validator_set.set_id.saturating_sub(1),
+				validator_set.set_id + 1,
 			];
 
-			let mut signature_result = None;
-			let mut used_set_id = validator_set.set_id;
+			let (is_ok, used_set_id) = candidate_set_ids
+				.iter()
+				.find_map(|&set_id| {
+					let signed_message = Encode::encode(&(
+						&SignerMessage::PrecommitMessage(precommit.precommit.clone()),
+						&justification.round,
+						&set_id,
+					));
 
-			// Try each candidate set_id until one works
-			for &candidate_set_id in &candidate_set_ids {
-				let signed_message = Encode::encode(&(
-					&SignerMessage::PrecommitMessage(precommit.precommit.clone()),
-					&justification.round,
-					&candidate_set_id,
-				));
+					verify_signature(precommit.id.0, precommit.signature.0, signed_message).then(
+						|| {
+							if set_id != validator_set.set_id {
+								info!(
+									"Used set_id {} instead of expected {}",
+									set_id, validator_set.set_id
+								);
+							}
+							(true, set_id)
+						},
+					)
+				})
+				.unwrap_or((false, validator_set.set_id));
 
-				if verify_signature(precommit.id.0, precommit.signature.0, signed_message) {
-					signature_result = Some(true);
-					used_set_id = candidate_set_id;
-
-					// Log if we had to use a different set_id than expected
-					if candidate_set_id != validator_set.set_id {
-						info!(
-							"Signature verification succeeded with set_id {} instead of expected {}",
-							candidate_set_id, validator_set.set_id
-						);
-					}
-					break;
-				}
-			}
-
-			let is_ok = signature_result.unwrap_or(false);
 			let ancestry = confirm_ancestry(
 				&precommit.precommit.target_hash,
 				&justification.commit.target_hash,
