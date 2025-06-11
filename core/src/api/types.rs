@@ -1,10 +1,10 @@
 use avail_core::kate::COMMITMENT_SIZE;
-use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_client::avail_rust_core::{
+	header::CompactDataLookup, header::HeaderExtension, AvailHeader, H256,
+};
 use avail_rust_client::ext::subxt_core::config::substrate::{
 	Digest as ApiDigest, DigestItem as ApiDigestItem,
 };
-use avail_rust_client::prelude::H256;
-use avail_rust_core::{header::CompactDataLookup, header::HeaderExtension, AvailHeader};
 use codec::Encode;
 #[cfg(not(target_arch = "wasm32"))]
 use color_eyre::eyre::eyre;

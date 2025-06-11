@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use avail_light_core::data::{Database, LatestHeaderKey, MultiAddressKey, PeerIDKey};
-use avail_rust_client::prelude::Keypair;
+use avail_rust_client::Keypair;
 use chrono::Utc;
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};

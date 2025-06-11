@@ -10,9 +10,7 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
-use avail_rust_client::ext::client_core as avail_rust_core;
-use avail_rust_client::prelude::H256;
-use avail_rust_core::AvailHeader;
+use avail_rust_client::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;

@@ -2,9 +2,7 @@
 use crate::network::rpc::OutputEvent;
 use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
-use avail_rust_client::ext::client_core as avail_rust_core;
-use avail_rust_client::prelude::H256;
-use avail_rust_core::AvailHeader;
+use avail_rust_client::{AvailHeader, H256};
 use bounded_collections::bounded_vec::BoundedVec;
 use sp_core::{bytes, ed25519};
 
@@ -16,7 +14,7 @@ use avail_rust::subxt_signer::{
 	SecretString,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use avail_rust_client::prelude::{Keypair, SecretUri};
+use avail_rust_client::{Keypair, SecretUri};
 use base64::{engine::general_purpose, DecodeError, Engine};
 use clap::ValueEnum;
 use codec::{Decode, Encode, Input};

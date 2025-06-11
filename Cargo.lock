@@ -1569,11 +1569,12 @@ dependencies = [
 [[package]]
 name = "avail-rust-client"
 version = "0.2.0"
-source = "git+https://github.com/availproject/avail-rust.git?branch=v0.2.0#38ae1b0135b1afaa2876377dc70e262f98b9d53e"
+source = "git+https://github.com/availproject/avail-rust.git?branch=v0.2.0#6c767cf6717788e870f03f133f1ae218cb42bfc0"
 dependencies = [
  "avail-rust-core",
  "bounded-collections",
  "frame-metadata 20.0.0",
+ "futures",
  "hex",
  "impl-serde 0.5.0",
  "reqwest",
@@ -1587,7 +1588,7 @@ dependencies = [
 [[package]]
 name = "avail-rust-core"
 version = "0.2.0"
-source = "git+https://github.com/availproject/avail-rust.git?branch=v0.2.0#38ae1b0135b1afaa2876377dc70e262f98b9d53e"
+source = "git+https://github.com/availproject/avail-rust.git?branch=v0.2.0#6c767cf6717788e870f03f133f1ae218cb42bfc0"
 dependencies = [
  "bounded-collections",
  "hex",
@@ -6426,7 +6427,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if 1.0.0",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -16135,7 +16136,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "digest 0.10.7",
  "rand 0.8.5",
  "static_assertions",
@@ -16934,7 +16935,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

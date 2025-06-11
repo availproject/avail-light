@@ -16,8 +16,7 @@ use avail_core::{
 	kate::{CHUNK_SIZE, COMMITMENT_SIZE, EXTENSION_FACTOR},
 	AppId,
 };
-use avail_rust_client::ext::client_core as avail_rust_core;
-use avail_rust_client::prelude::H256;
+use avail_rust_client::{avail_rust_core, H256};
 use avail_rust_core::rpc::kate::{MaxRows, Rows};
 use color_eyre::{
 	eyre::{eyre, WrapErr},

@@ -1,5 +1,4 @@
-use avail_rust_client::ext::client_core as avail_rust_core;
-use avail_rust_core::AvailHeader;
+use avail_rust_client::AvailHeader;
 use codec::Encode;
 use color_eyre::{eyre::eyre, Result};
 use sp_core::ed25519::{self, Public};

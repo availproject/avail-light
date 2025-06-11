@@ -2,8 +2,7 @@ use crate::{
 	network::rpc::Node as RpcNode,
 	types::{BlockRange, Uuid},
 };
-use avail_rust_client::ext::client_core as avail_rust_core;
-use avail_rust_core::AvailHeader;
+use avail_rust_client::AvailHeader;
 use codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sp_core::ed25519;

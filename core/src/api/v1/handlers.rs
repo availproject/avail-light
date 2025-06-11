@@ -9,8 +9,9 @@ use crate::{
 	types::{BlockRange, Mode},
 	utils::calculate_confidence,
 };
-use avail_rust_client::prelude::RuntimeCall;
-use avail_rust_client::prelude::{avail::data_availability::tx::Call, OpaqueTransaction};
+use avail_rust_client::avail_rust_core::{
+	avail::data_availability::tx::Call, avail::RuntimeCall, OpaqueTransaction,
+};
 use base64::{engine::general_purpose, Engine};
 use color_eyre::eyre::WrapErr;
 use num::{BigUint, FromPrimitive};

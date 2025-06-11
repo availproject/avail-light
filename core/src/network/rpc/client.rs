@@ -1,22 +1,19 @@
 use avail_core::AppId;
 use avail_rust::subxt::{self, tx::SubmittableExtrinsic};
-use avail_rust_client::ext::subxt_core::storage::address::StaticAddress;
-use avail_rust_client::prelude::{
-	AccountId, Client as AvailRustClient, Keypair, Options, H256, U256,
-};
 use avail_rust_client::{
+	avail_rust_core::rpc::kate::{Cells, GProof, GRawScalar, Rows},
 	clients::online_client::OnlineClientT,
 	ext::{
-		client_core as avail_rust_core,
-		subxt_core::{storage::address::StaticStorageKey, utils::Yes},
+		subxt_core::{
+			storage::address::StaticAddress, storage::address::StaticStorageKey, utils::Yes,
+		},
 		subxt_rpcs::{
 			methods::legacy::{RuntimeVersion, StorageKey},
 			rpc_params,
 		},
 	},
+	AccountId, AvailHeader, Client as AvailRustClient, Keypair, Options, H256, U256,
 };
-use avail_rust_core::rpc::kate::{Cells, GProof, GRawScalar, Rows};
-use avail_rust_core::AvailHeader;
 
 #[cfg(feature = "multiproof")]
 use avail_rust::{primitives::kate::GMultiProof, rpc::kate::query_multi_proof};
@@ -566,7 +563,7 @@ impl<D: Database> Client<D> {
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
 		self.with_retries(|client| async move {
 			client
-				.header(block_hash)
+				.block_header(block_hash)
 				.await?
 				.ok_or_else(|| {
 					subxt::Error::Other(

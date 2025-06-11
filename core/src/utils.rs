@@ -2,11 +2,11 @@ use crate::shutdown::Controller;
 use avail_core::{
 	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 };
-use avail_rust_client::ext::client_core as avail_rust_core;
+use avail_rust_client::avail_rust_core::{
+	avail, avail::RuntimeCall, grandpa::AuthorityId, grandpa::ConsensusLog,
+	header::HeaderExtension, header::V3HeaderExtension, AvailHeader, OpaqueTransaction, H256,
+};
 use avail_rust_client::ext::subxt_core::config::substrate;
-use avail_rust_client::prelude::{avail, OpaqueTransaction, RuntimeCall, H256};
-use avail_rust_core::{grandpa::AuthorityId, grandpa::ConsensusLog};
-use avail_rust_core::{header::HeaderExtension, header::V3HeaderExtension, AvailHeader};
 use codec::Decode;
 use color_eyre::{
 	eyre::{self, eyre, WrapErr},

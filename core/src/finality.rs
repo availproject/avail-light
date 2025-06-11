@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use avail_rust_client::prelude::H256;
+use avail_rust_client::H256;
 use codec::Encode;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};

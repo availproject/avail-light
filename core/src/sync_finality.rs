@@ -1,9 +1,6 @@
 use async_trait::async_trait;
-use avail_rust_client::ext::client_core as avail_rust_core;
 use avail_rust_client::ext::subxt_rpcs::methods::legacy::StorageKey;
-use avail_rust_client::prelude::AccountId;
-use avail_rust_client::prelude::H256;
-use avail_rust_core::AvailHeader;
+use avail_rust_client::{AccountId, AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{
 	eyre::{eyre, Context},
