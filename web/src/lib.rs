@@ -297,8 +297,8 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 
 	info!("Fetching the latest block...");
 
-	let block = sdk.client.online_client.blocks().at_latest().await.unwrap();
-	let header = block.header().clone();
+	let block = client.finalized_block().await.unwrap();
+	let header = block.block.header.clone();
 	let received_at = Instant::now();
 
 	let (lc_sender, mut lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
@@ -348,5 +348,8 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 			.map(|confidence| format!("{confidence}"))
 			.unwrap_or("none".to_string());
 
-	format!("Confidence for block {} is {confidence}.", block.number())
+	format!(
+		"Confidence for block {} is {confidence}.",
+		block.block.header.number
+	)
 }

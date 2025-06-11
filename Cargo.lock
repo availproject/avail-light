@@ -1118,7 +1118,7 @@ version = "1.13.0"
 dependencies = [
  "avail-core",
  "avail-light-core",
- "avail-rust-client",
+ "avail-rust-core",
  "better-panic",
  "chrono",
  "clap",
@@ -1148,7 +1148,7 @@ name = "avail-light-compatibility-tests"
 version = "0.0.0"
 dependencies = [
  "avail-light-core",
- "avail-rust-client",
+ "avail-rust-core",
  "clap",
  "color-eyre",
  "kate-recovery",

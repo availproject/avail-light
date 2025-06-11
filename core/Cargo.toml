@@ -9,9 +9,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
-avail-core = { workspace = true, default-features = false, features = ["std"] }
-kate = { workspace = true, features = ["std"] }
-kate-recovery = { workspace = true, features = ["std"] }
 bounded-collections = { workspace = true }
 
 # 3rd-party
@@ -55,7 +52,10 @@ flate2 = "1.1"
 tar = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-sp-core = { workspace = true, default-features = false, features = ["std"] }
+avail-core = { workspace = true, default-features = false, features = ["std"] }
+kate = { workspace = true, features = ["std"] }
+kate-recovery = { workspace = true, features = ["std"] }
+sp-core = { workspace = true, default-features = false, features = ["std", "serde"] }
 async-std = { workspace = true }
 color-eyre = { workspace = true, default-features = true }
 confy = { workspace = true }
@@ -89,7 +89,10 @@ opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-sp-core = { workspace = true, default-features = false }
+avail-core = { workspace = true, default-features = false }
+kate = { workspace = true, default-features = false  }
+kate-recovery = { workspace = true, default-features = false  }
+sp-core = { workspace = true, default-features = false, features = ["serde"] }
 avail-rust-client = { workspace = true, features = ["wasm", "reqwest", "subxt"]}
 blake2b_simd = "1.0.2"
 color-eyre = { workspace = true }

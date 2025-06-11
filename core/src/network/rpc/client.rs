@@ -15,10 +15,13 @@ use avail_rust_client::{
 };
 
 #[cfg(feature = "multiproof")]
-use avail_rust_client::avail_rust_core::{rpc::kate::query_multi_proof, rpc::kate::GMultiProof};
+use avail_rust_client::avail_rust_core::{
+	rpc::kate::query_multi_proof,
+	rpc::kate::{GCellBlock, GMultiProof},
+};
 use codec::Decode;
 #[cfg(feature = "multiproof")]
-use kate_recovery::data::{GCellBlock, MultiProofCell};
+use kate_recovery::data::MultiProofCell;
 use kate_recovery::{data::SingleCell, matrix::Position};
 use sp_core::{bytes::from_hex, crypto, ed25519::Public};
 
@@ -27,7 +30,6 @@ use color_eyre::{
 	Report, Result,
 };
 use futures::{Stream, TryStreamExt};
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use std::{iter::Iterator, pin::Pin, sync::Arc};
 #[cfg(not(target_arch = "wasm32"))]
@@ -581,13 +583,12 @@ impl<D: Database> Client<D> {
 			.with_retries(|client| {
 				let cells = cells.clone();
 				async move {
-					query_multi_proof(&client.client, Some(block_hash), cells.to_vec())
+					query_multi_proof(&client.rpc_client, Some(block_hash), cells.to_vec())
 						.await
 						.map_err(Into::into)
 				}
 			})
-			.await?
-			.0;
+			.await?;
 
 		let cells = positions
 			.iter()
@@ -596,6 +597,13 @@ impl<D: Database> Client<D> {
 				let (scalars, proof) = proof;
 				let proof_bytes: [u8; 48] = proof.0;
 				let raw_scalars: Vec<[u64; 4]> = scalars.into_iter().map(|u| u.0).collect();
+
+				let gcell_block = kate_recovery::data::GCellBlock {
+					start_x: gcell_block.start_x,
+					start_y: gcell_block.start_y,
+					end_x: gcell_block.end_x,
+					end_y: gcell_block.end_y,
+				};
 
 				MultiProofCell {
 					position,
