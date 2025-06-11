@@ -16,6 +16,7 @@ use avail_rust_client::{
 
 #[cfg(feature = "multiproof")]
 use avail_rust_client::avail_rust_core::{rpc::kate::query_multi_proof, rpc::kate::GMultiProof};
+use codec::Decode;
 #[cfg(feature = "multiproof")]
 use kate_recovery::data::{GCellBlock, MultiProofCell};
 use kate_recovery::{data::SingleCell, matrix::Position};
@@ -45,7 +46,7 @@ use crate::{
 	data::{Database, RpcNodeKey, SignerNonceKey},
 	network::rpc::OutputEvent as RpcEvent,
 	shutdown::Controller,
-	types::{Base64, DEV_FLAG_GENHASH},
+	types::{Base64, GrandpaJustification, DEV_FLAG_GENHASH},
 };
 
 #[derive(codec::Encode)]
@@ -132,13 +133,10 @@ impl GenesisHash {
 	}
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-type SubscriptionStream =
-	Pin<Box<dyn Stream<Item = Result<Result<Subscription, subxt::error::Error>, Elapsed>> + Send>>;
-
-#[cfg(target_arch = "wasm32")]
-type SubscriptionStream =
-	Pin<Box<dyn Stream<Item = Result<Subscription, subxt::error::Error>> + Send>>;
+type SubscriptionStream = (
+	avail_rust_client::subscription::HeaderSubscription,
+	avail_rust_client::subscription::JustificationSubscription,
+);
 
 #[derive(Clone)]
 pub struct Client<T: Database> {
@@ -436,37 +434,31 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn subscription_stream(self) -> impl Stream<Item = Result<Subscription>> {
+		let (mut sub_header, mut sub_just) =
+			Self::create_rpc_subscriptions(self.current_client().await)
+				.await
+				.unwrap();
+
 		async_stream::stream! {
 			loop {
-				match self.with_retries(Self::create_rpc_subscriptions).await {
-					Ok(mut stream) => {
-						loop {
-							match stream.next().await {
-								#[cfg(not(target_arch = "wasm32"))]
-								Some(Ok(Ok(item))) => {
-									 yield Ok(item);
-									 continue;
-								},
-								#[cfg(target_arch = "wasm32")]
-								Some(Ok(item)) => {
-									yield Ok(item);
-									continue;
-								},
-								#[cfg(not(target_arch = "wasm32"))]
-								Some(Ok(Err(error))) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
-								Some(Err(error)) => warn!(%error, "Received error on RPC Subscription stream. Creating new connection."),
-								None => warn!("RPC Subscription Stream exhausted. Creating new connection."),
-							}
-							break;
-						}
-
+				tokio::select! {
+					val = sub_header.next() => {
+						yield Ok(Subscription::Header(val.unwrap()))
 					}
-					Err(err) => {
-						warn!(error = %err, "Failed to create RPC Subscription stream.");
-						yield Err(err);
-						return;
+					val = sub_just.next() => {
+						const FRNK: [u8; 4] = *b"FRNK";
+						let justifications = val.unwrap();
+						for just in justifications.justifications {
+							if just.0 != FRNK {
+								continue
+							}
+							let value = just.1;
+							let res: GrandpaJustification = GrandpaJustification::decode(&mut value.as_slice()).unwrap();
+							yield Ok(Subscription::Justification(res))
+						}
 					}
 				}
+				break;
 			}
 		}
 	}
@@ -476,72 +468,12 @@ impl<D: Database> Client<D> {
 	}
 
 	async fn create_rpc_subscriptions(client: AvailRustClient) -> Result<SubscriptionStream> {
-		// NOTE: current tokio stream implementation doesn't support timeouts on web
-		#[cfg(not(target_arch = "wasm32"))]
-		let timeout_in = Duration::from_secs(30);
-
-		let headers_stream = client
-			.client
-			.online_client
-			.backend()
-			.stream_finalized_block_headers()
-			.await?
-			.map_ok(|(header, _)| Subscription::Header(header))
-			.inspect_ok(|_| info!("Received header on the stream"))
-			.inspect_err(|error| warn!(%error, "Received error on headers stream"));
-
-		// Create fused Avail Header subscription
-		#[cfg(not(target_arch = "wasm32"))]
-		let headers: SubscriptionStream = Box::pin(headers_stream.timeout(timeout_in).fuse());
-		#[cfg(target_arch = "wasm32")]
-		let headers: SubscriptionStream = Box::pin(headers_stream.fuse());
-
-		let justifications_stream = client
-			.client
-			.rpc_client
-			.subscribe(
-				"grandpa_subscribeJustifications",
-				rpc_params![],
-				"grandpa_unsubscribeJustifications",
-			)
-			.await?
-			.map_ok(Subscription::Justification)
-			.inspect_ok(|_| info!("Received justification on the stream"))
-			.inspect_err(|error| warn!(%error, "Received error on justifications stream"));
-
-		#[cfg(not(target_arch = "wasm32"))]
-		// Create fused GrandpaJustification subscription
-		let justifications: SubscriptionStream =
-			Box::pin(justifications_stream.timeout(timeout_in).fuse());
-		#[cfg(target_arch = "wasm32")]
-		let justifications: SubscriptionStream = Box::pin(justifications_stream.fuse());
-
-		let mut last_stream = 0;
-		let mut per_stream_count = 0;
-
-		let mut streams = StreamMap::new();
-		streams.insert(0, Box::pin(headers));
-		streams.insert(1, Box::pin(justifications));
-		let streams = streams
-			.take_while(move |&(stream, _)| {
-				if last_stream != stream {
-					last_stream = stream;
-					per_stream_count = 0;
-					return true;
-				}
-
-				per_stream_count += 1;
-
-				if per_stream_count < 3 {
-					return true;
-				}
-
-				// If one of the streams is inactive third time in a row, reconnect
-				warn!("Stream stalled, restarting...");
-				false
-			})
-			.map(|(_, value)| value);
-		Ok(Box::pin(streams))
+		let block_height = client.finalized_block_height().await.unwrap();
+		let sub_header =
+			client.subscription_block_header(block_height, Duration::from_secs(3), false);
+		let sub_just =
+			client.subscription_justification(block_height, Duration::from_secs(3), false);
+		Ok((sub_header, sub_just))
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
@@ -560,22 +492,14 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
-		self.with_retries(|client| async move {
-			client
-				.block_header(block_hash)
-				.await?
-				.ok_or_else(|| {
-					subxt::Error::Other(
-						format!("Block Header with hash: {block_hash:?} not found",),
-					)
-				})
-				.map_err(Into::into)
-		})
-		.await
-		.wrap_err(format!(
-			"Block Header with hash: {:?} not found",
-			block_hash
-		))
+		// TODO
+		let v = self
+			.current_client()
+			.await
+			.block_header(block_hash)
+			.await
+			.unwrap();
+		Ok(v.unwrap())
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
@@ -600,15 +524,13 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
+		// TODO
 		let head = self
-			.with_retries(|client| async move {
-				client
-					.finalized_block_hash()
-					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
-					.map_err(Into::into)
-			})
-			.await?;
+			.current_client()
+			.await
+			.finalized_block_hash()
+			.await
+			.unwrap();
 
 		Ok(head)
 	}
@@ -647,7 +569,7 @@ impl<D: Database> Client<D> {
 	) -> Result<Vec<MultiProofCell>> {
 		let cells: Cells = positions
 			.iter()
-			.map(|p| avail_rust::Cell {
+			.map(|p| avail_rust_client::avail_rust_core::rpc::kate::Cell {
 				row: p.row,
 				col: p.col as u32,
 			})
@@ -708,7 +630,7 @@ impl<D: Database> Client<D> {
 
 		let cells: Cells = positions
 			.iter()
-			.map(|p| avail_rust::Cell {
+			.map(|p| avail_rust_client::avail_rust_core::rpc::kate::Cell {
 				row: p.row,
 				col: p.col as u32,
 			})

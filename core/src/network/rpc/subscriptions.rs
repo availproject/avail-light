@@ -125,7 +125,7 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 				if !new_auths.is_empty() {
 					let new_valset = new_auths
 						.into_iter()
-						.map(|(a, _)| ed25519::Public::from_raw(a.0 .0 .0))
+						.map(|(a, _)| ed25519::Public::from_raw(a.0))
 						.collect::<Vec<Public>>();
 
 					self.block_data.next_valset = Some(ValidatorSet {

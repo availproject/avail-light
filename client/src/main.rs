@@ -29,7 +29,6 @@ use avail_light_core::{
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::account;
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -155,8 +154,8 @@ async fn run(
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
 	let client = rpc_client.current_client().await;
 
-	let account_address = account_id.to_string();
-	let nonce = account::nonce_node(&client.client, &account_address)
+	let nonce = client
+		.nonce(&account_id)
 		.await
 		.map_err(|error| eyre!("{:?}", error))?;
 	db.put(SignerNonceKey, nonce);
