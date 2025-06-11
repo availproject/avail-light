@@ -2,6 +2,7 @@
 
 ## [1.2.9]
 
+- Check previous and next validator set in case when current fails
 - Moved computation of dimensions to block verified
 - Added p2p client restart capability
 - Added polynomial multiproof features to core
