@@ -20,7 +20,6 @@ repository = "https://github.com/availproject/avail-light"
 [workspace.dependencies]
 # Internal deps
 avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
-avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.12", default-features = false }
 avail-rust-client = { package = "avail-rust-client", git = "https://github.com/availproject/avail-rust.git", branch = "v0.2.0", default-features = false }
 bounded-collections = { version = "0.2.0", default-features = false, features = ["serde"] }
 kate = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-8", features = ["serde"] }
@@ -75,3 +74,4 @@ codegen-units = 1
 # and we need to specify `disable-allocator` feature to enable wasm compilation.
 # Patch needs to match patched tag of dependencies, for feature toggle to be applied.
 sp-io = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12" }
+

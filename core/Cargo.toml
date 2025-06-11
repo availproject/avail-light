@@ -9,11 +9,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Internal deps
-avail-core = { workspace = true }
-kate = { workspace = true }
-kate-recovery = { workspace = true }
-sp-core = { workspace = true }
-avail-rust-client = { workspace = true, features = ["native", "reqwest", "subxt"]}
+avail-core = { workspace = true, default-features = false, features = ["std"] }
+kate = { workspace = true, features = ["std"] }
+kate-recovery = { workspace = true, features = ["std"] }
 bounded-collections = { workspace = true }
 
 # 3rd-party
@@ -57,7 +55,7 @@ flate2 = "1.1"
 tar = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-avail-rust = { workspace = true, default-features = true }
+sp-core = { workspace = true, default-features = false, features = ["std"] }
 async-std = { workspace = true }
 color-eyre = { workspace = true, default-features = true }
 confy = { workspace = true }
@@ -83,6 +81,7 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 void = { workspace = true }
 warp = { workspace = true }
+avail-rust-client = { workspace = true, features = ["native", "reqwest", "subxt"]}
 
 # OpenTelemetry
 opentelemetry = { workspace = true }
@@ -90,7 +89,8 @@ opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-avail-rust = { workspace = true, default-features = false, features = ["wasm"] }
+sp-core = { workspace = true, default-features = false }
+avail-rust-client = { workspace = true, features = ["wasm", "reqwest", "subxt"]}
 blake2b_simd = "1.0.2"
 color-eyre = { workspace = true }
 ed25519-compact = "2.1.1"
@@ -106,7 +106,6 @@ wasm-bindgen = "0.2.90"
 web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-avail-rust = { workspace = true, default-features = true }
 hex-literal = "0.4.1"
 proptest = "1.0.0"
 test-case = "3.2.1"

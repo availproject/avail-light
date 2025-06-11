@@ -9,7 +9,7 @@ use sp_core::{bytes, ed25519};
 use kate_recovery::{commitments, matrix::Dimensions};
 
 #[cfg(not(target_arch = "wasm32"))]
-use avail_rust::subxt_signer::{
+use avail_rust_client::ext::subxt_signer::{
 	bip39::{Language, Mnemonic},
 	SecretString,
 };

@@ -8,7 +8,7 @@ use avail_light_core::shutdown::Controller;
 use avail_light_core::types::{Delay, NetworkMode, PeerAddress};
 use avail_light_core::utils::spawn_in_span;
 use avail_light_core::{api, data};
-use avail_rust::SDK;
+use avail_rust_client::Client;
 use clap::ValueEnum;
 use kate::couscous;
 use libp2p::Multiaddr;
@@ -290,7 +290,7 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 	};
 
 	let endpoint = network.full_node_ws().first().cloned().unwrap();
-	let sdk = SDK::new(&endpoint).await.unwrap();
+	let client = Client::new(&endpoint).await.unwrap();
 	let db = data::DB::default();
 	let shutdown = Controller::new();
 	let pp = Arc::new(couscous::multiproof_params());

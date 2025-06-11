@@ -1,5 +1,4 @@
 use avail_core::AppId;
-use avail_rust::subxt::{self, tx::SubmittableExtrinsic};
 use avail_rust_client::{
 	avail_rust_core::rpc::kate::{Cells, GProof, GRawScalar, Rows},
 	clients::online_client::OnlineClientT,
@@ -16,7 +15,7 @@ use avail_rust_client::{
 };
 
 #[cfg(feature = "multiproof")]
-use avail_rust::{primitives::kate::GMultiProof, rpc::kate::query_multi_proof};
+use avail_rust_client::avail_rust_core::{rpc::kate::query_multi_proof, rpc::kate::GMultiProof};
 #[cfg(feature = "multiproof")]
 use kate_recovery::data::{GCellBlock, MultiProofCell};
 use kate_recovery::{data::SingleCell, matrix::Position};
@@ -868,7 +867,9 @@ impl<D: Database> Client<D> {
 		&self,
 		tx_bytes: Vec<u8>,
 	) -> Result<SubmitResponse> {
-		self.with_retries(|client| {
+		// TODO
+		todo!()
+		/* 		self.with_retries(|client| {
 			let extrinsic =
 				SubmittableExtrinsic::from_bytes(client.client.online_client, tx_bytes.clone());
 			async move {
@@ -889,7 +890,7 @@ impl<D: Database> Client<D> {
 					})
 			}
 		})
-		.await
+		.await */
 	}
 
 	pub async fn get_paged_storage_keys(
