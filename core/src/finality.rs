@@ -82,7 +82,7 @@ pub fn check_finality(
 			let candidate_set_ids = [
 				validator_set.set_id,
 				validator_set.set_id.saturating_sub(1),
-				validator_set.set_id + 1,
+				validator_set.set_id.saturating_sub(2),
 			];
 
 			let (is_ok, used_set_id) = candidate_set_ids
