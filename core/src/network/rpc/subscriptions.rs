@@ -168,9 +168,9 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 					.get(BlockHeaderReceivedAtKey(header.number))
 					.expect("Block header timestamp is in the database");
 
-				let is_final = check_finality(&valset, &justification);
-
-				is_final.expect("Finality check failed");
+				let set_id =
+					check_finality(&valset, &justification).expect("Finality check failed");
+				self.block_data.current_valset.set_id = set_id;
 
 				// store Finality Checkpoint if finality is synced
 				if finality_synced {

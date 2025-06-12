@@ -293,7 +293,8 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 			set_id,
 			validator_set,
 		};
-		check_finality(&valset, &proof.0.justification.0).context("Finality sync check failed")?;
+		set_id = check_finality(&valset, &proof.0.justification.0)
+			.context("Finality sync check failed")?;
 
 		trace!("Proof in block: {}", p_h.number);
 		curr_block_num += 1;
