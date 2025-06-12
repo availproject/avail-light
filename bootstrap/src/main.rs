@@ -3,7 +3,7 @@
 use avail_light_core::{
 	data::{self, ClientIdKey, Database, DB},
 	network::{
-		p2p::{self, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		p2p::{self, OutputEvent as P2pEvent},
 		Network,
 	},
 	shutdown::Controller,
@@ -42,7 +42,7 @@ pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 
 pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_boot={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light_bootstrap={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
@@ -85,6 +85,11 @@ async fn run(
 	info!("TCP listener started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
+
+	if cfg.libp2p.bootstraps.is_empty() {
+		info!("Running as standalone bootstrap node");
+	}
+
 	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
@@ -169,10 +174,6 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(client_alias) = &opts.client_alias {
 		cfg.client_alias = Some(client_alias.clone())
-	}
-
-	if cfg.libp2p.bootstraps.is_empty() {
-		return Err(eyre!("{BOOTSTRAP_LIST_EMPTY_MESSAGE}"));
 	}
 
 	Ok(cfg)
@@ -289,7 +290,7 @@ async fn main() -> Result<()> {
 	.await
 	{
 		error!("{error:#}");
-		return Err(error.wrap_err("Starting Light Client failed"));
+		return Err(error.wrap_err("Starting Bootstrap Client failed"));
 	};
 
 	let reason = shutdown.completed_shutdown().await;
