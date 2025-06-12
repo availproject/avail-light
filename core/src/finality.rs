@@ -40,7 +40,7 @@ fn verify_signature(public_key: [u8; 32], signature: [u8; 64], message: Vec<u8>)
 pub fn check_finality(
 	validator_set: &ValidatorSet,
 	justification: &GrandpaJustification,
-) -> Result<()> {
+) -> Result<u64> {
 	// Make sure the validator set contains only unique validators
 	let mut validator_set_clone = validator_set.clone();
 	validator_set_clone.validator_set.sort();
@@ -71,6 +71,7 @@ pub fn check_finality(
 		info!("Votes ancestries found, mapping: {ancestry_map:?}");
 	}
 
+	let mut validator_set_id = validator_set.set_id;
 	// verify all the Signatures of the Justification signs,
 	// verify the hash of the block and extract all the signer addresses
 	let (failed_verifications, signer_addresses): (Vec<_>, Vec<_>) = justification
@@ -85,28 +86,26 @@ pub fn check_finality(
 				validator_set.set_id.saturating_sub(2),
 			];
 
-			let (is_ok, used_set_id) = candidate_set_ids
-				.iter()
-				.find_map(|&set_id| {
-					let signed_message = Encode::encode(&(
-						&SignerMessage::PrecommitMessage(precommit.precommit.clone()),
-						&justification.round,
-						&set_id,
-					));
+			let (is_ok, used_set_id) =
+				candidate_set_ids
+					.iter()
+					.find_map(|&set_id| {
+						let signed_message = Encode::encode(&(
+							&SignerMessage::PrecommitMessage(precommit.precommit.clone()),
+							&justification.round,
+							&set_id,
+						));
 
-					verify_signature(precommit.id.0, precommit.signature.0, signed_message).then(
-						|| {
-							if set_id != validator_set.set_id {
-								info!(
-									"Used set_id {} instead of expected {}",
-									set_id, validator_set.set_id
-								);
-							}
-							(true, set_id)
-						},
-					)
-				})
-				.unwrap_or((false, validator_set.set_id));
+						verify_signature(precommit.id.0, precommit.signature.0, signed_message)
+							.then(|| {
+								if set_id != validator_set_id {
+									info!("Used set_id {set_id} instead of expected {validator_set_id}");
+								}
+								validator_set_id = set_id;
+								(true, set_id)
+							})
+					})
+					.unwrap_or((false, validator_set.set_id));
 
 			let ancestry = confirm_ancestry(
 				&precommit.precommit.target_hash,
@@ -139,11 +138,11 @@ pub fn check_finality(
 		"Number of matching signatures: {num_matched_addresses}/{} for block {}, set_id {}",
 		validator_set.validator_set.len(),
 		justification.commit.target_number,
-		validator_set.set_id
+		validator_set_id
 	);
 
 	is_signed_by_supermajority(num_matched_addresses, validator_set.validator_set.len())
-		.then_some(())
+		.then_some(validator_set_id)
 		.ok_or(eyre!("Not signed by supermajority of validator set!"))
 }
 
