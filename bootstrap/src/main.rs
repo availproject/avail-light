@@ -8,7 +8,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{load_or_init_suri, IdentityConfig, ProjectName, SecretKey, Uuid},
+	types::{load_or_init_suri, IdentityConfig, KademliaMode, ProjectName, SecretKey, Uuid},
 	utils::spawn_in_span,
 };
 use clap::Parser;
@@ -144,6 +144,12 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	} else {
 		RuntimeConfig::default()
 	};
+
+	// TODO: This is a temporary workaround to set the agent role and operation mode for the bootstrap node.
+	// Better solution would be to avoid exposing libp2p configuration directly.
+	cfg.libp2p.identify.agent_role = "bootstrap".to_string();
+	cfg.libp2p.kademlia.automatic_server_mode = false;
+	cfg.libp2p.kademlia.operation_mode = KademliaMode::Server;
 
 	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
 	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
