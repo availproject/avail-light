@@ -1,5 +1,10 @@
 #[cfg(not(feature = "multiproof"))]
 use avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE};
+use color_eyre::{
+	eyre::{eyre, OptionExt, WrapErr},
+	Result,
+};
+use futures::future::join_all;
 #[cfg(feature = "multiproof")]
 use kate_recovery::data::MultiProofCell;
 #[cfg(not(feature = "multiproof"))]
@@ -8,12 +13,6 @@ use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position, RowIndex},
 };
-
-use color_eyre::{
-	eyre::{eyre, OptionExt, WrapErr},
-	Result,
-};
-use futures::future::join_all;
 use libp2p::{
 	core::transport::ListenerId,
 	kad::{store::RecordStore, Mode, PeerRecord, Quorum, Record, RecordKey},
