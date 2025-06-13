@@ -145,6 +145,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		RuntimeConfig::default()
 	};
 
+	// TODO: This is a temporary workaround to set the agent role for the bootstrap node.
+	// Better solution would be to specify the role from the enum type.
+	cfg.libp2p.identify.agent_role = "bootstrap".to_string();
+
 	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
 	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
 
