@@ -474,10 +474,7 @@ impl EventLoop {
 							};
 
 						if !incoming_peer_agent_version.is_supported() {
-							debug!(
-								"Unsupported release version: {}",
-								incoming_peer_agent_version.release_version
-							);
+							debug!("Unsupported release version: {incoming_peer_agent_version}",);
 							self.swarm
 								.behaviour_mut()
 								.kademlia
