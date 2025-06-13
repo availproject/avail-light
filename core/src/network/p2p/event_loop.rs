@@ -358,38 +358,29 @@ impl EventLoop {
 						QueryResult::GetClosestPeers(result) => match result {
 							Ok(GetClosestPeersOk { peers, .. }) => {
 								let peer_addresses = collect_peer_addresses(peers);
-								if !peer_addresses.is_empty() {
-									// Send results to the query channel if it exists
-									if let Some(QueryChannel::GetClosestPeer(ch)) =
-										self.pending_kad_queries.remove(&id)
-									{
-										let _ = ch.send(Ok(peer_addresses.clone()));
-									}
-
-									// Notify about discovered peers
-									let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
-										peers: peer_addresses,
-									});
+								if let Some(QueryChannel::GetClosestPeer(ch)) =
+									self.pending_kad_queries.remove(&id)
+								{
+									let _ = ch.send(Ok(peer_addresses.clone()));
 								}
+								// Notify about discovered peers even if there are no active addresses
+								let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
+									peers: peer_addresses,
+								});
 							},
 							Err(err) => {
 								// There will be peers even though the request timed out
-								let GetClosestPeersError::Timeout { key: _, peers } = err;
-
+								let GetClosestPeersError::Timeout { key: _, peers } = err.clone();
 								let peer_addresses = collect_peer_addresses(peers);
-								if !peer_addresses.is_empty() {
-									// Send results to the query channel if it exists
-									if let Some(QueryChannel::GetClosestPeer(ch)) =
-										self.pending_kad_queries.remove(&id)
-									{
-										let _ = ch.send(Ok(peer_addresses.clone()));
-									}
-
-									// Notify about discovered peers
-									let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
-										peers: peer_addresses,
-									});
+								if let Some(QueryChannel::GetClosestPeer(ch)) =
+									self.pending_kad_queries.remove(&id)
+								{
+									let _ = ch.send(Ok(peer_addresses.clone()));
 								}
+								// Notify about discovered peers even if there are no active addresses
+								let _ = self.event_sender.send(OutputEvent::DiscoveredPeers {
+									peers: peer_addresses,
+								});
 							},
 						},
 						QueryResult::PutRecord(Err(error)) => {
