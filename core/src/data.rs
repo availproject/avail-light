@@ -354,3 +354,31 @@ impl RecordKey for MultiAddressKey {
 		MULTI_ADDRESS_KEY.into()
 	}
 }
+
+pub struct DhtFetchedPercentageKey;
+
+impl RecordKey for DhtFetchedPercentageKey {
+	type Type = f64;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		DHT_FETCHED_PERCENTAGE.into()
+	}
+}
+
+pub struct DhtPutSuccessKey;
+
+impl RecordKey for DhtPutSuccessKey {
+	type Type = f64;
+
+	fn space(&self) -> Option<&'static str> {
+		Some(APP_STATE_CF)
+	}
+
+	fn key(&self) -> String {
+		DHT_PUT_SUCCESS.into()
+	}
+}

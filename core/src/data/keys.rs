@@ -41,3 +41,7 @@ pub const BLOCK_HEADER_RECEIVED_AT: &str = "block_header_received_at";
 pub const PEER_ID_KEY: &str = "peer_id";
 /// Multi-address
 pub const MULTI_ADDRESS_KEY: &str = "multi_address";
+/// Key for storing latest dht fetch rate
+pub const DHT_FETCHED_PERCENTAGE: &str = "dht_fetched_percentage";
+/// Key for storing latest dht put success
+pub const DHT_PUT_SUCCESS: &str = "dht_put_success";

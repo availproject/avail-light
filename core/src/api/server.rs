@@ -74,7 +74,7 @@ impl<T: Database + Clone + Send + Sync + 'static> Server<T> {
 
 		// Add P2P routes depending on whether P2P is enabled
 		let p2p_routes = if let Some(p2p_client) = &self.p2p_client {
-			diagnostics::routes(p2p_client.clone())
+			diagnostics::routes(p2p_client.clone(), self.db.clone())
 		} else {
 			diagnostics::p2p_disabled_routes()
 		};
