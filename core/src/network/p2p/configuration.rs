@@ -136,7 +136,7 @@ impl Default for IdentifyConfig {
 			cache_size: Some(100),
 			interval: Duration::from_secs(10 * 60),
 			push_listen_addr_updates: false,
-			hide_listen_addrs: false,
+			hide_listen_addrs: true,
 		}
 	}
 }
@@ -318,7 +318,7 @@ pub fn identify_config(
 		libp2p::identify::Config::new(cfg.identify.protocol_name.clone(), public_key)
 			.with_interval(cfg.identify.interval)
 			.with_push_listen_addr_updates(cfg.identify.push_listen_addr_updates)
-			.with_push_listen_addr_updates(cfg.identify.push_listen_addr_updates);
+			.with_hide_listen_addrs(cfg.identify.hide_listen_addrs);
 
 	if let Some(cache_size) = cfg.identify.cache_size {
 		identify_cfg = identify_cfg.with_cache_size(cache_size);
