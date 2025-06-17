@@ -117,6 +117,67 @@ Content-Type: application/json
 }
 ```
 
+## GET `/v1/p2p/dht/{metric}`
+
+Returns a specific DHT performance metric.
+
+### Path Parameters
+
+- `{metric}` (required): The name of the metric to fetch.
+
+  Valid values:
+  - `fetch` → Returns the DHT fetched percentage.
+  - `put` → Returns the DHT put success rate.
+
+### Example: `fetch`
+
+**Request**
+
+```yaml
+GET /v1/p2p/dht/fetch
+```
+
+**Response**
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+	"dht_fetched_percentage": 84.5
+}
+```
+
+### Example: `put`
+
+**Request**
+
+```yaml
+GET /v1/p2p/dht/put
+```
+
+**Response**
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+	"dht_put_success": 91.3
+}
+```
+
+In case of an error (e.g. no data available in the DHT), the following response is returned:
+
+```yaml
+HTTP/1.1 404 Not Found
+Content-Type: text/plain
+
+Not Found
+```
+
+If the requested peer or metric does not exist, or the value cannot be parsed, a 404 will be returned.
+
 ## Errors
 
 In case of an error, endpoints will return a response with `500 Internal Server Error` status code, and a descriptive error message:

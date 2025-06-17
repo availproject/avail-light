@@ -7,8 +7,8 @@ use avail_light_core::proof::get_or_init_pmp;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
-		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
-		MultiAddressKey, SignerNonceKey, DB,
+		self, ClientIdKey, Database, DhtFetchedPercentageKey, DhtPutSuccessKey,
+		IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, MultiAddressKey, SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
 	maintenance::{self, OutputEvent as MaintenanceEvent},
@@ -604,6 +604,7 @@ impl ClientState {
 		&mut self,
 		record_key: RecordKey,
 		query_stats: QueryStats,
+		db: impl Database + Clone,
 	) -> Result<()> {
 		let block_num = extract_block_num(record_key)?;
 		let block = self.get_block_stat(block_num)?;
@@ -623,6 +624,7 @@ impl ClientState {
 			self.metrics
 				.record(MetricValue::DHTPutSuccess(success_rate));
 			self.metrics.record(MetricValue::DHTPutDuration(time_stat));
+			db.put(DhtPutSuccessKey, success_rate);
 		}
 
 		Ok(())
@@ -706,7 +708,7 @@ impl ClientState {
 								record_key,
 								query_stats,
 							} => {
-								if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
+								if let Err(error) = self.handle_successful_put_record(record_key, query_stats, db.clone()){
 									error!("Could not handle Successful PUT Record event properly: {error}");
 								};
 							},
@@ -758,6 +760,7 @@ impl ClientState {
 							self.metrics.record(MetricValue::DHTFetched(fetched));
 							self.metrics.record(MetricValue::DHTFetchedPercentage(fetched_percentage));
 							self.metrics.record(MetricValue::DHTFetchDuration(fetch_duration));
+							db.put(DhtFetchedPercentageKey, fetched_percentage);
 						},
 						LcEvent::RecordRPCFetched(fetched) => {
 							self.metrics.record(MetricValue::RPCFetched(fetched));
