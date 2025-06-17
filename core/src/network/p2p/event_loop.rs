@@ -10,13 +10,9 @@ use libp2p::{
 	},
 	multiaddr::Protocol,
 	ping,
-	swarm::{
-		dial_opts::{DialOpts, PeerCondition},
-		SwarmEvent,
-	},
+	swarm::SwarmEvent,
 	Multiaddr, PeerId, Swarm,
 };
-use rand::seq::SliceRandom;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use std::{collections::HashMap, str::FromStr};
@@ -28,7 +24,7 @@ use tokio::sync::{
 use tokio::time::{interval, Instant};
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
@@ -40,38 +36,7 @@ use crate::{
 	network::p2p::{is_multiaddr_global, AgentVersion},
 	shutdown::Controller,
 	types::TimeToLive,
-	utils,
 };
-
-// RelayState keeps track of all things relay related
-struct RelayState {
-	// id of the selected Relay that needs to be connected
-	id: PeerId,
-	// Multiaddress of the selected Relay that needs to be connected
-	address: Multiaddr,
-	// boolean value that signals if have established a circuit with the selected Relay
-	is_circuit_established: bool,
-	// list of available Relay nodes
-	nodes: Vec<(PeerId, Multiaddr)>,
-}
-
-impl RelayState {
-	fn reset(&mut self) {
-		self.id = PeerId::random();
-		self.address = Multiaddr::empty();
-		self.is_circuit_established = false;
-	}
-
-	fn select_random(&mut self) {
-		// choose relay by random
-		if let Some(relay) = self.nodes.choose(&mut utils::rng()) {
-			let (id, addr) = relay.clone();
-			// appoint this relay as our chosen one
-			self.id = id;
-			self.address = addr;
-		}
-	}
-}
 
 struct EventLoopConfig {
 	// Used for checking protocol version
@@ -129,7 +94,6 @@ pub struct EventLoop {
 	pub pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	// Tracking swarm events (i.e. peer dialing)
 	pub pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<ConnectionEstablishedInfo>>>,
-	relay: RelayState,
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
 	pub kad_mode: Mode,
@@ -168,20 +132,12 @@ impl EventLoop {
 		event_sender: UnboundedSender<OutputEvent>,
 		shutdown: Controller<String>,
 	) -> Self {
-		let relay_nodes = cfg.relays.iter().map(Into::into).collect();
-
 		Self {
 			swarm,
 			command_receiver,
 			event_sender,
 			pending_kad_queries: Default::default(),
 			pending_swarm_events: Default::default(),
-			relay: RelayState {
-				id: PeerId::random(),
-				address: Multiaddr::empty(),
-				is_circuit_established: false,
-				nodes: relay_nodes,
-			},
 			shutdown,
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
@@ -509,28 +465,19 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(event)) => {
-				match event {
-					autonat::Event::InboundProbe(e) => {
-						trace!("[AutoNat] Inbound Probe: {:#?}", e);
-					},
-					autonat::Event::OutboundProbe(e) => {
-						trace!("[AutoNat] Outbound Probe: {:#?}", e);
-					},
-					autonat::Event::StatusChanged { old, new } => {
-						debug!("[AutoNat] Old status: {:#?}. New status: {:#?}", old, new);
-						// check if went private or are private
-						// if so, create reservation request with relay
-						if new == NatStatus::Private || old == NatStatus::Private {
-							info!("[AutoNat] Autonat says we're still private.");
-							// Fat clients should always be in Kademlia client mode, no need to do NAT traversal
-							if !self.event_loop_config.is_fat_client {
-								// select a relay, try to dial it
-								self.select_and_dial_relay();
-							}
-						};
-					},
-				}
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(event)) => match event {
+				autonat::Event::InboundProbe(e) => {
+					trace!("[AutoNat] Inbound Probe: {:#?}", e);
+				},
+				autonat::Event::OutboundProbe(e) => {
+					trace!("[AutoNat] Outbound Probe: {:#?}", e);
+				},
+				autonat::Event::StatusChanged { old, new } => {
+					debug!("[AutoNat] Old status: {:#?}. New status: {:#?}", old, new);
+					if new == NatStatus::Private || old == NatStatus::Private {
+						info!("[AutoNat] Autonat says we're still private.");
+					};
+				},
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(ping::Event {
 				peer,
@@ -604,7 +551,6 @@ impl EventLoop {
 								num_established: num_established.into(),
 							}));
 						}
-						self.establish_relay_circuit(peer_id);
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
 						_ = self.event_sender.send(OutputEvent::OutgoingConnectionError);
@@ -626,13 +572,6 @@ impl EventLoop {
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 								_ = ch.send(Err(error.into()));
 							}
-
-							// remove error producing relay from pending dials
-							// if the peer giving us problems is the chosen relay
-							// just remove it by resetting the reservation state slot
-							if self.relay.id == peer_id {
-								self.relay.reset();
-							}
 						}
 					},
 					SwarmEvent::Dialing {
@@ -643,55 +582,6 @@ impl EventLoop {
 					},
 					_ => {},
 				}
-			},
-		}
-	}
-
-	fn establish_relay_circuit(&mut self, peer_id: PeerId) {
-		// before we try and create a circuit with the relay
-		// we have to exchange observed addresses
-		// in this case we're waiting on relay to tell us our own
-		if peer_id == self.relay.id && !self.relay.is_circuit_established {
-			match self
-				.swarm
-				.listen_on(self.relay.address.clone().with(Protocol::P2pCircuit))
-			{
-				Ok(_) => {
-					info!("Relay circuit established with relay: {peer_id:?}");
-					self.relay.is_circuit_established = true;
-				},
-				Err(e) => {
-					// failed to establish a circuit, reset to try another relay
-					self.relay.reset();
-					error!("Local node failed to listen on relay address. Error: {e:#?}");
-				},
-			}
-		}
-	}
-
-	fn select_and_dial_relay(&mut self) {
-		// select a random relay from the list of known ones
-		self.relay.select_random();
-
-		// dial selected relay,
-		// so we don't wait on swarm to do it eventually
-		match self.swarm.dial(
-			DialOpts::peer_id(self.relay.id)
-				.condition(PeerCondition::NotDialing)
-				.addresses(vec![self.relay.address.clone()])
-				.build(),
-		) {
-			Ok(_) => {
-				info!("Dialing Relay: {id:?} succeeded.", id = self.relay.id);
-			},
-			Err(e) => {
-				// got an error while dialing,
-				// better select a new relay and try again
-				self.relay.reset();
-				error!(
-					"Dialing Relay: {id:?}, produced an error: {e:?}",
-					id = self.relay.id
-				);
 			},
 		}
 	}

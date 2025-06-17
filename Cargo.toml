@@ -1,14 +1,14 @@
 [workspace]
 members = [
-	"bootstrap",
-	"client",
-	"compatibility-tests",
-	"core",
-	"crawler",
-	"fat",
-	"monitor-client",
-	"relay",
-	"web",
+    "bootstrap",
+    "client",
+    "compatibility-tests",
+    "core",
+    "crawler",
+    "fat",
+    "monitor-client",
+    "relay",
+    "web",
 ]
 default-members = ["client"]
 resolver = "2"
@@ -19,12 +19,20 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-10", features = ["serde"] }
+avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-10", features = [
+    "serde",
+] }
 avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.13", default-features = false }
-kate = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-10", features = ["serde"] }
-kate-recovery = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-10", features = ["serde"] }
+kate = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-10", features = [
+    "serde",
+] }
+kate-recovery = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-10", features = [
+    "serde",
+] }
 avail-light-core = { path = "./core", default-features = false }
-sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12", default-features = false, features = ["serde"] }
+sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12", default-features = false, features = [
+    "serde",
+] }
 
 anyhow = "1.0.71"
 async-std = { version = "1.12.0", features = ["attributes"] }
@@ -36,24 +44,60 @@ confy = "0.5.1"
 hex = "0.4.3"
 rand = { version = "0.8.5", default-features = false }
 reqwest = { version = "0.12" }
-libp2p = { version = "0.55.0", features = ["kad", "identify", "ping", "autonat", "relay", "dcutr", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+libp2p = { version = "0.55.0", features = [
+    "kad",
+    "identify",
+    "ping",
+    "autonat",
+    "relay",
+    "noise",
+    "yamux",
+    "dns",
+    "metrics",
+    "tokio",
+    "macros",
+    "tcp",
+    "quic",
+    "serde",
+    "websocket",
+] }
 libp2p-allow-block-list = "0.5.0"
 libp2p-webrtc-websys = "0.4.0"
-multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
+multihash = { version = "0.14.0", default-features = false, features = [
+    "blake3",
+    "sha3",
+] }
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.35", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
+tokio = { version = "1.35", default-features = false, features = [
+    "sync",
+    "macros",
+    "io-util",
+    "rt",
+    "time",
+] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.17", features = ["json", "env-filter"] }
-uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+uuid = { version = "1.3.4", features = [
+    "v4",
+    "fast-rng",
+    "macro-diagnostics",
+    "serde",
+] }
 void = "1.0.2"
 warp = "0.3.6"
-futures = { version = "0.3.15", default-features = false, features = ["std", "async-await"] }
+futures = { version = "0.3.15", default-features = false, features = [
+    "std",
+    "async-await",
+] }
 
 # OpenTelemetry
 opentelemetry = "0.27.1"
-opentelemetry-otlp = { version = "0.27.0", features = ["grpc-tonic", "metrics"] }
+opentelemetry-otlp = { version = "0.27.0", features = [
+    "grpc-tonic",
+    "metrics",
+] }
 opentelemetry_sdk = { version = "0.27.1", features = ["metrics", "rt-tokio"] }
 
 [profile.debug-fast]

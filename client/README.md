@@ -177,8 +177,6 @@ port = 37000
 webrtc_port = 37001
 # Vector of Light Client bootstrap nodes, used to bootstrap the DHT (mandatory field).
 bootstraps = ["/ip4/13.51.79.255/tcp/39000/p2p/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
-# Vector of Relay nodes, which are used for hole punching
-relays = ["/ip4/13.49.44.246/tcp/39111/12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b"]
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # Genesis hash of the network you are connecting to. The genesis hash will be checked upon connecting to the node(s) and will also be used to identify you on the p2p network. If you wish to skip the check for development purposes, entering DEV{suffix} instead will skip the check and create a separate p2p network with that identifier.
@@ -207,7 +205,7 @@ max_cells_per_rpc = 30
 block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 sync_start_block = 0
-# Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the 
+# Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the
 # starting block at the point the LC is started and is only checked for new blocks. (default: false)
 sync_finality_enable = false
 ```

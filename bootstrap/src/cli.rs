@@ -1,5 +1,5 @@
 use avail_light_core::network::ServiceMode;
-use clap::{command, ArgAction, Parser};
+use clap::{command, Parser};
 use tracing::Level;
 
 #[derive(Parser)]
@@ -50,19 +50,4 @@ pub struct CliOpts {
 	/// AutoNAT behaviour mode: client, server, or disabled
 	#[arg(long, value_enum, default_value = "server")]
 	pub auto_nat_mode: ServiceMode,
-
-	/// Relay behaviour mode: client, server, or disabled
-	#[arg(long, value_enum, default_value = "disabled")]
-	pub relay_mode: ServiceMode,
-
-	/// Enable or disable DCUTR (Direct Connection Upgrade through Relay)
-	/// Only works when relay_mode is Client or Both
-	#[arg(
-        long,
-        default_value = "false",
-        action = ArgAction::SetTrue,
-        requires = "relay_mode",
-        required_if_eq_any = [("relay_mode", "client"), ("relay_mode", "server")],
-    )]
-	pub enable_dcutr: bool,
 }
