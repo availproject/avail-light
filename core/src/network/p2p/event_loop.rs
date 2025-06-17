@@ -488,17 +488,8 @@ impl EventLoop {
 			},
 			swarm_event => {
 				match swarm_event {
-					// TODO: this should be automated with the addition of the new AutoNAT v2
-					SwarmEvent::NewListenAddr {
-						listener_id,
-						address,
-					} => {
-						if is_localhost(&address) {
-							self.swarm.remove_listener(listener_id);
-							debug!("Removed localhost listener from: {:?}", address);
-						} else {
-							debug!("Local node is listening on {:?}", address);
-						}
+					SwarmEvent::NewListenAddr { address, .. } => {
+						debug!("Local node is listening on {:?}", address);
 					},
 					SwarmEvent::ConnectionClosed {
 						peer_id,
