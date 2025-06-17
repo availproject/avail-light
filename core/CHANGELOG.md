@@ -2,7 +2,8 @@
 
 ## [1.2.9]
 
-- Update avail-rust, kate and kate-recovery to latest versions
+- Listen addresses on identify are hidden by default
+- Updated avail-rust, kate and kate-recovery to latest versions
 - Check previous and next validator set in case when current fails
 - Moved computation of dimensions to block verified
 - Added p2p client restart capability
