@@ -270,12 +270,10 @@ impl EventLoop {
 									// Set TTL for all incoming records
 									// TTL will be set to a lower value between the local TTL and incoming record TTL
 									record.expires = record.expires.min(ttl.expires());
-									_ = self
-										.swarm
-										.behaviour_mut()
-										.kademlia
-										.as_mut()
-										.map(|kad| kad.store_mut().put(record));
+									if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut()
+									{
+										_ = kad.store_mut().put(record);
+									}
 								},
 								None => {
 									debug!("Received empty cell record from: {source:?}");
@@ -558,15 +556,11 @@ impl EventLoop {
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occurred
 							if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
-								if let Some(Some(peer)) = self
-									.swarm
-									.behaviour_mut()
-									.kademlia
-									.as_mut()
-									.map(|kad| kad.remove_peer(&peer_id))
-								{
-									let removed_peer_id = peer.node.key.preimage();
-									debug!("Removed peer {removed_peer_id} from the routing table. Cause: {error}");
+								if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
+									if let Some(peer) = kad.remove_peer(&peer_id) {
+										let removed_peer_id = peer.node.key.preimage();
+										debug!("Removed peer {removed_peer_id} from the routing table. Cause: {error}");
+									}
 								}
 							}
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
