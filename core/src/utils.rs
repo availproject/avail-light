@@ -278,5 +278,7 @@ pub(crate) fn generate_multiproof_grid_dims(
 }
 
 pub(crate) fn is_flush_cycle(block_number: u32) -> bool {
-	block_number % 5 == 0
+	block_number % METRICS_FLUSH_INTERVAL == 0
 }
+
+const METRICS_FLUSH_INTERVAL: u32 = 5;
