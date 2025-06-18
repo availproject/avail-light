@@ -1,8 +1,9 @@
-use super::{protocol_name, ProvidersConfig};
+use super::{protocol_name, AgentVersion, ProvidersConfig};
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::ServiceMode;
 use crate::types::{
-	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress, SecretKey,
+	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress,
+	ProjectName, SecretKey,
 };
 use libp2p::{autonat, kad, multiaddr::Protocol, Multiaddr};
 use serde::{Deserialize, Serialize};
@@ -247,8 +248,6 @@ pub struct LibP2PConfig {
 	/// Swarm behaviour config
 	#[serde(flatten)]
 	pub behaviour: BehaviourConfig,
-	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<PeerAddress>,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 10s).
 	#[serde(with = "duration_seconds_format")]
 	pub connection_idle_timeout: Duration,
@@ -276,7 +275,6 @@ impl Default for LibP2PConfig {
 			kademlia: Default::default(),
 			identify: Default::default(),
 			behaviour: Default::default(),
-			relays: Default::default(),
 			connection_idle_timeout: Duration::from_secs(10),
 			max_negotiating_inbound_streams: 128,
 			task_command_buffer_size: NonZeroUsize::new(32).unwrap(),
@@ -313,12 +311,15 @@ impl LibP2PConfig {
 pub fn identify_config(
 	cfg: &LibP2PConfig,
 	public_key: libp2p::identity::PublicKey,
+	project_name: ProjectName,
+	version: &str,
 ) -> libp2p::identify::Config {
 	let mut identify_cfg =
 		libp2p::identify::Config::new(cfg.identify.protocol_name.clone(), public_key)
 			.with_interval(cfg.identify.interval)
 			.with_push_listen_addr_updates(cfg.identify.push_listen_addr_updates)
-			.with_hide_listen_addrs(cfg.identify.hide_listen_addrs);
+			.with_hide_listen_addrs(cfg.identify.hide_listen_addrs)
+			.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
 
 	if let Some(cache_size) = cfg.identify.cache_size {
 		identify_cfg = identify_cfg.with_cache_size(cache_size);

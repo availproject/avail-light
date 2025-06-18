@@ -1,7 +1,7 @@
 http_server_host = "${HTTP_SERVER_HOST}"
 http_server_port = ${HTTP_SERVER_PORT}
 libp2p_seed_randomize = ${IPFS_SEED_RANDOM}
-secret_key = { seed="${P2P_SEED}" } 
+secret_key = { seed="${P2P_SEED}" }
 libp2p_port = "${IPFS_PORT}"
 libp2p_path = "${IPFS_PATH}"
 full_node_ws = ${FULL_NODE_WS}
@@ -9,8 +9,7 @@ app_id = ${APP_ID}
 confidence = ${CONFIDENCE}
 avail_path = "${AVAIL_PATH}"
 bootstraps = ${BOOTSTRAPS}
-relays = ${RELAYS}
-log_level = ${LOG_LEVEL} 
+log_level = ${LOG_LEVEL}
 max_parallel_fetch_tasks = ${PARALLEL_TASKS}
 disable_rpc = ${DISABLE_RPC}
 block_processing_delay = ${BLOCK_PROCESSING_DELAY}

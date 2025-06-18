@@ -302,9 +302,7 @@ async fn build_swarm(
 
 		let identify = if cfg.behaviour.enable_identify {
 			// create Identify Protocol Config
-			let identify_cfg = identify_config(cfg, id_keys.public())
-				.with_agent_version(AgentVersion::new(project_name, version, cfg).to_string());
-
+			let identify_cfg = identify_config(cfg, id_keys.public(), project_name, version);
 			Some(identify::Behaviour::new(identify_cfg))
 		} else {
 			None
