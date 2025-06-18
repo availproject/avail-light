@@ -7,8 +7,8 @@ use avail_light_core::proof::get_or_init_pmp;
 use avail_light_core::{
 	api::{self, types::ApiData},
 	data::{
-		self, ClientIdKey, Database,
-		IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey, MultiAddressKey, SignerNonceKey, DB,
+		self, ClientIdKey, Database, IsFinalitySyncedKey, IsSyncedKey, LatestHeaderKey,
+		MultiAddressKey, SignerNonceKey, DB,
 	},
 	light_client::{self, OutputEvent as LcEvent},
 	maintenance::{self, OutputEvent as MaintenanceEvent},

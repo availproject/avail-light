@@ -127,7 +127,6 @@ Returns a specific DHT performance metric.
 
   Valid values:
   - `fetch` → Returns the DHT fetched percentage.
-  - `put` → Returns the DHT put success rate.
 
 ### Example: `fetch`
 
@@ -145,25 +144,6 @@ Content-Type: application/json
 
 {
 	"dht_fetched_percentage": 84.5
-}
-```
-
-### Example: `put`
-
-**Request**
-
-```yaml
-GET /v1/p2p/dht/put
-```
-
-**Response**
-
-```yaml
-HTTP/1.1 200 OK
-Content-Type: application/json
-
-{
-	"dht_put_success": 91.3
 }
 ```
 

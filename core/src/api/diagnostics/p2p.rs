@@ -177,7 +177,7 @@ pub async fn dial_external_peer(
 
 #[derive(Serialize)]
 pub struct DhtMetricResponse {
-	dht_fetched_percentage: f64 ,
+	dht_fetched_percentage: f64,
 }
 
 pub async fn get_dht_metric(
@@ -185,12 +185,9 @@ pub async fn get_dht_metric(
 	db: impl Database + Clone,
 ) -> Result<impl Reply, Error> {
 	let response = match metric.as_str() {
-		"fetch" => db
-			.get(DhtFetchedPercentageKey)
-			.map(|v| DhtMetricResponse {
-				dht_fetched_percentage: v,
-			}),
-
+		"fetch" => db.get(DhtFetchedPercentageKey).map(|v| DhtMetricResponse {
+			dht_fetched_percentage: v,
+		}),
 		_ => None,
 	};
 

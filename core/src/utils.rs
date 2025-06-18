@@ -276,3 +276,7 @@ pub(crate) fn generate_multiproof_grid_dims(
 
 	Dimensions::new(rows, cols)
 }
+
+pub(crate) fn is_flush_cycle(block_number: u32) -> bool {
+	block_number % 5 == 0
+}
