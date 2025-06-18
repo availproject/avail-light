@@ -17,6 +17,7 @@ use avail_light_core::{
 		p2p::{
 			self, extract_block_num, forward_p2p_events, init_and_start_p2p_client,
 			p2p_restart_manager, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
+			MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
 		},
 		rpc::{self, OutputEvent as RpcEvent},
 		Network,
@@ -521,9 +522,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.p2p_client_restart_interval = Some(Duration::from_secs(p2p_client_restart_interval));
 	}
 
-	if matches!(cfg.p2p_client_restart_interval, Some(interval) if interval.as_secs() < 60) {
+	if matches!(cfg.p2p_client_restart_interval, Some(interval) if interval.as_secs() < MINIMUM_P2P_CLIENT_RESTART_INTERVAL)
+	{
 		return Err(eyre!(
-			"p2p_client_restart_interval can't be less than 60 seconds"
+		        "p2p_client_restart_interval can't be less than {MINIMUM_P2P_CLIENT_RESTART_INTERVAL} seconds"
 		));
 	}
 
