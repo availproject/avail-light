@@ -169,12 +169,16 @@ pub async fn forward_p2p_events(
 	}
 }
 
+/// Returns a randomized `Duration` between 60s and the given `max`.
+/// Defaults to 60s.
 pub fn randomize_duration(max: Duration) -> Duration {
+	const MIN_SECS: u64 = 60;
+	if max.as_secs() <= MIN_SECS {
+		return Duration::from_secs(MIN_SECS);
+	}
+
 	let mut rng = utils::rng();
-	// 1 minute minimum
-	let min_secs = 60;
-	let max_secs = max.as_secs().max(min_secs);
-	Duration::from_secs(rng.gen_range(min_secs..max_secs))
+	Duration::from_secs(rng.gen_range(MIN_SECS..=max.as_secs()))
 }
 
 #[cfg(test)]
@@ -187,9 +191,8 @@ mod tests {
 
 		for _ in 0..100 {
 			let result = randomize_duration(max_duration);
-
-			assert!(result >= Duration::from_secs(0));
-			assert!(result < max_duration);
+			assert!(result >= Duration::from_secs(60));
+			assert!(result <= max_duration);
 		}
 	}
 }
