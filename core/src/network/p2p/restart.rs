@@ -148,6 +148,7 @@ pub async fn p2p_restart_manager(
 				}
 				randomized_duration = randomize_duration(restart_interval);
 				interval = tokio::time::interval(randomized_duration);
+				interval.tick().await;
 			}
 			_ = app_shutdown.triggered_shutdown() => {
 				info!("P2P restart manager shutting down");
