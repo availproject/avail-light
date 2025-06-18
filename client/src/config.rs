@@ -73,6 +73,7 @@ pub struct RuntimeConfig {
 	/// Delay maintenance restart to allow fixed uptime (default: 1h)
 	pub maintenance_restart_delay: u64,
 	/// P2P client maintenance restart period. By default, it doesn't restart. (default: None)
+	#[serde(with = "option_duration_seconds_format")]
 	pub p2p_client_restart_interval: Option<Duration>,
 }
 
