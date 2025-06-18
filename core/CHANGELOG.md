@@ -2,7 +2,7 @@
 
 ## [1.2.9]
 
-- Added diagnostics API for fetching DHT fetch rates
+- Added diagnostics API for DHT fetch rates
 - Listen addresses on identify are hidden by default
 - Updated avail-rust, kate and kate-recovery to latest versions
 - Check previous and next validator set in case when current fails
