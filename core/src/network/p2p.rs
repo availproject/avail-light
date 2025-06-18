@@ -69,6 +69,7 @@ pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_man
 
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.0";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
+pub const MINIMUM_P2P_CLIENT_RESTART_INTERVAL: u64 = 60; // seconds
 
 pub const BOOTSTRAP_LIST_EMPTY_MESSAGE: &str = r#"
 Bootstrap node list must not be empty.

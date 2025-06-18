@@ -17,7 +17,7 @@ use crate::{
 	utils::{self, spawn_in_span},
 };
 
-use super::configuration::LibP2PConfig;
+use super::{configuration::LibP2PConfig, MINIMUM_P2P_CLIENT_RESTART_INTERVAL};
 
 /// Initialize and start P2P client with all necessary components
 #[allow(clippy::too_many_arguments)]
@@ -170,16 +170,15 @@ pub async fn forward_p2p_events(
 	}
 }
 
-/// Returns a randomized `Duration` between 60s and the given `max`.
-/// Defaults to 60s.
+/// Returns a randomized `Duration` between `MINIMUM_P2P_CLIENT_RESTART_INTERVAL` and the given `max`.
+/// Defaults to `MINIMUM_P2P_CLIENT_RESTART_INTERVAL`.
 pub fn randomize_duration(max: Duration) -> Duration {
-	const MIN_SECS: u64 = 60;
-	if max.as_secs() <= MIN_SECS {
-		return Duration::from_secs(MIN_SECS);
+	if max.as_secs() <= MINIMUM_P2P_CLIENT_RESTART_INTERVAL {
+		return Duration::from_secs(MINIMUM_P2P_CLIENT_RESTART_INTERVAL);
 	}
 
 	let mut rng = utils::rng();
-	Duration::from_secs(rng.gen_range(MIN_SECS..=max.as_secs()))
+	Duration::from_secs(rng.gen_range(MINIMUM_P2P_CLIENT_RESTART_INTERVAL..=max.as_secs()))
 }
 
 #[cfg(test)]
@@ -192,7 +191,7 @@ mod tests {
 
 		for _ in 0..100 {
 			let result = randomize_duration(max_duration);
-			assert!(result >= Duration::from_secs(60));
+			assert!(result >= Duration::from_secs(MINIMUM_P2P_CLIENT_RESTART_INTERVAL));
 			assert!(result <= max_duration);
 		}
 	}
