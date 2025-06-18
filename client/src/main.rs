@@ -521,6 +521,12 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.p2p_client_restart_interval = Some(Duration::from_secs(p2p_client_restart_interval));
 	}
 
+	if matches!(cfg.p2p_client_restart_interval, Some(interval) if interval.as_secs() < 60) {
+		return Err(eyre!(
+			"p2p_client_restart_interval can't be less than 60 seconds"
+		));
+	}
+
 	Ok(cfg)
 }
 
