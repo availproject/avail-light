@@ -4,7 +4,7 @@ use std::{
 	time::{Duration, Instant},
 };
 use tokio::sync::{broadcast, mpsc::UnboundedSender, Mutex};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -139,8 +139,7 @@ pub async fn run(
 		};
 
 		if let Err(error) = result {
-			let _ = shutdown.trigger_shutdown(format!("{error:#}"));
-			break;
+			warn!("Maintenance error: {error:#}");
 		}
 	}
 }
