@@ -222,7 +222,6 @@ impl EventLoop {
 				}
 			}
 		}
-		info!("TESSSSSSSST");
 		// Process any remaining commands before shutting down
 		self.drain_pending_commands().await;
 		self.disconnect_peers();

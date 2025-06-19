@@ -45,7 +45,7 @@ pub async fn init_and_start_p2p_client(
 	.await?;
 
 	// Start the new event loop
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+	spawn_in_span(p2p_event_loop.run());
 
 	let addrs = vec![libp2p_cfg.tcp_multiaddress()];
 
