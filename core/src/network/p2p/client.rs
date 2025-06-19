@@ -97,11 +97,21 @@ impl Client {
 	where
 		F: FnOnce(oneshot::Sender<Result<T>>) -> Command,
 	{
+		if self.command_sender.is_closed() {
+			return Err(eyre!("Cannot execute command: event loop is shut down"));
+		}
+
 		let (response_sender, response_receiver) = oneshot::channel();
 		let command = command_creator(response_sender);
-		self.command_sender
-			.send(command)
-			.map_err(|_| eyre!("receiver should not be dropped"))?;
+
+		self.command_sender.send(command).map_err(|error| {
+			if self.command_sender.is_closed() {
+				eyre!("Command channel closed during send: {error}")
+			} else {
+				eyre!("Failed to send command: {error}")
+			}
+		})?;
+
 		response_receiver
 			.await
 			.wrap_err("sender should not be dropped")?
@@ -132,6 +142,11 @@ impl Client {
 	}
 
 	pub async fn stop_listening(&mut self) -> Result<()> {
+		if self.command_sender.is_closed() {
+			info!("Event loop already shut down, skipping stop_listening");
+			return Ok(());
+		}
+
 		let listener_ids = self.listeners.clone();
 		let result = self
 			.execute_sync(|response_sender| {

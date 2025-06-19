@@ -99,8 +99,8 @@ pub async fn p2p_restart_manager(
 
 				{
 					let mut client_guard = p2p_client.lock().await;
-					if let Some(mut client) = client_guard.take() {
-						info!("Stopping listener");
+					if let Some(client) = client_guard.as_mut() {
+						info!("Stopping listeners before shutdown");
 						if let Err(e) = client.stop_listening().await {
 							warn!("Error stopping listeners during restart: {e}");
 						}
@@ -111,6 +111,8 @@ pub async fn p2p_restart_manager(
 				let _ = current_shutdown.trigger_shutdown("P2P client periodic restart".to_string());
 
 				_ = current_shutdown.completed_shutdown().await;
+
+				p2p_client.lock().await.take();
 
 				// Create a new shutdown controller for the next restart cycle
 				let new_shutdown = Controller::<String>::new();
