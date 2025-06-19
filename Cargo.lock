@@ -1425,6 +1425,7 @@ dependencies = [
  "tokio-util",
  "tokio_with_wasm",
  "tracing",
+ "tracing-error",
  "tracing-subscriber 0.3.19",
  "uuid",
  "void",
