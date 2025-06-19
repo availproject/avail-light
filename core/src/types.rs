@@ -127,7 +127,7 @@ impl TryFrom<(&AvailHeader, Option<f64>)> for BlockVerified {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
 #[serde(try_from = "String")]
 pub enum KademliaMode {
 	Client,

@@ -1,7 +1,7 @@
 #[cfg(not(feature = "multiproof"))]
 use avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE};
 use color_eyre::{
-	eyre::{eyre, OptionExt, WrapErr},
+	eyre::{eyre, OptionExt},
 	Result,
 };
 use futures::future::join_all;
@@ -112,9 +112,13 @@ impl Client {
 			}
 		})?;
 
-		response_receiver
-			.await
-			.wrap_err("sender should not be dropped")?
+		response_receiver.await.map_err(|_| {
+			if self.command_sender.is_closed() {
+				eyre!("Event loop shut down before command could be processed")
+			} else {
+				eyre!("Command handler failed to send response")
+			}
+		})?
 	}
 
 	/// Starts listening on provided multiaddresses and saves the listener IDs

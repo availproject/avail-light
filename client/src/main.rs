@@ -529,6 +529,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		));
 	}
 
+	if let Some(operation_mode) = opts.operation_mode {
+		cfg.libp2p.kademlia.operation_mode = operation_mode;
+	}
+
 	Ok(cfg)
 }
 

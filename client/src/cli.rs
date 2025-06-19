@@ -1,6 +1,6 @@
 use avail_light_core::{
 	network::{Network, ServiceMode},
-	types::NetworkMode,
+	types::{KademliaMode, NetworkMode},
 };
 use clap::{command, ArgAction, Parser};
 use tracing::Level;
@@ -85,4 +85,8 @@ pub struct CliOpts {
 	/// AutoNAT behaviour mode: client, server, or disabled
 	#[arg(long, value_enum, default_value = "server")]
 	pub auto_nat_mode: ServiceMode,
+
+	/// Kademlia operation mode: client or server
+	#[arg(long, value_enum, default_value = "client")]
+	pub operation_mode: Option<KademliaMode>,
 }

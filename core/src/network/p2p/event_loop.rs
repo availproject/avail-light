@@ -222,7 +222,33 @@ impl EventLoop {
 				}
 			}
 		}
+		info!("TESSSSSSSST");
+		// Process any remaining commands before shutting down
+		self.drain_pending_commands().await;
 		self.disconnect_peers();
+	}
+
+	async fn drain_pending_commands(&mut self) {
+		debug!("Draining pending commands before shutdown");
+		while let Ok(command) = self.command_receiver.try_recv() {
+			if let Err(e) = (command)(self) {
+				warn!("Error processing command during shutdown: {e}");
+			}
+		}
+		// Send error responses to any pending queries
+		for (_, sender) in self.pending_swarm_events.drain() {
+			let _ = sender.send(Err(eyre!("Event loop shutting down")));
+		}
+		for (_, channel) in self.pending_kad_queries.drain() {
+			match channel {
+				QueryChannel::GetRecord(sender) => {
+					let _ = sender.send(Err(eyre!("Event loop shutting down")));
+				},
+				QueryChannel::GetClosestPeer(sender) => {
+					let _ = sender.send(Err(eyre!("Event loop shutting down")));
+				},
+			}
+		}
 	}
 
 	fn disconnect_peers(&mut self) {
