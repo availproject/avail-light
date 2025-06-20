@@ -148,6 +148,7 @@ impl EventLoop {
 	}
 
 	pub async fn run(mut self) {
+		info!("Running P2P event loop");
 		// shutdown will wait as long as this token is not dropped
 		let _delay_token = self
 			.shutdown
@@ -223,6 +224,7 @@ impl EventLoop {
 			}
 		}
 		self.disconnect_peers();
+		info!("Exiting P2P event loop");
 	}
 
 	fn disconnect_peers(&mut self) {
