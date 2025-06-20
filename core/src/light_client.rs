@@ -29,14 +29,17 @@ use tracing::{error, info};
 use {tokio_with_wasm::alias as tokio, web_time::Instant};
 
 use crate::{
-	data::{AchievedConfidenceKey, BlockHeaderKey, Database, VerifiedCellCountKey},
+	data::{
+		AchievedConfidenceKey, BlockHeaderKey, Database, DhtFetchedPercentageKey,
+		VerifiedCellCountKey,
+	},
 	network::{
 		self,
 		rpc::{self, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
 	types::{self, BlockRange, BlockVerified, ClientChannels, Delay},
-	utils::{blake2_256, calculate_confidence, extract_kate},
+	utils::{blake2_256, calculate_confidence, extract_kate, is_flush_cycle},
 };
 
 #[derive(Debug)]
@@ -131,6 +134,10 @@ pub async fn process_block(
 					&positions,
 				)
 				.await?;
+
+			if is_flush_cycle(block_number) {
+				db.put(DhtFetchedPercentageKey, fetch_stats.dht_fetched_percentage);
+			}
 
 			event_sender.send(OutputEvent::RecordDHTStats {
 				fetched: fetch_stats.dht_fetched,
