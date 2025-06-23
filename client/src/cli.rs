@@ -87,6 +87,6 @@ pub struct CliOpts {
 	pub auto_nat_mode: ServiceMode,
 
 	/// Kademlia operation mode: client or server
-	#[arg(long, value_enum, default_value = "client")]
+	#[arg(long, value_enum)]
 	pub operation_mode: Option<KademliaMode>,
 }
