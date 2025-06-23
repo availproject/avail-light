@@ -435,7 +435,7 @@ impl EventLoop {
 								listen_addrs
 									.into_iter()
 									// Filter out the loopback addresses
-									.filter(|addr| !is_localhost(addr))
+									.filter(|addr| !is_private_ip(addr))
 									.for_each(|addr| {
 										trace!("Adding peer {peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
@@ -586,18 +586,20 @@ fn collect_peer_addresses(peers: Vec<kad::PeerInfo>) -> Vec<(PeerId, Vec<Multiad
 		.collect()
 }
 
-fn is_localhost(addr: &Multiaddr) -> bool {
+fn is_private_ip(addr: &Multiaddr) -> bool {
 	for protocol in addr.iter() {
-		// Check IPv4 addresses in the 127.x.x.x range (loopback range)
+		// Check private IPv4 ranges
 		match protocol {
 			Protocol::Ip4(ip) => {
-				if ip.is_loopback() {
+				// Also includes loopback (127.0.0.0/8) and link-local (169.254.0.0/16)
+				if ip.is_private() || ip.is_loopback() || ip.is_link_local() {
 					return true;
 				}
 			},
-			// Check IPv6 localhost (::1)
+			// Check private IPv6 ranges:
 			Protocol::Ip6(ip) => {
-				if ip.is_loopback() {
+				// Also check for loopback and link-local
+				if ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local() {
 					return true;
 				}
 			},
@@ -606,7 +608,9 @@ fn is_localhost(addr: &Multiaddr) -> bool {
 			| Protocol::Dns4(host)
 			| Protocol::Dns6(host)
 			| Protocol::Dnsaddr(host) => {
-				if host.to_lowercase() == "localhost" {
+				let host = host.to_lowercase();
+				// Check for common private/local hostnames
+				if host == "localhost" || host.ends_with(".local") || host.ends_with(".localhost") {
 					return true;
 				}
 			},
@@ -641,22 +645,16 @@ mod tests {
 	}
 
 	#[test]
-	fn test_ipv4_localhost() {
-		// Test simple address with default port
-		let addr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/8080").unwrap();
-		assert!(is_localhost(&addr));
-
-		// Test localhost with different ports
-		let addrs_with_ports = vec![
-			"/ip4/127.0.0.1/tcp/0",
-			"/ip4/127.0.0.1/tcp/80",
-			"/ip4/127.0.0.1/tcp/443",
-			"/ip4/127.0.0.1/tcp/8000",
-			"/ip4/127.0.0.1/tcp/65535",
-			"/ip4/127.0.0.1/udp/53",
-			"/ip4/127.0.0.1/sctp/9899",
+	fn test_ipv4_private() {
+		// Test Class A private network (10.0.0.0/8)
+		let class_a_addrs = vec![
+			"/ip4/10.0.0.1/tcp/8080",
+			"/ip4/10.255.255.255/tcp/8080",
+			"/ip4/10.1.2.3/tcp/443",
+			"/ip4/10.0.0.0/tcp/80",
 		];
 
+<<<<<<< HEAD
 		for addr_str in addrs_with_ports {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(is_localhost(&addr), "Failed for: {addr_str}");
@@ -688,35 +686,151 @@ mod tests {
 			assert!(
 				is_localhost(&addr),
 				"Should detect localhost for: {addr_str}"
+=======
+		for addr_str in class_a_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect private IP: {}",
+				addr_str
+			);
+		}
+
+		// Test Class B private network (172.16.0.0/12)
+		let class_b_addrs = vec![
+			"/ip4/172.16.0.1/tcp/8080",
+			"/ip4/172.31.255.255/tcp/8080",
+			"/ip4/172.20.1.1/tcp/443",
+			"/ip4/172.16.0.0/tcp/80",
+		];
+
+		for addr_str in class_b_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect private IP: {}",
+				addr_str
+			);
+		}
+
+		// Test Class C private network (192.168.0.0/16)
+		let class_c_addrs = vec![
+			"/ip4/192.168.0.1/tcp/8080",
+			"/ip4/192.168.255.255/tcp/8080",
+			"/ip4/192.168.1.100/tcp/443",
+			"/ip4/192.168.0.0/tcp/80",
+		];
+
+		for addr_str in class_c_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect private IP: {}",
+				addr_str
+			);
+		}
+
+		// Test loopback addresses (127.0.0.0/8)
+		let loopback_addrs = vec![
+			"/ip4/127.0.0.1/tcp/8080",
+			"/ip4/127.0.0.2/tcp/8080",
+			"/ip4/127.255.255.255/tcp/8080",
+			"/ip4/127.1.2.3/tcp/443",
+		];
+
+		for addr_str in loopback_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect loopback IP: {}",
+				addr_str
+			);
+		}
+
+		// Test link-local addresses (169.254.0.0/16)
+		let link_local_addrs = vec![
+			"/ip4/169.254.0.1/tcp/8080",
+			"/ip4/169.254.255.255/tcp/8080",
+			"/ip4/169.254.1.100/tcp/443",
+		];
+
+		for addr_str in link_local_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect link-local IP: {}",
+				addr_str
+>>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
 
 	#[test]
-	fn test_ipv6_localhost() {
-		let test_addrs = vec![
-			"/ip6/::1/tcp/8080",
-			"/ip6/::1/tcp/0",
-			"/ip6/::1/udp/53",
-			"/ip6/::1/tcp/8080/http",
-			"/ip6/::1/tcp/443/tls",
+	fn test_ipv6_private() {
+		// Test unique local addresses (fc00::/7)
+		let unique_local_addrs = vec![
+			"/ip6/fc00::1/tcp/8080",
+			"/ip6/fd00::1/tcp/8080",
+			"/ip6/fcff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/tcp/8080",
+			"/ip6/fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/tcp/8080",
 		];
 
-		for addr_str in test_addrs {
+		for addr_str in unique_local_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
+<<<<<<< HEAD
 			assert!(is_localhost(&addr), "Failed for: {addr_str}");
+=======
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect unique local IPv6: {}",
+				addr_str
+			);
+		}
+
+		// Test link-local addresses (fe80::/10)
+		let link_local_addrs = vec![
+			"/ip6/fe80::1/tcp/8080",
+			"/ip6/fe80::dead:beef/tcp/8080",
+			"/ip6/febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff/tcp/8080",
+		];
+
+		for addr_str in link_local_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect link-local IPv6: {}",
+				addr_str
+			);
+		}
+
+		// Test loopback address (::1)
+		let loopback_addrs = vec!["/ip6/::1/tcp/8080", "/ip6/::1/tcp/443", "/ip6/::1/udp/53"];
+
+		for addr_str in loopback_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed to detect IPv6 loopback: {}",
+				addr_str
+			);
+>>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 		}
 	}
 
 	#[test]
-	fn test_dns_localhost() {
-		let test_addrs = vec![
+	fn test_dns_private() {
+		let private_dns_addrs = vec![
 			"/dns/localhost/tcp/8080",
 			"/dns4/localhost/tcp/8080",
 			"/dns6/localhost/tcp/8080",
 			"/dnsaddr/localhost/tcp/8080",
+			"/dns/myserver.local/tcp/8080",
+			"/dns/printer.local/tcp/631",
+			"/dns/device.localhost/tcp/80",
+			"/dns/test.localhost/tcp/443",
 		];
 
+<<<<<<< HEAD
 		for addr_str in test_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(is_localhost(&addr), "Failed for: {addr_str}");
@@ -741,46 +855,120 @@ mod tests {
 			assert!(
 				!is_localhost(&addr),
 				"Incorrectly identified as localhost: {addr_str}"
-			);
-		}
-	}
-
-	#[test]
-	fn test_non_localhost_ipv6() {
-		let test_addrs = vec![
-			"/ip6/::/tcp/8080",                 // All interfaces
-			"/ip6/2001:db8::1/tcp/8080",        // Documentation range
-			"/ip6/fe80::1/tcp/8080",            // Link-local
-			"/ip6/2001:4860:4860::8888/tcp/53", // Google DNS
-			"/ip6/2606:4700:4700::1111/tcp/53", // Cloudflare DNS
-			"/ip6/fc00::1/tcp/8080",            // Unique local
-			"/ip6/ff02::1/tcp/8080",            // Multicast
-		];
-
-		for addr_str in test_addrs {
+=======
+		for addr_str in private_dns_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
+				is_private_ip(&addr),
+				"Failed to detect private DNS: {}",
+				addr_str
+>>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
 
 	#[test]
-	fn test_non_localhost_dns() {
-		let test_addrs = vec![
+	fn test_non_private_ipv4() {
+		let public_addrs = vec![
+			"/ip4/8.8.8.8/tcp/53",         // Google DNS
+			"/ip4/1.1.1.1/tcp/53",         // Cloudflare DNS
+			"/ip4/208.67.222.222/tcp/53",  // OpenDNS
+			"/ip4/203.0.113.1/tcp/80",     // Test network (public)
+			"/ip4/198.51.100.1/tcp/80",    // Test network (public)
+			"/ip4/172.15.255.255/tcp/80",  // Just outside private range
+			"/ip4/172.32.0.1/tcp/80",      // Just outside private range
+			"/ip4/9.255.255.255/tcp/80",   // Just outside private range
+			"/ip4/11.0.0.1/tcp/80",        // Just outside private range
+			"/ip4/192.167.255.255/tcp/80", // Just outside private range
+			"/ip4/192.169.0.1/tcp/80",     // Just outside private range
+			"/ip4/0.0.0.0/tcp/80",         // All interfaces (not private)
+		];
+
+		for addr_str in public_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				!is_private_ip(&addr),
+				"Incorrectly identified as private: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_non_private_ipv6() {
+		let public_addrs = vec![
+			"/ip6/2001:db8::1/tcp/8080",        // Documentation range
+			"/ip6/2001:4860:4860::8888/tcp/53", // Google DNS
+			"/ip6/2606:4700:4700::1111/tcp/53", // Cloudflare DNS
+			"/ip6/2001::/tcp/80",               // Global unicast
+			"/ip6/::/tcp/8080",                 // All interfaces
+			"/ip6/ff02::1/tcp/8080",            // Multicast (not private)
+			"/ip6/fec0::1/tcp/8080",            // Just outside link-local range
+			"/ip6/fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/tcp/8080", // Just outside unique local
+			"/ip6/fe00::1/tcp/8080",            // Just outside unique local
+		];
+
+		for addr_str in public_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+<<<<<<< HEAD
+				!is_localhost(&addr),
+				"Incorrectly identified as localhost: {addr_str}"
+=======
+				!is_private_ip(&addr),
+				"Incorrectly identified as private: {}",
+				addr_str
+>>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
+			);
+		}
+	}
+
+	#[test]
+	fn test_non_private_dns() {
+		let public_dns_addrs = vec![
 			"/dns/example.com/tcp/80",
 			"/dns4/google.com/tcp/443",
 			"/dns6/ipv6.google.com/tcp/443",
 			"/dnsaddr/bootstrap.libp2p.io/tcp/443",
 			"/dns/peer.example.org/tcp/4001",
+			"/dns/github.com/tcp/443",
+			"/dns/stackoverflow.com/tcp/443",
+			"/dns/cloudflare.com/tcp/80",
 		];
 
-		for addr_str in test_addrs {
+		for addr_str in public_dns_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
+<<<<<<< HEAD
 				!is_localhost(&addr),
 				"Incorrectly identified as localhost: {addr_str}"
+=======
+				!is_private_ip(&addr),
+				"Incorrectly identified as private: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_mixed_protocols_private() {
+		// Test private IPs with various protocol combinations
+		let mixed_addrs = vec![
+			"/ip4/192.168.1.1/tcp/8080/http",
+			"/ip4/10.0.0.1/tcp/443/tls/ws",
+			"/ip6/fc00::1/tcp/8080/ws",
+			"/ip6/fe80::1/udp/53",
+			"/dns/localhost/tcp/443/tls",
+			"/dns/device.local/tcp/8080/http",
+		];
+
+		for addr_str in mixed_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_private_ip(&addr),
+				"Failed for mixed protocol: {}",
+				addr_str
+>>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
