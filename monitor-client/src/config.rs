@@ -58,6 +58,30 @@ pub struct CliOpts {
 	pub fail_threshold: usize,
 	#[arg(long, default_value = "3")]
 	pub success_threshold: usize,
+	#[arg(long)]
+	pub ot_collector_endpoint: Option<String>,
+	#[arg(long)]
+	pub ot_export_period: Option<u64>,
+	#[arg(long)]
+	pub ot_export_timeout: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct OtelConfig {
+	pub ot_collector_endpoint: String,
+	pub ot_export_period: u64,
+	pub ot_export_timeout: u64,
+}
+
+impl Default for OtelConfig {
+	fn default() -> Self {
+		Self {
+			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
+			ot_export_period: 5,
+			ot_export_timeout: 10,
+		}
+	}
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -117,6 +141,7 @@ pub struct Config {
 	pub success_threshold: usize,
 	pub http_port: u16,
 	pub pagination: PaginationConfig,
+	pub otel: OtelConfig,
 }
 
 impl Default for Config {
@@ -134,6 +159,7 @@ impl Default for Config {
 			success_threshold: 3,
 			http_port: 8090,
 			pagination: PaginationConfig::default(),
+			otel: OtelConfig::default(),
 		}
 	}
 }
@@ -195,6 +221,16 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	}
 	if let Some(query_timeout) = opts.query_timeout {
 		config.libp2p.kademlia.query_timeout = Duration::from_secs(query_timeout);
+	}
+
+	if let Some(endpoint) = &opts.ot_collector_endpoint {
+		config.otel.ot_collector_endpoint = endpoint.clone();
+	}
+	if let Some(period) = opts.ot_export_period {
+		config.otel.ot_export_period = period;
+	}
+	if let Some(timeout) = opts.ot_export_timeout {
+		config.otel.ot_export_timeout = timeout;
 	}
 	Ok(config)
 }

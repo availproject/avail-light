@@ -79,8 +79,8 @@ impl<'de> Deserialize<'de> for WrappedProof {
 		D: serde::Deserializer<'de>,
 	{
 		let data = from_hex(&String::deserialize(deserializer)?)
-			.map_err(|e| de::Error::custom(format!("{:?}", e)))?;
-		Decode::decode(&mut &data[..]).map_err(|e| de::Error::custom(format!("{:?}", e)))
+			.map_err(|e| de::Error::custom(format!("{e:?}")))?;
+		Decode::decode(&mut &data[..]).map_err(|e| de::Error::custom(format!("{e:?}")))
 	}
 }
 

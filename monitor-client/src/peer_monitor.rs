@@ -11,12 +11,13 @@ use tracing::{debug, info, trace, warn};
 
 use avail_light_core::network::p2p::Client;
 
-use crate::{config::Config, ServerInfo};
+use crate::{config::Config, telemetry::MonitorMetrics, ServerInfo};
 pub struct PeerMonitor {
 	p2p_client: Client,
 	interval: Interval,
 	server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 	config: Config,
+	metrics: MonitorMetrics,
 }
 impl PeerMonitor {
 	pub fn new(
@@ -24,12 +25,14 @@ impl PeerMonitor {
 		interval: Interval,
 		server_monitor_list: Arc<Mutex<HashMap<PeerId, ServerInfo>>>,
 		config: Config,
+		metrics: MonitorMetrics,
 	) -> Self {
 		Self {
 			interval,
 			p2p_client,
 			server_monitor_list,
 			config,
+			metrics,
 		}
 	}
 
@@ -68,6 +71,7 @@ impl PeerMonitor {
 			let p2p_client = self.p2p_client.clone();
 			let server_monitor_list = self.server_monitor_list.clone();
 			let config = self.config.clone();
+			let metrics = self.metrics.clone();
 
 			tokio::spawn(async move {
 				let mut cloned_info = {
@@ -81,7 +85,14 @@ impl PeerMonitor {
 				};
 
 				// TODO: Handle the result
-				_ = check_peer_connectivity(&config, p2p_client, &peer_id, &mut cloned_info).await;
+				_ = check_peer_connectivity(
+					&config,
+					p2p_client,
+					&peer_id,
+					&mut cloned_info,
+					&metrics,
+				)
+				.await;
 
 				let mut server_list = server_monitor_list.lock().await;
 				if let Some(info) = server_list.get_mut(&peer_id) {
@@ -101,6 +112,7 @@ async fn check_peer_connectivity(
 	p2p_client: Client,
 	peer_id: &PeerId,
 	info: &mut ServerInfo,
+	metrics: &MonitorMetrics,
 ) -> Result<()> {
 	// NOTE: `PeerCondition::NotDialing` might not be the best suitable dial condition for our approach
 	match p2p_client
@@ -124,10 +136,15 @@ async fn check_peer_connectivity(
 						"Peer {} unmarked as blacklisted after {} successful dials",
 						peer_id, config.success_threshold
 					);
+					// Update health score to 100 when unmarked
+					metrics.set_peer_health_score(&peer_id.to_string(), 100.0);
+					metrics.set_peer_blocked_status(&peer_id.to_string(), false);
 				}
 			} else {
 				// For non-blacklisted peers, just increment the success counter and reset the failure counter
 				info.success_counter = info.success_counter.saturating_add(1);
+				// Ensure blocked status is false for healthy peers
+				metrics.set_peer_blocked_status(&peer_id.to_string(), false);
 			}
 
 			// Every successful dial resets the fail counter for all peers
@@ -145,9 +162,27 @@ async fn check_peer_connectivity(
                     peer_id, config.fail_threshold
                 );
 				info.is_blacklisted = true;
+				// Update health score to 0 when blacklisted
+				metrics.set_peer_health_score(&peer_id.to_string(), 0.0);
+				metrics.set_peer_blocked_status(&peer_id.to_string(), true);
+			} else {
+				// Calculate health score based on fail/success ratio
+				let health_score = calculate_health_score(info);
+				metrics.set_peer_health_score(&peer_id.to_string(), health_score);
 			}
 		},
 	}
 
 	Ok(())
+}
+
+fn calculate_health_score(info: &ServerInfo) -> f64 {
+	// Simple health score calculation: success_counter / (success_counter + failed_counter)
+	// Returns a value between 0.0 and 100.0
+	let total = info.success_counter + info.failed_counter;
+	if total == 0 {
+		50.0 // No data yet, assume neutral health
+	} else {
+		(info.success_counter as f64 / total as f64) * 100.0
+	}
 }
