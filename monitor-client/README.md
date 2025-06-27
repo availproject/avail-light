@@ -16,16 +16,19 @@ The monitor client performs several key functions:
 The monitor consists of three main components:
 
 ### 1. Bootstrap Monitor
+
 - Periodically dials bootstrap nodes to ensure they remain accessible
 - Tracks success/failure rates of bootstrap connections
 - Runs on a configurable interval (default: 60 seconds)
 
 ### 2. Peer Discovery
+
 - Uses Kademlia DHT queries to discover new peers in the network
 - Queries random peer IDs to explore different parts of the DHT
 - Tracks the total number of discovered peers
 
 ### 3. Peer Monitor
+
 - Monitors the health of discovered peers by attempting to dial them
 - Maintains a blacklist of unreachable peers
 - Calculates health scores based on connection success rates
@@ -57,6 +60,7 @@ otel:
   ot_export_period: 5      # Export metrics every 5 seconds
   ot_export_timeout: 10
 ```
+
 Example run command:
 
 ```bash
@@ -69,21 +73,21 @@ The monitor exports the following metrics via OpenTelemetry:
 
 ### Global Metrics
 
-| Metric Name | Type | Description |
-|------------|------|-------------|
-| `avail_light_monitor_active_peers` | Gauge | Number of currently active (non-blocked) peers |
-| `avail_light_monitor_blocked_peers` | Gauge | Number of blocked peers |
-| `avail_light_monitor_discovered_peers_total` | Counter | Total number of peers discovered since startup |
-| `avail_light_monitor_bootstrap_attempts_total` | Counter | Total number of bootstrap connection attempts |
-| `avail_light_monitor_bootstrap_failures_total` | Counter | Total number of failed bootstrap connections |
+| Metric Name                                    | Type    | Description                                    |
+| ---------------------------------------------- | ------- | ---------------------------------------------- |
+| `avail_light_monitor_active_peers`             | Gauge   | Number of currently active (non-blocked) peers |
+| `avail_light_monitor_blocked_peers`            | Gauge   | Number of blocked peers                        |
+| `avail_light_monitor_discovered_peers_total`   | Counter | Total number of peers discovered since startup |
+| `avail_light_monitor_bootstrap_attempts_total` | Counter | Total number of bootstrap connection attempts  |
+| `avail_light_monitor_bootstrap_failures_total` | Counter | Total number of failed bootstrap connections   |
 
 ### Per-Peer Metrics
 
-| Metric Name | Type | Labels | Description |
-|------------|------|--------|-------------|
+| Metric Name                                | Type  | Labels  | Description              |
+| ------------------------------------------ | ----- | ------- | ------------------------ |
 | `avail_light_monitor_peer_ping_latency_ms` | Gauge | peer_id | Ping RTT in milliseconds |
-| `avail_light_monitor_peer_health_score` | Gauge | peer_id | Health score (0-100) |
-| `avail_light_monitor_peer_blocked` | Gauge | peer_id | 1 if blocked, 0 if not |
+| `avail_light_monitor_peer_health_score`    | Gauge | peer_id | Health score (0-100)     |
+| `avail_light_monitor_peer_blocked`         | Gauge | peer_id | 1 if blocked, 0 if not   |
 
 ## Peer Health Scoring
 
@@ -100,10 +104,12 @@ health_score = (success_counter / (success_counter + failed_counter)) * 100
 ## Peer Blocking Logic
 
 Peers are marked as blocked when:
+
 1. They fail `fail_threshold` consecutive connection attempts (default: 3)
 2. They have no globally reachable addresses
 
 Blocked peers can be unblocked by:
+
 1. Successfully connecting `success_threshold` times (default: 3)
 2. Being rediscovered with globally reachable addresses
 
@@ -116,15 +122,16 @@ The monitor exposes a REST API on the configured HTTP port:
 - `GET /peers/{peer_id}` - Get details for a specific peer
 - `GET /peers/blacklisted` - List all blocked peers
 
-
 ## Development
 
 The monitor is built using:
+
 - **libp2p** - P2P networking
 - **OpenTelemetry** - Metrics collection
 - **actix-web** - HTTP API server
 
 Key source files:
+
 - `src/main.rs` - Main entry point and event handling
 - `src/telemetry.rs` - Metrics implementation
 - `src/peer_monitor.rs` - Peer health monitoring logic
