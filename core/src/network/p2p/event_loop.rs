@@ -659,7 +659,7 @@ mod tests {
 
 		for addr_str in addrs_with_ports {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {}", addr_str);
+			assert!(is_localhost(&addr), "Failed for: {addr_str}");
 		}
 
 		// Test localhost with different protocols
@@ -671,7 +671,7 @@ mod tests {
 
 		for addr_str in addrs_with_protocols {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {}", addr_str);
+			assert!(is_localhost(&addr), "Failed for: {addr_str}");
 		}
 
 		// Test localhost range
@@ -687,8 +687,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				is_localhost(&addr),
-				"Should detect localhost for: {}",
-				addr_str
+				"Should detect localhost for: {addr_str}"
 			);
 		}
 	}
@@ -705,7 +704,7 @@ mod tests {
 
 		for addr_str in test_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {}", addr_str);
+			assert!(is_localhost(&addr), "Failed for: {addr_str}");
 		}
 	}
 
@@ -720,7 +719,7 @@ mod tests {
 
 		for addr_str in test_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {}", addr_str);
+			assert!(is_localhost(&addr), "Failed for: {addr_str}");
 		}
 	}
 
@@ -741,8 +740,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {}",
-				addr_str
+				"Incorrectly identified as localhost: {addr_str}"
 			);
 		}
 	}
@@ -763,8 +761,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {}",
-				addr_str
+				"Incorrectly identified as localhost: {addr_str}"
 			);
 		}
 	}
@@ -783,8 +780,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {}",
-				addr_str
+				"Incorrectly identified as localhost: {addr_str}"
 			);
 		}
 	}
