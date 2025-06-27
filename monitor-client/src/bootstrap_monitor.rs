@@ -13,7 +13,12 @@ pub struct BootstrapMonitor {
 }
 
 impl BootstrapMonitor {
-	pub fn new(bootstraps: Vec<PeerAddress>, interval: Interval, p2p_client: Client, metrics: MonitorMetrics) -> Self {
+	pub fn new(
+		bootstraps: Vec<PeerAddress>,
+		interval: Interval,
+		p2p_client: Client,
+		metrics: MonitorMetrics,
+	) -> Self {
 		Self {
 			bootstraps,
 			interval,
