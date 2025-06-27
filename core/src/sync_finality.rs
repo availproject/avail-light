@@ -277,8 +277,7 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 			.request_finality_proof(curr_block_num)
 			.await
 			.wrap_err(format!(
-				"Couldn't get finality proof for block no. {}",
-				curr_block_num
+				"Couldn't get finality proof for block no. {curr_block_num}"
 			))?;
 		let proof_block_hash = proof.0.block;
 		let p_h = client
