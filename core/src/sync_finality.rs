@@ -234,7 +234,7 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 		set_id = client
 			.fetch_set_id_at(gen_hash)
 			.await
-			.wrap_err(format!("Couldn't get set_id at {}", gen_hash))?;
+			.wrap_err(format!("Couldn't get set_id at {gen_hash}"))?;
 		info!("Set ID at genesis is {set_id}");
 	}
 
@@ -254,14 +254,11 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 		let hash = client
 			.get_block_hash(curr_block_num)
 			.await
-			.wrap_err(format!(
-				"Couldn't get hash for block no. {}",
-				curr_block_num
-			))?;
+			.wrap_err(format!("Couldn't get hash for block no. {curr_block_num}"))?;
 		from_header = client
 			.get_header_by_hash(hash)
 			.await
-			.wrap_err(format!("Couldn't get header for {}", hash))?;
+			.wrap_err(format!("Couldn't get header for {hash}"))?;
 		client.store_block_header(curr_block_num, from_header.clone());
 
 		assert_eq!(
@@ -287,7 +284,7 @@ pub async fn sync(client: impl Client, mut from_header: AvailHeader) -> Result<(
 		let p_h = client
 			.get_header_by_hash(proof_block_hash)
 			.await
-			.wrap_err(format!("Couldn't get header for {}", proof_block_hash))?;
+			.wrap_err(format!("Couldn't get header for {proof_block_hash}"))?;
 
 		let valset = ValidatorSet {
 			set_id,
