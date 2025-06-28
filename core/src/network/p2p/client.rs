@@ -31,8 +31,8 @@ use tracing::{debug, info, trace, warn};
 use web_time::{Duration, Instant};
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
-	MultiAddressInfo, OutputEvent, PeerInfo, QueryChannel,
+	event_loop::ConnectionEstablishedInfo, is_global_address, Command, EventLoop, MultiAddressInfo,
+	OutputEvent, PeerInfo, QueryChannel,
 };
 use crate::types::PeerAddress;
 
@@ -305,7 +305,7 @@ impl Client {
 				for bucket in kad.kbuckets() {
 					for item in bucket.iter() {
 						for address in item.node.value.iter() {
-							if is_multiaddr_global(address) {
+							if is_global_address(address) {
 								peers_with_non_pvt_addr += 1;
 								// We just need to hit the first external address
 								break;
@@ -407,11 +407,7 @@ impl Client {
 				let public_listeners: Vec<String> = context
 					.swarm
 					.external_addresses()
-					.filter(|multiaddr| {
-						multiaddr.iter().any(
-							|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
-						)
-					})
+					.filter(|addr| is_global_address(addr))
 					.map(ToString::to_string)
 					.collect();
 				let local_listeners: Vec<String> =
