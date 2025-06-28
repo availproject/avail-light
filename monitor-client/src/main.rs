@@ -2,7 +2,7 @@ use crate::server::{get_blacklisted_peers, get_peer_by_id, get_peer_count, get_p
 use actix_web::{web, App, HttpServer};
 use avail_light_core::{
 	data,
-	network::p2p::{self, is_multiaddr_global, OutputEvent},
+	network::p2p::{self, is_global_address, OutputEvent},
 	shutdown::Controller,
 	types::{PeerAddress, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -230,7 +230,7 @@ pub async fn handle_events(
 
 							let globally_reachable_addresses: Vec<Multiaddr> = addresses
 								.iter()
-								.filter(|addr| is_multiaddr_global(addr))
+								.filter(|addr| is_global_address(addr))
 								.cloned()
 								.collect();
 

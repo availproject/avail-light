@@ -8,7 +8,6 @@ use libp2p::{
 		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
 		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult, RecordKey,
 	},
-	multiaddr::Protocol,
 	ping,
 	swarm::SwarmEvent,
 	Multiaddr, PeerId, Swarm,
@@ -33,7 +32,7 @@ use super::{
 	OutputEvent, QueryChannel,
 };
 use crate::{
-	network::p2p::{is_multiaddr_global, AgentVersion},
+	network::p2p::{is_global_address, AgentVersion},
 	shutdown::Controller,
 	types::TimeToLive,
 };
@@ -435,7 +434,7 @@ impl EventLoop {
 								listen_addrs
 									.into_iter()
 									// Filter out the loopback addresses
-									.filter(|addr| !is_private_ip(addr))
+									.filter(|addr| is_global_address(addr))
 									.for_each(|addr| {
 										trace!("Adding peer {peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
@@ -513,7 +512,7 @@ impl EventLoop {
 							"External reachability confirmed on address: {}",
 							address.to_string()
 						);
-						if is_multiaddr_global(&address) {
+						if is_global_address(&address) {
 							info!(
 								"Public reachability confirmed on address: {}",
 								address.to_string()
@@ -586,48 +585,13 @@ fn collect_peer_addresses(peers: Vec<kad::PeerInfo>) -> Vec<(PeerId, Vec<Multiad
 		.collect()
 }
 
-fn is_private_ip(addr: &Multiaddr) -> bool {
-	for protocol in addr.iter() {
-		// Check private IPv4 ranges
-		match protocol {
-			Protocol::Ip4(ip) => {
-				// Also includes loopback (127.0.0.0/8) and link-local (169.254.0.0/16)
-				if ip.is_private() || ip.is_loopback() || ip.is_link_local() {
-					return true;
-				}
-			},
-			// Check private IPv6 ranges:
-			Protocol::Ip6(ip) => {
-				// Also check for loopback and link-local
-				if ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local() {
-					return true;
-				}
-			},
-			// Check DNS entries for localhost (case insensitive)
-			Protocol::Dns(host)
-			| Protocol::Dns4(host)
-			| Protocol::Dns6(host)
-			| Protocol::Dnsaddr(host) => {
-				let host = host.to_lowercase();
-				// Check for common private/local hostnames
-				if host == "localhost" || host.ends_with(".local") || host.ends_with(".localhost") {
-					return true;
-				}
-			},
-			_ => continue,
-		}
-	}
-	false
-}
-
 #[cfg(test)]
 mod tests {
+	use std::str::FromStr;
+
 	use crate::network::p2p::event_loop::DHTKey;
 	use color_eyre::Result;
 	use libp2p::{kad::RecordKey, Multiaddr};
-	use std::str::FromStr;
-
-	use super::*;
 
 	#[test]
 	fn dht_key_parse_record_key() {
@@ -654,39 +618,6 @@ mod tests {
 			"/ip4/10.0.0.0/tcp/80",
 		];
 
-<<<<<<< HEAD
-		for addr_str in addrs_with_ports {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-
-		// Test localhost with different protocols
-		let addrs_with_protocols = vec![
-			"/ip4/127.0.0.1/tcp/8080/http",
-			"/ip4/127.0.0.1/tcp/443/tls/ws",
-			"/ip4/127.0.0.1/tcp/8080/ws",
-		];
-
-		for addr_str in addrs_with_protocols {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-
-		// Test localhost range
-		let test_cases = vec![
-			"/ip4/127.0.0.2/tcp/8080",
-			"/ip4/127.0.1.1/tcp/8080",
-			"/ip4/127.1.0.1/tcp/8080",
-			"/ip4/127.255.255.255/tcp/8080",
-			"/ip4/127.1.2.3/tcp/8080",
-		];
-
-		for addr_str in test_cases {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(
-				is_localhost(&addr),
-				"Should detect localhost for: {addr_str}"
-=======
 		for addr_str in class_a_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
@@ -760,7 +691,6 @@ mod tests {
 				is_private_ip(&addr),
 				"Failed to detect link-local IP: {}",
 				addr_str
->>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
@@ -777,9 +707,6 @@ mod tests {
 
 		for addr_str in unique_local_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
-<<<<<<< HEAD
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-=======
 			assert!(
 				is_private_ip(&addr),
 				"Failed to detect unique local IPv6: {}",
@@ -813,7 +740,6 @@ mod tests {
 				"Failed to detect IPv6 loopback: {}",
 				addr_str
 			);
->>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 		}
 	}
 
@@ -830,39 +756,12 @@ mod tests {
 			"/dns/test.localhost/tcp/443",
 		];
 
-<<<<<<< HEAD
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-	}
-
-	#[test]
-	fn test_non_localhost_ipv4() {
-		let test_addrs = vec![
-			"/ip4/0.0.0.0/tcp/8080",       // All interfaces
-			"/ip4/192.168.1.1/tcp/8080",   // Private network
-			"/ip4/10.0.0.1/tcp/8080",      // Private network
-			"/ip4/172.16.0.1/tcp/8080",    // Private network
-			"/ip4/8.8.8.8/tcp/53",         // Public DNS
-			"/ip4/1.1.1.1/tcp/53",         // Cloudflare DNS
-			"/ip4/203.0.113.1/tcp/80",     // Test network
-			"/ip4/255.255.255.255/tcp/80", // Broadcast
-		];
-
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
-=======
 		for addr_str in private_dns_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				is_private_ip(&addr),
 				"Failed to detect private DNS: {}",
 				addr_str
->>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
@@ -911,14 +810,9 @@ mod tests {
 		for addr_str in public_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
-<<<<<<< HEAD
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
-=======
 				!is_private_ip(&addr),
 				"Incorrectly identified as private: {}",
 				addr_str
->>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
@@ -939,10 +833,6 @@ mod tests {
 		for addr_str in public_dns_addrs {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
-<<<<<<< HEAD
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
-=======
 				!is_private_ip(&addr),
 				"Incorrectly identified as private: {}",
 				addr_str
@@ -968,7 +858,6 @@ mod tests {
 				is_private_ip(&addr),
 				"Failed for mixed protocol: {}",
 				addr_str
->>>>>>> 44052185 (Filtering for private range IPs in p2p discovery)
 			);
 		}
 	}
