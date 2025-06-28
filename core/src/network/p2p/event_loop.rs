@@ -434,7 +434,7 @@ impl EventLoop {
 								listen_addrs
 									.into_iter()
 									// Filter out the loopback addresses
-									.filter(|addr| is_global_address(addr))
+									.filter(is_global_address)
 									.for_each(|addr| {
 										trace!("Adding peer {peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
