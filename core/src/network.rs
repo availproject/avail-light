@@ -443,7 +443,7 @@ impl Network {
 		};
 
 		let prefix = &genesis_hash[..std::cmp::min(6, genesis_hash.len())];
-		format!("{}:{}", network, prefix)
+		format!("{network}:{prefix}")
 	}
 }
 
