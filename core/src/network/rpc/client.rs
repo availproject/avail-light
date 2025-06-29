@@ -574,14 +574,12 @@ impl<D: Database> Client<D> {
 				.block_header(block_hash)
 				.await?
 				.ok_or_else(|| {
-					subxt::Error::Other(
-						format!("Block Header with hash: {block_hash:?} not found",),
-					)
+					subxt::Error::Other(format!("Block Header with hash: {block_hash:?} not found"))
 				})
 				.map_err(Into::into)
 		})
 		.await
-		.wrap_err(format!("Block Header with hash: {block_hash:?} not found",))
+		.wrap_err(format!("Block Header with hash: {block_hash:?} not found"))
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
@@ -609,7 +607,7 @@ impl<D: Database> Client<D> {
 			.with_retries(|client| async move {
 				get_finalized_head(&client.client)
 					.await
-					.map_err(|error| subxt::Error::Other(format!("{error:?}")))
+					.map_err(|e| subxt::Error::Other(format!("{e:?}")))
 					.map_err(Into::into)
 			})
 			.await?;
