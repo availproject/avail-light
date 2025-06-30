@@ -1,5 +1,3 @@
-//use std::time::Duration;
-
 use avail_light_core::network::p2p::Client;
 use color_eyre::Result;
 use libp2p::PeerId;

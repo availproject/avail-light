@@ -449,7 +449,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(config_path) = &opts.config {
 		fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
 		confy::load_path(config_path)
-			.wrap_err(format!("Failed to load configuration from {}", config_path))?
+			.wrap_err(format!("Failed to load configuration from {config_path}"))?
 	} else {
 		RuntimeConfig::default()
 	};

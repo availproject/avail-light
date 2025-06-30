@@ -331,7 +331,7 @@ impl<D: Database> Client<D> {
 			return Err(Report::msg(ClientCreationError::GenesisHashMismatch {
 				host: host.to_string(),
 				expected: expected_genesis_hash.to_string(),
-				found: format!("{:?}", genesis_hash),
+				found: format!("{genesis_hash:?}"),
 			}));
 		}
 
@@ -581,10 +581,7 @@ impl<D: Database> Client<D> {
 				.map_err(Into::into)
 		})
 		.await
-		.wrap_err(format!(
-			"Block Header with hash: {:?} not found",
-			block_hash
-		))
+		.wrap_err(format!("Block Header with hash: {block_hash:?} not found",))
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
@@ -612,7 +609,7 @@ impl<D: Database> Client<D> {
 			.with_retries(|client| async move {
 				get_finalized_head(&client.client)
 					.await
-					.map_err(|error| subxt::Error::Other(format!("{:?}", error)))
+					.map_err(|error| subxt::Error::Other(format!("{error:?}")))
 					.map_err(Into::into)
 			})
 			.await?;
