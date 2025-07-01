@@ -39,7 +39,7 @@ pub struct CliOpts {
 	#[arg(short, long)]
 	pub p2p_port: Option<u16>,
 	/// REST server port
-	#[arg(short, long)]
+	#[arg(long)]
 	pub http_port: Option<u16>,
 	/// RocksDB store location
 	#[arg(long, default_value = "./db")]
