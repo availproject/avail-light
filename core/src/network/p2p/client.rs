@@ -1,5 +1,10 @@
 #[cfg(not(feature = "multiproof"))]
 use avail_core::kate::{CHUNK_SIZE, COMMITMENT_SIZE};
+use color_eyre::{
+	eyre::{eyre, OptionExt},
+	Result,
+};
+use futures::future::join_all;
 #[cfg(feature = "multiproof")]
 use kate_recovery::data::MultiProofCell;
 #[cfg(not(feature = "multiproof"))]
@@ -8,12 +13,6 @@ use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position, RowIndex},
 };
-
-use color_eyre::{
-	eyre::{eyre, OptionExt, WrapErr},
-	Result,
-};
-use futures::future::join_all;
 use libp2p::{
 	core::transport::ListenerId,
 	kad::{store::RecordStore, Mode, PeerRecord, Quorum, Record, RecordKey},
@@ -32,8 +31,8 @@ use tracing::{debug, info, trace, warn};
 use web_time::{Duration, Instant};
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global, is_multiaddr_global, Command, EventLoop,
-	MultiAddressInfo, OutputEvent, PeerInfo, QueryChannel,
+	event_loop::ConnectionEstablishedInfo, is_global_address, Command, EventLoop, MultiAddressInfo,
+	OutputEvent, PeerInfo, QueryChannel,
 };
 use crate::types::PeerAddress;
 
@@ -98,14 +97,28 @@ impl Client {
 	where
 		F: FnOnce(oneshot::Sender<Result<T>>) -> Command,
 	{
+		if self.command_sender.is_closed() {
+			return Err(eyre!("Cannot execute command: event loop is shut down"));
+		}
+
 		let (response_sender, response_receiver) = oneshot::channel();
 		let command = command_creator(response_sender);
-		self.command_sender
-			.send(command)
-			.map_err(|_| eyre!("receiver should not be dropped"))?;
-		response_receiver
-			.await
-			.wrap_err("sender should not be dropped")?
+
+		self.command_sender.send(command).map_err(|error| {
+			if self.command_sender.is_closed() {
+				eyre!("Command channel closed during send: {error}")
+			} else {
+				eyre!("Failed to send command: {error}")
+			}
+		})?;
+
+		response_receiver.await.map_err(|_| {
+			if self.command_sender.is_closed() {
+				eyre!("Event loop shut down before command could be processed")
+			} else {
+				eyre!("Command handler failed to send response")
+			}
+		})?
 	}
 
 	/// Starts listening on provided multiaddresses and saves the listener IDs
@@ -133,6 +146,11 @@ impl Client {
 	}
 
 	pub async fn stop_listening(&mut self) -> Result<()> {
+		if self.command_sender.is_closed() {
+			info!("Event loop already shut down, skipping stop_listening");
+			return Ok(());
+		}
+
 		let listener_ids = self.listeners.clone();
 		let result = self
 			.execute_sync(|response_sender| {
@@ -287,7 +305,7 @@ impl Client {
 				for bucket in kad.kbuckets() {
 					for item in bucket.iter() {
 						for address in item.node.value.iter() {
-							if is_multiaddr_global(address) {
+							if is_global_address(address) {
 								peers_with_non_pvt_addr += 1;
 								// We just need to hit the first external address
 								break;
@@ -389,11 +407,7 @@ impl Client {
 				let public_listeners: Vec<String> = context
 					.swarm
 					.external_addresses()
-					.filter(|multiaddr| {
-						multiaddr.iter().any(
-							|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)),
-						)
-					})
+					.filter(|addr| is_global_address(addr))
 					.map(ToString::to_string)
 					.collect();
 				let local_listeners: Vec<String> =

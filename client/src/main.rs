@@ -17,6 +17,7 @@ use avail_light_core::{
 		p2p::{
 			self, extract_block_num, forward_p2p_events, init_and_start_p2p_client,
 			p2p_restart_manager, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
+			MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
 		},
 		rpc::{self, OutputEvent as RpcEvent},
 		Network,
@@ -448,7 +449,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(config_path) = &opts.config {
 		fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
 		confy::load_path(config_path)
-			.wrap_err(format!("Failed to load configuration from {}", config_path))?
+			.wrap_err(format!("Failed to load configuration from {config_path}"))?
 	} else {
 		RuntimeConfig::default()
 	};
@@ -519,6 +520,17 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(p2p_client_restart_interval) = opts.p2p_client_restart_interval {
 		cfg.p2p_client_restart_interval = Some(Duration::from_secs(p2p_client_restart_interval));
+	}
+
+	if matches!(cfg.p2p_client_restart_interval, Some(interval) if interval.as_secs() < MINIMUM_P2P_CLIENT_RESTART_INTERVAL)
+	{
+		return Err(eyre!(
+		        "p2p_client_restart_interval can't be less than {MINIMUM_P2P_CLIENT_RESTART_INTERVAL} seconds"
+		));
+	}
+
+	if let Some(operation_mode) = opts.operation_mode {
+		cfg.libp2p.kademlia.operation_mode = operation_mode;
 	}
 
 	Ok(cfg)

@@ -17,7 +17,7 @@ use crate::{
 	utils::{self, spawn_in_span},
 };
 
-use super::configuration::LibP2PConfig;
+use super::{configuration::LibP2PConfig, MINIMUM_P2P_CLIENT_RESTART_INTERVAL};
 
 /// Initialize and start P2P client with all necessary components
 #[allow(clippy::too_many_arguments)]
@@ -45,7 +45,7 @@ pub async fn init_and_start_p2p_client(
 	.await?;
 
 	// Start the new event loop
-	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
+	spawn_in_span(p2p_event_loop.run());
 
 	let addrs = vec![libp2p_cfg.tcp_multiaddress()];
 
@@ -99,8 +99,8 @@ pub async fn p2p_restart_manager(
 
 				{
 					let mut client_guard = p2p_client.lock().await;
-					if let Some(mut client) = client_guard.take() {
-						info!("Stopping listener");
+					if let Some(client) = client_guard.as_mut() {
+						info!("Stopping listeners before shutdown");
 						if let Err(e) = client.stop_listening().await {
 							warn!("Error stopping listeners during restart: {e}");
 						}
@@ -111,6 +111,8 @@ pub async fn p2p_restart_manager(
 				let _ = current_shutdown.trigger_shutdown("P2P client periodic restart".to_string());
 
 				_ = current_shutdown.completed_shutdown().await;
+
+				p2p_client.lock().await.take();
 
 				// Create a new shutdown controller for the next restart cycle
 				let new_shutdown = Controller::<String>::new();
@@ -148,6 +150,7 @@ pub async fn p2p_restart_manager(
 				}
 				randomized_duration = randomize_duration(restart_interval);
 				interval = tokio::time::interval(randomized_duration);
+				interval.tick().await;
 			}
 			_ = app_shutdown.triggered_shutdown() => {
 				info!("P2P restart manager shutting down");
@@ -169,12 +172,15 @@ pub async fn forward_p2p_events(
 	}
 }
 
+/// Returns a randomized `Duration` between `MINIMUM_P2P_CLIENT_RESTART_INTERVAL` and the given `max`.
+/// Defaults to `MINIMUM_P2P_CLIENT_RESTART_INTERVAL`.
 pub fn randomize_duration(max: Duration) -> Duration {
+	if max.as_secs() <= MINIMUM_P2P_CLIENT_RESTART_INTERVAL {
+		return Duration::from_secs(MINIMUM_P2P_CLIENT_RESTART_INTERVAL);
+	}
+
 	let mut rng = utils::rng();
-	// 1 minute minimum
-	let min_secs = 60;
-	let max_secs = max.as_secs().max(min_secs);
-	Duration::from_secs(rng.gen_range(min_secs..max_secs))
+	Duration::from_secs(rng.gen_range(MINIMUM_P2P_CLIENT_RESTART_INTERVAL..=max.as_secs()))
 }
 
 #[cfg(test)]
@@ -187,9 +193,8 @@ mod tests {
 
 		for _ in 0..100 {
 			let result = randomize_duration(max_duration);
-
-			assert!(result >= Duration::from_secs(0));
-			assert!(result < max_duration);
+			assert!(result >= Duration::from_secs(MINIMUM_P2P_CLIENT_RESTART_INTERVAL));
+			assert!(result <= max_duration);
 		}
 	}
 }

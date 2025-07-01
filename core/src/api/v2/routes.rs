@@ -202,8 +202,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light"],"genesis_hash":"{:x?}","network":"host/nv1.0.0/0","blocks":{{"latest":0}}}}"#,
-			gen_hash
+			r#"{{"modes":["light"],"genesis_hash":"{gen_hash:x?}","network":"host/nv1.0.0/0","blocks":{{"latest":0}}}}"#
 		);
 		assert_eq!(response.body(), &expected);
 	}
@@ -246,8 +245,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:#x}","network":"host/nv1.0.0/0","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}"#,
-			gen_hash
+			r#"{{"modes":["light","app"],"app_id":1,"genesis_hash":"{gen_hash:#x}","network":"host/nv1.0.0/0","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}"#
 		);
 		assert_eq!(response.body(), &expected);
 	}
@@ -694,8 +692,7 @@ mod tests {
 
 		let gen_hash = H256::default();
 		let expected = format!(
-			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app"],"app_id":1,"genesis_hash":"{:x?}","network":"host/nv1.0.0/0","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}}}"#,
-			gen_hash
+			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app"],"app_id":1,"genesis_hash":"{gen_hash:x?}","network":"host/nv1.0.0/0","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}}}}}}"#
 		);
 
 		let status_request =

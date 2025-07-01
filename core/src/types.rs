@@ -127,7 +127,7 @@ impl TryFrom<(&AvailHeader, Option<f64>)> for BlockVerified {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
 #[serde(try_from = "String")]
 pub enum KademliaMode {
 	Client,
@@ -586,7 +586,7 @@ impl<'de> Deserialize<'de> for GrandpaJustification {
 	{
 		let encoded = bytes::deserialize(deserializer)?;
 		Self::decode(&mut &encoded[..])
-			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {:?}", codec_err)))
+			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {codec_err:?}")))
 	}
 }
 

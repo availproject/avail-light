@@ -296,14 +296,14 @@ mod maintenance {
 			match block_receiver.recv().await.map_err(Report::from) {
 				Ok(_) => {
 					if let Err(error) = event_sender.send(OutputEvent::CountUps) {
-						let error_msg = format!("Failed to send CountUps event: {:#}", error);
+						let error_msg = format!("Failed to send CountUps event: {error:#}");
 						error!("{error_msg}");
 						_ = shutdown.trigger_shutdown(error_msg);
 						break;
 					}
 				},
 				Err(error) => {
-					let error_msg = format!("Error receiving block: {:#}", error);
+					let error_msg = format!("Error receiving block: {error:#}");
 					error!("{error_msg}");
 					_ = shutdown.trigger_shutdown(error_msg);
 					break;

@@ -24,6 +24,10 @@ use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
 use tracing::{error, warn, Instrument, Level, Subscriber};
+#[cfg(not(target_arch = "wasm32"))]
+use tracing_error::ErrorLayer;
+#[cfg(not(target_arch = "wasm32"))]
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{fmt::format, EnvFilter, FmtSubscriber};
 
 #[cfg(feature = "multiproof")]
@@ -194,18 +198,36 @@ pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 }
 
 pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
+	let subscriber = FmtSubscriber::builder()
 		.json()
 		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
-		.finish()
+		.finish();
+
+	#[cfg(not(target_arch = "wasm32"))]
+	{
+		subscriber.with(ErrorLayer::default())
+	}
+	#[cfg(target_arch = "wasm32")]
+	{
+		subscriber
+	}
 }
 
 pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
+	let subscriber = FmtSubscriber::builder()
 		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
-		.finish()
+		.finish();
+
+	#[cfg(not(target_arch = "wasm32"))]
+	{
+		subscriber.with(ErrorLayer::default())
+	}
+	#[cfg(target_arch = "wasm32")]
+	{
+		subscriber
+	}
 }
 
 #[cfg(target_arch = "wasm32")]
