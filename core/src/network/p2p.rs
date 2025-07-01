@@ -535,6 +535,21 @@ mod tests {
 	use super::*;
 
 	#[test]
+	fn dht_key_parse_record_key() {
+		let row_key: DHTKey = RecordKey::new(&"1:2").try_into().unwrap();
+		assert_eq!(row_key, DHTKey::Row(1, 2));
+
+		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
+		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
+
+		let result: Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
+		_ = result.unwrap_err();
+
+		let result: Result<DHTKey> = RecordKey::new(&"123").try_into();
+		_ = result.unwrap_err();
+	}
+
+	#[test]
 	fn test_ipv4_global() {
 		// Test public IPv4 addresses that should be considered global
 		let global_addrs = vec![
