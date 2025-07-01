@@ -8,7 +8,6 @@ use libp2p::{
 		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
 		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult, RecordKey,
 	},
-	multiaddr::Protocol,
 	ping,
 	swarm::SwarmEvent,
 	Multiaddr, PeerId, Swarm,
@@ -33,7 +32,7 @@ use super::{
 	OutputEvent, QueryChannel,
 };
 use crate::{
-	network::p2p::{is_multiaddr_global, AgentVersion},
+	network::p2p::{is_global_address, AgentVersion},
 	shutdown::Controller,
 	types::TimeToLive,
 };
@@ -435,7 +434,7 @@ impl EventLoop {
 								listen_addrs
 									.into_iter()
 									// Filter out the loopback addresses
-									.filter(|addr| !is_localhost(addr))
+									.filter(is_global_address)
 									.for_each(|addr| {
 										trace!("Adding peer {peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
@@ -513,7 +512,7 @@ impl EventLoop {
 							"External reachability confirmed on address: {}",
 							address.to_string()
 						);
-						if is_multiaddr_global(&address) {
+						if is_global_address(&address) {
 							info!(
 								"Public reachability confirmed on address: {}",
 								address.to_string()
@@ -584,204 +583,4 @@ fn collect_peer_addresses(peers: Vec<kad::PeerInfo>) -> Vec<(PeerId, Vec<Multiad
 			(peer_id, addresses)
 		})
 		.collect()
-}
-
-fn is_localhost(addr: &Multiaddr) -> bool {
-	for protocol in addr.iter() {
-		// Check IPv4 addresses in the 127.x.x.x range (loopback range)
-		match protocol {
-			Protocol::Ip4(ip) => {
-				if ip.is_loopback() {
-					return true;
-				}
-			},
-			// Check IPv6 localhost (::1)
-			Protocol::Ip6(ip) => {
-				if ip.is_loopback() {
-					return true;
-				}
-			},
-			// Check DNS entries for localhost (case insensitive)
-			Protocol::Dns(host)
-			| Protocol::Dns4(host)
-			| Protocol::Dns6(host)
-			| Protocol::Dnsaddr(host) => {
-				if host.to_lowercase() == "localhost" {
-					return true;
-				}
-			},
-			_ => continue,
-		}
-	}
-	false
-}
-
-#[cfg(test)]
-mod tests {
-	use crate::network::p2p::event_loop::DHTKey;
-	use color_eyre::Result;
-	use libp2p::{kad::RecordKey, Multiaddr};
-	use std::str::FromStr;
-
-	use super::*;
-
-	#[test]
-	fn dht_key_parse_record_key() {
-		let row_key: DHTKey = RecordKey::new(&"1:2").try_into().unwrap();
-		assert_eq!(row_key, DHTKey::Row(1, 2));
-
-		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
-		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
-
-		let result: Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
-		_ = result.unwrap_err();
-
-		let result: Result<DHTKey> = RecordKey::new(&"123").try_into();
-		_ = result.unwrap_err();
-	}
-
-	#[test]
-	fn test_ipv4_localhost() {
-		// Test simple address with default port
-		let addr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/8080").unwrap();
-		assert!(is_localhost(&addr));
-
-		// Test localhost with different ports
-		let addrs_with_ports = vec![
-			"/ip4/127.0.0.1/tcp/0",
-			"/ip4/127.0.0.1/tcp/80",
-			"/ip4/127.0.0.1/tcp/443",
-			"/ip4/127.0.0.1/tcp/8000",
-			"/ip4/127.0.0.1/tcp/65535",
-			"/ip4/127.0.0.1/udp/53",
-			"/ip4/127.0.0.1/sctp/9899",
-		];
-
-		for addr_str in addrs_with_ports {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-
-		// Test localhost with different protocols
-		let addrs_with_protocols = vec![
-			"/ip4/127.0.0.1/tcp/8080/http",
-			"/ip4/127.0.0.1/tcp/443/tls/ws",
-			"/ip4/127.0.0.1/tcp/8080/ws",
-		];
-
-		for addr_str in addrs_with_protocols {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-
-		// Test localhost range
-		let test_cases = vec![
-			"/ip4/127.0.0.2/tcp/8080",
-			"/ip4/127.0.1.1/tcp/8080",
-			"/ip4/127.1.0.1/tcp/8080",
-			"/ip4/127.255.255.255/tcp/8080",
-			"/ip4/127.1.2.3/tcp/8080",
-		];
-
-		for addr_str in test_cases {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(
-				is_localhost(&addr),
-				"Should detect localhost for: {addr_str}"
-			);
-		}
-	}
-
-	#[test]
-	fn test_ipv6_localhost() {
-		let test_addrs = vec![
-			"/ip6/::1/tcp/8080",
-			"/ip6/::1/tcp/0",
-			"/ip6/::1/udp/53",
-			"/ip6/::1/tcp/8080/http",
-			"/ip6/::1/tcp/443/tls",
-		];
-
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-	}
-
-	#[test]
-	fn test_dns_localhost() {
-		let test_addrs = vec![
-			"/dns/localhost/tcp/8080",
-			"/dns4/localhost/tcp/8080",
-			"/dns6/localhost/tcp/8080",
-			"/dnsaddr/localhost/tcp/8080",
-		];
-
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(is_localhost(&addr), "Failed for: {addr_str}");
-		}
-	}
-
-	#[test]
-	fn test_non_localhost_ipv4() {
-		let test_addrs = vec![
-			"/ip4/0.0.0.0/tcp/8080",       // All interfaces
-			"/ip4/192.168.1.1/tcp/8080",   // Private network
-			"/ip4/10.0.0.1/tcp/8080",      // Private network
-			"/ip4/172.16.0.1/tcp/8080",    // Private network
-			"/ip4/8.8.8.8/tcp/53",         // Public DNS
-			"/ip4/1.1.1.1/tcp/53",         // Cloudflare DNS
-			"/ip4/203.0.113.1/tcp/80",     // Test network
-			"/ip4/255.255.255.255/tcp/80", // Broadcast
-		];
-
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
-			);
-		}
-	}
-
-	#[test]
-	fn test_non_localhost_ipv6() {
-		let test_addrs = vec![
-			"/ip6/::/tcp/8080",                 // All interfaces
-			"/ip6/2001:db8::1/tcp/8080",        // Documentation range
-			"/ip6/fe80::1/tcp/8080",            // Link-local
-			"/ip6/2001:4860:4860::8888/tcp/53", // Google DNS
-			"/ip6/2606:4700:4700::1111/tcp/53", // Cloudflare DNS
-			"/ip6/fc00::1/tcp/8080",            // Unique local
-			"/ip6/ff02::1/tcp/8080",            // Multicast
-		];
-
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
-			);
-		}
-	}
-
-	#[test]
-	fn test_non_localhost_dns() {
-		let test_addrs = vec![
-			"/dns/example.com/tcp/80",
-			"/dns4/google.com/tcp/443",
-			"/dns6/ipv6.google.com/tcp/443",
-			"/dnsaddr/bootstrap.libp2p.io/tcp/443",
-			"/dns/peer.example.org/tcp/4001",
-		];
-
-		for addr_str in test_addrs {
-			let addr = Multiaddr::from_str(addr_str).unwrap();
-			assert!(
-				!is_localhost(&addr),
-				"Incorrectly identified as localhost: {addr_str}"
-			);
-		}
-	}
 }

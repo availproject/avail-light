@@ -8,6 +8,7 @@ use libp2p::{
 	autonat, identify,
 	identity::{self, ed25519, Keypair},
 	kad::{self, Mode, PeerRecord, QueryStats, Record, RecordKey},
+	multiaddr::Protocol,
 	ping,
 	swarm::{behaviour::toggle::Toggle, NetworkBehaviour},
 	Multiaddr, PeerId, Swarm, SwarmBuilder,
@@ -417,28 +418,55 @@ fn keypair(secret_key: &SecretKey) -> Result<identity::Keypair> {
 	Ok(keypair)
 }
 
-// Returns [`true`] if the address appears to be globally reachable
-// Take from the unstable std::net implementation
-pub fn is_global(ip: Ipv4Addr) -> bool {
-	!(ip.octets()[0] == 0
-		|| ip.is_private()
-		|| ip.is_loopback()
-		|| ip.is_link_local()
-		// addresses reserved for future protocols (`192.0.0.0/24`)
-		// .9 and .10 are documented as globally reachable so they're excluded
-		|| (
-			ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0
-			&& ip.octets()[3] != 9 && ip.octets()[3] != 10
-		)
-		|| ip.is_documentation()
-		|| ip.is_broadcast())
+/// Checks for IPv4 addresses reserved for future protocols
+fn is_reserved_ip(ip: &Ipv4Addr) -> bool {
+	ip.octets()[0] == 192
+		&& ip.octets()[1] == 0
+		&& ip.octets()[2] == 0
+		&& ip.octets()[3] != 9
+		&& ip.octets()[3] != 10
 }
 
-// Returns [`true`] if the multi-address IP appears to be globally reachable
-pub fn is_multiaddr_global(address: &Multiaddr) -> bool {
-	address
-		.iter()
-		.any(|protocol| matches!(protocol, libp2p::multiaddr::Protocol::Ip4(ip) if is_global(ip)))
+/// Checks if the multi-address appears to be globally reachable
+pub fn is_global_address(addr: &Multiaddr) -> bool {
+	for protocol in addr.iter() {
+		// Check private IPv4 ranges
+		match protocol {
+			Protocol::Ip4(ip) => {
+				// Also includes loopback (127.0.0.0/8) and link-local (169.254.0.0/16)
+				if !ip.is_private()
+					&& !ip.is_loopback()
+					&& !ip.is_link_local()
+					&& !ip.is_documentation()
+					&& !ip.is_broadcast()
+					&& !is_reserved_ip(&ip)
+				{
+					return true;
+				}
+			},
+			// Check private IPv6 ranges:
+			Protocol::Ip6(ip) => {
+				// Also check for loopback and link-local
+				if !ip.is_unique_local() && !ip.is_loopback() && !ip.is_unicast_link_local() {
+					return true;
+				}
+			},
+			// Check DNS entries for localhost (case insensitive)
+			Protocol::Dns(host)
+			| Protocol::Dns4(host)
+			| Protocol::Dns6(host)
+			| Protocol::Dnsaddr(host) => {
+				let host = host.to_lowercase();
+				// Check for common private/local hostnames
+				if host != "localhost" && !host.ends_with(".local") && !host.ends_with(".localhost")
+				{
+					return true;
+				}
+			},
+			_ => continue,
+		}
+	}
+	false
 }
 
 fn get_or_init_keypair(cfg: &LibP2PConfig, db: impl Database) -> Result<identity::Keypair> {
@@ -505,19 +533,272 @@ pub fn extract_block_num(key: RecordKey) -> Result<u32> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use test_case::test_case;
 
-	#[test_case("/ip4/159.73.143.3/tcp/37000" => true ; "Global IPv4")]
-	#[test_case("/ip4/192.168.0.1/tcp/37000" => false ; "Local (192.168) IPv4")]
-	#[test_case("/ip4/172.16.10.11/tcp/37000" => false ; "Local (172.16) IPv4")]
-	#[test_case("/ip4/127.0.0.1/tcp/37000" => false ; "Loopback IPv4")]
-	#[test_case("" => false ; "Empty multiaddr")]
-	fn test_is_multiaddr_global(addr_str: &str) -> bool {
-		let addr = if addr_str.is_empty() {
-			Multiaddr::empty()
-		} else {
-			addr_str.parse().unwrap()
-		};
-		is_multiaddr_global(&addr)
+	#[test]
+	fn dht_key_parse_record_key() {
+		let row_key: DHTKey = RecordKey::new(&"1:2").try_into().unwrap();
+		assert_eq!(row_key, DHTKey::Row(1, 2));
+
+		let cell_key: DHTKey = RecordKey::new(&"3:2:1").try_into().unwrap();
+		assert_eq!(cell_key, DHTKey::Cell(3, 2, 1));
+
+		let result: Result<DHTKey> = RecordKey::new(&"1:2:4:3").try_into();
+		_ = result.unwrap_err();
+
+		let result: Result<DHTKey> = RecordKey::new(&"123").try_into();
+		_ = result.unwrap_err();
+	}
+
+	#[test]
+	fn test_ipv4_global() {
+		// Test public IPv4 addresses that should be considered global
+		let global_addrs = vec![
+			"/ip4/8.8.8.8/tcp/53",         // Google DNS
+			"/ip4/1.1.1.1/tcp/53",         // Cloudflare DNS
+			"/ip4/208.67.222.222/tcp/53",  // OpenDNS
+			"/ip4/172.15.255.255/tcp/80",  // Just outside private range
+			"/ip4/172.32.0.1/tcp/80",      // Just outside private range
+			"/ip4/9.255.255.255/tcp/80",   // Just outside private range
+			"/ip4/11.0.0.1/tcp/80",        // Just outside private range
+			"/ip4/192.167.255.255/tcp/80", // Just outside private range
+			"/ip4/192.169.0.1/tcp/80",     // Just outside private range
+			"/ip4/192.0.0.9/tcp/80",       // Globally reachable exception
+			"/ip4/192.0.0.10/tcp/80",      // Globally reachable exception
+		];
+
+		for addr_str in global_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_global_address(&addr),
+				"Failed to detect global IP: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_ipv4_non_global() {
+		// Test private/local IPv4 addresses that should NOT be considered global
+		let non_global_addrs = vec![
+			// Private ranges
+			"/ip4/10.0.0.1/tcp/8080",
+			"/ip4/172.16.0.1/tcp/8080",
+			"/ip4/192.168.1.1/tcp/8080",
+			// Loopback
+			"/ip4/127.0.0.1/tcp/8080",
+			// Link-local
+			"/ip4/169.254.1.1/tcp/8080",
+			// Documentation
+			"/ip4/192.0.2.1/tcp/8080",
+			"/ip4/198.51.100.1/tcp/8080",
+			"/ip4/203.0.113.1/tcp/8080",
+			// Broadcast
+			"/ip4/255.255.255.255/tcp/8080",
+			// Reserved (except the globally reachable ones)
+			"/ip4/192.0.0.1/tcp/8080",
+			"/ip4/192.0.0.100/tcp/8080",
+		];
+
+		for addr_str in non_global_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				!is_global_address(&addr),
+				"Incorrectly identified as global: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_ipv6_global() {
+		// Test global IPv6 addresses
+		let global_addrs = vec![
+			"/ip6/2001:db8::1/tcp/8080", // Documentation range (but considered global by std lib)
+			"/ip6/2001:4860:4860::8888/tcp/53", // Google DNS
+			"/ip6/2606:4700:4700::1111/tcp/53", // Cloudflare DNS
+			"/ip6/2001::/tcp/80",        // Global unicast
+			"/ip6/ff02::1/tcp/8080",     // Multicast (global)
+			"/ip6/fec0::1/tcp/8080",     // Just outside link-local range
+			"/ip6/fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/tcp/8080", // Just outside unique local
+			"/ip6/fe00::1/tcp/8080",     // Just outside unique local
+		];
+
+		for addr_str in global_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_global_address(&addr),
+				"Failed to detect global IPv6: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_ipv6_non_global() {
+		// Test non-global IPv6 addresses
+		let non_global_addrs = vec![
+			// Unique local addresses (fc00::/7)
+			"/ip6/fc00::1/tcp/8080",
+			"/ip6/fd00::1/tcp/8080",
+			// Link-local addresses (fe80::/10)
+			"/ip6/fe80::1/tcp/8080",
+			"/ip6/fe80::dead:beef/tcp/8080",
+			// Loopback address (::1)
+			"/ip6/::1/tcp/8080",
+		];
+
+		for addr_str in non_global_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				!is_global_address(&addr),
+				"Incorrectly identified as global: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_dns_global() {
+		// Test global DNS addresses
+		let global_dns_addrs = vec![
+			"/dns/example.com/tcp/80",
+			"/dns4/google.com/tcp/443",
+			"/dns6/ipv6.google.com/tcp/443",
+			"/dnsaddr/bootstrap.libp2p.io/tcp/443",
+			"/dns/peer.example.org/tcp/4001",
+			"/dns/github.com/tcp/443",
+			"/dns/stackoverflow.com/tcp/443",
+			"/dns/cloudflare.com/tcp/80",
+		];
+
+		for addr_str in global_dns_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_global_address(&addr),
+				"Failed to detect global DNS: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_dns_non_global() {
+		// Test non-global DNS addresses
+		let non_global_dns_addrs = vec![
+			"/dns/localhost/tcp/8080",
+			"/dns4/localhost/tcp/8080",
+			"/dns/LOCALHOST/tcp/8080", // Case insensitive
+			"/dns/myserver.local/tcp/8080",
+			"/dns/printer.local/tcp/631",
+			"/dns/device.localhost/tcp/80",
+			"/dns/test.localhost/tcp/443",
+		];
+
+		for addr_str in non_global_dns_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				!is_global_address(&addr),
+				"Incorrectly identified as global: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_multiaddr_without_ip_or_dns() {
+		// Test multiaddresses that don't contain IP or DNS addresses
+		let non_ip_addrs = vec![
+			"/tcp/8080",
+			"/udp/53",
+			"/p2p/QmYyQSo1c1Ym7orWxLYvCrM2EmxFTANf8wXmmE7DWjhx5N",
+			"/memory/1234",
+		];
+
+		for addr_str in non_ip_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				!is_global_address(&addr),
+				"Non-IP/DNS address incorrectly identified as global: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_mixed_protocols_global() {
+		// Test that the function returns true if ANY protocol in the chain is global
+		let mixed_addrs = vec![
+			// Global IP first, then private DNS - should be global
+			"/ip4/8.8.8.8/dns/localhost/tcp/80",
+			// Private IP first, then global DNS - should be global
+			"/ip4/192.168.1.1/dns/example.com/tcp/80",
+			// Multiple global protocols - should be global
+			"/ip4/1.1.1.1/dns/google.com/tcp/80",
+		];
+
+		for addr_str in mixed_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				is_global_address(&addr),
+				"Mixed protocol address should be global: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_mixed_protocols_non_global() {
+		// Test addresses where all IP/DNS protocols are non-global
+		let non_global_addrs = vec![
+			"/ip4/192.168.1.1/dns/localhost/tcp/80",
+			"/ip4/10.0.0.1/dns/device.local/tcp/80",
+			"/ip6/fc00::1/dns/test.localhost/tcp/80",
+		];
+
+		for addr_str in non_global_addrs {
+			let addr = Multiaddr::from_str(addr_str).unwrap();
+			assert!(
+				!is_global_address(&addr),
+				"All-private protocol address should not be global: {}",
+				addr_str
+			);
+		}
+	}
+
+	#[test]
+	fn test_is_reserved_ip_integration_with_is_global() {
+		use std::net::Ipv4Addr;
+
+		// Test how reserved IPs work with is_global_address
+		let test_cases = vec![
+			("192.0.0.1", true, false),   // Reserved and should NOT be global
+			("192.0.0.9", false, true),   // Not reserved and IS global
+			("192.0.0.10", false, true),  // Not reserved and IS global
+			("192.0.0.100", true, false), // Reserved and should NOT be global
+		];
+
+		for (ip_str, is_reserved_expected, should_be_global) in test_cases {
+			let ip: Ipv4Addr = ip_str.parse().unwrap();
+			let multiaddr_str = format!("/ip4/{}/tcp/80", ip_str);
+			let addr = Multiaddr::from_str(&multiaddr_str).unwrap();
+
+			// Test is_reserved_ip function
+			assert_eq!(
+				is_reserved_ip(&ip),
+				is_reserved_expected,
+				"is_reserved_ip failed for {}",
+				ip_str
+			);
+
+			// Test is_global_address function
+			assert_eq!(
+				is_global_address(&addr),
+				should_be_global,
+				"is_global_address test failed for {}: expected {}, got {}",
+				ip_str,
+				should_be_global,
+				is_global_address(&addr)
+			);
+		}
 	}
 }
