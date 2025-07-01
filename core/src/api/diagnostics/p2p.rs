@@ -1,6 +1,6 @@
 use crate::{
 	api::types::Error,
-	data::{Database, DhtFetchedPercentageKey, DhtPutSuccessKey},
+	data::{Database, DhtFetchedPercentageKey},
 	network::p2p::{self, MultiAddressInfo},
 };
 use libp2p::{
@@ -176,10 +176,8 @@ pub async fn dial_external_peer(
 }
 
 #[derive(Serialize)]
-#[serde(untagged)]
-pub enum DhtMetricResponse {
-	DhtFetched { dht_fetched_percentage: f64 },
-	DhtPut { dht_put_success: f64 },
+pub struct DhtMetricResponse {
+	dht_fetched_percentage: f64,
 }
 
 pub async fn get_dht_metric(
@@ -187,16 +185,9 @@ pub async fn get_dht_metric(
 	db: impl Database + Clone,
 ) -> Result<impl Reply, Error> {
 	let response = match metric.as_str() {
-		"fetch" => db
-			.get(DhtFetchedPercentageKey)
-			.map(|v| DhtMetricResponse::DhtFetched {
-				dht_fetched_percentage: v,
-			}),
-
-		"put" => db
-			.get(DhtPutSuccessKey)
-			.map(|v| DhtMetricResponse::DhtPut { dht_put_success: v }),
-
+		"fetch" => db.get(DhtFetchedPercentageKey).map(|v| DhtMetricResponse {
+			dht_fetched_percentage: v,
+		}),
 		_ => None,
 	};
 
