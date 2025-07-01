@@ -60,7 +60,7 @@ pub struct AppState {
 	pub pagination: PaginationConfig,
 }
 
-#[get("/blacklisted_peers")]
+#[get("/peers/blacklisted")]
 async fn get_blacklisted_peers(
 	app_state: web::Data<AppState>,
 	pagination: web::Query<PaginationParams>,
@@ -191,7 +191,7 @@ async fn get_peer_by_id(app_state: web::Data<AppState>, path: web::Path<String>)
 	}))
 }
 
-#[get("/peer_count")]
+#[get("/peers/count")]
 async fn get_peer_count(app_state: web::Data<AppState>) -> impl Responder {
 	let server_list = app_state.server_list.lock().await;
 	let blacklist_count = server_list
