@@ -47,7 +47,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-zip = "2.5.0"
+zip = "3.0.0"
 
 [target.'cfg(unix)'.dependencies]
 flate2 = "1.1"
