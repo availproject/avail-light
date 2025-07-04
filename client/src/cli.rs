@@ -1,7 +1,4 @@
-use avail_light_core::{
-	network::{Network, ServiceMode},
-	types::{KademliaMode, NetworkMode},
-};
+use avail_light_core::{network::Network, types::NetworkMode};
 use clap::{command, ArgAction, Parser};
 use tracing::Level;
 
@@ -81,12 +78,8 @@ pub struct CliOpts {
 	pub no_update: bool,
 	#[arg(long)]
 	pub p2p_client_restart_interval: Option<u64>,
-
-	/// AutoNAT behaviour mode: client, server, or disabled
-	#[arg(long, value_enum, default_value = "server")]
-	pub auto_nat_mode: ServiceMode,
-
-	/// Kademlia operation mode: client or server
-	#[arg(long, value_enum)]
-	pub operation_mode: Option<KademliaMode>,
+	#[arg(long, action = ArgAction::SetTrue)]
+	/// Enable public server mode.
+	/// Requires public accessibility and sets Kademlia and AutoNAT to server mode.
+	pub public_server: bool,
 }

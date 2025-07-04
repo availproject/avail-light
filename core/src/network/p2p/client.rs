@@ -184,6 +184,15 @@ impl Client {
 			.map_err(|_| eyre!("Failed to send the Add Address Command to the EventLoop"))
 	}
 
+	pub async fn confirm_external_address(&self, addr: Multiaddr) -> Result<()> {
+		self.command_sender
+			.send(Box::new(move |context: &mut EventLoop| {
+				context.swarm.add_external_address(addr);
+				Ok(())
+			}))
+			.map_err(|_| eyre!("Failed to send the Add External Address Command to the EventLoop"))
+	}
+
 	pub async fn dial_peer(
 		&self,
 		peer_id: PeerId,
@@ -208,32 +217,15 @@ impl Client {
 		.await
 	}
 
-	pub async fn add_autonat_server(&self, peer_id: PeerId, address: Multiaddr) -> Result<()> {
-		self.command_sender
-			.send(Box::new(move |context: &mut EventLoop| {
-				let nat = context
-					.swarm
-					.behaviour_mut()
-					.auto_nat
-					.as_mut()
-					.ok_or_eyre("AutoNAT behaviour is not configured")?;
-
-				nat.add_server(peer_id, Some(address));
-				Ok(())
-			}))
-			.map_err(|_| eyre!("Failed to send the Add AutoNat Server Command to the EventLoop"))
-	}
-
 	// Bootstrap is triggered automatically on add_address call
-	// Bootstrap nodes are also used as autonat servers
+	// Bootstrap nodes are also used as AutoNAT servers
 	pub async fn bootstrap_on_startup(&self, bootstraps: &[PeerAddress]) -> Result<()> {
 		for (peer, addr) in bootstraps.iter().map(Into::into) {
+			// Dialing bootstrap peer acts as adding it as the AutoNAT server
 			self.dial_peer(peer, vec![addr.clone()], PeerCondition::Always)
 				.await
 				.map_err(|e| eyre!("Failed to dial bootstrap peer: {e}"))?;
 			self.add_address(peer, addr.clone()).await?;
-
-			self.add_autonat_server(peer, addr).await?;
 		}
 		Ok(())
 	}
