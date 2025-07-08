@@ -1,5 +1,3 @@
-use std::{fs, time::Duration};
-
 use avail_light_core::{
 	api::configuration::APIConfig,
 	fat_client,
@@ -15,9 +13,13 @@ use avail_light_core::{
 	},
 };
 use clap::{command, Parser};
-use color_eyre::{eyre::eyre, Result};
+use color_eyre::{
+	eyre::{eyre, Context},
+	Result,
+};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tracing::Level;
 
 #[derive(Parser)]
@@ -109,8 +111,7 @@ impl Default for Config {
 pub fn load(opts: &CliOpts) -> Result<Config> {
 	let mut config = match &opts.config {
 		Some(path) => {
-			fs::metadata(path)?;
-			confy::load_path(path)?
+			confy::load_path(path).wrap_err(format!("Failed to load configuration from {path}"))?
 		},
 		None => Config::default(),
 	};
