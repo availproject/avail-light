@@ -140,11 +140,6 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
-		let missing_fetched: Vec<SingleCell> = missing_fetched
-			.into_iter()
-			.map(SingleCell::try_from)
-			.map(|res| res.map_err(|e| eyre!(e)))
-			.collect::<Result<_, _>>()?;
 
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
