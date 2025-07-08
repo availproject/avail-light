@@ -18,7 +18,6 @@ use color_eyre::{
 	Result,
 };
 use config::RuntimeConfig;
-use std::fs;
 use tokio::{select, sync::mpsc::UnboundedReceiver};
 use tracing::{error, info, span, warn, Level, Subscriber};
 use tracing_subscriber::{
