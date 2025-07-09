@@ -102,7 +102,7 @@ async fn run_load_test(
 	let state_clone = state.clone();
 
 	// Stats printer task
-	let _stats_task = spawn_in_span(shutdown.with_cancel(async move {
+	spawn_in_span(shutdown.with_cancel(async move {
 		let mut interval = time::interval(Duration::from_secs(10));
 		loop {
 			interval.tick().await;

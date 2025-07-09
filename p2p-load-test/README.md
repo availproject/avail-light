@@ -50,6 +50,7 @@ cargo run --bin p2p-load-test -- --p2p-port 30333
 ## Statistics
 
 The client reports statistics every 10 seconds including:
+
 - Total blocks sent
 - Total cells sent
 - Error count
@@ -59,7 +60,7 @@ The client reports statistics every 10 seconds including:
 ## Implementation Details
 
 - Pre-generates a configurable number of blocks on startup
-- Each block is divided into cells (2KB each)
+- Each block is divided into cells (80B for legacy grid, 2KB for multi-proof grid)
 - Cycles through pre-generated blocks to maintain consistent load
 - Uses the same DHT insertion mechanism as the fat client
 - Supports both single-cell and multi-proof cell configurations
