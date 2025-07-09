@@ -15,8 +15,10 @@ use avail_light_core::{
 	network::{
 		self,
 		p2p::{
-			self, extract_block_num, forward_p2p_events, init_and_start_p2p_client,
-			p2p_restart_manager, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
+			self,
+			configuration::{AutoNatMode, BehaviourConfig},
+			extract_block_num, forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager,
+			Client, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
 			MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
 		},
 		rpc::{self, OutputEvent as RpcEvent},
@@ -27,8 +29,8 @@ use avail_light_core::{
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, NetworkMode, PeerAddress,
-		SecretKey, Uuid,
+		load_or_init_suri, Delay, IdentityConfig, KademliaMode, MaintenanceConfig, NetworkMode,
+		PeerAddress, SecretKey, Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -420,9 +422,13 @@ async fn run(
 	let mut state = ClientState::new(metrics);
 
 	let db_clone = db.clone();
+	let state_cfg = cfg.clone();
+	let state_p2p_client = p2p_client.lock().await.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
 			.handle_events(
+				state_cfg,
+				state_p2p_client,
 				p2p_event_receiver,
 				maintenance_receiver,
 				lc_receiver,
@@ -447,7 +453,6 @@ async fn run(
 
 pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(config_path) = &opts.config {
-		fs::metadata(config_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
 		confy::load_path(config_path)
 			.wrap_err(format!("Failed to load configuration from {config_path}"))?
 	} else {
@@ -529,8 +534,14 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		));
 	}
 
-	if let Some(operation_mode) = opts.operation_mode {
-		cfg.libp2p.kademlia.operation_mode = operation_mode;
+	if opts.public_server {
+		cfg.libp2p.kademlia.automatic_server_mode = false;
+		cfg.libp2p.kademlia.operation_mode = KademliaMode::Server;
+		cfg.libp2p.behaviour = BehaviourConfig {
+			auto_nat_mode: AutoNatMode::Server,
+			..Default::default()
+		};
+		cfg.is_public_server = true;
 	}
 
 	Ok(cfg)
@@ -668,8 +679,11 @@ impl ClientState {
 		Ok(())
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	pub async fn handle_events(
 		&mut self,
+		cfg: RuntimeConfig,
+		p2p_client: Option<Client>,
 		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
 		mut maintenance_receiver: UnboundedReceiver<MaintenanceEvent>,
 		mut lc_receiver: UnboundedReceiver<LcEvent>,
@@ -730,8 +744,14 @@ impl ClientState {
 									error!("Could not handle Failed PUT Record event properly: {error}");
 								};
 							},
-							P2pEvent::DiscoveredPeers { .. } => {
-
+							P2pEvent::DiscoveredPeers { .. } => {},
+							// Manualy confirm the external address if client is publicly reachable
+							P2pEvent::NewObservedAddress(addr) => {
+								if cfg.is_public_server {
+									if let Some(p2p) = &p2p_client {
+										_ = p2p.confirm_external_address(addr).await;
+									}
+								}
 							}
 						}
 					}

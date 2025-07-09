@@ -18,7 +18,6 @@ use color_eyre::{
 	Result,
 };
 use config::RuntimeConfig;
-use std::fs;
 use tokio::{select, sync::mpsc::UnboundedReceiver};
 use tracing::{error, info, span, warn, Level, Subscriber};
 use tracing_subscriber::{
@@ -138,7 +137,6 @@ async fn run(
 
 pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(cfg_path) = &opts.config {
-		fs::metadata(cfg_path).map_err(|_| eyre!("Provided config file doesn't exist."))?;
 		confy::load_path(cfg_path)
 			.wrap_err(format!("Failed to load configuration from: {cfg_path}"))?
 	} else {
