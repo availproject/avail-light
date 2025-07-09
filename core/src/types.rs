@@ -143,6 +143,15 @@ impl From<KademliaMode> for KadMode {
 	}
 }
 
+impl From<KadMode> for KademliaMode {
+	fn from(value: KadMode) -> Self {
+		match value {
+			KadMode::Client => KademliaMode::Client,
+			KadMode::Server => KademliaMode::Server,
+		}
+	}
+}
+
 impl Display for KademliaMode {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		match self {

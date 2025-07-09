@@ -74,7 +74,7 @@ pub async fn init_and_start_p2p_client(
 #[allow(clippy::too_many_arguments)]
 pub async fn p2p_restart_manager(
 	p2p_client: Arc<Mutex<Option<Client>>>,
-	libp2p_cfg: LibP2PConfig,
+	libp2p_cfg: Arc<Mutex<LibP2PConfig>>,
 	project_name: ProjectName,
 	genesis_hash: String,
 	id_keys: Keypair,
@@ -98,6 +98,7 @@ pub async fn p2p_restart_manager(
 			_ = interval.tick() => {
 				info!("Starting P2P client restart process (periodic)...");
 
+				let libp2p_cfg = libp2p_cfg.lock().await.clone();
 				perform_restart(
 					&p2p_client,
 					&libp2p_cfg,
@@ -119,6 +120,7 @@ pub async fn p2p_restart_manager(
 			_ = restart_trigger.recv() => {
 				info!("Starting P2P client restart process (mode changed)...");
 
+				let libp2p_cfg = libp2p_cfg.lock().await.clone();
 				perform_restart(
 					&p2p_client,
 					&libp2p_cfg,
