@@ -493,7 +493,7 @@ impl EventLoop {
 								result: Ok(()),
 								..
 							} => {
-								debug!("Tested {tested_addr} with AutoNat v2 {server}. Everything Ok and verified.");
+								info!("Tested {tested_addr} with AutoNat v2 {server}. Everything Ok and verified.");
 							},
 							autonat::v2::client::Event {
 								server,
@@ -502,7 +502,7 @@ impl EventLoop {
 								result: Err(e),
 								..
 							} => {
-								debug!("Tested {tested_addr} with AutoNat v2 {server}. Failed with {e:?}.");
+								info!("Tested {tested_addr} with AutoNat v2 {server}. Failed with {e:?}.");
 							},
 						}
 					},
@@ -514,7 +514,7 @@ impl EventLoop {
 							result: Ok(()),
 							..
 						} => {
-							debug!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Everything Ok and verified.")
+							info!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Everything Ok and verified.")
 						},
 						autonat::v2::server::Event {
 							all_addrs,
@@ -523,7 +523,7 @@ impl EventLoop {
 							result: Err(e),
 							..
 						} => {
-							debug!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Failed with {e:?}.")
+							info!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Failed with {e:?}.")
 						},
 					},
 				}

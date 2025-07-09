@@ -76,8 +76,8 @@ pub struct AutoNATClientConfig {
 impl Default for AutoNATClientConfig {
 	fn default() -> Self {
 		Self {
-			probe_interval: Duration::from_secs(90),
-			max_candidates: 10,
+			probe_interval: Duration::from_secs(30),
+			max_candidates: 3,
 		}
 	}
 }
