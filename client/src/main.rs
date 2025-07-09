@@ -749,6 +749,7 @@ impl ClientState {
 							P2pEvent::NewObservedAddress(addr) => {
 								if cfg.is_public_server {
 									if let Some(p2p) = &p2p_client {
+										info!("Manually confirming external address: {addr}");
 										_ = p2p.confirm_external_address(addr).await;
 									}
 								}
