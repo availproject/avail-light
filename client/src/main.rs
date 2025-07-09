@@ -90,6 +90,7 @@ async fn run(
 	);
 
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
+	let (restart_trigger_tx, restart_trigger_rx) = mpsc::unbounded_channel::<()>();
 
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
@@ -143,6 +144,7 @@ async fn run(
 				db.clone(),
 				p2p_event_tx,
 				p2p_shutdown_controller,
+				restart_trigger_rx,
 			)));
 
 			(p2p_client, p2p_event_rx)
@@ -419,7 +421,7 @@ async fn run(
 	metrics.set_attribute("execution_id", execution_id.to_string());
 	metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, operating_mode.to_string());
 
-	let mut state = ClientState::new(metrics);
+	let mut state = ClientState::new(metrics, restart_trigger_tx);
 
 	let db_clone = db.clone();
 	let state_cfg = cfg.clone();
@@ -594,13 +596,15 @@ impl BlockStat {
 struct ClientState {
 	metrics: Metrics,
 	active_blocks: HashMap<u32, BlockStat>,
+	restart_trigger: mpsc::UnboundedSender<()>,
 }
 
 impl ClientState {
-	fn new(metrics: Metrics) -> Self {
+	fn new(metrics: Metrics, restart_trigger: mpsc::UnboundedSender<()>) -> Self {
 		ClientState {
 			metrics,
 			active_blocks: Default::default(),
+			restart_trigger,
 		}
 	}
 
@@ -706,6 +710,10 @@ impl ClientState {
 							},
 							P2pEvent::KadModeChange(mode) => {
 								self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
+
+								if let Err(e) = &self.restart_trigger.send(()) {
+									warn!("Failed to send restart trigger: {}", e);
+								}
 							}
 							P2pEvent::Ping{ rtt, .. } => {
 								self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));

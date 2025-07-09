@@ -85,6 +85,7 @@ pub async fn p2p_restart_manager(
 	db: DB,
 	event_tx: UnboundedSender<OutputEvent>,
 	mut current_shutdown: Controller<String>,
+	mut restart_trigger: UnboundedReceiver<()>,
 ) {
 	// Randomize restart intervals
 	let mut randomized_duration = randomize_duration(restart_interval);
@@ -95,68 +96,118 @@ pub async fn p2p_restart_manager(
 	loop {
 		select! {
 			_ = interval.tick() => {
-				info!("Starting P2P client restart process...");
+				info!("Starting P2P client restart process (periodic)...");
 
-				{
-					let mut client_guard = p2p_client.lock().await;
-					if let Some(client) = client_guard.as_mut() {
-						info!("Stopping listeners before shutdown");
-						if let Err(e) = client.stop_listening().await {
-							warn!("Error stopping listeners during restart: {e}");
-						}
-					}
-				}
-
-				// Trigger shutdown of the current event loop
-				let _ = current_shutdown.trigger_shutdown("P2P client periodic restart".to_string());
-
-				_ = current_shutdown.completed_shutdown().await;
-
-				p2p_client.lock().await.take();
-
-				// Create a new shutdown controller for the next restart cycle
-				let new_shutdown = Controller::<String>::new();
-
-				// Restart the P2P client
-				match init_and_start_p2p_client(
+				perform_restart(
+					&p2p_client,
 					&libp2p_cfg,
-					project_name.clone(),
+					&project_name,
 					&genesis_hash,
-					id_keys.clone(),
+					&id_keys,
 					peer_id,
 					&version,
-					new_shutdown.clone(),
-					db.clone(),
-				).await {
-					Ok((new_p2p_client, receiver)) => {
-						info!("P2P client restarted successfully");
+					&db,
+					&event_tx,
+					&app_shutdown,
+					&mut current_shutdown,
+				).await;
 
-						// Update the shared client reference
-						*p2p_client.lock().await = Some(new_p2p_client);
-						// Forward events from new receiver to the main event channel
-						let event_tx_clone = event_tx.clone();
-						let app_shutdown_clone = app_shutdown.clone();
-						spawn_in_span(app_shutdown_clone.with_cancel(async move {
-							forward_p2p_events(receiver, event_tx_clone).await;
-						}));
-
-						// Update current shutdown for next restart
-						current_shutdown = new_shutdown;
-					}
-					Err(error) => {
-						error!("Failed to restart P2P client: {error:#}");
-						// Continue with the next restart attempt
-					}
-				}
 				randomized_duration = randomize_duration(restart_interval);
 				interval = tokio::time::interval(randomized_duration);
 				interval.tick().await;
+			}
+			_ = restart_trigger.recv() => {
+				info!("Starting P2P client restart process (mode changed)...");
+
+				perform_restart(
+					&p2p_client,
+					&libp2p_cfg,
+					&project_name,
+					&genesis_hash,
+					&id_keys,
+					peer_id,
+					&version,
+					&db,
+					&event_tx,
+					&app_shutdown,
+					&mut current_shutdown,
+				).await;
 			}
 			_ = app_shutdown.triggered_shutdown() => {
 				info!("P2P restart manager shutting down");
 				break;
 			}
 		}
+	}
+}
+
+/// Performs the actual P2P client restart logic
+#[allow(clippy::too_many_arguments)]
+async fn perform_restart(
+	p2p_client: &Arc<Mutex<Option<Client>>>,
+	libp2p_cfg: &LibP2PConfig,
+	project_name: &ProjectName,
+	genesis_hash: &str,
+	id_keys: &Keypair,
+	peer_id: PeerId,
+	version: &str,
+	db: &DB,
+	event_tx: &UnboundedSender<OutputEvent>,
+	app_shutdown: &Controller<String>,
+	current_shutdown: &mut Controller<String>,
+) {
+	{
+		let mut client_guard = p2p_client.lock().await;
+		if let Some(client) = client_guard.as_mut() {
+			info!("Stopping listeners before shutdown");
+			if let Err(e) = client.stop_listening().await {
+				warn!("Error stopping listeners during restart: {e}");
+			}
+		}
+	}
+
+	// Trigger shutdown of the current event loop
+	let _ = current_shutdown.trigger_shutdown("P2P client restart".to_string());
+
+	_ = current_shutdown.completed_shutdown().await;
+
+	p2p_client.lock().await.take();
+
+	// Create a new shutdown controller for the next restart cycle
+	let new_shutdown = Controller::<String>::new();
+
+	// Restart the P2P client
+	match init_and_start_p2p_client(
+		libp2p_cfg,
+		project_name.clone(),
+		genesis_hash,
+		id_keys.clone(),
+		peer_id,
+		version,
+		new_shutdown.clone(),
+		db.clone(),
+	)
+	.await
+	{
+		Ok((new_p2p_client, receiver)) => {
+			info!("P2P client restarted successfully");
+
+			// Update the shared client reference
+			*p2p_client.lock().await = Some(new_p2p_client);
+			// Forward events from new receiver to the main event channel
+			let event_tx_clone = event_tx.clone();
+			let app_shutdown_clone = app_shutdown.clone();
+			spawn_in_span(app_shutdown_clone.with_cancel(async move {
+				forward_p2p_events(receiver, event_tx_clone).await;
+			}));
+
+			// Update current shutdown for next restart
+			*current_shutdown = new_shutdown;
+		},
+		Err(error) => {
+			error!("Failed to restart P2P client: {error:#}");
+			// Continue with the next restart attempt
+		},
 	}
 }
 
