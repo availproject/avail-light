@@ -16,7 +16,7 @@ use avail_light_core::{
 		self,
 		p2p::{
 			self,
-			configuration::{AutoNatMode, BehaviourConfig},
+			configuration::{AutoNatMode, BehaviourConfig, LibP2PConfig},
 			extract_block_num, forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager,
 			Client, OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
 			MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
@@ -92,6 +92,8 @@ async fn run(
 	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
 	let (restart_trigger_tx, restart_trigger_rx) = mpsc::unbounded_channel::<()>();
 
+	let cfg_libp2p = Arc::new(Mutex::new(cfg.libp2p.clone()));
+
 	// Initialize p2p components only if not in RPCOnly mode
 	let (p2p_client, p2p_event_receiver) = if cfg.network_mode != NetworkMode::RPCOnly {
 		if let Some(restart_interval) = cfg.p2p_client_restart_interval {
@@ -133,7 +135,7 @@ async fn run(
 
 			spawn_in_span(shutdown.with_cancel(p2p_restart_manager(
 				p2p_client.clone(),
-				restart_cfg.libp2p,
+				cfg_libp2p.clone(),
 				restart_cfg.project_name,
 				restart_cfg.genesis_hash,
 				id_keys.clone(),
@@ -421,7 +423,7 @@ async fn run(
 	metrics.set_attribute("execution_id", execution_id.to_string());
 	metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, operating_mode.to_string());
 
-	let mut state = ClientState::new(metrics, restart_trigger_tx);
+	let mut state = ClientState::new(metrics, restart_trigger_tx, cfg_libp2p);
 
 	let db_clone = db.clone();
 	let state_cfg = cfg.clone();
@@ -597,14 +599,20 @@ struct ClientState {
 	metrics: Metrics,
 	active_blocks: HashMap<u32, BlockStat>,
 	restart_trigger: mpsc::UnboundedSender<()>,
+	libp2p_config: Arc<Mutex<LibP2PConfig>>,
 }
 
 impl ClientState {
-	fn new(metrics: Metrics, restart_trigger: mpsc::UnboundedSender<()>) -> Self {
+	fn new(
+		metrics: Metrics,
+		restart_trigger: mpsc::UnboundedSender<()>,
+		libp2p_config: Arc<Mutex<LibP2PConfig>>,
+	) -> Self {
 		ClientState {
 			metrics,
 			active_blocks: Default::default(),
 			restart_trigger,
+			libp2p_config,
 		}
 	}
 
@@ -710,6 +718,10 @@ impl ClientState {
 							},
 							P2pEvent::KadModeChange(mode) => {
 								self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
+
+								// Update libp2p config directly
+								let mut cfg = self.libp2p_config.lock().await;
+								cfg.kademlia.operation_mode = mode.into();
 
 								if let Err(e) = &self.restart_trigger.send(()) {
 									warn!("Failed to send restart trigger: {}", e);
