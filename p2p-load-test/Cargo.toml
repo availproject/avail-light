@@ -1,5 +1,5 @@
 [package]
-name = "p2p-load-test"
+name = "avail-light-p2p-load-test"
 version = "0.1.0"
 authors.workspace = true
 build = "../build.rs"

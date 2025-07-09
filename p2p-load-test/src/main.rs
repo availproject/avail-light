@@ -20,7 +20,7 @@ use tokio::{
 	sync::{mpsc::UnboundedReceiver, Mutex},
 	time::{self, sleep},
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 mod config;
 
@@ -185,10 +185,10 @@ async fn handle_events(mut p2p_receiver: UnboundedReceiver<OutputEvent>) -> Resu
 			Some(p2p_event) = p2p_receiver.recv() => {
 				match p2p_event {
 					OutputEvent::PutRecord { block_num, records } => {
-						info!("Put {} records for block {}", records.len(), block_num);
+						trace!("Put {} records for block {}", records.len(), block_num);
 					}
 					OutputEvent::PutRecordSuccess { record_key, query_stats } => {
-						info!("Successfully put record: {:?}, stats: {:?}", record_key, query_stats);
+						debug!("Successfully put record: {:?}, stats: {:?}", record_key, query_stats);
 					}
 					OutputEvent::PutRecordFailed { record_key, query_stats } => {
 						warn!("Failed to put record: {:?}, stats: {:?}", record_key, query_stats);
@@ -207,7 +207,6 @@ async fn handle_events(mut p2p_receiver: UnboundedReceiver<OutputEvent>) -> Resu
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	info!("Starting Avail P2P Load Test Client...");
 	let version = clap::crate_version!();
 	let opts = config::CliOpts::parse();
 	let config = config::load(&opts)?;
@@ -216,8 +215,8 @@ async fn main() -> Result<()> {
 		tracing::subscriber::set_global_default(json_subscriber(config.log_level))?;
 	} else {
 		tracing::subscriber::set_global_default(default_subscriber(config.log_level))?;
-	}
-	info!("Using configuration: {config:?}");
+	};
+	info!("Starting Avail P2P Load Test Client...");
 
 	#[cfg(not(feature = "rocksdb"))]
 	let db = data::DB::default();
@@ -226,6 +225,8 @@ async fn main() -> Result<()> {
 
 	let shutdown = Controller::new();
 	install_panic_hooks(shutdown.clone())?;
+
+	info!("Using configuration: {config:?}");
 
 	let (p2p_keypair, _) = p2p::identity(&config.libp2p, db.clone())?;
 
@@ -242,7 +243,6 @@ async fn main() -> Result<()> {
 	)
 	.await?;
 
-	info!("Starting P2P event loop");
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	let addrs = vec![config.libp2p.tcp_multiaddress()];

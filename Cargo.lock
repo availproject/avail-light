@@ -1489,6 +1489,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "avail-light-p2p-load-test"
+version = "0.1.0"
+dependencies = [
+ "avail-core",
+ "avail-light-core",
+ "clap",
+ "color-eyre",
+ "kate-recovery",
+ "libp2p",
+ "rand 0.8.5",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
 name = "avail-light-relay"
 version = "0.0.3"
 dependencies = [
@@ -7902,23 +7919,6 @@ name = "owo-colors"
 version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1036865bb9422d3300cf723f657c2851d0e9ab12567854b1f4eba3d77decf564"
-
-[[package]]
-name = "p2p-load-test"
-version = "0.1.0"
-dependencies = [
- "avail-core",
- "avail-light-core",
- "clap",
- "color-eyre",
- "kate-recovery",
- "libp2p",
- "rand 0.8.5",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber 0.3.19",
-]
 
 [[package]]
 name = "pallet-alliance"
