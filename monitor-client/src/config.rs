@@ -196,15 +196,15 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	}
 
 	if let Some(max_negotiating_inbound_streams) = opts.max_negotiating_inbound_streams {
-		config.libp2p.max_negotiating_inbound_streams = max_negotiating_inbound_streams;
+		config.libp2p.max_negotiating_inbound_streams = Some(max_negotiating_inbound_streams);
 	}
 	if let Some(task_command_buffer_size) = opts.task_command_buffer_size {
 		config.libp2p.task_command_buffer_size =
-			NonZeroUsize::new(task_command_buffer_size).unwrap();
+			Some(NonZeroUsize::new(task_command_buffer_size).unwrap());
 	}
 
 	if let Some(per_connection_event_buffer_size) = opts.per_connection_event_buffer_size {
-		config.libp2p.per_connection_event_buffer_size = per_connection_event_buffer_size;
+		config.libp2p.per_connection_event_buffer_size = Some(per_connection_event_buffer_size);
 	}
 
 	config.db_path = opts.db_path.to_string();

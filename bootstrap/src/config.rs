@@ -59,9 +59,9 @@ impl Default for RuntimeConfig {
 					..Default::default()
 				},
 				connection_idle_timeout: Duration::from_secs(10),
-				max_negotiating_inbound_streams: 20,
-				task_command_buffer_size: NonZero::new(30000).unwrap(),
-				per_connection_event_buffer_size: 10000,
+				max_negotiating_inbound_streams: Some(20),
+				task_command_buffer_size: Some(NonZero::new(30000).unwrap()),
+				per_connection_event_buffer_size: Some(10000),
 				dial_concurrency_factor: NonZero::new(5).unwrap(),
 				..Default::default()
 			},

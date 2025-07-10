@@ -2,6 +2,7 @@
 
 ## [1.2.9]
 
+- Added different P2P defaults for Client and Server modes
 - Added diagnostics API for DHT fetch rates
 - Listen addresses on identify are hidden by default
 - Updated avail-rust, kate and kate-recovery to latest versions
