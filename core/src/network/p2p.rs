@@ -32,7 +32,7 @@ use tokio::sync::{
 };
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 #[cfg(target_arch = "wasm32")]
 use web_time::Duration;
 
@@ -226,10 +226,10 @@ pub struct MultiAddressInfo {
 fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p::swarm::Config {
 	config
 		.with_idle_connection_timeout(cfg.connection_idle_timeout)
-		.with_max_negotiating_inbound_streams(cfg.max_negotiating_inbound_streams)
-		.with_notify_handler_buffer_size(cfg.task_command_buffer_size)
+		.with_max_negotiating_inbound_streams(cfg.effective_max_negotiating_inbound_streams())
+		.with_notify_handler_buffer_size(cfg.effective_task_command_buffer_size())
 		.with_dial_concurrency_factor(cfg.dial_concurrency_factor)
-		.with_per_connection_event_buffer_size(cfg.per_connection_event_buffer_size)
+		.with_per_connection_event_buffer_size(cfg.effective_per_connection_event_buffer_size())
 }
 
 const KADEMLIA_PROTOCOL_BASE: &str = "/avail_kad/id/1.0.0";
@@ -386,6 +386,8 @@ async fn build_swarm(
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	}
+
+	debug!(config = ?cfg, "Building P2P swarm");
 
 	info!("Local peerID: {}", swarm.local_peer_id());
 
