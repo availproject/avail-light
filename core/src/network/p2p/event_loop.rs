@@ -410,14 +410,18 @@ impl EventLoop {
 						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
 						debug!("Reported observed address: {observed_addr:?}");
 
-						// Currently only used for confirmation of external addresses with publicly deployed KAD server nodes
 						if is_global_address(&observed_addr) {
-							let is_new_observed = self
-								.swarm
-								.external_addresses()
-								.all(|addr| addr != &observed_addr);
+							let external_addrs: Vec<_> = self.swarm.external_addresses().collect();
+							info!("Observed address: {}", observed_addr);
+							info!("External addresses: {:?}", external_addrs);
+
+							let is_new_observed =
+								external_addrs.iter().all(|addr| **addr != observed_addr);
+
+							info!("Is new observed: {}", is_new_observed);
+
 							if is_new_observed {
-								// Send the event; now is used for manual confirmation
+								// Send the event
 								_ = self
 									.event_sender
 									.send(OutputEvent::NewObservedAddress(observed_addr));

@@ -535,13 +535,16 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	if opts.public_server {
+		cfg.is_public_server = true;
+	}
+
+	if cfg.is_public_server {
 		cfg.libp2p.kademlia.automatic_server_mode = false;
 		cfg.libp2p.kademlia.operation_mode = KademliaMode::Server;
 		cfg.libp2p.behaviour = BehaviourConfig {
 			auto_nat_mode: AutoNatMode::Server,
 			..Default::default()
 		};
-		cfg.is_public_server = true;
 	}
 
 	Ok(cfg)
@@ -717,7 +720,9 @@ impl ClientState {
 								self.metrics.count(MetricCounter::IncomingConnectionErrors);
 							},
 							P2pEvent::ExternalMultiaddressUpdate(multi_addr) => {
-								db.put(MultiAddressKey, multi_addr.to_string());
+								if !cfg.is_public_server{
+									db.put(MultiAddressKey, multi_addr.to_string());
+								}
 							},
 							P2pEvent::EstablishedConnection => {
 								self.metrics.count(MetricCounter::EstablishedConnections);
@@ -750,7 +755,8 @@ impl ClientState {
 								if cfg.is_public_server {
 									if let Some(p2p) = &p2p_client {
 										info!("Manually confirming external address: {addr}");
-										_ = p2p.confirm_external_address(addr).await;
+										_ = p2p.confirm_external_address(addr.clone()).await;
+										db.put(MultiAddressKey, addr.to_string());
 									}
 								}
 							}
