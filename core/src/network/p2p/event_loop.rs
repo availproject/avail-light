@@ -1,6 +1,5 @@
 use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
-use itertools::Either;
 use libp2p::{
 	autonat::{self},
 	core::ConnectedPoint,
@@ -482,49 +481,45 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(behaviour)) => {
-				match behaviour {
-					Either::Left(client_event) => {
-						match client_event {
-							autonat::v2::client::Event {
-								server,
-								tested_addr,
-
-								result: Ok(()),
-								..
-							} => {
-								info!("Tested {tested_addr} with AutoNat v2 {server}. Everything Ok and verified.");
-							},
-							autonat::v2::client::Event {
-								server,
-								tested_addr,
-
-								result: Err(e),
-								..
-							} => {
-								info!("Tested {tested_addr} with AutoNat v2 {server}. Failed with {e:?}.");
-							},
-						}
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutonatClient(client_event)) => {
+				match client_event {
+					autonat::v2::client::Event {
+						server,
+						tested_addr,
+						result: Ok(()),
+						..
+					} => {
+						info!("Tested {tested_addr} with AutoNat v2 {server}. Everything Ok and verified.");
 					},
-					Either::Right(server_event) => match server_event {
-						autonat::v2::server::Event {
-							all_addrs,
-							client,
-							tested_addr,
-							result: Ok(()),
-							..
-						} => {
-							info!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Everything Ok and verified.")
-						},
-						autonat::v2::server::Event {
-							all_addrs,
-							client,
-							tested_addr,
-							result: Err(e),
-							..
-						} => {
-							info!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Failed with {e:?}.")
-						},
+					autonat::v2::client::Event {
+						server,
+						tested_addr,
+						result: Err(e),
+						..
+					} => {
+						info!("Tested {tested_addr} with AutoNat v2 {server}. Failed with {e:?}.");
+					},
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutonatServer(server_event)) => {
+				match server_event {
+					autonat::v2::server::Event {
+						all_addrs,
+						client,
+						tested_addr,
+						result: Ok(()),
+						..
+					} => {
+						info!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Everything Ok and verified.")
+					},
+					autonat::v2::server::Event {
+						all_addrs,
+						client,
+						tested_addr,
+						result: Err(e),
+						..
+					} => {
+						info!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Failed with {e:?}.")
 					},
 				}
 			},

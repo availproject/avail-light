@@ -6,7 +6,6 @@ use color_eyre::{
 use configuration::{
 	auto_nat_client_config, identify_config, kad_config, AutoNatMode, LibP2PConfig,
 };
-use itertools::Either;
 use libp2p::{
 	autonat, identify,
 	identity::{self, ed25519, Keypair},
@@ -201,7 +200,10 @@ pub struct ConfigurableBehaviour {
 	ping: Toggle<ping::Behaviour>,
 
 	#[behaviour(optional)]
-	auto_nat: Toggle<Either<autonat::v2::client::Behaviour, autonat::v2::server::Behaviour>>,
+	autonat_client: Toggle<autonat::v2::client::Behaviour>,
+
+	#[behaviour(optional)]
+	autonat_server: Toggle<autonat::v2::server::Behaviour>,
 
 	#[behaviour(optional)]
 	blocked_peers: Toggle<allow_block_list::Behaviour<BlockedPeers>>,
@@ -321,15 +323,15 @@ async fn build_swarm(
 			None
 		};
 
-		let auto_nat = match cfg.behaviour.auto_nat_mode {
-			AutoNatMode::Disabled => None,
-			AutoNatMode::Server => Some(Either::Right(autonat::v2::server::Behaviour::new(OsRng))),
+		let (autonat_client, autonat_server) = match cfg.behaviour.auto_nat_mode {
+			AutoNatMode::Disabled => (None, None),
+			AutoNatMode::Server => (None, Some(autonat::v2::server::Behaviour::new(OsRng))),
 			AutoNatMode::Client => {
 				let autonat_cfg = auto_nat_client_config(cfg);
-				Some(Either::Left(autonat::v2::client::Behaviour::new(
-					OsRng,
-					autonat_cfg,
-				)))
+				(
+					Some(autonat::v2::client::Behaviour::new(OsRng, autonat_cfg)),
+					None,
+				)
 			},
 		};
 
@@ -343,7 +345,8 @@ async fn build_swarm(
 			ping: ping.into(),
 			identify: identify.into(),
 			kademlia: kademlia.into(),
-			auto_nat: auto_nat.into(),
+			autonat_client: autonat_client.into(),
+			autonat_server: autonat_server.into(),
 			blocked_peers: blocked_peers.into(),
 		})
 	};
