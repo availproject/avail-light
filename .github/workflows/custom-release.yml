@@ -1,0 +1,149 @@
+name: Custom Release All Binaries
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+      version:
+        description: 'Version tag (e.g., v1.0.0, v1.0.0-mmp, v1.0.0-alpha)'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            librust-openssl-dev build-essential protobuf-compiler \
+            musl-tools clang libc6-dev libssl-dev pkg-config
+
+      - name: Setup Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: Build Bootstrap
+        run: |
+          source "$HOME/.cargo/env"
+          cargo build --release -p avail-light-bootstrap
+          mkdir -p binaries
+          cp target/release/avail-light-bootstrap binaries/avail-light-bootstrap-linux-amd64
+          cd binaries
+          tar czf avail-light-bootstrap-linux-amd64.tar.gz avail-light-bootstrap-linux-amd64
+
+      - name: Build Light Client
+        run: |
+          source "$HOME/.cargo/env"
+          cargo build --release --features multiproof -p avail-light-client
+          cp target/release/avail-light-client binaries/avail-light-linux-amd64
+          cd binaries
+          tar czf avail-light-linux-amd64.tar.gz avail-light-linux-amd64
+
+      - name: Build Fat Client
+        run: |
+          source "$HOME/.cargo/env"
+          cargo build --release -p avail-light-fat --features multiproof
+          cp target/release/avail-light-fat binaries/avail-light-fat-linux-amd64
+          cd binaries
+          tar czf avail-light-fat-linux-amd64.tar.gz avail-light-fat-linux-amd64
+
+
+      - name: Get commit changes
+        id: changes
+        run: |
+          if [ "${{ github.event.inputs.branch }}" = "main" ]; then
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              echo "commits<<EOF" >> $GITHUB_OUTPUT
+              git log --oneline $LAST_TAG..HEAD >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "commits<<EOF" >> $GITHUB_OUTPUT
+              git log --oneline -10 >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "commits<<EOF" >> $GITHUB_OUTPUT
+            git log --oneline origin/main..${{ github.event.inputs.branch }} >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: avail-light-binaries
+          path: binaries/*.tar.gz
+
+  binary_publish:
+    needs: [build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Get commit changes
+        id: changes
+        run: |
+          if [ "${{ github.event.inputs.branch }}" = "main" ]; then
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              echo "commits<<EOF" >> $GITHUB_OUTPUT
+              git log --oneline $LAST_TAG..HEAD >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "commits<<EOF" >> $GITHUB_OUTPUT
+              git log --oneline -10 >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "commits<<EOF" >> $GITHUB_OUTPUT
+            git log --oneline origin/main..${{ github.event.inputs.branch }} >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          pattern: avail-light-binaries
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: |
+          echo "Downloaded files:"
+          find binaries -name "*.tar.gz" | sort
+
+      - name: Publish binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.PAT_TOKEN }}
+          file: binaries/avail-light*.tar.gz
+          release_name: ${{ github.event.inputs.version }}
+          tag: ${{ github.event.inputs.version }}
+          overwrite: true
+          file_glob: true
+          prerelease: true
+
+      - name: Summary
+        run: |
+          echo "## Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.event.inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Published:**" >> $GITHUB_STEP_SUMMARY
+          find binaries -name "*.tar.gz" | while read file; do
+            echo "  - $(basename $file)" >> $GITHUB_STEP_SUMMARY
+          done
