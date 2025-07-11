@@ -3,7 +3,7 @@
 use avail_light_core::{
 	data::{self, ClientIdKey, Database, DB},
 	network::{
-		p2p::{self, OutputEvent as P2pEvent},
+		p2p::{self, Client, OutputEvent as P2pEvent},
 		Network,
 	},
 	shutdown::Controller,
@@ -129,7 +129,9 @@ async fn run(
 	let mut state = ClientState::new(metrics);
 
 	spawn_in_span(shutdown.with_cancel(async move {
-		state.handle_events(p2p_event_receiver).await;
+		state
+			.handle_events(p2p_client.clone(), p2p_event_receiver)
+			.await;
 	}));
 
 	Ok(())
@@ -192,7 +194,11 @@ impl ClientState {
 		ClientState { metrics }
 	}
 
-	pub async fn handle_events(&mut self, mut p2p_receiver: UnboundedReceiver<P2pEvent>) {
+	pub async fn handle_events(
+		&mut self,
+		p2p_client: Client,
+		mut p2p_receiver: UnboundedReceiver<P2pEvent>,
+	) {
 		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
@@ -225,6 +231,10 @@ impl ClientState {
 							P2pEvent::OutgoingConnectionError => {
 								self.metrics.count(MetricCounter::OutgoingConnectionErrors);
 							},
+							P2pEvent::NewObservedAddress(addr) => {
+								info!("Manually confirming external address: {addr}");
+								_ = p2p_client.confirm_external_address(addr.clone()).await;
+							}
 							_ => {}
 						}
 					}
