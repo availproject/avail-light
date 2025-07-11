@@ -1,0 +1,91 @@
+name: Bootstrap RC Tag Creation
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_increment:
+        description: 'Force increment RC even if version matches existing tag'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  create-rc-tag:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' bootstrap/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Found version: $VERSION"
+
+      - name: Find highest RC tag for version
+        id: find_rc
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          
+          # Get all tags matching the pattern avail-light-bootstrap-{version}-rc*
+          TAGS=$(git tag -l "avail-light-bootstrap-${VERSION}-rc*" | sort -V)
+          
+          if [ -z "$TAGS" ]; then
+            echo "No RC tags found for version $VERSION"
+            NEXT_RC=1
+          else
+            echo "Found RC tags:"
+            echo "$TAGS"
+            
+            # Extract the highest RC number
+            HIGHEST_RC=$(echo "$TAGS" | sed "s/avail-light-bootstrap-${VERSION}-rc//" | sort -n | tail -1)
+            NEXT_RC=$((HIGHEST_RC + 1))
+            echo "Highest RC: $HIGHEST_RC"
+          fi
+          
+          NEW_TAG="avail-light-bootstrap-${VERSION}-rc${NEXT_RC}"
+          echo "next_rc=$NEXT_RC" >> $GITHUB_OUTPUT
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "Next RC tag will be: $NEW_TAG"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          NEW_TAG="${{ steps.find_rc.outputs.new_tag }}"
+          
+          if git tag -l | grep -q "^${NEW_TAG}$"; then
+            echo "Tag $NEW_TAG already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $NEW_TAG does not exist"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push new RC tag
+        if: steps.check_tag.outputs.exists == 'false' || github.event.inputs.force_increment == 'true'
+        run: |
+          NEW_TAG="${{ steps.find_rc.outputs.new_tag }}"
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create annotated tag
+          git tag -a "$NEW_TAG" -m "Bootstrap RC release $NEW_TAG"
+          
+          # Push the tag
+          git push origin "$NEW_TAG"
+          
+          echo "Created and pushed tag: $NEW_TAG"
+
+      - name: Output result
+        run: |
+          if [ "${{ steps.check_tag.outputs.exists }}" == "true" ] && [ "${{ github.event.inputs.force_increment }}" != "true" ]; then
+            echo "❌ Tag ${{ steps.find_rc.outputs.new_tag }} already exists. Use force_increment to override."
+            exit 1
+          else
+            echo "✅ Successfully created tag: ${{ steps.find_rc.outputs.new_tag }}"
+          fi
