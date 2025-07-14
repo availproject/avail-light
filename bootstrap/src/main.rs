@@ -1,5 +1,7 @@
 #![doc = include_str!("../README.md")]
 
+use std::time::Duration;
+
 use avail_light_core::{
 	data::{self, ClientIdKey, Database, DB},
 	network::{
@@ -18,7 +20,11 @@ use color_eyre::{
 	Result,
 };
 use config::RuntimeConfig;
-use tokio::{select, sync::mpsc::UnboundedReceiver};
+use tokio::{
+	select,
+	sync::mpsc::UnboundedReceiver,
+	time::{interval_at, Instant},
+};
 use tracing::{error, info, span, warn, Level};
 
 mod cli;
@@ -108,7 +114,7 @@ async fn run(
 
 	metrics.set_attribute("execution_id", execution_id.to_string());
 
-	let mut state = ClientState::new(metrics);
+	let mut state = ClientState::new(metrics, Duration::from_secs(20));
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state.handle_events(p2p_event_receiver).await;
@@ -167,50 +173,54 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 struct ClientState {
 	metrics: Metrics,
+	interval: Duration,
 }
 
 impl ClientState {
-	fn new(metrics: Metrics) -> Self {
-		ClientState { metrics }
+	fn new(metrics: Metrics, interval: Duration) -> Self {
+		ClientState { metrics, interval }
 	}
 
 	pub async fn handle_events(&mut self, mut p2p_receiver: UnboundedReceiver<P2pEvent>) {
 		self.metrics.count(MetricCounter::Starts);
+		let mut interval = interval_at(Instant::now() + self.interval, self.interval);
 		loop {
 			select! {
-					Some(p2p_event) = p2p_receiver.recv() => {
-						match p2p_event {
-							P2pEvent::Count => {
-								self.metrics.count(MetricCounter::EventLoopEvent);
-							},
-							P2pEvent::IncomingGetRecord => {
-								self.metrics.count(MetricCounter::IncomingGetRecord);
-							},
-							P2pEvent::IncomingPutRecord => {
-								self.metrics.count(MetricCounter::IncomingPutRecord);
-							},
-							P2pEvent::KadModeChange(mode) => {
-								self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
-							}
-							P2pEvent::Ping{ rtt, .. } => {
-								self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
-							},
-							P2pEvent::IncomingConnection => {
-								self.metrics.count(MetricCounter::IncomingConnections);
-							},
-							P2pEvent::IncomingConnectionError => {
-								self.metrics.count(MetricCounter::IncomingConnectionErrors);
-							},
-							P2pEvent::EstablishedConnection => {
-								self.metrics.count(MetricCounter::EstablishedConnections);
-							},
-							P2pEvent::OutgoingConnectionError => {
-								self.metrics.count(MetricCounter::OutgoingConnectionErrors);
-							},
-							_ => {}
+				Some(p2p_event) = p2p_receiver.recv() => {
+					match p2p_event {
+						P2pEvent::Count => {
+							self.metrics.count(MetricCounter::EventLoopEvent);
+						},
+						P2pEvent::IncomingGetRecord => {
+							self.metrics.count(MetricCounter::IncomingGetRecord);
+						},
+						P2pEvent::IncomingPutRecord => {
+							self.metrics.count(MetricCounter::IncomingPutRecord);
+						},
+						P2pEvent::KadModeChange(mode) => {
+							self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
 						}
+						P2pEvent::Ping{ rtt, .. } => {
+							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
+						},
+						P2pEvent::IncomingConnection => {
+							self.metrics.count(MetricCounter::IncomingConnections);
+						},
+						P2pEvent::IncomingConnectionError => {
+							self.metrics.count(MetricCounter::IncomingConnectionErrors);
+						},
+						P2pEvent::EstablishedConnection => {
+							self.metrics.count(MetricCounter::EstablishedConnections);
+						},
+						P2pEvent::OutgoingConnectionError => {
+							self.metrics.count(MetricCounter::OutgoingConnectionErrors);
+						},
+						_ => {}
 					}
-
+				},
+				_ = interval.tick() => {
+					self.metrics.count(MetricCounter::Up);
+				},
 				// break the loop if all channels are closed
 				else => break,
 			}
