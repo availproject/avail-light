@@ -9,7 +9,7 @@ use avail_light_core::{
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{load_or_init_suri, IdentityConfig, KademliaMode, ProjectName, SecretKey, Uuid},
-	utils::spawn_in_span,
+	utils::{default_subscriber, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
 use cli::CliOpts;
@@ -19,11 +19,7 @@ use color_eyre::{
 };
 use config::RuntimeConfig;
 use tokio::{select, sync::mpsc::UnboundedReceiver};
-use tracing::{error, info, span, warn, Level, Subscriber};
-use tracing_subscriber::{
-	fmt::format::{self},
-	EnvFilter, FmtSubscriber,
-};
+use tracing::{error, info, span, warn, Level};
 
 mod cli;
 mod config;
@@ -31,20 +27,6 @@ mod server;
 
 const CLIENT_ROLE: &str = "bootnode";
 
-pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
-		.json()
-		.with_env_filter(EnvFilter::new(format!("avail_light_bootstrap={log_level}")))
-		.with_span_events(format::FmtSpan::CLOSE)
-		.finish()
-}
-
-pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
-	FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light_bootstrap={log_level}")))
-		.with_span_events(format::FmtSpan::CLOSE)
-		.finish()
-}
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
