@@ -537,6 +537,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.kademlia.operation_mode = operation_mode;
 	}
 
+	if opts.is_local_test_mode {
+		cfg.is_local_test_mode = true;
+	}
+
 	Ok(cfg)
 }
 

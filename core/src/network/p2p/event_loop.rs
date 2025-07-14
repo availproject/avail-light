@@ -96,6 +96,7 @@ pub struct EventLoop {
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
 	pub kad_mode: Mode,
+	is_local_test_mode: bool,
 }
 
 #[derive(PartialEq, Debug)]
@@ -143,6 +144,7 @@ impl EventLoop {
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
+			is_local_test_mode: cfg.is_local_test_mode,
 		}
 	}
 
@@ -410,6 +412,21 @@ impl EventLoop {
 						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
 					);
 
+						// Currently only used for confirmation of external addresses with publicly deployed KAD server nodes
+						let should_output =
+							is_global_address(&observed_addr) || self.is_local_test_mode;
+						let is_new_observed = !self
+							.swarm
+							.external_addresses()
+							.any(|addr| addr == &observed_addr);
+						if is_new_observed && should_output {
+							// Send the event; now is used for manual confirmation
+							_ = self
+								.event_sender
+								.send(OutputEvent::NewObservedAddress(observed_addr));
+						}
+
+						// KAD Discovery process
 						if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
 							let incoming_peer_agent_version =
 								match AgentVersion::from_str(&agent_version) {
