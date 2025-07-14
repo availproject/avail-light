@@ -1,7 +1,7 @@
 use avail_light_core::{
 	network::p2p::configuration::{AutoNatMode, BehaviourConfig, KademliaConfig, LibP2PConfig},
 	telemetry::otlp::OtelConfig,
-	types::{tracing_level_format, Origin, ProjectName},
+	types::{tracing_level_format, Origin, ProjectName, SecretKey},
 };
 use color_eyre::eyre::{self, Context};
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,11 @@ impl Default for RuntimeConfig {
 			origin: Origin::External,
 			genesis_hash: "DEV".to_owned(),
 			libp2p: LibP2PConfig {
+				secret_key: Some(SecretKey::Seed {
+					seed: "1".to_string(),
+				}),
+				port: 39000,
+				webrtc_port: 39001,
 				autonat: Default::default(),
 				kademlia: KademliaConfig {
 					query_timeout: Duration::from_secs(60),
