@@ -41,6 +41,9 @@ pub struct CliOpts {
 	/// Number of unique blocks to cycle through
 	#[arg(long, default_value = "10")]
 	pub block_count: u32,
+	/// Genesis hash of the network to connect to (overrides network default)
+	#[arg(long)]
+	pub genesis_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -95,7 +98,10 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 		opts.network.bootstrap_multiaddr(),
 	);
 	config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
-	config.genesis_hash = opts.network.genesis_hash().to_string();
+	config.genesis_hash = opts
+		.genesis_hash
+		.clone()
+		.unwrap_or_else(|| opts.network.genesis_hash().to_string());
 
 	if let Some(seed) = &opts.seed {
 		config.libp2p.secret_key = Some(SecretKey::Seed {
