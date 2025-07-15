@@ -754,7 +754,13 @@ impl ClientState {
 									error!("Could not handle Failed PUT Record event properly: {error}");
 								};
 							},
-							P2pEvent::DiscoveredPeers { .. } => {
+							P2pEvent::DiscoveredPeers { .. } => {},
+							// Manualy confirm the external address if client is publicly reachable
+							P2pEvent::NewObservedAddress(addr) => {
+								let should_confirm = cfg.is_public_server || cfg.is_local_test_mode;
+								if !should_confirm {
+									continue;
+								}
 
 							}
 						}
