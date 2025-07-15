@@ -2,7 +2,9 @@ use avail_light_core::network::{p2p::configuration::LibP2PConfig, Network};
 use avail_light_core::types::{tracing_level_format, PeerAddress, SecretKey};
 use clap::Parser;
 use color_eyre::{eyre::eyre, Result};
+use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use tracing::Level;
 
 #[derive(Parser)]
@@ -44,6 +46,12 @@ pub struct CliOpts {
 	/// Genesis hash of the network to connect to (overrides network default)
 	#[arg(long)]
 	pub genesis_hash: Option<String>,
+	/// Comma-separated list of peer IDs to target for DHT puts (e.g., "12D3KooW...,12D3KooW...")
+	#[arg(long)]
+	pub target_peers: Option<String>,
+	/// Comma-separated list of multiaddresses to add to the routing table (e.g., "/ip4/1.2.3.4/tcp/30333/p2p/12D3KooW...")
+	#[arg(long)]
+	pub manual_peers: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -69,6 +77,10 @@ pub struct Config {
 	pub duration: u64,
 	/// Number of unique blocks to cycle through
 	pub block_count: u32,
+	/// Target peer IDs for DHT puts
+	pub target_peers: Vec<PeerId>,
+	/// Manual peers to add to routing table
+	pub manual_peers: Vec<PeerAddress>,
 }
 
 impl Default for Config {
@@ -83,6 +95,8 @@ impl Default for Config {
 			block_size: 524288, // 512KB
 			duration: 0,
 			block_count: 10,
+			target_peers: vec![],
+			manual_peers: vec![],
 		}
 	}
 }
@@ -118,6 +132,46 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	config.block_size = opts.block_size.min(524288); // Cap at 512KB
 	config.duration = opts.duration;
 	config.block_count = opts.block_count;
+
+	// Parse target peers
+	if let Some(target_peers_str) = &opts.target_peers {
+		config.target_peers = target_peers_str
+			.split(',')
+			.map(|s| s.trim())
+			.filter(|s| !s.is_empty())
+			.map(PeerId::from_str)
+			.collect::<Result<Vec<_>, _>>()
+			.map_err(|e| eyre!("Invalid peer ID in target_peers: {}", e))?;
+	}
+
+	// Parse manual peers
+	if let Some(manual_peers_str) = &opts.manual_peers {
+		config.manual_peers = manual_peers_str
+			.split(',')
+			.map(|s| s.trim())
+			.filter(|s| !s.is_empty())
+			.map(|s| {
+				// First validate it's a proper multiaddress
+				let addr = Multiaddr::from_str(s)
+					.map_err(|e| eyre!("Invalid multiaddress '{}': {}", s, e))?;
+
+				// Check if it contains a peer ID at the end
+				let has_peer_id = addr
+					.iter()
+					.any(|p| matches!(p, libp2p::multiaddr::Protocol::P2p(_)));
+
+				if !has_peer_id {
+					return Err(eyre!(
+						"Multiaddress must contain peer ID (e.g., /p2p/12D3KooW...): {}",
+						s
+					));
+				}
+
+				// Parse as PeerAddress::Compact
+				Ok(PeerAddress::Compact(s.to_string().try_into()?))
+			})
+			.collect::<Result<Vec<_>>>()?;
+	}
 
 	if config.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("List of bootstraps must not be empty!"));

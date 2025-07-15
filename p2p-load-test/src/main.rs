@@ -120,8 +120,13 @@ async fn run_load_test(
 	let cells_per_block = (config.block_size / cell_size).min(256) as u16;
 
 	info!(
-        "Starting load test - Rate: {} blocks/sec, Block size: {} bytes, Cells per block: {}, Duration: {} sec",
-        config.rate, config.block_size, cells_per_block, config.duration
+        "Starting load test - Rate: {} blocks/sec, Block size: {} bytes, Cells per block: {}, Duration: {} sec{}",
+        config.rate, config.block_size, cells_per_block, config.duration,
+        if config.target_peers.is_empty() {
+            "".to_string()
+        } else {
+            format!(", Targeting {} specific peers", config.target_peers.len())
+        }
     );
 
 	// Pre-generate blocks
@@ -149,7 +154,17 @@ async fn run_load_test(
 				let cells = blocks[block_idx].clone();
 				let cell_count = cells.len();
 
-				match p2p_client.insert_cells_into_dht(block_counter, cells).await {
+				let result = if config.target_peers.is_empty() {
+					// Use standard DHT insertion
+					p2p_client.insert_cells_into_dht(block_counter, cells).await
+				} else {
+					// Use targeted DHT insertion
+					p2p_client
+						.insert_cells_into_dht_to(block_counter, cells, config.target_peers.clone())
+						.await
+				};
+
+				match result {
 					Ok(_) => {
 						let mut state = state.lock().await;
 						state.blocks_sent += 1;
@@ -257,6 +272,21 @@ async fn main() -> Result<()> {
 		.bootstrap_on_startup(&config.libp2p.bootstraps)
 		.await?;
 	info!("Connected to bootstrap nodes");
+
+	// Add manual peers to routing table
+	for peer_addr in &config.manual_peers {
+		let (peer_id, multiaddr) = peer_addr.into();
+		match p2p_client.add_address(peer_id, multiaddr.clone()).await {
+			Ok(_) => info!("Added manual peer {} to routing table", peer_id),
+			Err(e) => warn!("Failed to add manual peer {}: {}", peer_id, e),
+		}
+	}
+	if !config.manual_peers.is_empty() {
+		info!(
+			"Added {} manual peers to routing table",
+			config.manual_peers.len()
+		);
+	}
 
 	// Start event handler
 	spawn_in_span(shutdown.with_cancel(async move {
