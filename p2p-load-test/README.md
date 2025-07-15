@@ -32,6 +32,17 @@ cargo run --bin p2p-load-test -- --network hex
 
 # Custom P2P port
 cargo run --bin p2p-load-test -- --p2p-port 30333
+
+# Target specific peers for DHT storage
+cargo run --bin p2p-load-test -- --target-peers "12D3KooWRkGLz4YbVmrsWK75VjFTs8NvaBu42xhAmQaP4KeJpw1L,12D3KooWBmFN8Dh3irQvpZi4LJWqg5RPmFKPPMqH3V5aUtxezFEJ"
+
+# Add manual peers to routing table
+cargo run --bin p2p-load-test -- --manual-peers "/ip4/192.168.1.100/tcp/30333/p2p/12D3KooWRkGLz4YbVmrsWK75VjFTs8NvaBu42xhAmQaP4KeJpw1L"
+
+# Combine both for targeted testing
+cargo run --bin p2p-load-test -- \
+  --manual-peers "/ip4/192.168.1.100/tcp/30333/p2p/12D3KooWRkGLz4YbVmrsWK75VjFTs8NvaBu42xhAmQaP4KeJpw1L" \
+  --target-peers "12D3KooWRkGLz4YbVmrsWK75VjFTs8NvaBu42xhAmQaP4KeJpw1L"
 ```
 
 ## CLI Options
@@ -46,6 +57,43 @@ cargo run --bin p2p-load-test -- --p2p-port 30333
 - `--db-path <PATH>`: RocksDB store location (default: ./db)
 - `--verbosity <LEVEL>`: Log verbosity level
 - `--logs-json`: Output logs in JSON format
+- `--target-peers <PEER_IDS>`: Comma-separated list of peer IDs to target for DHT storage
+- `--manual-peers <MULTIADDRS>`: Comma-separated list of multiaddresses to add to the routing table
+
+## Peer Targeting Options
+
+The load test client provides two distinct options for working with specific peers:
+
+### `--manual-peers`
+
+- **Purpose**: Adds peer addresses to your local Kademlia routing table
+- **Format**: Comma-separated list of full multiaddresses including peer IDs
+- **Example**: `/ip4/192.168.1.100/tcp/30333/p2p/12D3KooWRkGLz4YbVmrsWK75VjFTs8NvaBu42xhAmQaP4KeJpw1L`
+- **Effect**: These peers are added to your node's routing table, making them discoverable and reachable for DHT operations
+- **Use case**: When you want to ensure your node knows about specific peers that it might not discover through bootstrap nodes
+
+### `--target-peers`
+
+- **Purpose**: Specifies which peers to directly send DHT records to
+- **Format**: Comma-separated list of peer IDs only (without network addresses)
+- **Example**: `12D3KooWRkGLz4YbVmrsWK75VjFTs8NvaBu42xhAmQaP4KeJpw1L,12D3KooWBmFN8Dh3irQvpZi4LJWqg5RPmFKPPMqH3V5aUtxezFEJ`
+- **Effect**: When storing data in the DHT, records are sent directly to these specific peers instead of using the standard Kademlia algorithm
+- **Use case**: For testing specific nodes or ensuring certain peers receive the data
+
+### Key Differences
+
+1. **Network vs Storage**: `--manual-peers` affects network connectivity, while `--target-peers` affects where data is stored
+2. **Standard vs Non-standard**: `--manual-peers` uses standard Kademlia operations, while `--target-peers` uses a non-standard direct storage method
+3. **Format**: `--manual-peers` requires full network addresses, while `--target-peers` only needs peer IDs
+
+### Combined Usage
+
+You can use both options together for comprehensive testing:
+
+1. Use `--manual-peers` to ensure connectivity to specific nodes
+2. Use `--target-peers` to direct DHT storage to those (or other) specific nodes
+
+This is particularly useful for isolated testing environments or when evaluating specific node performance.
 
 ## Statistics
 

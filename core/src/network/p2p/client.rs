@@ -280,6 +280,34 @@ impl Client {
 			.map_err(|_| eyre!("Failed to send the Put Kad Record Command to the EventLoop"))
 	}
 
+	pub async fn put_kad_record_to(
+		&self,
+		records: Vec<Record>,
+		peers: Vec<PeerId>,
+		quorum: Quorum,
+		block_num: u32,
+	) -> Result<()> {
+		self.command_sender
+			.send(Box::new(move |context: &mut EventLoop| {
+				let kad = context
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.as_mut()
+					.ok_or_eyre("Kademlia behaviour not configured")?;
+
+				for record in records.clone() {
+					kad.put_record_to(record, peers.clone().into_iter(), quorum);
+				}
+
+				context
+					.event_sender
+					.send(OutputEvent::PutRecord { block_num, records })?;
+				Ok(())
+			}))
+			.map_err(|_| eyre!("Failed to send the Put Kad Record To Command to the EventLoop"))
+	}
+
 	pub async fn count_dht_entries(&self) -> Result<(usize, usize)> {
 		self.execute_sync(|response_sender| {
 			Box::new(move |context: &mut EventLoop| {
@@ -698,6 +726,24 @@ impl Client {
 		.await
 	}
 
+	async fn insert_into_dht_to(
+		&self,
+		records: Vec<(String, Record)>,
+		block_num: u32,
+		peers: Vec<PeerId>,
+	) -> Result<()> {
+		if records.is_empty() {
+			return Err(eyre!("Cant send empty record list."));
+		}
+		self.put_kad_record_to(
+			records.into_iter().map(|e| e.1).collect(),
+			peers,
+			Quorum::One,
+			block_num,
+		)
+		.await
+	}
+
 	/// Inserts cells into the DHT.
 	/// There is no rollback, and errors will be logged and skipped,
 	/// which means that we cannot rely on error logs as alert mechanism.
@@ -715,6 +761,28 @@ impl Client {
 			.map(|cell| (cell.reference(block), cell.dht_record(block, self.ttl)))
 			.collect::<Vec<_>>();
 		self.insert_into_dht(records, block).await
+	}
+
+	/// Inserts cells into the DHT targeting specific peers.
+	/// This is a non-standard Kademlia operation used for testing and specific use cases.
+	///
+	/// # Arguments
+	///
+	/// * `block` - Block number
+	/// * `cells` - Matrix cells to store into DHT
+	/// * `peers` - Specific peers to target for storage
+	pub async fn insert_cells_into_dht_to(
+		&self,
+		block: u32,
+		cells: Vec<Cell>,
+		peers: Vec<PeerId>,
+	) -> Result<()> {
+		let records: Vec<_> = cells
+			.into_iter()
+			.map(DHTCell)
+			.map(|cell| (cell.reference(block), cell.dht_record(block, self.ttl)))
+			.collect::<Vec<_>>();
+		self.insert_into_dht_to(records, block, peers).await
 	}
 
 	/// Inserts rows into the DHT.
