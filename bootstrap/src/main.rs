@@ -114,7 +114,7 @@ async fn run(
 
 	metrics.set_attribute("execution_id", execution_id.to_string());
 
-	let mut state = ClientState::new(metrics, Duration::from_secs(20));
+	let mut state = ClientState::new(metrics, p2p_client, Duration::from_secs(20));
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state.handle_events(p2p_event_receiver).await;
@@ -173,12 +173,17 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 struct ClientState {
 	metrics: Metrics,
+	p2p_client: p2p::Client,
 	interval: Duration,
 }
 
 impl ClientState {
-	fn new(metrics: Metrics, interval: Duration) -> Self {
-		ClientState { metrics, interval }
+	fn new(metrics: Metrics, p2p_client: p2p::Client, interval: Duration) -> Self {
+		ClientState {
+			metrics,
+			p2p_client,
+			interval,
+		}
 	}
 
 	pub async fn handle_events(&mut self, mut p2p_receiver: UnboundedReceiver<P2pEvent>) {
@@ -219,6 +224,10 @@ impl ClientState {
 					}
 				},
 				_ = interval.tick() => {
+					if let Ok((peers_num, _)) = self.p2p_client.count_dht_entries().await {
+						info!("Number of peers in the routing table: {}", peers_num);
+						self.metrics.record(MetricValue::DHTConnectedPeers(peers_num));
+					};
 					self.metrics.count(MetricCounter::Up);
 				},
 				// break the loop if all channels are closed
