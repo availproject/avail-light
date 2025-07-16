@@ -3,10 +3,7 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use configuration::{
-	auto_nat_client_config, identify_config, kad_config, AutoNatMode, LibP2PConfig,
-};
-use itertools::Either;
+use configuration::{auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig};
 use libp2p::{
 	autonat, identify,
 	identity::{self, ed25519, Keypair},
@@ -20,7 +17,6 @@ use libp2p::{
 use libp2p::{noise, tcp, yamux};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
-use rand::rngs::OsRng;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
@@ -111,7 +107,6 @@ pub enum OutputEvent {
 	DiscoveredPeers {
 		peers: Vec<(PeerId, Vec<Multiaddr>)>,
 	},
-	NewObservedAddress(Multiaddr),
 }
 
 #[derive(Clone)]
@@ -201,7 +196,7 @@ pub struct ConfigurableBehaviour {
 	ping: Toggle<ping::Behaviour>,
 
 	#[behaviour(optional)]
-	auto_nat: Toggle<Either<autonat::v2::client::Behaviour, autonat::v2::server::Behaviour>>,
+	auto_nat: Toggle<autonat::Behaviour>,
 
 	#[behaviour(optional)]
 	blocked_peers: Toggle<allow_block_list::Behaviour<BlockedPeers>>,
@@ -323,13 +318,12 @@ async fn build_swarm(
 
 		let auto_nat = match cfg.behaviour.auto_nat_mode {
 			AutoNatMode::Disabled => None,
-			AutoNatMode::Server => Some(Either::Right(autonat::v2::server::Behaviour::new(OsRng))),
-			AutoNatMode::Client => {
-				let autonat_cfg = auto_nat_client_config(cfg);
-				Some(Either::Left(autonat::v2::client::Behaviour::new(
-					OsRng,
+			_ => {
+				let autonat_cfg = auto_nat_config(cfg);
+				Some(autonat::Behaviour::new(
+					key.public().to_peer_id(),
 					autonat_cfg,
-				)))
+				))
 			},
 		};
 
