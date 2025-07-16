@@ -1,8 +1,7 @@
 use color_eyre::{eyre::eyre, Result};
 use futures::StreamExt;
-use itertools::Either;
 use libp2p::{
-	autonat::{self},
+	autonat::{self, NatStatus},
 	core::ConnectedPoint,
 	identify::{self, Info},
 	kad::{
@@ -403,29 +402,14 @@ impl EventLoop {
 								agent_version,
 								protocol_version,
 								protocols,
-								observed_addr,
 								..
 							},
 						connection_id: _,
 					} => {
-						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
-						debug!("Reported observed address: {observed_addr:?}");
+						trace!(
+						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
+					);
 
-						// Currently only used for confirmation of external addresses with publicly deployed KAD server nodes
-						if is_global_address(&observed_addr) {
-							let is_new_observed = self
-								.swarm
-								.external_addresses()
-								.all(|addr| addr != &observed_addr);
-							if is_new_observed {
-								// Send the event; now is used for manual confirmation
-								_ = self
-									.event_sender
-									.send(OutputEvent::NewObservedAddress(observed_addr));
-							}
-						}
-
-						// KAD Discovery process
 						if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
 							let incoming_peer_agent_version =
 								match AgentVersion::from_str(&agent_version) {
@@ -445,13 +429,11 @@ impl EventLoop {
 								return;
 							}
 
-							let kad_protocols = kad.protocol_names();
-							let any_contained_protocol =
-								protocols.iter().any(|p| kad_protocols.contains(p));
-							if any_contained_protocol {
+							let protocol = kad.protocol_names()[0].clone();
+							if protocols.contains(&protocol) {
 								listen_addrs
 									.into_iter()
-									// Filter out all of the private addresses that we can
+									// Filter out the loopback addresses
 									.filter(is_global_address)
 									.for_each(|addr| {
 										trace!("Adding peer {peer_id} to routing table.");
@@ -482,51 +464,19 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(behaviour)) => {
-				match behaviour {
-					Either::Left(client_event) => {
-						match client_event {
-							autonat::v2::client::Event {
-								server,
-								tested_addr,
-
-								result: Ok(()),
-								..
-							} => {
-								debug!("Tested {tested_addr} with AutoNat v2 {server}. Everything Ok and verified.");
-							},
-							autonat::v2::client::Event {
-								server,
-								tested_addr,
-
-								result: Err(e),
-								..
-							} => {
-								debug!("Tested {tested_addr} with AutoNat v2 {server}. Failed with {e:?}.");
-							},
-						}
-					},
-					Either::Right(server_event) => match server_event {
-						autonat::v2::server::Event {
-							all_addrs,
-							client,
-							tested_addr,
-							result: Ok(()),
-							..
-						} => {
-							debug!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Everything Ok and verified.")
-						},
-						autonat::v2::server::Event {
-							all_addrs,
-							client,
-							tested_addr,
-							result: Err(e),
-							..
-						} => {
-							debug!("Peer {client} tested for {tested_addr} from the list of {all_addrs:?}. Failed with {e:?}.")
-						},
-					},
-				}
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(event)) => match event {
+				autonat::Event::InboundProbe(e) => {
+					trace!("[AutoNat] Inbound Probe: {:#?}", e);
+				},
+				autonat::Event::OutboundProbe(e) => {
+					trace!("[AutoNat] Outbound Probe: {:#?}", e);
+				},
+				autonat::Event::StatusChanged { old, new } => {
+					debug!("[AutoNat] Old status: {:#?}. New status: {:#?}", old, new);
+					if new == NatStatus::Private || old == NatStatus::Private {
+						info!("[AutoNat] Autonat says we're still private.");
+					};
+				},
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(ping::Event {
 				peer,
@@ -540,7 +490,7 @@ impl EventLoop {
 			swarm_event => {
 				match swarm_event {
 					SwarmEvent::NewListenAddr { address, .. } => {
-						info!("Local node is listening on {:?}", address);
+						debug!("Local node is listening on {:?}", address);
 					},
 					SwarmEvent::ConnectionClosed {
 						peer_id,
@@ -562,6 +512,12 @@ impl EventLoop {
 							"External reachability confirmed on address: {}",
 							address.to_string()
 						);
+						if is_global_address(&address) {
+							info!(
+								"Public reachability confirmed on address: {}",
+								address.to_string()
+							);
+						};
 
 						_ = self
 							.event_sender

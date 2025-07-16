@@ -1,5 +1,7 @@
 use avail_light_core::{
-	network::p2p::configuration::{AutoNatMode, BehaviourConfig, KademliaConfig, LibP2PConfig},
+	network::p2p::configuration::{
+		AutoNATConfig, AutoNatMode, BehaviourConfig, KademliaConfig, LibP2PConfig,
+	},
 	telemetry::otlp::OtelConfig,
 	types::{tracing_level_format, Origin, ProjectName, SecretKey},
 };
@@ -54,7 +56,12 @@ impl Default for RuntimeConfig {
 				}),
 				port: 39000,
 				webrtc_port: 39001,
-				autonat: Default::default(),
+				autonat: AutoNATConfig {
+					throttle_clients_global_max: 120,
+					throttle_clients_peer_max: 4,
+					only_global_ips: false,
+					..Default::default()
+				},
 				kademlia: KademliaConfig {
 					query_timeout: Duration::from_secs(60),
 					..Default::default()
