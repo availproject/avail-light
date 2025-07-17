@@ -75,10 +75,6 @@ pub struct RuntimeConfig {
 	/// P2P client maintenance restart period. By default, it doesn't restart. (default: None)
 	#[serde(with = "option_duration_seconds_format")]
 	pub p2p_client_restart_interval: Option<Duration>,
-	/// Flag that is set when the client is running as a public KAD server.
-	pub is_public_server: bool,
-	/// Flag that is set when the client is running as a local test mode. [should be only used for testing!]
-	pub is_local_test_mode: bool,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -156,8 +152,6 @@ impl Default for RuntimeConfig {
 			maintenance_restart: false,
 			maintenance_restart_delay: 60 * 60,
 			p2p_client_restart_interval: None,
-			is_public_server: false,
-			is_local_test_mode: false,
 		}
 	}
 }

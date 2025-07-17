@@ -537,8 +537,8 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.kademlia.operation_mode = operation_mode;
 	}
 
-	if opts.is_local_test_mode {
-		cfg.is_local_test_mode = true;
+	if opts.local_test_mode {
+		cfg.libp2p.local_test_mode = true;
 	}
 
 	Ok(cfg)
@@ -755,14 +755,6 @@ impl ClientState {
 								};
 							},
 							P2pEvent::DiscoveredPeers { .. } => {},
-							// Manualy confirm the external address if client is publicly reachable
-							P2pEvent::NewObservedAddress(addr) => {
-								let should_confirm = cfg.is_public_server || cfg.is_local_test_mode;
-								if !should_confirm {
-									continue;
-								}
-
-							}
 						}
 					}
 				Some(maintenance_event) = maintenance_receiver.recv() => {

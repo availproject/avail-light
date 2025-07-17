@@ -263,7 +263,7 @@ pub struct LibP2PConfig {
 	#[serde(with = "duration_seconds_format")]
 	pub ping_interval: Duration,
 	/// Local test mode flag, currently only disables the private address filtering for KAD discovery and allows manual address confirmation of local addresses.
-	pub is_local_test_mode: bool,
+	pub local_test_mode: bool,
 }
 
 impl Default for LibP2PConfig {
@@ -285,7 +285,7 @@ impl Default for LibP2PConfig {
 			bootstraps: vec![],
 			dht_parallelization_limit: 20,
 			ping_interval: Duration::from_secs(60),
-			is_local_test_mode: false,
+			local_test_mode: false,
 		}
 	}
 }

@@ -41,6 +41,7 @@ struct EventLoopConfig {
 	// Used for checking protocol version
 	is_fat_client: bool,
 	kad_record_ttl: TimeToLive,
+	is_local_test_mode: bool,
 }
 
 #[derive(Debug)]
@@ -96,7 +97,6 @@ pub struct EventLoop {
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
 	pub kad_mode: Mode,
-	is_local_test_mode: bool,
 }
 
 #[derive(PartialEq, Debug)]
@@ -142,9 +142,9 @@ impl EventLoop {
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
+				is_local_test_mode: cfg.local_test_mode,
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
-			is_local_test_mode: cfg.is_local_test_mode,
 		}
 	}
 
@@ -411,21 +411,6 @@ impl EventLoop {
 						trace!(
 						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
 					);
-
-						// Currently only used for confirmation of external addresses with publicly deployed KAD server nodes
-						let should_output =
-							is_global_address(&observed_addr) || self.is_local_test_mode;
-						let is_new_observed = !self
-							.swarm
-							.external_addresses()
-							.any(|addr| addr == &observed_addr);
-						if is_new_observed && should_output {
-							// Send the event; now is used for manual confirmation
-							_ = self
-								.event_sender
-								.send(OutputEvent::NewObservedAddress(observed_addr));
-						}
-
 						// KAD Discovery process
 						if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
 							let incoming_peer_agent_version =
@@ -450,17 +435,18 @@ impl EventLoop {
 							if protocols.contains(&protocol) {
 								listen_addrs
 									.into_iter()
-									// Filter out the loopback addresses
-									.filter(is_global_address)
+									.filter(|addr| {
+										self.event_loop_config.is_local_test_mode
+											|| is_global_address(addr)
+									})
 									.for_each(|addr| {
-										trace!("Adding peer {peer_id} to routing table.");
+										debug!("Adding peer {peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
 									});
 							} else {
-								// Block and remove non-compatible peers
 								debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 								kad.remove_peer(&peer_id);
-							}
+							};
 						}
 					},
 					identify::Event::Sent {
