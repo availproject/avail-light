@@ -53,7 +53,10 @@ jobs:
         run: |
           source "$HOME/.cargo/env"
           cargo build --release -p avail-light-fat --features multiproof
+          ls -la target/release/
           cp target/release/avail-light-fat binaries/avail-light-fat-linux-amd64
+          ls -la binaries/
+          ./binaries/avail-light-fat-linux-amd64 --help
           cd binaries
           tar czf avail-light-fat-linux-amd64.tar.gz avail-light-fat-linux-amd64
 
