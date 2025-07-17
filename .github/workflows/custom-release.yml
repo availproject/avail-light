@@ -1,25 +1,25 @@
 name: Custom Release Components
-  on:
-    workflow_dispatch:
-      inputs:
-        branch:
-          description: 'Branch to build from'
-          required: true
-          default: 'main'
-        version:
-          description: 'Version tag (e.g., v1.13.1, v1.13.1-alpha)'
-          required: true
-        component:
-          description: 'Component to release'
-          required: true
-          type: choice
-          options:
-            - bootnode
-            - lightclient
-            - fatclient
-            - all
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+      version:
+        description: 'Version tag (e.g., v1.13.1, v1.13.1-alpha)'
+        required: true
+      component:
+        description: 'Component to release'
+        required: true
+        type: choice
+        options:
+          - bootnode
+          - lightclient
+          - fatclient
+          - all
 
-  jobs:
+jobs:
     build:
       runs-on: ubuntu-22.04
       steps:
