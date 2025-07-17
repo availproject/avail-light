@@ -572,8 +572,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				is_global_address(&addr),
-				"Failed to detect global IP: {}",
-				addr_str
+				"Failed to detect global IP: {addr_str}"
 			);
 		}
 	}
@@ -605,8 +604,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_global_address(&addr),
-				"Incorrectly identified as global: {}",
-				addr_str
+				"Incorrectly identified as global: {addr_str}"
 			);
 		}
 	}
@@ -629,8 +627,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				is_global_address(&addr),
-				"Failed to detect global IPv6: {}",
-				addr_str
+				"Failed to detect global IPv6: {addr_str}"
 			);
 		}
 	}
@@ -653,8 +650,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_global_address(&addr),
-				"Incorrectly identified as global: {}",
-				addr_str
+				"Incorrectly identified as global: {addr_str}"
 			);
 		}
 	}
@@ -677,8 +673,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				is_global_address(&addr),
-				"Failed to detect global DNS: {}",
-				addr_str
+				"Failed to detect global DNS: {addr_str}"
 			);
 		}
 	}
@@ -700,8 +695,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_global_address(&addr),
-				"Incorrectly identified as global: {}",
-				addr_str
+				"Incorrectly identified as global: {addr_str}"
 			);
 		}
 	}
@@ -720,8 +714,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_global_address(&addr),
-				"Non-IP/DNS address incorrectly identified as global: {}",
-				addr_str
+				"Non-IP/DNS address incorrectly identified as global: {addr_str}"
 			);
 		}
 	}
@@ -742,8 +735,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				is_global_address(&addr),
-				"Mixed protocol address should be global: {}",
-				addr_str
+				"Mixed protocol address should be global: {addr_str}"
 			);
 		}
 	}
@@ -761,8 +753,7 @@ mod tests {
 			let addr = Multiaddr::from_str(addr_str).unwrap();
 			assert!(
 				!is_global_address(&addr),
-				"All-private protocol address should not be global: {}",
-				addr_str
+				"All-private protocol address should not be global: {addr_str}"
 			);
 		}
 	}
@@ -781,15 +772,14 @@ mod tests {
 
 		for (ip_str, is_reserved_expected, should_be_global) in test_cases {
 			let ip: Ipv4Addr = ip_str.parse().unwrap();
-			let multiaddr_str = format!("/ip4/{}/tcp/80", ip_str);
+			let multiaddr_str = format!("/ip4/{ip_str}/tcp/80");
 			let addr = Multiaddr::from_str(&multiaddr_str).unwrap();
 
 			// Test is_reserved_ip function
 			assert_eq!(
 				is_reserved_ip(&ip),
 				is_reserved_expected,
-				"is_reserved_ip failed for {}",
-				ip_str
+				"is_reserved_ip failed for {ip_str}"
 			);
 
 			// Test is_global_address function
