@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::{
 	borrow::Cow,
-	fmt,
 	net::Ipv4Addr,
 	num::{NonZeroU8, NonZeroUsize},
 };
@@ -223,7 +222,7 @@ impl Default for KademliaConfig {
 	}
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Debug, Deserialize)]
 #[serde(default)]
 pub struct LibP2PConfig {
 	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
@@ -330,42 +329,6 @@ impl LibP2PConfig {
 				KademliaMode::Server => 10000,
 			}
 		})
-	}
-}
-
-impl fmt::Debug for LibP2PConfig {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let max_inbound_streams = format!(
-			"{:?} -> {}",
-			self.max_negotiating_inbound_streams,
-			self.effective_max_negotiating_inbound_streams()
-		);
-
-		let task_buffer_size = format!(
-			"{:?} -> {}",
-			self.task_command_buffer_size,
-			self.effective_task_command_buffer_size()
-		);
-
-		let per_conn_buffer_size = format!(
-			"{:?} -> {}",
-			self.per_connection_event_buffer_size,
-			self.effective_per_connection_event_buffer_size()
-		);
-
-		f.debug_struct("LibP2PConfig")
-			.field("kademlia_mode", &self.kademlia.operation_mode)
-			.field("port", &self.port)
-			.field("webrtc_port", &self.webrtc_port)
-			.field("max_negotiating_inbound_streams", &max_inbound_streams)
-			.field("task_command_buffer_size", &task_buffer_size)
-			.field("per_connection_event_buffer_size", &per_conn_buffer_size)
-			.field("connection_idle_timeout", &self.connection_idle_timeout)
-			.field("dial_concurrency_factor", &self.dial_concurrency_factor)
-			.field("dht_parallelization_limit", &self.dht_parallelization_limit)
-			.field("ping_interval", &self.ping_interval)
-			.field("bootstraps", &self.bootstraps)
-			.finish()
 	}
 }
 
