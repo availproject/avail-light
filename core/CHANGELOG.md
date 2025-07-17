@@ -2,6 +2,7 @@
 
 ## [1.2.9]
 
+- Added debug print for bootstraps
 - Added different P2P defaults for Client and Server modes
 - Added diagnostics API for DHT fetch rates
 - Listen addresses on identify are hidden by default
