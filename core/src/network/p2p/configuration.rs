@@ -364,7 +364,7 @@ impl fmt::Debug for LibP2PConfig {
 			.field("dial_concurrency_factor", &self.dial_concurrency_factor)
 			.field("dht_parallelization_limit", &self.dht_parallelization_limit)
 			.field("ping_interval", &self.ping_interval)
-			.field("bootstrap_count", &self.bootstraps.len())
+			.field("bootstraps", &self.bootstraps)
 			.finish()
 	}
 }

@@ -381,7 +381,7 @@ impl TryFrom<String> for CompactMultiaddress {
 	}
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(
 	untagged,
 	expecting = "Valid multiaddress/peer_id string or a tuple (peer_id, multiaddress) expected"
@@ -397,6 +397,29 @@ impl From<&PeerAddress> for (PeerId, Multiaddr) {
 			PeerAddress::Compact(CompactMultiaddress(value)) => value.clone(),
 			PeerAddress::PeerIdAndMultiaddr(value) => value.clone(),
 		}
+	}
+}
+
+impl fmt::Display for CompactMultiaddress {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let (peer_id, addr) = &self.0;
+		write!(f, "{addr}/p2p/{peer_id}")
+	}
+}
+
+impl fmt::Display for PeerAddress {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let (peer_id, addr) = match self {
+			PeerAddress::Compact(CompactMultiaddress(inner)) => inner,
+			PeerAddress::PeerIdAndMultiaddr(inner) => inner,
+		};
+		write!(f, "{addr}/p2p/{peer_id}")
+	}
+}
+
+impl fmt::Debug for PeerAddress {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "\"{self}\"")
 	}
 }
 
