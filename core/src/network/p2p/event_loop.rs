@@ -41,6 +41,7 @@ struct EventLoopConfig {
 	// Used for checking protocol version
 	is_fat_client: bool,
 	kad_record_ttl: TimeToLive,
+	is_local_test_mode: bool,
 }
 
 #[derive(Debug)]
@@ -141,6 +142,7 @@ impl EventLoop {
 			event_loop_config: EventLoopConfig {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
+				is_local_test_mode: cfg.local_test_mode,
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -409,7 +411,7 @@ impl EventLoop {
 						trace!(
 						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
 					);
-
+						// KAD Discovery process
 						if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
 							let incoming_peer_agent_version =
 								match AgentVersion::from_str(&agent_version) {
@@ -433,17 +435,18 @@ impl EventLoop {
 							if protocols.contains(&protocol) {
 								listen_addrs
 									.into_iter()
-									// Filter out the loopback addresses
-									.filter(is_global_address)
+									.filter(|addr| {
+										self.event_loop_config.is_local_test_mode
+											|| is_global_address(addr)
+									})
 									.for_each(|addr| {
-										trace!("Adding peer {peer_id} to routing table.");
+										debug!("Adding peer {peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
 									});
 							} else {
-								// Block and remove non-compatible peers
 								debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
 								kad.remove_peer(&peer_id);
-							}
+							};
 						}
 					},
 					identify::Event::Sent {

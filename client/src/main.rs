@@ -537,6 +537,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.kademlia.operation_mode = operation_mode;
 	}
 
+	if opts.local_test_mode {
+		cfg.libp2p.local_test_mode = true;
+	}
+
 	Ok(cfg)
 }
 
@@ -750,9 +754,7 @@ impl ClientState {
 									error!("Could not handle Failed PUT Record event properly: {error}");
 								};
 							},
-							P2pEvent::DiscoveredPeers { .. } => {
-
-							}
+							P2pEvent::DiscoveredPeers { .. } => {},
 						}
 					}
 				Some(maintenance_event) = maintenance_receiver.recv() => {

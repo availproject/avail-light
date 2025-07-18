@@ -168,6 +168,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.client_alias = Some(client_alias.clone())
 	}
 
+	if opts.local_test_mode {
+		cfg.libp2p.local_test_mode = true;
+	}
+
 	Ok(cfg)
 }
 

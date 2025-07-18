@@ -15,6 +15,7 @@
 - Removed dusk-plonk dependencies from core
 - Behaviour struct can now be pre-configured based on the client needs
 - Stopping the loopback address advertisments and filtering for private IP ranges upon discovery
+- Added configuration flag and logic for local testing mode
 
 ## [1.2.8](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.8) - 2025-05-30
 
