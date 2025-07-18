@@ -294,7 +294,8 @@ impl LibP2PConfig {
 	pub fn tcp_multiaddress(&self) -> Multiaddr {
 		let tcp_multiaddress = Multiaddr::empty()
 			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-			.with(Protocol::Tcp(self.port));
+			.with(Protocol::Udp(self.port))
+			.with(Protocol::QuicV1);
 
 		if self.ws_transport_enable {
 			tcp_multiaddress.with(Protocol::Ws(Cow::Borrowed("avail-light")))
