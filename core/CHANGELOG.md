@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.9]
+## [1.2.9](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.9) - 2025-07-18
 
 - Added debug print for bootstraps
 - Added different P2P defaults for Client and Server modes
