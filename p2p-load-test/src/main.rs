@@ -296,7 +296,7 @@ async fn main() -> Result<()> {
 	}));
 
 	// Wait a bit for initial peer discovery
-	sleep(Duration::from_secs(5)).await;
+	sleep(Duration::from_secs(config.peer_discovery_interval)).await;
 
 	// Run the load test
 	run_load_test(p2p_client, config, shutdown.clone()).await?;
