@@ -52,6 +52,9 @@ pub struct CliOpts {
 	/// Comma-separated list of multiaddresses to add to the routing table (e.g., "/ip4/1.2.3.4/tcp/30333/p2p/12D3KooW...")
 	#[arg(long)]
 	pub manual_peers: Option<String>,
+	/// Peer discovery interval in seconds
+	#[arg(long, default_value = "10")]
+	pub peer_discovery_interval: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -81,6 +84,8 @@ pub struct Config {
 	pub target_peers: Vec<PeerId>,
 	/// Manual peers to add to routing table
 	pub manual_peers: Vec<PeerAddress>,
+	/// Peer discovery interval in seconds
+	pub peer_discovery_interval: u64,
 }
 
 impl Default for Config {
@@ -97,6 +102,7 @@ impl Default for Config {
 			block_count: 10,
 			target_peers: vec![],
 			manual_peers: vec![],
+			peer_discovery_interval: 10,
 		}
 	}
 }
@@ -132,6 +138,7 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	config.block_size = opts.block_size.min(524288); // Cap at 512KB
 	config.duration = opts.duration;
 	config.block_count = opts.block_count;
+	config.peer_discovery_interval = opts.peer_discovery_interval;
 
 	// Parse target peers
 	if let Some(target_peers_str) = &opts.target_peers {
