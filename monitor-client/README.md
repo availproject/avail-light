@@ -30,9 +30,9 @@ The monitor consists of three main components:
 ### 3. Peer Monitor
 
 - Monitors the health of discovered peers by attempting to dial them
-- Maintains a blacklist of unreachable peers
-- Calculates health scores based on connection success rates
+- Calculates health scores based on the last 20 connection attempts
 - Measures ping latency (RTT) for each peer
+- Uses time-based thresholds for blacklisting decisions
 
 ## Configuration
 
@@ -50,9 +50,8 @@ bootstrap_interval: 60      # How often to check bootstrap nodes
 peer_monitor_interval: 30   # How often to monitor peer health
 peer_discovery_interval: 10 # How often to discover new peers
 
-# Connection thresholds
-fail_threshold: 3     # Failed attempts before marking peer as blocked
-success_threshold: 3  # Successful attempts needed to unblock a peer
+# Blacklist duration (in hours)
+blacklist_duration_hours: 6 # Duration for health score thresholds
 
 # OpenTelemetry configuration
 otel:
@@ -64,7 +63,7 @@ otel:
 Example run command:
 
 ```bash
-./avail-light-monitor --network mainnet --http-port 51241 --ot-collector-endpoint http://localhost:4317 --ot-export-period 5 --ot-export-timeout 10
+./avail-light-monitor --network mainnet --http-port 51241 --blacklist-duration-hours 6 --ot-collector-endpoint http://localhost:4317 --ot-export-period 5 --ot-export-timeout 10
 ```
 
 ## Metrics
@@ -91,27 +90,30 @@ The monitor exports the following metrics via OpenTelemetry:
 
 ## Peer Health Scoring
 
-The health score is calculated based on the ratio of successful to total connection attempts:
+The health score is calculated based on the last 20 connection attempts:
 
-```
-health_score = (success_counter / (success_counter + failed_counter)) * 100
-```
+- **Before 20 established connections**: Health score is 50% (neutral)
+- **After 20 established connections**: Health score = (successful_connections / total_connections) * 100
 
-- **100**: Perfect health (all connection attempts successful)
-- **0**: Blocked (exceeded failure threshold)
-- **50**: Neutral (no connection attempts yet)
+Health score ranges:
+
+- **100%**: Perfect health (all recent connection attempts successful)
+- **50%**: Default for peers with less than 20 connection attempts
+- **0-100%**: Based on success rate of the last 20 attempts
 
 ## Peer Blocking Logic
 
-Peers are marked as blocked when:
+Peers are marked as blacklisted when:
 
-1. They fail `fail_threshold` consecutive connection attempts (default: 3)
+1. Their health score remains below 20% for the configured duration (default: 6 hours)
 2. They have no globally reachable addresses
 
-Blocked peers can be unblocked by:
+Blacklisted peers can be removed from the blacklist by:
 
-1. Successfully connecting `success_threshold` times (default: 3)
+1. Their health score staying above 60% for the configured duration (default: 6 hours)
 2. Being rediscovered with globally reachable addresses
+
+The blacklist duration can be configured with the `--blacklist-duration-hours` parameter.
 
 ## HTTP API
 

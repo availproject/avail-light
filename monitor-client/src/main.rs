@@ -246,13 +246,14 @@ pub async fn handle_events(
 								None => {
 									let server_info = ServerInfo {
 										multiaddr: globally_reachable_addresses,
-										failed_counter: 0,
-										success_counter: 0,
 										last_discovered: Some(SystemTime::now()),
 										last_successful_dial: None,
 										last_ping_rtt: None,
 										ping_records: VecDeque::with_capacity(20),
 										is_blacklisted,
+										connection_results: VecDeque::with_capacity(20),
+										below_threshold_since: None,
+										above_threshold_since: None,
 									};
 									servers.insert(peer_id, server_info);
 								}
