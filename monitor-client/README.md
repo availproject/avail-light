@@ -50,8 +50,9 @@ bootstrap_interval: 60      # How often to check bootstrap nodes
 peer_monitor_interval: 30   # How often to monitor peer health
 peer_discovery_interval: 10 # How often to discover new peers
 
-# Blacklist duration (in hours)
-blacklist_duration_hours: 6 # Duration for health score thresholds
+# Blacklist thresholds
+blacklist_threshold: 20 # Minimum health score under which the peer is blacklisted
+blacklist_removal_threshold: 60 # Threshold over which peer is removed from the blacklist
 
 # OpenTelemetry configuration
 otel:
@@ -105,15 +106,13 @@ Health score ranges:
 
 Peers are marked as blacklisted when:
 
-1. Their health score remains below 20% for the configured duration (default: 6 hours)
-2. They have no globally reachable addresses
+1. They have no globally reachable addresses
+2. Their health score is below the `blacklist_threshold` (default: 20)
 
 Blacklisted peers can be removed from the blacklist by:
 
-1. Their health score staying above 60% for the configured duration (default: 6 hours)
+1. Their health score staying above `blacklist_removal_threshold` (default: 60)
 2. Being rediscovered with globally reachable addresses
-
-The blacklist duration can be configured with the `--blacklist-duration-hours` parameter.
 
 ## HTTP API
 
