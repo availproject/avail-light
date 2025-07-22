@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.13.1]
+
+- Update `avail-light-core` to 1.2.10
+
 ## [1.13.0](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.13.0) - 2025-07-21
 
 - Disabled DHT put
