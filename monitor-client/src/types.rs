@@ -9,20 +9,29 @@ use std::{
 use tracing::{debug, info};
 
 const MAX_PING_RECORDS: usize = 20;
+const MAX_CONNECTION_RESULTS: usize = 20;
 
 #[derive(Clone, Default)]
 pub struct ServerInfo {
 	pub multiaddr: Vec<Multiaddr>,
-	pub failed_counter: usize,
-	pub success_counter: usize,
 	pub last_successful_dial: Option<SystemTime>,
 	pub last_discovered: Option<SystemTime>,
 	pub last_ping_rtt: Option<Duration>,
 	pub ping_records: VecDeque<f64>,
 	pub is_blacklisted: bool,
+	// N last connection attempt results
+	pub connection_results: VecDeque<bool>,
 }
 
 impl ServerInfo {
+	pub fn update_connection_result(&mut self, success: bool) {
+		self.connection_results.push_back(success);
+		// Maintain a maximum of MAX_CONNECTION_RESULTS
+		if self.connection_results.len() > MAX_CONNECTION_RESULTS {
+			self.connection_results.pop_front();
+		}
+	}
+
 	pub fn update_ping_stats(&mut self, rtt: Duration) {
 		self.last_ping_rtt = Some(rtt);
 
