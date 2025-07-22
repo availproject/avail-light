@@ -1,23 +1,28 @@
-name: Custom Release Components
+name: Manual pre-release
 on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to build from'
+        description: 'Branch'
         required: true
         default: 'main'
       version:
-        description: 'Version tag (e.g., v1.13.1, v1.13.1-alpha)'
+        description: 'Version (e.g. chore/upgrade, v1.13.1-alpha.1, v1.13.1-rc1)'
         required: true
       component:
-        description: 'Component to release'
+        description: 'Component'
         required: true
         type: choice
         options:
-          - bootnode
+          - all
           - lightclient
           - fatclient
-          - all
+          - bootnode
+      multiproof:
+        description: 'Multiproof feature'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
     build:
@@ -32,18 +37,22 @@ jobs:
         - name: Set release tag
           id: tag
           run: |
+            MMP_SUFFIX=""
+            if [ "${{ github.event.inputs.multiproof }}" = "true" ]; then
+              MMP_SUFFIX="-mmp"
+            fi
             case "${{ github.event.inputs.component }}" in
               "bootnode")
-                echo "tag=mmp-bootnode-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light-bootstrap${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
               "lightclient")
-                echo "tag=mmp-lightclient-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light-client${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
               "fatclient")
-                echo "tag=mmp-fatclient-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light-fat${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
               "all")
-                echo "tag=mmp-all-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
             esac
 
@@ -73,7 +82,11 @@ jobs:
           if: ${{ github.event.inputs.component == 'lightclient' || github.event.inputs.component == 'all' }}
           run: |
             source "$HOME/.cargo/env"
-            cargo build --release --features multiproof -p avail-light-client
+            if [ "${{ github.event.inputs.multiproof }}" = "true" ]; then
+              cargo build --release --features multiproof -p avail-light-client
+            else
+              cargo build --release -p avail-light-client
+            fi
             mkdir -p binaries
             cp target/release/avail-light-client binaries/avail-light-linux-amd64
             cd binaries
@@ -83,14 +96,18 @@ jobs:
           if: ${{ github.event.inputs.component == 'fatclient' || github.event.inputs.component == 'all' }}
           run: |
             source "$HOME/.cargo/env"
-            cargo build --release -p avail-light-fat --features multiproof
+            if [ "${{ github.event.inputs.multiproof }}" = "true" ]; then
+              cargo build --release -p avail-light-fat --features multiproof
+            else
+              cargo build --release -p avail-light-fat
+            fi
             mkdir -p binaries
             ls -la target/release/
-            cp target/release/avail-light-fat binaries/avail-light-linux-amd64
+            cp target/release/avail-light-fat binaries/avail-light-fat-linux-amd64
             ls -la binaries/
-            ./binaries/avail-light-linux-amd64 --help
+            ./binaries/avail-light-fat-linux-amd64 --help
             cd binaries
-            tar czf avail-light-linux-amd64.tar.gz avail-light-linux-amd64
+            tar czf avail-light-fat-linux-amd64.tar.gz avail-light-fat-linux-amd64
 
         - name: Get commit changes
           id: changes
@@ -131,18 +148,22 @@ jobs:
         - name: Set release tag
           id: tag
           run: |
+            MMP_SUFFIX=""
+            if [ "${{ github.event.inputs.multiproof }}" = "true" ]; then
+              MMP_SUFFIX="-mmp"
+            fi
             case "${{ github.event.inputs.component }}" in
               "bootnode")
-                echo "tag=mmp-bootnode-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light-bootstrap${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
               "lightclient")
-                echo "tag=mmp-lightclient-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light-client${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
               "fatclient")
-                echo "tag=mmp-fatclient-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light-fat${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
               "all")
-                echo "tag=mmp-all-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                echo "tag=avail-light${MMP_SUFFIX}-${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
                 ;;
             esac
 
