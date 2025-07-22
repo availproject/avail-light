@@ -224,13 +224,12 @@ pub async fn process_block(
 
 	#[cfg(not(feature = "multiproof"))]
 	if rpc_fetched.len() >= extension.dimensions.cols().get() as usize {
-		let cells: Vec<SingleCell> = rpc_fetched
+		let cells: Vec<Cell> = rpc_fetched
 			.into_iter()
 			.filter(|c| !c.position().is_extended())
-			.filter_map(|c| SingleCell::try_from(c).ok())
 			.collect();
 
-		let data_cells: Vec<&SingleCell> = cells.iter().collect();
+		let data_cells: Vec<&Cell> = cells.iter().collect();
 		let data_rows = data::rows(extension.dimensions, &data_cells);
 
 		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
