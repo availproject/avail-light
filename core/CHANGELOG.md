@@ -2,6 +2,7 @@
 
 ## [1.2.10]
 
+- Re-enable quic, set it as preffered
 - Added libp2p swarm peer blacklisting by partial string matching of multi-addresses
 - Updated the libp2p version to the latest stable release of 0.56.0
 

@@ -375,6 +375,7 @@ async fn build_swarm(
 				noise::Config::new,
 				yamux::Config::default,
 			)?
+			.with_quic_config(|_| libp2p::quic::Config::new(id_keys))
 			.with_dns()?;
 
 		swarm = builder

@@ -294,16 +294,27 @@ impl Default for LibP2PConfig {
 }
 
 impl LibP2PConfig {
-	pub fn tcp_multiaddress(&self) -> Multiaddr {
-		let tcp_multiaddress = Multiaddr::empty()
+	fn ws_multiaddress(&self) -> Multiaddr {
+		Multiaddr::empty()
 			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-			.with(Protocol::Tcp(self.port));
+			.with(Protocol::Tcp(self.port))
+			.with(Protocol::Ws(Cow::Borrowed("avail-light")))
+	}
 
+	pub fn multiaddresses(&self) -> Vec<Multiaddr> {
 		if self.ws_transport_enable {
-			tcp_multiaddress.with(Protocol::Ws(Cow::Borrowed("avail-light")))
-		} else {
-			tcp_multiaddress
+			return vec![self.ws_multiaddress()];
 		}
+
+		vec![
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Udp(self.port))
+				.with(Protocol::QuicV1),
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Tcp(self.port)),
+		]
 	}
 
 	pub fn webrtc_multiaddress(&self) -> Multiaddr {
