@@ -12,6 +12,7 @@ use tracing::{debug, info, trace, warn};
 use avail_light_core::network::p2p::Client;
 
 use crate::{config::Config, telemetry::MonitorMetrics, ServerInfo};
+
 pub struct PeerMonitor {
 	p2p_client: Client,
 	interval: Interval,
@@ -61,6 +62,7 @@ impl PeerMonitor {
 		}
 	}
 
+	// Iterates through the list of discovered peers and checks individual peer connectivity by dialing
 	async fn process_peers(&mut self) -> Result<()> {
 		let peer_ids: Vec<PeerId> = {
 			let server_list = self.server_monitor_list.lock().await;
@@ -138,69 +140,15 @@ async fn check_peer_connectivity(
 
 	// Calculate current health score
 	let health_score = calculate_health_score(info);
-	let now = SystemTime::now();
-	let blacklist_duration =
-		std::time::Duration::from_secs(config.blacklist_duration_hours * 60 * 60);
 
-	// Check blacklisting conditions
-	if !info.is_blacklisted {
-		// Check if health score dropped below 20%
-		if health_score < 20.0 {
-			match info.below_threshold_since {
-				Some(timestamp) => {
-					// Check if it's been below 20% for the configured duration
-					if now.duration_since(timestamp).unwrap_or_default() >= blacklist_duration {
-						info.is_blacklisted = true;
-						info.below_threshold_since = None;
-						debug!(
-							"⚠️ Peer {} blacklisted after {} hours with health score below 20%",
-							peer_id, config.blacklist_duration_hours
-						);
-						metrics.set_peer_blocked_status(&peer_id.to_string(), true);
-					}
-				},
-				None => {
-					// First time dropping below 20%
-					info.below_threshold_since = Some(now);
-					debug!(
-						"Peer {} health score dropped below 20% ({}%)",
-						peer_id, health_score
-					);
-				},
-			}
-		} else {
-			info.below_threshold_since = None;
-		}
-	} else {
-		// Peer is blacklisted, check if health score is above 60%
-		if health_score > 60.0 {
-			match info.above_threshold_since {
-				Some(timestamp) => {
-					// Check if it's been above 60% for the configured duration
-					if now.duration_since(timestamp).unwrap_or_default() >= blacklist_duration {
-						info.is_blacklisted = false;
-						info.above_threshold_since = None; // Reset the timer
-						debug!(
-							"✅ Peer {} unblacklisted after {} hours with health score above 60%",
-							peer_id, config.blacklist_duration_hours
-						);
-						metrics.set_peer_blocked_status(&peer_id.to_string(), false);
-					}
-				},
-				None => {
-					// First time rising above 60%
-					info.above_threshold_since = Some(now);
-					debug!(
-						"Peer {} health score rose above 60% ({}%)",
-						peer_id, health_score
-					);
-				},
-			}
-		} else {
-			// Health score is below 60%, reset the timer
-			info.above_threshold_since = None;
-		}
+	if health_score < config.blacklist_threshold as f64 {
+		info.is_blacklisted = true;
 	}
+	if health_score > config.blacklist_remove_threshold as f64 {
+		info.is_blacklisted = false;
+	}
+
+	metrics.set_peer_blocked_status(&peer_id.to_string(), info.is_blacklisted);
 
 	// Update health score metric
 	metrics.set_peer_health_score(&peer_id.to_string(), health_score);

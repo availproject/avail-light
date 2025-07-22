@@ -21,9 +21,6 @@ pub struct ServerInfo {
 	pub is_blacklisted: bool,
 	// N last connection attempt results
 	pub connection_results: VecDeque<bool>,
-	// Timestamp when the peer health went bellow/above the threshold
-	pub below_threshold_since: Option<SystemTime>,
-	pub above_threshold_since: Option<SystemTime>,
 }
 
 impl ServerInfo {

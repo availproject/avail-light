@@ -32,9 +32,12 @@ pub struct CliOpts {
 	/// Time interval for peer monitoring actions
 	#[arg(long, default_value = "30")]
 	pub peer_monitor_interval: u64,
-	/// Duration in hours for blacklist threshold checks
-	#[arg(long, default_value = "6")]
-	pub blacklist_duration_hours: u64,
+	/// Peer health threshold under which peer is blacklisted
+	#[arg(long, default_value = "20")]
+	pub blacklist_threshold: u64,
+	/// Peer health threshold over which peer is removed from the blacklist
+	#[arg(long, default_value = "60")]
+	pub blacklist_removal_threshold: u64,
 	/// Seed string for libp2p keypair generation
 	#[arg(long)]
 	pub seed: Option<String>,
@@ -127,8 +130,10 @@ pub struct Config {
 	pub peer_discovery_interval: u64,
 	/// Time interval for peer monitor actions.
 	pub peer_monitor_interval: u64,
-	/// Duration in hours for blacklist threshold checks.
-	pub blacklist_duration_hours: u64,
+	/// Peer health threshold under which peer is blacklisted
+	pub blacklist_threshold: u64,
+	/// Peer health threshold over which peer is removed from the blacklist
+	pub blacklist_remove_threshold: u64,
 	/// Log level.
 	#[serde(with = "tracing_level_format")]
 	pub log_level: Level,
@@ -154,10 +159,11 @@ impl Default for Config {
 			bootstrap_interval: 10,
 			peer_discovery_interval: 10,
 			peer_monitor_interval: 30,
-			blacklist_duration_hours: 6,
 			http_port: 8090,
 			pagination: PaginationConfig::default(),
 			otel: OtelConfig::default(),
+			blacklist_threshold: 20,
+			blacklist_remove_threshold: 60,
 		}
 	}
 }
@@ -210,7 +216,6 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	config.bootstrap_interval = opts.bootstrap_interval;
 	config.peer_discovery_interval = opts.peer_discovery_interval;
 	config.peer_monitor_interval = opts.peer_monitor_interval;
-	config.blacklist_duration_hours = opts.blacklist_duration_hours;
 
 	if config.libp2p.bootstraps.is_empty() {
 		return Err(eyre!("List of bootstraps must not be empty!"));

@@ -252,8 +252,6 @@ pub async fn handle_events(
 										ping_records: VecDeque::with_capacity(20),
 										is_blacklisted,
 										connection_results: VecDeque::with_capacity(20),
-										below_threshold_since: None,
-										above_threshold_since: None,
 									};
 									servers.insert(peer_id, server_info);
 								}
