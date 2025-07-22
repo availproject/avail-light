@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-core"
-version = "1.2.9"
+version = "1.2.10"
 edition = "2021"
 description = "Avail Light core driving library"
 
@@ -21,7 +21,11 @@ base64 = "0.21.0"
 better-panic = "0.3.0"
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
+codec = { package = "parity-scale-codec", version = "3", default-features = false, features = [
+    "derive",
+    "full",
+    "bit-vec",
+] }
 convert_case = "0.6.0"
 derive_more = { version = "1", features = ["from", "display"] }
 futures = { workspace = true }
@@ -68,7 +72,10 @@ num_cpus = "1.13.0"
 pcap = "1.1.0"
 rand = { workspace = true, default-features = true }
 rand_chacha = "0.3"
-rocksdb = { version = "0.21.0", features = ["snappy", "multi-threaded-cf"], optional = true }
+rocksdb = { version = "0.21.0", features = [
+    "snappy",
+    "multi-threaded-cf",
+], optional = true }
 self_update = "0.42.0"
 strip-ansi-escapes = "0.2.0"
 thiserror = "1.0.64"
@@ -98,7 +105,12 @@ libp2p-webrtc-websys = { workspace = true }
 rand = { workspace = true, features = ["std_rng"] }
 thiserror-no-std = "2.0.2"
 tokio = { workspace = true }
-tokio_with_wasm = { version = "0.8.2", default-features = false, features = ["sync", "macros", "rt", "time"] }
+tokio_with_wasm = { version = "0.8.2", default-features = false, features = [
+    "sync",
+    "macros",
+    "rt",
+    "time",
+] }
 uuid = { workspace = true, features = ["js"] }
 wasm-bindgen = "0.2.90"
 web-time = "1.1.0"
