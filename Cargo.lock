@@ -1506,27 +1506,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "avail-light-relay"
-version = "0.0.3"
-dependencies = [
- "anyhow",
- "async-trait",
- "clap",
- "confy 0.5.1",
- "hex",
- "libp2p",
- "multihash 0.14.0",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber 0.3.19",
- "warp",
-]
-
-[[package]]
 name = "avail-light-web"
 version = "0.1.0"
 dependencies = [

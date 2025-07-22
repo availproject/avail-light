@@ -8,7 +8,6 @@ members = [
 	"fat",
 	"monitor-client",
 	"p2p-load-test",
-	"relay",
 	"web",
 ]
 default-members = ["client"]
