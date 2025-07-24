@@ -230,7 +230,7 @@ pub struct LibP2PConfig {
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
 	pub secret_key: Option<SecretKey>,
-	/// P2P TCP listener port (default: 37000).
+	/// P2P TCP/UDP listener port (default: 37000).
 	pub port: u16,
 	/// P2P WebRTC listener port (default: 37001).
 	pub webrtc_port: u16,
@@ -301,20 +301,24 @@ impl LibP2PConfig {
 			.with(Protocol::Ws(Cow::Borrowed("avail-light")))
 	}
 
+	pub fn quic_multiaddress(&self) -> Multiaddr {
+		Multiaddr::empty()
+			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+			.with(Protocol::Udp(self.port))
+			.with(Protocol::QuicV1)
+	}
+
+	fn tcp_multiaddress(&self) -> Multiaddr {
+		Multiaddr::empty()
+			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+			.with(Protocol::Tcp(self.port))
+	}
+
 	pub fn multiaddresses(&self) -> Vec<Multiaddr> {
 		if self.ws_transport_enable {
 			return vec![self.ws_multiaddress()];
 		}
-
-		vec![
-			Multiaddr::empty()
-				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Udp(self.port))
-				.with(Protocol::QuicV1),
-			Multiaddr::empty()
-				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Tcp(self.port)),
-		]
+		vec![self.quic_multiaddress(), self.tcp_multiaddress()]
 	}
 
 	pub fn webrtc_multiaddress(&self) -> Multiaddr {
