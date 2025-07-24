@@ -210,7 +210,7 @@ async fn run(
 		"Subscription loop failure triggered shutdown".to_string(),
 		async {
 			if let Err(error) = rpc_subscriptions.run().await {
-				error!(%error, "Subscription loop ended with error");
+				error!(%error, event_type = "RPC_SUBSCRIPTION", "Subscription loop ended with error");
 			};
 		},
 	)));
@@ -347,7 +347,7 @@ async fn run(
 	);
 	spawn_in_span(shutdown.with_cancel(async move {
 		if let Err(error) = updater_run.await {
-			error!("Updater failed: {error:#}");
+			error!(%error, event_type = "AUTO_UPDATER", "Auto Updater failed with error");
 		}
 	}));
 
@@ -743,7 +743,11 @@ impl ClientState {
 								query_stats,
 							} => {
 								if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
-									error!("Could not handle Successful PUT Record event properly: {error}");
+									error!(
+										%error,
+										event_type = "PUT_RECORD_HANDLER",
+										"Failed to process successful PUT record"
+									);
 								};
 							},
 							P2pEvent::PutRecordFailed {
@@ -751,7 +755,11 @@ impl ClientState {
 								query_stats,
 							} => {
 								if let Err(error) = self.handle_failed_put_record(record_key, query_stats) {
-									error!("Could not handle Failed PUT Record event properly: {error}");
+									error!(
+										%error,
+										event_type = "PUT_RECORD_HANDLER",
+										"Failed to process failed PUT record"
+									);
 								};
 							},
 							P2pEvent::DiscoveredPeers { .. } => {},
@@ -893,7 +901,7 @@ pub async fn main() -> Result<()> {
 	)
 	.await
 	{
-		error!("{error:#}");
+		error!(%error, event_type = "LC_START", "Light Client failed to start");
 		return Err(error.wrap_err("Starting Light Client failed"));
 	};
 
