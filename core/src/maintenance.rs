@@ -4,7 +4,7 @@ use std::{
 	time::{Duration, Instant},
 };
 use tokio::sync::{broadcast, mpsc::UnboundedSender, Mutex};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
 	network::p2p::Client as P2pClient,
@@ -38,13 +38,30 @@ pub async fn process_block(
 				block_number,
 				"No P2P client available, skipping p2p maintenance"
 			);
-			event_sender.send(OutputEvent::RecordStats {
+
+			if let Err(error) = event_sender.send(OutputEvent::RecordStats {
 				connected_peers: 0,
 				block_confidence_treshold: maintenance_config.block_confidence_treshold,
 				replication_factor: maintenance_config.replication_factor,
 				query_timeout: maintenance_config.query_timeout.as_secs() as u32,
-			})?;
-			event_sender.send(OutputEvent::CountUps)?;
+			}) {
+				error!(
+					%error,
+					block_number,
+					event_type = "OUTPUT_EVENT_SEND",
+					"Failed to send stats event (no P2P client)"
+				);
+			}
+
+			if let Err(error) = event_sender.send(OutputEvent::CountUps) {
+				error!(
+					%error,
+					block_number,
+					event_type = "OUTPUT_EVENT_SEND",
+					"Failed to send count ups event (no P2P client)"
+				);
+			}
+
 			return Ok(());
 		}
 	};
@@ -57,41 +74,94 @@ pub async fn process_block(
 		}
 	}
 
-	p2p_client
+	if let Err(error) = p2p_client
 		.shrink_kademlia_map()
 		.await
-		.wrap_err("Unable to perform Kademlia map shrink")?;
+		.wrap_err("Unable to perform Kademlia map shrink")
+	{
+		error!(
+			%error,
+			block_number,
+			event_type = "KADEMLIA_MAINTENANCE",
+			operation = "shrink_map",
+			"Failed to shrink Kademlia map"
+		);
+		return Err(error);
+	}
 
-	let map_size = p2p_client
+	let map_size = match p2p_client
 		.get_kademlia_map_size()
 		.await
-		.wrap_err("Unable to get Kademlia map size")?;
+		.wrap_err("Unable to get Kademlia map size")
+	{
+		Ok(size) => size,
+		Err(error) => {
+			error!(
+				%error,
+				block_number,
+				event_type = "KADEMLIA_MAINTENANCE",
+				operation = "get_map_size",
+				"Failed to get Kademlia map size"
+			);
+			return Err(error);
+		},
+	};
 
-	let (peers_num, pub_peers_num) = p2p_client.count_dht_entries().await?;
+	let (peers_num, pub_peers_num) = p2p_client.count_dht_entries().await.map_err(|error| {
+		error!(%error, block_number, event_type = "DHT_MAINTENANCE", "Failed to count DHT entries");
+		error
+	})?;
 	info!("Number of peers in the routing table: {peers_num}. Number of peers with public IPs: {pub_peers_num}.");
 
-	let connected_peers = p2p_client.list_connected_peers().await?;
-	debug!("Connected peers: {:?}", connected_peers);
+	let peers = p2p_client.list_connected_peers().await.map_err(|error| {
+		error!(%error, event_type = "P2P_PEER_LIST", block_number, "Failed to list connected peers");
+		error
+	})?;
+	debug!("Connected peers: {peers:?}");
 
 	// Reconfigure Kademlia mode if needed
 	if maintenance_config.automatic_server_mode {
-		p2p_client
+		if let Err(error) = p2p_client
 			.reconfigure_kademlia_mode(
 				maintenance_config.total_memory_gb_threshold,
 				maintenance_config.num_cpus_threshold,
 			)
 			.await
-			.wrap_err("Unable to reconfigure kademlia mode")?;
+			.wrap_err("Unable to reconfigure kademlia mode")
+		{
+			error!(
+				%error,
+				block_number,
+				event_type = "KADEMLIA_MAINTENANCE",
+				operation = "reconfigure_mode",
+				"Failed to reconfigure Kademlia mode"
+			);
+			return Err(error);
+		}
 	}
 
-	event_sender.send(OutputEvent::RecordStats {
+	if let Err(error) = event_sender.send(OutputEvent::RecordStats {
 		connected_peers: peers_num,
 		block_confidence_treshold: maintenance_config.block_confidence_treshold,
 		replication_factor: maintenance_config.replication_factor,
 		query_timeout: maintenance_config.query_timeout.as_secs() as u32,
-	})?;
+	}) {
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send stats event"
+		);
+	}
 
-	event_sender.send(OutputEvent::CountUps)?;
+	if let Err(error) = event_sender.send(OutputEvent::CountUps) {
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send Count Ups event"
+		);
+	}
 
 	info!(block_number, map_size, "Maintenance completed");
 	Ok(())
@@ -119,7 +189,11 @@ pub async fn run(
 				let message = "Avail Light Client maintenance restart...".to_string();
 				info!("{message}");
 				if let Err(error) = shutdown.trigger_shutdown(message) {
-					error!("{error:#}");
+					error!(
+						%error,
+						event_type = "MAINTENANCE_SHUTDOWN",
+						"Failed to trigger maintenance shutdown"
+					);
 				}
 				return;
 			}
@@ -135,11 +209,22 @@ pub async fn run(
 				)
 				.await
 			},
-			Err(error) => Err(error.into()),
+			Err(error) => {
+				error!(
+					%error,
+					event_type = "BLOCK_RECEIVE",
+					"Failed to receive block for maintenance"
+				);
+				Err(error.into())
+			},
 		};
 
 		if let Err(error) = result {
-			warn!("Maintenance error: {error:#}");
+			error!(
+				%error,
+				event_type = "MAINTENANCE_PROCESSING",
+				"Block maintenance processing failed"
+			);
 		}
 	}
 }
