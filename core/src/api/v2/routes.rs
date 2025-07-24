@@ -2,7 +2,7 @@ use super::{handlers, transactions};
 use crate::{
 	api::{
 		configuration::SharedConfig,
-		server::log_internal_server_error,
+		server::log_internal_server_error_v2,
 		types::{DataQuery, WsClients},
 	},
 	data::Database,
@@ -60,7 +60,7 @@ pub fn block_route(
 		.and(warp::any().map(move || config.clone()))
 		.and(with_db(db))
 		.then(handlers::block)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v2)
 }
 
 pub fn block_header_route(
@@ -72,7 +72,7 @@ pub fn block_header_route(
 		.and(warp::any().map(move || config.clone()))
 		.and(with_db(db))
 		.then(handlers::block_header)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v2)
 }
 
 pub fn block_data_route(
@@ -85,7 +85,7 @@ pub fn block_data_route(
 		.and(warp::any().map(move || config.clone()))
 		.and(with_db(db))
 		.then(handlers::block_data)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v2)
 }
 
 pub fn submit_route(
@@ -96,7 +96,7 @@ pub fn submit_route(
 		.and_then(move || optionally(submitter.clone()))
 		.and(warp::body::json())
 		.then(handlers::submit)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v2)
 }
 
 pub fn subscriptions_route(
