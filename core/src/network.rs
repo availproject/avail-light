@@ -388,8 +388,8 @@ impl Network {
 
 	pub fn bootstrap_multiaddr(&self) -> Multiaddr {
 		let multiaddr = match self {
-			Network::Local => "/ip4/127.0.0.1/tcp/39000",
-			Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
+			Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
+			Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/udp/37000/quic-v1",
 			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
 			Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
 		};

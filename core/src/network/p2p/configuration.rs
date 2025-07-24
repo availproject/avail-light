@@ -308,9 +308,9 @@ impl LibP2PConfig {
 				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
 				.with(Protocol::Udp(self.port))
 				.with(Protocol::QuicV1),
-			Multiaddr::empty()
-				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Tcp(self.port)),
+			// Multiaddr::empty()
+			// 	.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+			// 	.with(Protocol::Tcp(self.port)),
 		]
 	}
 
