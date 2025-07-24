@@ -32,13 +32,13 @@ pub async fn connect(
 	let receiver_stream = UnboundedReceiverStream::new(receiver);
 
 	if let Err(error) = clients.set_sender(&subscription_id, sender.clone()).await {
-		error!("Cannot set sender: {error}");
+		error!(%error, event_type = "WS_CONNECT", api_version = "v2","Cannot set sender");
 		return;
 	};
 
 	spawn_in_span(receiver_stream.forward(web_socket_sender).map(|result| {
 		if let Err(error) = result {
-			error!("Error sending web socket message: {error}");
+		    error!(%error, event_type = "WS_CONNECT", api_version = "v2", "Error sending web socket message");
 		}
 	}));
 
@@ -55,7 +55,7 @@ pub async fn connect(
 	while let Some(result) = web_socket_receiver.next().await {
 		let message = match result {
 			Err(error) => {
-				error!("Error receiving client message: {error}");
+				error!(%error, event_type = "WS_CONNECT", api_version = "v2", "Error receiving client message");
 				continue;
 			},
 			Ok(message) if !message.is_text() => continue,
@@ -69,7 +69,7 @@ pub async fn connect(
 				Ok(response) => send(sender.clone(), response),
 				Err(error) => {
 					if let Some(cause) = error.cause.as_ref() {
-						error!("Failed to handle request: {cause:#}");
+						error!(%cause, event_type = "WS_CONNECT", api_version = "v2", "Failed to handle request");
 					};
 					send::<WsError>(sender.clone(), error.into())
 				},

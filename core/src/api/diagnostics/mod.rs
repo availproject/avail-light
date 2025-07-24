@@ -7,7 +7,7 @@ use p2p::{dial_external_peer, get_peer_info, get_peer_multiaddr};
 use crate::{
 	api::{
 		diagnostics::p2p::get_dht_metric,
-		server::{handle_rejection, log_internal_server_error},
+		server::{handle_rejection, log_internal_server_error_v1},
 	},
 	data::Database,
 	network::p2p::Client,
@@ -23,7 +23,7 @@ fn p2p_local_info_route(
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.then(get_peer_info)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v1)
 }
 
 fn p2p_peers_dial_route(
@@ -34,7 +34,7 @@ fn p2p_peers_dial_route(
 		.and(warp::any().map(move || p2p_client.clone()))
 		.and(warp::body::json())
 		.then(dial_external_peer)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v1)
 }
 
 fn p2p_peer_multiaddr_route(
@@ -44,7 +44,7 @@ fn p2p_peer_multiaddr_route(
 		.and(warp::get())
 		.and(warp::any().map(move || p2p_client.clone()))
 		.then(get_peer_multiaddr)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v1)
 }
 
 fn p2p_dht_metrics_route(
@@ -54,7 +54,7 @@ fn p2p_dht_metrics_route(
 		.and(warp::get())
 		.and(warp::any().map(move || db.clone()))
 		.then(get_dht_metric)
-		.map(log_internal_server_error)
+		.map(log_internal_server_error_v1)
 }
 
 #[allow(clippy::too_many_arguments)]
