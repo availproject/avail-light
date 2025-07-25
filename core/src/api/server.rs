@@ -101,7 +101,10 @@ pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection>
 	Err(error)
 }
 
-pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {
+fn log_server_error_with_version(
+	result: Result<impl Reply, Error>,
+	api_version: &str,
+) -> Result<impl Reply, Error> {
 	if let Err(Error {
 		error_code: ErrorCode::InternalServerError,
 		cause: Some(error),
@@ -109,7 +112,24 @@ pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<im
 		..
 	}) = result.as_ref()
 	{
-		error!("{message}: {error:#}");
+		error!(
+			%error,
+			event_type = "API_INTERNAL_ERROR",
+			api_version = api_version,
+			"{message}"
+		);
 	}
 	result
+}
+
+pub fn log_internal_server_error_v1(
+	result: Result<impl Reply, Error>,
+) -> Result<impl Reply, Error> {
+	log_server_error_with_version(result, "v1")
+}
+
+pub fn log_internal_server_error_v2(
+	result: Result<impl Reply, Error>,
+) -> Result<impl Reply, Error> {
+	log_server_error_with_version(result, "v2")
 }
