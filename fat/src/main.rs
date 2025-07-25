@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
 	let db = DB::open(&config.avail_path)?;
 
 	if let Err(error) = run(config, db, shutdown.clone()).await {
-		error!("{error:#}");
+		error!(%error, event_type = "FAT_START", "Fat Client failed to start");
 		return Err(error.wrap_err("Starting Fat Client failed"));
 	};
 
@@ -414,7 +414,11 @@ impl FatState {
 							query_stats,
 						} => {
 							if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
-								error!("Could not handle Successful PUT Record event properly: {error}");
+								error!(
+									%error,
+									event_type = "PUT_RECORD_HANDLER",
+									"Failed to process successful PUT record"
+								);
 							};
 						},
 						P2pEvent::PutRecordFailed {
@@ -422,7 +426,11 @@ impl FatState {
 							query_stats,
 						} => {
 							if let Err(error) = self.handle_failed_put_record(record_key, query_stats) {
-								error!("Could not handle Failed PUT Record event properly: {error}");
+								error!(
+									%error,
+									event_type = "PUT_RECORD_HANDLER",
+									"Failed to process failed PUT record"
+								);
 							};
 						},
 						// KadModeChange Event doesn't need to be handled for Fat Clients
@@ -493,15 +501,15 @@ mod maintenance {
 			match block_receiver.recv().await.map_err(Report::from) {
 				Ok(_) => {
 					if let Err(error) = event_sender.send(OutputEvent::CountUps) {
+						error!(%error, event_type = "MAINTENANCE_EVENT", "Failed to send CountUps maintenance event");
 						let error_msg = format!("Failed to send CountUps event: {error:#}");
-						error!("{error_msg}");
 						_ = shutdown.trigger_shutdown(error_msg);
 						break;
 					}
 				},
 				Err(error) => {
+					error!(%error, event_type = "MAINTENANCE_EVENT", "Error while trying to receive block");
 					let error_msg = format!("Error receiving block: {error:#}");
-					error!("{error_msg}");
 					_ = shutdown.trigger_shutdown(error_msg);
 					break;
 				},
