@@ -271,7 +271,7 @@ pub fn restart(current_exe: PathBuf) {
 		let error = std::process::Command::new(current_exe)
 			.args(std::env::args().skip(1))
 			.exec();
-		error!("Restarting light client failed: {error}");
+		error!(%error, "Restarting light client failed");
 		std::process::exit(1);
 	}
 
