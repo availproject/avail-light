@@ -153,7 +153,11 @@ async fn process_block(
 			};
 
 			if extension.dimensions.cols().get() <= 2 {
-				error!(block_number, "More than 2 columns are required");
+				error!(
+					block_number,
+					event_type = "BLOCK_VALIDATION",
+					"Insufficient columns: more than 2 columns required"
+				);
 				return Ok(());
 			}
 			let target_grid_dimensions = block_verified
@@ -184,7 +188,12 @@ async fn process_block(
 	};
 
 	if required > verified {
-		error!(block_number, "Failed to fetch {} cells", unverified);
+		error!(
+			block_number,
+			unverified_cells = unverified,
+			event_type = "CELL_FETCH_INSUFFICIENT",
+			"Failed to fetch sufficient cells for block verification"
+		);
 		return Ok(());
 	}
 
@@ -195,7 +204,12 @@ async fn process_block(
 	block_verified.confidence = confidence;
 
 	if let Err(error) = block_verified_sender.send(block_verified) {
-		error!("Cannot send block verified message: {error}");
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_VERIFIED_BLOCK",
+			"Failed to send block verified message"
+		);
 	}
 
 	Ok(())
@@ -236,7 +250,13 @@ pub async fn run(
 		let (header, header_hash) = match client.get_header_by_block_number(block_number).await {
 			Ok(value) => value,
 			Err(error) => {
-				error!(block_number, "Cannot process block: {error:#}");
+				error!(
+					%error,
+					block_number,
+					event_type = "BLOCK_PROCESSING",
+					component = "sync_client",
+					"Block processing failed"
+				);
 				continue;
 			},
 		};
