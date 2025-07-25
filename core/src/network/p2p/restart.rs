@@ -207,7 +207,7 @@ async fn perform_restart(
 			*current_shutdown = new_shutdown;
 		},
 		Err(error) => {
-			error!("Failed to restart P2P client: {error:#}");
+			error!(%error, "Failed to restart P2P client");
 			// Continue with the next restart attempt
 		},
 	}
