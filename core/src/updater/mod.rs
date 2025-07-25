@@ -252,7 +252,11 @@ pub async fn run(
 						.show_progress(true)
 						.download_to(&mut archive)
 					{
-						error!("Failed to download the light client: {error:#}");
+						error!(
+							%error,
+							event_type = "UPDATER_DOWNLOAD",
+							"Failed to download the light client"
+						);
 					}
 				})
 				.await?;
@@ -276,7 +280,11 @@ pub async fn run(
 
 				let message = "Light client updated, stopping...".to_string();
 				if let Err(error) = shutdown.trigger_shutdown(message) {
-					error!("{error:#}");
+					error!(
+						%error,
+						event_type = "UPDATER_SHUTDOWN",
+						"Failed to trigger shutdown after update"
+					);
 				}
 
 				return Ok(());
@@ -294,13 +302,20 @@ pub async fn run(
 		let releases = match github::get_releases(&client).await {
 			Ok(releases) => releases,
 			Err(error) => {
-				error!("{error:#}");
+				error!(
+					%error,
+					event_type = "UPDATER_GITHUB_API",
+					"Failed to fetch releases from GitHub API"
+				);
 				continue;
 			},
 		};
 
 		let Some(latest_release) = releases.latest_stable() else {
-			error!("No latest release");
+			error!(
+				event_type = "UPDATER_RELEASE_RESOLUTION",
+				"No stable release found"
+			);
 			continue;
 		};
 
