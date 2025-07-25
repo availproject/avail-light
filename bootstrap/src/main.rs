@@ -298,7 +298,7 @@ async fn main() -> Result<()> {
 	)
 	.await
 	{
-		error!("{error:#}");
+		error!(%error, event_type = "BOOT_START","Bootstrap Client failed to start");
 		return Err(error.wrap_err("Starting Bootstrap Client failed"));
 	};
 
