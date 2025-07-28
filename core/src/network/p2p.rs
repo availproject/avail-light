@@ -42,6 +42,7 @@ mod kad_mem_providers;
 mod kad_mem_store;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
+pub mod memory_swarm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod restart;
 
