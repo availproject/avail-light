@@ -10,7 +10,7 @@ use libp2p::{
 	},
 	ping,
 	swarm::SwarmEvent,
-	Multiaddr, PeerId, Swarm,
+	Multiaddr, PeerId, StreamProtocol, Swarm,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -125,106 +125,6 @@ impl TryFrom<RecordKey> for DHTKey {
 }
 
 impl EventLoop {
-	fn identify_handler(&mut self, event: identify::Event) {
-		match event {
-			identify::Event::Received {
-				peer_id,
-				info:
-					Info {
-						listen_addrs,
-						agent_version,
-						protocol_version,
-						protocols,
-						..
-					},
-				connection_id: _,
-			} => {
-				trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
-				// KAD Discovery process
-				if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
-					let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
-						Ok(agent) => agent,
-						Err(e) => {
-							debug!("Error parsing incoming agent version: {e}");
-							return;
-						},
-					};
-
-					if !incoming_peer_agent_version.is_supported() {
-						debug!(
-							"Unsupported release version: {}",
-							incoming_peer_agent_version.release_version
-						);
-						self.swarm
-							.behaviour_mut()
-							.blocked_peers
-							.as_mut()
-							.unwrap()
-							.block_peer(peer_id);
-						return;
-					}
-					let kad_protocol_name = kad.protocol_names()[0].clone();
-
-					// Apply blacklist filtering for the peer if any hits from the filter list
-					let should_block = if protocols.contains(&kad_protocol_name) {
-						let mut block_peer = false;
-						listen_addrs
-							.into_iter()
-							.filter(|addr| {
-								let addr_str = addr.to_string();
-								block_peer = self
-									.event_loop_config
-									.address_filters
-									.iter()
-									.any(|filter| addr_str.contains(filter));
-								!block_peer
-							})
-							.filter(|addr| {
-								self.event_loop_config.is_local_test_mode || is_global_address(addr)
-							})
-							.for_each(|addr| {
-								trace!("Adding peer {addr}/{peer_id} to routing table.");
-								kad.add_address(&peer_id, addr);
-							});
-
-						if block_peer {
-							debug!("Peer {peer_id} flagged for blacklisting.");
-						}
-						block_peer
-					} else {
-						debug!("Incorrect peer Kademlia protocol name. Blacklisting. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}.");
-						true
-					};
-
-					if should_block {
-						self.swarm
-							.behaviour_mut()
-							.blocked_peers
-							.as_mut()
-							.unwrap()
-							.block_peer(peer_id);
-					}
-				}
-			},
-			identify::Event::Sent {
-				peer_id,
-				connection_id: _,
-			} => {
-				trace!("Identity Sent event to: {peer_id:?}");
-			},
-			identify::Event::Pushed { peer_id, .. } => {
-				trace!("Identify Pushed event. PeerId: {peer_id:?}");
-			},
-			identify::Event::Error {
-				peer_id,
-				error,
-				connection_id: _,
-			} => {
-				trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
-			},
-		}
-	}
-
 	#[allow(clippy::too_many_arguments)]
 	pub(crate) fn new(
 		cfg: LibP2PConfig,
@@ -337,6 +237,56 @@ impl EventLoop {
 		for peer in connected_peers {
 			_ = self.swarm.disconnect_peer_id(peer);
 		}
+	}
+
+	fn should_allow_peer(
+		&mut self,
+		_peer_id: PeerId,
+		agent_version: &str,
+		protocols: Vec<StreamProtocol>,
+		listen_addrs: Vec<Multiaddr>,
+		kad_protocol_name: StreamProtocol,
+	) -> Result<Vec<Multiaddr>> {
+		// Parse and validate agent version
+		let incoming_peer_agent_version =
+			AgentVersion::from_str(agent_version).map_err(|e| eyre!(e))?;
+
+		// Check if the release version is supported
+		if !incoming_peer_agent_version.is_supported() {
+			return Err(eyre!(
+				"Unsupported release version: {}",
+				incoming_peer_agent_version.release_version
+			));
+		}
+
+		// Check if peer supports the correct Kademlia protocol
+		if !protocols
+			.iter()
+			.any(|p| p.as_ref() == kad_protocol_name.as_ref())
+		{
+			return Err(eyre!("Incorrect peer Kademlia protocol name."));
+		}
+
+		// Early exit if any address matches the blacklist filters
+		for addr in &listen_addrs {
+			let addr_str = addr.to_string();
+			if self
+				.event_loop_config
+				.address_filters
+				.iter()
+				.any(|filter| addr_str.contains(filter))
+			{
+				return Err(eyre!("Address {addr_str} blacklisted."));
+			}
+		}
+
+		// Filter and collect valid addresses
+		let valid_addrs: Vec<Multiaddr> = listen_addrs
+			.into_iter()
+			.filter(|addr| self.event_loop_config.is_local_test_mode || is_global_address(addr))
+			.collect();
+
+		Ok(valid_addrs)
 	}
 
 	#[tracing::instrument(level = "trace", skip(self))]
@@ -498,7 +448,76 @@ impl EventLoop {
 				}
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Identify(event)) => {
-				self.identify_handler(event);
+				match event {
+					identify::Event::Received {
+						peer_id,
+						info:
+							Info {
+								listen_addrs,
+								agent_version,
+								protocol_version: _,
+								protocols,
+								..
+							},
+						connection_id: _,
+					} => {
+						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						// KAD Discovery process
+						let kad_protocol_name = self
+							.swarm
+							.behaviour_mut()
+							.kademlia
+							.as_ref()
+							.map(|kad| kad.protocol_names()[0].clone());
+
+						if let Some(kad_protocol_name) = kad_protocol_name {
+							match self.should_allow_peer(
+								peer_id,
+								&agent_version,
+								protocols,
+								listen_addrs,
+								kad_protocol_name,
+							) {
+								Ok(addreses) => {
+									if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut()
+									{
+										for addr in &addreses {
+											trace!(
+												"Adding peer {addr}/{peer_id} to routing table."
+											);
+											kad.add_address(&peer_id, addr.clone());
+										}
+									}
+								},
+								Err(e) => {
+									debug!("{e}");
+									self.swarm
+										.behaviour_mut()
+										.blocked_peers
+										.as_mut()
+										.unwrap()
+										.block_peer(peer_id);
+								},
+							}
+						}
+					},
+					identify::Event::Sent {
+						peer_id,
+						connection_id: _,
+					} => {
+						trace!("Identity Sent event to: {peer_id:?}");
+					},
+					identify::Event::Pushed { peer_id, .. } => {
+						trace!("Identify Pushed event. PeerId: {peer_id:?}");
+					},
+					identify::Event::Error {
+						peer_id,
+						error,
+						connection_id: _,
+					} => {
+						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+					},
+				}
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {
