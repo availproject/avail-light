@@ -52,4 +52,7 @@ pub struct CliOpts {
 	#[arg(long, action = ArgAction::SetTrue)]
 	/// Flag that is set when the client is running as a local test mode. [should be only used for testing!]
 	pub local_test_mode: bool,
+	/// List of address patterns to filter out when adding peers to the routing table
+	#[arg(long, value_delimiter = ',')]
+	pub address_blacklist: Option<Vec<String>>,
 }
