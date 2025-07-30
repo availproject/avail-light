@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use avail_rust::H256;
+use avail_rust_client::H256;
 use codec::Encode;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -181,7 +181,7 @@ fn confirm_ancestry(
 mod tests {
 	use super::{check_finality, ValidatorSet};
 	use crate::types::{Commit, GrandpaJustification, Precommit, SignerMessage};
-	use avail_rust::AvailHeader;
+	use avail_rust_client::AvailHeader;
 	use codec::Encode;
 	use hex::FromHex;
 	use serde::{Deserialize, Serialize};

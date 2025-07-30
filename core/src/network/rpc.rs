@@ -1,4 +1,4 @@
-use avail_rust::{AvailHeader, H256};
+use avail_rust_client::{AvailHeader, H256};
 use codec::{Decode, Encode};
 use color_eyre::{eyre::eyre, Result};
 use configuration::RPCConfig;

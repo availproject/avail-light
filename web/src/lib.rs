@@ -8,7 +8,7 @@ use avail_light_core::shutdown::Controller;
 use avail_light_core::types::{Delay, NetworkMode, PeerAddress};
 use avail_light_core::utils::spawn_in_span;
 use avail_light_core::{api, data};
-use avail_rust::SDK;
+use avail_rust_client::SDK;
 use clap::ValueEnum;
 use kate::couscous;
 use libp2p::Multiaddr;

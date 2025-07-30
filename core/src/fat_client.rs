@@ -10,7 +10,7 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
-use avail_rust::{AvailHeader, H256};
+use avail_rust_client::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;
@@ -328,7 +328,7 @@ pub async fn run(
 mod tests {
 	use super::*;
 	use crate::data;
-	use avail_rust::{
+	use avail_rust_client::{
 		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},

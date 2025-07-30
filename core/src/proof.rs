@@ -19,7 +19,7 @@ use tracing::debug;
 use web_time::Instant;
 #[cfg(feature = "multiproof")]
 use {
-	avail_rust::U256,
+	avail_rust_client::U256,
 	tokio::sync::OnceCell,
 	tracing::{info, warn},
 };

@@ -2,7 +2,7 @@
 use crate::network::rpc::OutputEvent;
 use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
-use avail_rust::{
+use avail_rust_client::{
 	avail::runtime_types::bounded_collections::bounded_vec::BoundedVec, AvailHeader, H256,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -12,7 +12,7 @@ use sp_core::{bytes, ed25519};
 use kate_recovery::{commitments, matrix::Dimensions};
 
 #[cfg(not(target_arch = "wasm32"))]
-use avail_rust::{
+use avail_rust_client::{
 	subxt_signer::{
 		bip39::{Language, Mnemonic},
 		SecretString, SecretUri,

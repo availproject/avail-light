@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use avail_rust::{
+use avail_rust_client::{
 	subxt::{backend::legacy::rpc_methods::StorageKey, utils::AccountId32},
 	AvailHeader, H256,
 };

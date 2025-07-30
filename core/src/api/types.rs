@@ -1,5 +1,5 @@
 use avail_core::kate::COMMITMENT_SIZE;
-use avail_rust::{
+use avail_rust_client::{
 	avail::runtime_types::avail_core::{
 		data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension,
 	},
@@ -879,7 +879,7 @@ pub enum WsError {
 mod tests {
 	use std::time::Duration;
 
-	use avail_rust::{
+	use avail_rust_client::{
 		avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup, H256,
 	};
 	use tokio::sync::mpsc;

@@ -2,7 +2,7 @@ use crate::shutdown::Controller;
 use avail_core::{
 	compact::CompactDataLookup, data_lookup::compact::DataLookupItem, AppId, DataLookup,
 };
-use avail_rust::{
+use avail_rust_client::{
 	avail::runtime_types::{
 		avail_core::header::extension::{v3, HeaderExtension},
 		da_control::pallet::Call,

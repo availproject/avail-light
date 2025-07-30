@@ -16,7 +16,7 @@ use avail_core::{
 	kate::{CHUNK_SIZE, COMMITMENT_SIZE, EXTENSION_FACTOR},
 	AppId,
 };
-use avail_rust::{
+use avail_rust_client::{
 	primitives::kate::{MaxRows, Rows},
 	H256,
 };

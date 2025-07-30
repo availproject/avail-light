@@ -9,8 +9,8 @@ use crate::{
 	types::{BlockRange, Mode},
 	utils::calculate_confidence,
 };
-use avail_rust::{
-	avail::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
+use avail_rust_client::{
+	avail_rust_core::avail_generated::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
 	AppUncheckedExtrinsic,
 };
 use base64::{engine::general_purpose, Engine};

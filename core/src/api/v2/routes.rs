@@ -147,7 +147,7 @@ mod tests {
 		types::BlockRange,
 	};
 	use async_trait::async_trait;
-	use avail_rust::{
+	use avail_rust_client::{
 		avail::runtime_types::avail_core::{
 			data_lookup::compact::{CompactDataLookup, DataLookupItem},
 			header::extension::{v3, HeaderExtension},

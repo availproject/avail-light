@@ -33,7 +33,7 @@ use avail_light_core::{
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::account;
+use avail_rust_client::account;
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},

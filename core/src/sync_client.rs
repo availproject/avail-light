@@ -28,7 +28,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use avail_rust::{AvailHeader, H256};
+use avail_rust_client::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::commitments;
@@ -274,7 +274,7 @@ mod tests {
 
 	use super::*;
 	use crate::types;
-	use avail_rust::{
+	use avail_rust_client::{
 		avail::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
 			header::extension::{v3::HeaderExtension, HeaderExtension::V3},
