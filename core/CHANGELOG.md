@@ -2,6 +2,7 @@
 
 ## [1.2.10]
 
+- Re-enable quic, set it as preffered
 - Updated the libp2p version to the latest stable release of 0.56.0
 
 ## [1.2.9](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.9) - 2025-07-18
