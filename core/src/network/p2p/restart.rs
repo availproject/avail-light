@@ -47,6 +47,14 @@ pub async fn init_and_start_p2p_client(
 	// Start the new event loop
 	spawn_in_span(p2p_event_loop.run());
 
+	// Since quic transport is creating separate future on each dial, which holds reference to socked,
+	// we have to wait until its released, to be able to perform a restart
+	let now = tokio::time::Instant::now();
+	let second = Duration::from_secs(1);
+	utils::wait_for_udp_port_free(&libp2p_cfg.quic_multiaddress(), second, 10).await;
+	let elapsed = now.elapsed().as_micros();
+	info!("Waited {elapsed} ms for UDP socket to be free",);
+
 	// Start the TCP and WebRTC listeners
 	p2p_client
 		.start_listening(libp2p_cfg.multiaddresses())

@@ -18,9 +18,12 @@ use color_eyre::{
 	Result,
 };
 use futures::Future;
+use libp2p::{multiaddr::Protocol, Multiaddr};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
+use std::{net::SocketAddr, time::Duration};
 use tokio::task::JoinHandle;
+use tokio::{net::UdpSocket, time::sleep};
 #[cfg(target_arch = "wasm32")]
 use tokio_with_wasm::alias as tokio;
 use tracing::{error, warn, Instrument, Level, Subscriber};
@@ -304,3 +307,32 @@ pub(crate) fn is_flush_cycle(block_number: u32) -> bool {
 }
 
 const METRICS_FLUSH_INTERVAL: u32 = 5;
+
+fn multiaddr_to_udp_socket_addr(addr: &Multiaddr) -> Option<SocketAddr> {
+	let mut protocols = addr.iter();
+
+	match (protocols.next()?, protocols.next()?) {
+		(Protocol::Ip4(ip), Protocol::Udp(port)) => Some(SocketAddr::new(ip.into(), port)),
+		(Protocol::Ip6(ip), Protocol::Udp(port)) => Some(SocketAddr::new(ip.into(), port)),
+		_ => None,
+	}
+}
+
+/// Waits until the UDP port in `Multiaddr` is free or gives up after `max_tries`.
+pub async fn wait_for_udp_port_free(
+	addr: &Multiaddr,
+	retry_delay: Duration,
+	max_tries: usize,
+) -> bool {
+	let Some(addr) = multiaddr_to_udp_socket_addr(addr) else {
+		return false;
+	};
+
+	for _ in 0..max_tries {
+		if UdpSocket::bind(addr).await.is_ok() {
+			return true;
+		}
+		sleep(retry_delay).await;
+	}
+	false
+}
