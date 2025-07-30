@@ -1,10 +1,19 @@
 use async_trait::async_trait;
+use futures::StreamExt;
 use libp2p::{
-	identity,
-	swarm::{NetworkBehaviour, SwarmEvent},
-	Multiaddr, Swarm,
+	core::{
+		muxing::StreamMuxerBox,
+		transport::{Boxed, MemoryTransport},
+		upgrade::Version,
+	},
+	identity::{self, Keypair},
+	multiaddr::Protocol,
+	plaintext,
+	swarm::{dial_opts::DialOpts, NetworkBehaviour, SwarmEvent},
+	yamux, Multiaddr, PeerId, Swarm, Transport,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
+use tokio::time::timeout;
 
 #[async_trait]
 /// Extension trait for libp2p Swarm providing in-memory networking utilities.
@@ -116,4 +125,197 @@ pub trait SwarmTestingExt {
 	/// # Errors
 	/// Returns an error if no suitable listening address can be found or bound.
 	async fn start_listening(&mut self) -> Multiaddr;
+}
+
+/// Default timeout for network operations (connections, events, etc.)
+const DEFAULT_NETWORK_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Default timeout for waiting for swarm events
+const DEFAULT_EVENT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[async_trait::async_trait]
+impl<B> SwarmTestingExt for Swarm<B>
+where
+	B: NetworkBehaviour + Send,
+	<B as NetworkBehaviour>::ToSwarm: Debug,
+{
+	type Behavior = B;
+
+	fn with_memory_transport(
+		behavior_factory: impl FnOnce(identity::Keypair) -> Self::Behavior,
+	) -> Self
+	where
+		Self: Sized,
+	{
+		let keypair = Keypair::generate_ed25519();
+		let peer_id = keypair.public().to_peer_id();
+
+		let transport = Helpers::build_memory_transport(&keypair);
+		let behavior = behavior_factory(keypair);
+		let swarm_config = Helpers::build_swarm_config();
+
+		Swarm::new(transport, behavior, peer_id, swarm_config)
+	}
+
+	async fn connect_to_peer<T>(&mut self, peer_swarm: &mut Swarm<T>)
+	where
+		T: NetworkBehaviour + Send,
+		<T as NetworkBehaviour>::ToSwarm: Debug,
+	{
+		// Collect all external addresses from the other swarm
+		let peer_addresses: Vec<Multiaddr> = peer_swarm.external_addresses().cloned().collect();
+
+		if peer_addresses.is_empty() {
+			panic!("Peer swarm has no external addresses to connect to. Did you call start_listening()?");
+		}
+
+		// Configure dialing options targeting the other peer
+		let dial_opts = DialOpts::peer_id(*peer_swarm.local_peer_id())
+			.addresses(peer_addresses)
+			.condition(libp2p::swarm::dial_opts::PeerCondition::Always)
+			.build();
+
+		// Initiate the connection
+		self.dial(dial_opts)
+			.expect("Failed to initiate dial to peer");
+
+		// Wait for both swarms to establish the connection
+		Helpers::wait_for_bidirectional_connection(self, peer_swarm).await;
+	}
+
+	async fn next_swarm_event(
+		&mut self,
+	) -> SwarmEvent<<Self::Behavior as NetworkBehaviour>::ToSwarm> {
+		timeout(DEFAULT_EVENT_TIMEOUT, self.select_next_some())
+			.await
+			.expect("Timed out waiting for swarm event")
+	}
+
+	async fn next_behavior_event(&mut self) -> <Self::Behavior as NetworkBehaviour>::ToSwarm {
+		loop {
+			let swarm_event = self.next_swarm_event().await;
+			if let Ok(behavior_event) = swarm_event.try_into_behaviour_event() {
+				return behavior_event;
+			}
+			// Continue polling if this wasn't a behavior event
+		}
+	}
+
+	async fn wait_for_swarm_event<ExtractedEvent, Matcher>(
+		&mut self,
+		event_matcher: Matcher,
+	) -> ExtractedEvent
+	where
+		Matcher:
+			Fn(SwarmEvent<<Self::Behavior as NetworkBehaviour>::ToSwarm>) -> Option<ExtractedEvent>,
+		Matcher: Send,
+	{
+		loop {
+			let event = self.next_swarm_event().await;
+			if let Some(extracted) = event_matcher(event) {
+				return extracted;
+			}
+		}
+	}
+
+	async fn wait_for_behavior_event<ExtractedEvent, Matcher>(
+		&mut self,
+		event_matcher: Matcher,
+	) -> ExtractedEvent
+	where
+		Matcher: Fn(<Self::Behavior as NetworkBehaviour>::ToSwarm) -> Option<ExtractedEvent>,
+		Matcher: Send,
+	{
+		loop {
+			let event = self.next_behavior_event().await;
+			if let Some(extracted) = event_matcher(event) {
+				return extracted;
+			}
+		}
+	}
+
+	async fn start_listening(&mut self) -> Multiaddr {
+		// Start listening on a random memory port
+		let memory_address = Protocol::Memory(0).into();
+		let listener_id = self
+			.listen_on(memory_address)
+			.expect("Failed to start listening on memory transport");
+
+		// Wait for the listening address to be established
+		let listening_address = self
+			.wait_for_swarm_event(|event| match event {
+				SwarmEvent::NewListenAddr {
+					listener_id: id,
+					address,
+				} if id == listener_id => Some(address),
+				SwarmEvent::ListenerError {
+					listener_id: id,
+					error,
+				} if id == listener_id => panic!("Listener error: {error}"),
+				_ => None,
+			})
+			.await;
+
+		// Register the address as externally reachable
+		self.add_external_address(listening_address.clone());
+
+		listening_address
+	}
+}
+
+/// Helper utilities for swarm testing operations
+struct Helpers;
+
+impl Helpers {
+	/// Builds the memory transport stack with all necessary upgrades
+	fn build_memory_transport(keypair: &Keypair) -> Boxed<(PeerId, StreamMuxerBox)> {
+		MemoryTransport::default()
+			.upgrade(Version::V1)
+			.authenticate(plaintext::Config::new(keypair))
+			.multiplex(yamux::Config::default())
+			.timeout(DEFAULT_NETWORK_TIMEOUT)
+			.boxed()
+	}
+
+	/// Builds the swarm configuration with appropriate timeouts
+	fn build_swarm_config() -> libp2p::swarm::Config {
+		libp2p::swarm::Config::with_tokio_executor()
+			.with_idle_connection_timeout(DEFAULT_NETWORK_TIMEOUT)
+	}
+
+	/// Waits for both swarms to establish a bidirectional connection
+	async fn wait_for_bidirectional_connection<B, T>(dialer: &mut Swarm<B>, listener: &mut Swarm<T>)
+	where
+		B: NetworkBehaviour + Send,
+		<B as NetworkBehaviour>::ToSwarm: Debug,
+		T: NetworkBehaviour + Send,
+		<T as NetworkBehaviour>::ToSwarm: Debug,
+	{
+		let wait_for_dialer_connection = async {
+			dialer
+				.wait_for_swarm_event(|event| match event {
+					SwarmEvent::ConnectionEstablished { .. } => Some(()),
+					SwarmEvent::OutgoingConnectionError { error, .. } => {
+						panic!("Failed to establish outgoing connection: {error}")
+					},
+					_ => None,
+				})
+				.await
+		};
+
+		let wait_for_listener_connection = async {
+			listener
+				.wait_for_swarm_event(|event| match event {
+					SwarmEvent::ConnectionEstablished { .. } => Some(()),
+					SwarmEvent::IncomingConnectionError { error, .. } => {
+						panic!("Failed to accept incoming connection: {error}")
+					},
+					_ => None,
+				})
+				.await
+		};
+
+		// Wait for both sides to confirm connection establishment
+		tokio::join!(wait_for_dialer_connection, wait_for_listener_connection);
+	}
 }
