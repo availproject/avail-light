@@ -42,6 +42,8 @@ struct EventLoopConfig {
 	is_fat_client: bool,
 	kad_record_ttl: TimeToLive,
 	is_local_test_mode: bool,
+	// List of address patterns to filter out
+	address_filters: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -143,6 +145,7 @@ impl EventLoop {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 				is_local_test_mode: cfg.local_test_mode,
+				address_filters: cfg.address_filters,
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -422,31 +425,58 @@ impl EventLoop {
 									},
 								};
 
+							let mut should_block = false;
+
 							if !incoming_peer_agent_version.is_supported() {
 								debug!(
 									"Unsupported release version: {}",
 									incoming_peer_agent_version.release_version
 								);
-								kad.remove_peer(&peer_id);
+								should_block = true;
 								return;
 							}
+							let kad_protocol_name = kad.protocol_names()[0].clone();
 
-							let protocol = kad.protocol_names()[0].clone();
-							if protocols.contains(&protocol) {
+							// Apply blacklist filtering
+							should_block = if protocols.contains(&kad_protocol_name) {
+								let mut block_peer = false;
 								listen_addrs
 									.into_iter()
+									.filter(|addr| {
+										let addr_str = addr.to_string();
+										block_peer = self
+											.event_loop_config
+											.address_filters
+											.iter()
+											.any(|filter| addr_str.contains(filter));
+										!block_peer
+									})
 									.filter(|addr| {
 										self.event_loop_config.is_local_test_mode
 											|| is_global_address(addr)
 									})
 									.for_each(|addr| {
-										debug!("Adding peer {peer_id} to routing table.");
+										trace!("Adding peer {addr}/{peer_id} to routing table.");
 										kad.add_address(&peer_id, addr);
 									});
+
+								if block_peer {
+									debug!("Peer {peer_id} flagged for blacklisting.");
+								}
+								block_peer
 							} else {
-								debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
-								kad.remove_peer(&peer_id);
+								debug!("Incorrect peer Kademlia protocol name. Blacklisting. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}.");
+								true
 							};
+
+							if should_block {
+								self.swarm
+									.behaviour_mut()
+									.blocked_peers
+									.as_mut()
+									.unwrap()
+									.block_peer(peer_id);
+							}
 						}
 					},
 					identify::Event::Sent {
