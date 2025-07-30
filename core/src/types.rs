@@ -3,7 +3,6 @@ use crate::network::rpc::OutputEvent;
 use crate::utils::{blake2_256, extract_app_lookup, extract_kate};
 use avail_core::DataLookup;
 use avail_rust_client::{AvailHeader, H256};
-use bounded_collections::bounded_vec::BoundedVec;
 use sp_core::{bytes, ed25519};
 
 use kate_recovery::{commitments, matrix::Dimensions};
@@ -615,13 +614,6 @@ impl Encode for Uuid {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(try_from = "String", into = "String")]
 pub struct Base64(pub Vec<u8>);
-
-// TODO
-/* impl From<Base64> for BoundedVec<u8> {
-	fn from(val: Base64) -> Self {
-		BoundedVec(val.0)
-	}
-} */
 
 impl From<Base64> for Vec<u8> {
 	fn from(val: Base64) -> Self {

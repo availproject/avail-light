@@ -42,23 +42,29 @@ impl<T: Database + Clone> SubscriptionLoop<T> {
 		rpc_client: Client<T>,
 		event_sender: Sender<OutputEvent>,
 	) -> Result<Self> {
+		dbg!("X");
 		// get the Hash of the Finalized Head [with Retries]
 		let last_finalized_block_hash = rpc_client.get_finalized_head_hash().await?;
+		dbg!("X1");
 
 		// current Set of Authorities, implicitly trusted, fetched from grandpa runtime [with Retries].
 		let validator_set = rpc_client
 			.get_validator_set_by_hash(last_finalized_block_hash)
 			.await?;
+		dbg!("X2");
 		// fetch the set ID from storage at current height [Offline Client; no need for Retries]
 		let set_id = rpc_client
 			.fetch_set_id_at(last_finalized_block_hash)
 			.await?;
+		dbg!("X3");
 		debug!("Current set: {:?}", (validator_set.clone(), set_id));
 
 		// get last (implicitly trusted) Finalized Block Number [with Retries]
 		let last_finalized_block_header = rpc_client
 			.get_header_by_hash(last_finalized_block_hash)
 			.await?;
+
+		dbg!("X4");
 
 		Ok(Self {
 			rpc_client,

@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 
 #[derive(Parser)]
 struct CommandArgs {
-	#[arg(short, long, value_name = "URL", default_value_t = String::from("ws://localhost:9944"))]
+	#[arg(short, long, value_name = "URL", default_value_t = String::from("http://127.0.0.1:9944"))]
 	url: String,
 	#[arg(short, long, value_name = "path", default_value_t = String::from("avail_path"))]
 	avail_path: String,
@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
 	let shutdown = Controller::new();
 	let (rpc_sender, _) = broadcast::channel(1000);
 	let (rpc_client, subscriptions) = rpc::init(db, "DEV", &rpc_cfg, shutdown, rpc_sender).await?;
+	println!("Init DOne");
 	tokio::spawn(subscriptions.run());
 
 	let mut correct: bool = true;
@@ -100,6 +101,7 @@ async fn main() -> Result<()> {
 	let res = rpc_client.get_current_set_id_by_block_number(number).await;
 	res_helper(&res, &mut correct);
 
+	dbg!("ABA");
 	print!("Testing get_kate_proof for cell 0... ");
 	let res = rpc_client
 		.request_kate_proof(
@@ -110,6 +112,7 @@ async fn main() -> Result<()> {
 		)
 		.await;
 	res_helper(&res, &mut correct);
+	dbg!("ADA");
 
 	print!("Testing get_kate_row for row 0... ");
 	let res = rpc_client

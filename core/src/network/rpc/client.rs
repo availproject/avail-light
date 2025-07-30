@@ -4,13 +4,15 @@ use avail_rust_client::{
 	clients::online_client::OnlineClientT,
 	ext::{
 		subxt_core::{
-			storage::address::StaticAddress, storage::address::StaticStorageKey, utils::Yes,
+			storage::address::{StaticAddress, StaticStorageKey},
+			utils::Yes,
 		},
 		subxt_rpcs::{
 			methods::legacy::{RuntimeVersion, StorageKey},
 			rpc_params,
 		},
 	},
+	subxt_core::dynamic,
 	AccountId, AvailHeader, Client as AvailRustClient, Keypair, Options, H256, U256,
 };
 
@@ -167,6 +169,8 @@ impl<D: Database> Client<D> {
 		shutdown: Controller<String>,
 		event_sender: Sender<RpcEvent>,
 	) -> Result<Self> {
+		dbg!("a");
+
 		let (client, node) = Self::initialize_connection(
 			&nodes,
 			expected_genesis_hash,
@@ -175,6 +179,7 @@ impl<D: Database> Client<D> {
 			event_sender.clone(),
 		)
 		.await?;
+		dbg!("b");
 
 		let client = Self {
 			subxt_client: Arc::new(RwLock::new(client)),
@@ -211,6 +216,7 @@ impl<D: Database> Client<D> {
 			}))
 			.await;
 
+		dbg!("Down");
 		match connection_result {
 			Ok(Ok(ConnectionAttempt { client, node, .. })) => Ok((client, node)),
 			Ok(Err(err)) => Err(Report::msg(RetryError::ConnectionFailed(err))),
@@ -226,18 +232,21 @@ impl<D: Database> Client<D> {
 	) -> Result<ConnectionAttempt<()>> {
 		// Not passing any RPC function calls since this is a first try of connecting RPC nodes
 		match Self::try_connect_and_execute(nodes, expected_genesis_hash, |_| {
+			println!("Lol");
 			futures::future::ok(())
 		})
 		.await
 		{
 			Ok(attempt) => {
+				dbg!("OK1");
 				// On success, log and send event
 				info!(
 					"Successfully initialized connection to the RPC host: {}",
 					attempt.node.host
 				);
 				// Output event, signaling first ever initialized connection to the RPC host
-				event_sender.send(RpcEvent::InitialConnection(attempt.node.host.clone()))?;
+				event_sender.send(RpcEvent::InitialConnection("ws://127.0.0.1:9944".into()));
+				dbg!("OK2");
 				Ok(attempt)
 			},
 			Err(err) => Err(err),
@@ -259,6 +268,7 @@ impl<D: Database> Client<D> {
 			return Err(Report::msg(ClientCreationError::NoNodesAvailable));
 		}
 
+		dbg!("c");
 		let mut last_error = None;
 		for node in nodes {
 			match Self::try_node_connection_and_exec(node, expected_genesis_hash, f).await {
@@ -269,7 +279,7 @@ impl<D: Database> Client<D> {
 				},
 			}
 		}
-
+		dbg!("Something went wrong with connection.");
 		Err(Report::msg(ClientCreationError::AllNodesFailed {
 			last_error: last_error.unwrap_or_else(|| eyre!("No error recorded")),
 		}))
@@ -288,6 +298,7 @@ impl<D: Database> Client<D> {
 	{
 		match Self::create_rpc_client(&node.host, expected_genesis_hash).await {
 			Ok((client, node)) => {
+				dbg!("D1");
 				// Execute the provided  RPC function call with the created client
 				let result = f(client.clone()).await.map_err(|e| {
 					Report::msg(ClientCreationError::RpcCallFailed {
@@ -296,6 +307,7 @@ impl<D: Database> Client<D> {
 					})
 				})?;
 
+				dbg!("D2");
 				Ok(ConnectionAttempt {
 					client,
 					node,
@@ -314,15 +326,17 @@ impl<D: Database> Client<D> {
 		host: &str,
 		expected_genesis_hash: &str,
 	) -> Result<(AvailRustClient, Node)> {
-		let client = AvailRustClient::new(host)
-			.await
-			.map_err(|e| Report::msg(e.to_string()))?;
+		dbg!("c1");
+		let client = AvailRustClient::new(host).await.unwrap();
+		dbg!("c2");
 
 		// Verify genesis hash
 		let genesis_hash = client.online_client().genesis_hash();
+		dbg!("c3");
 		info!("Genesis hash for {}: {:?}", host, genesis_hash);
 
 		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
+		dbg!("c4");
 
 		if !expected_hash.matches(&genesis_hash) {
 			return Err(Report::msg(ClientCreationError::GenesisHashMismatch {
@@ -331,6 +345,7 @@ impl<D: Database> Client<D> {
 				found: format!("{:?}", genesis_hash),
 			}));
 		}
+		dbg!("c5");
 
 		// Fetch system and runtime information
 		let system_version =
@@ -338,10 +353,12 @@ impl<D: Database> Client<D> {
 				Report::msg(ClientCreationError::SystemVersionError(eyre!("{:?}", e)))
 			})?;
 
+		dbg!("c6");
 		let spec_version = client.online_client().spec_version();
 
 		// Create Node variant
 		let node = Node::new(host.to_string(), system_version, spec_version, genesis_hash);
+		dbg!("c7");
 
 		Ok((client, node))
 	}
@@ -636,6 +653,7 @@ impl<D: Database> Client<D> {
 			Ok(result)
 		}
 
+		dbg!(1);
 		let cells: Cells = positions
 			.iter()
 			.map(|p| avail_rust_client::avail_rust_core::rpc::kate::Cell {
@@ -646,23 +664,26 @@ impl<D: Database> Client<D> {
 			.try_into()
 			.map_err(|_| eyre!("Failed to convert to cells"))?;
 
+		dbg!(2);
 		let proofs: Vec<(GRawScalar, GProof)> = self
 			.with_retries(|client| {
 				let cells = cells.clone();
 				async move {
-					client
+					Ok(client
 						.rpc_api()
 						.kate_query_proof(cells.to_vec(), Some(block_hash))
 						.await
-						.map_err(Into::into)
+						.unwrap())
 				}
 			})
 			.await?;
 
+		dbg!(3);
 		let contents = proofs
 			.into_iter()
 			.map(|(scalar, proof)| concat_content(scalar, proof).expect("Contents concated"));
 
+		dbg!(4);
 		Ok(positions
 			.iter()
 			.zip(contents)
@@ -703,13 +724,14 @@ impl<D: Database> Client<D> {
 		let res = self
 			.with_retries(|client| {
 				let set_id_key: StaticAddress<(), u64, Yes, Yes, ()> =
-					StaticAddress::new_static("Grandpa", "CurrentSetId", (), Default::default());
+					StaticAddress::new_static("Grandpa", "CurrentSetId", (), Default::default())
+						.unvalidated();
 				async move {
-					client
+					Ok(client
 						.storage_client()
 						.fetch(&set_id_key, block_hash)
 						.await
-						.map_err(Into::into)
+						.unwrap())
 				}
 			})
 			.await?
@@ -734,7 +756,8 @@ impl<D: Database> Client<D> {
 		let res = self
 			.with_retries(|client| {
 				let validators_key: StaticAddress<(), Vec<AccountId>, Yes, Yes, ()> =
-					StaticAddress::new_static("Session", "Validators", (), Default::default());
+					StaticAddress::new_static("Session", "Validators", (), Default::default())
+						.unvalidated();
 				async move {
 					client
 						.storage_client()
@@ -864,6 +887,7 @@ impl<D: Database> Client<D> {
 					),
 					Default::default(),
 				);
+				let session_key_key_owner = session_key_key_owner.unvalidated();
 				async move {
 					client
 						.storage_client()

@@ -214,6 +214,7 @@ pub async fn init<T: Database + Clone>(
 		event_sender.clone(),
 	)
 	.await?;
+	println!("Init2");
 	let subscriptions = SubscriptionLoop::new(db, rpc_client.clone(), event_sender.clone()).await?;
 
 	Ok((rpc_client, subscriptions))

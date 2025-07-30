@@ -622,6 +622,7 @@ impl ClientState {
 		db: impl Database + Clone,
 	) {
 		self.metrics.count(MetricCounter::Starts);
+		dbg!("Handle Loop Started");
 		loop {
 			select! {
 					Some(p2p_event) = p2p_receiver.recv() => {
