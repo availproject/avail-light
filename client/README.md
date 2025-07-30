@@ -138,6 +138,7 @@ avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold rac
 - `--seed`: Seed string for libp2p keypair generation
 - `--secret-key`: Ed25519 private key for libp2p keypair generation
 - `--operator-address <ADDRESS>`: Set the address of the Light Client operator
+- `--address-blacklist <ADDRESS>`: Set swarm blacklist filters for multi-addresses; works with partial string matching
 
 ## Flags
 
