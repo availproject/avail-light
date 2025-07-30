@@ -43,7 +43,7 @@ struct EventLoopConfig {
 	kad_record_ttl: TimeToLive,
 	is_local_test_mode: bool,
 	// List of address patterns to filter out
-	address_filters: Vec<String>,
+	address_blacklist: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -145,7 +145,7 @@ impl EventLoop {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 				is_local_test_mode: cfg.local_test_mode,
-				address_filters: cfg.address_filters,
+				address_blacklist: cfg.address_blacklist,
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -272,7 +272,7 @@ impl EventLoop {
 			let addr_str = addr.to_string();
 			if self
 				.event_loop_config
-				.address_filters
+				.address_blacklist
 				.iter()
 				.any(|filter| addr_str.contains(filter))
 			{

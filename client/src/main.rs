@@ -541,6 +541,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.local_test_mode = true;
 	}
 
+	if let Some(address_filters) = &opts.address_blacklist {
+		cfg.libp2p.address_filters = address_filters.clone();
+	}
+
 	Ok(cfg)
 }
 

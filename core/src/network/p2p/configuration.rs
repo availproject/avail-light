@@ -265,7 +265,7 @@ pub struct LibP2PConfig {
 	/// Local test mode flag, currently only disables the private address filtering for KAD discovery and allows manual address confirmation of local addresses.
 	pub local_test_mode: bool,
 	/// List of address patterns to filter out when adding peers to the routing table
-	pub address_filters: Vec<String>,
+	pub address_blacklist: Vec<String>,
 }
 
 impl Default for LibP2PConfig {
@@ -288,7 +288,7 @@ impl Default for LibP2PConfig {
 			dht_parallelization_limit: 20,
 			ping_interval: Duration::from_secs(60),
 			local_test_mode: false,
-			address_filters: vec![],
+			address_blacklist: vec![],
 		}
 	}
 }
