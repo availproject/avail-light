@@ -241,7 +241,7 @@ impl EventLoop {
 
 	fn should_allow_peer(
 		&mut self,
-		_peer_id: PeerId,
+		peer_id: PeerId,
 		agent_version: &str,
 		protocols: Vec<StreamProtocol>,
 		listen_addrs: Vec<Multiaddr>,
@@ -276,7 +276,7 @@ impl EventLoop {
 				.iter()
 				.any(|filter| addr_str.contains(filter))
 			{
-				return Err(eyre!("Address {addr_str} blacklisted."));
+				return Err(eyre!("Peer {addr_str}/p2p/{peer_id} blacklisted."));
 			}
 		}
 
