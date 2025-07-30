@@ -125,6 +125,106 @@ impl TryFrom<RecordKey> for DHTKey {
 }
 
 impl EventLoop {
+	fn identify_handler(&mut self, event: identify::Event) {
+		match event {
+			identify::Event::Received {
+				peer_id,
+				info:
+					Info {
+						listen_addrs,
+						agent_version,
+						protocol_version,
+						protocols,
+						..
+					},
+				connection_id: _,
+			} => {
+				trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+				// KAD Discovery process
+				if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
+					let incoming_peer_agent_version = match AgentVersion::from_str(&agent_version) {
+						Ok(agent) => agent,
+						Err(e) => {
+							debug!("Error parsing incoming agent version: {e}");
+							return;
+						},
+					};
+
+					if !incoming_peer_agent_version.is_supported() {
+						debug!(
+							"Unsupported release version: {}",
+							incoming_peer_agent_version.release_version
+						);
+						self.swarm
+							.behaviour_mut()
+							.blocked_peers
+							.as_mut()
+							.unwrap()
+							.block_peer(peer_id);
+						return;
+					}
+					let kad_protocol_name = kad.protocol_names()[0].clone();
+
+					// Apply blacklist filtering for the peer if any hits from the filter list
+					let should_block = if protocols.contains(&kad_protocol_name) {
+						let mut block_peer = false;
+						listen_addrs
+							.into_iter()
+							.filter(|addr| {
+								let addr_str = addr.to_string();
+								block_peer = self
+									.event_loop_config
+									.address_filters
+									.iter()
+									.any(|filter| addr_str.contains(filter));
+								!block_peer
+							})
+							.filter(|addr| {
+								self.event_loop_config.is_local_test_mode || is_global_address(addr)
+							})
+							.for_each(|addr| {
+								trace!("Adding peer {addr}/{peer_id} to routing table.");
+								kad.add_address(&peer_id, addr);
+							});
+
+						if block_peer {
+							debug!("Peer {peer_id} flagged for blacklisting.");
+						}
+						block_peer
+					} else {
+						debug!("Incorrect peer Kademlia protocol name. Blacklisting. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}.");
+						true
+					};
+
+					if should_block {
+						self.swarm
+							.behaviour_mut()
+							.blocked_peers
+							.as_mut()
+							.unwrap()
+							.block_peer(peer_id);
+					}
+				}
+			},
+			identify::Event::Sent {
+				peer_id,
+				connection_id: _,
+			} => {
+				trace!("Identity Sent event to: {peer_id:?}");
+			},
+			identify::Event::Pushed { peer_id, .. } => {
+				trace!("Identify Pushed event. PeerId: {peer_id:?}");
+			},
+			identify::Event::Error {
+				peer_id,
+				error,
+				connection_id: _,
+			} => {
+				trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+			},
+		}
+	}
+
 	#[allow(clippy::too_many_arguments)]
 	pub(crate) fn new(
 		cfg: LibP2PConfig,
@@ -398,104 +498,7 @@ impl EventLoop {
 				}
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Identify(event)) => {
-				match event {
-					identify::Event::Received {
-						peer_id,
-						info:
-							Info {
-								listen_addrs,
-								agent_version,
-								protocol_version,
-								protocols,
-								..
-							},
-						connection_id: _,
-					} => {
-						trace!(
-						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
-					);
-						// KAD Discovery process
-						if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
-							let incoming_peer_agent_version =
-								match AgentVersion::from_str(&agent_version) {
-									Ok(agent) => agent,
-									Err(e) => {
-										debug!("Error parsing incoming agent version: {e}");
-										return;
-									},
-								};
-
-							let mut should_block = false;
-
-							if !incoming_peer_agent_version.is_supported() {
-								debug!(
-									"Unsupported release version: {}",
-									incoming_peer_agent_version.release_version
-								);
-								should_block = true;
-								return;
-							}
-							let kad_protocol_name = kad.protocol_names()[0].clone();
-
-							// Apply blacklist filtering
-							should_block = if protocols.contains(&kad_protocol_name) {
-								let mut block_peer = false;
-								listen_addrs
-									.into_iter()
-									.filter(|addr| {
-										let addr_str = addr.to_string();
-										block_peer = self
-											.event_loop_config
-											.address_filters
-											.iter()
-											.any(|filter| addr_str.contains(filter));
-										!block_peer
-									})
-									.filter(|addr| {
-										self.event_loop_config.is_local_test_mode
-											|| is_global_address(addr)
-									})
-									.for_each(|addr| {
-										trace!("Adding peer {addr}/{peer_id} to routing table.");
-										kad.add_address(&peer_id, addr);
-									});
-
-								if block_peer {
-									debug!("Peer {peer_id} flagged for blacklisting.");
-								}
-								block_peer
-							} else {
-								debug!("Incorrect peer Kademlia protocol name. Blacklisting. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}.");
-								true
-							};
-
-							if should_block {
-								self.swarm
-									.behaviour_mut()
-									.blocked_peers
-									.as_mut()
-									.unwrap()
-									.block_peer(peer_id);
-							}
-						}
-					},
-					identify::Event::Sent {
-						peer_id,
-						connection_id: _,
-					} => {
-						trace!("Identity Sent event to: {peer_id:?}");
-					},
-					identify::Event::Pushed { peer_id, .. } => {
-						trace!("Identify Pushed event. PeerId: {peer_id:?}");
-					},
-					identify::Event::Error {
-						peer_id,
-						error,
-						connection_id: _,
-					} => {
-						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
-					},
-				}
+				self.identify_handler(event);
 			},
 			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {

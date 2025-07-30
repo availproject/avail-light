@@ -46,7 +46,7 @@ pub struct BehaviourConfig {
 	pub enable_identify: bool,
 	pub enable_ping: bool,
 	pub auto_nat_mode: AutoNatMode,
-	pub enable_blocked_peers: bool,
+	pub enable_peer_blocking: bool,
 }
 
 impl Default for BehaviourConfig {
@@ -56,7 +56,7 @@ impl Default for BehaviourConfig {
 			enable_identify: true,
 			enable_ping: true,
 			auto_nat_mode: AutoNatMode::Client,
-			enable_blocked_peers: true,
+			enable_peer_blocking: true,
 		}
 	}
 }
@@ -288,11 +288,7 @@ impl Default for LibP2PConfig {
 			dht_parallelization_limit: 20,
 			ping_interval: Duration::from_secs(60),
 			local_test_mode: false,
-			address_filters: vec![
-				"2a01:4f8:1c1a:bcb9::1".to_string(),
-				"91.99.135.182".to_string(),
-				"libp2p.direct".to_string(),
-			],
+			address_filters: vec![],
 		}
 	}
 }
