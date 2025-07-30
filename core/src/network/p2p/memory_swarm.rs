@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{stream::SelectAll, StreamExt};
 use libp2p::{
 	core::{
 		muxing::StreamMuxerBox,
@@ -12,8 +12,9 @@ use libp2p::{
 	swarm::{dial_opts::DialOpts, NetworkBehaviour, SwarmEvent},
 	yamux, Multiaddr, PeerId, Swarm, Transport,
 };
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use std::{fmt::Debug, time::Duration};
-use tokio::time::timeout;
+use tokio::time::{self, timeout};
 
 #[async_trait]
 /// Extension trait for libp2p Swarm providing in-memory networking utilities.
@@ -317,5 +318,213 @@ impl Helpers {
 
 		// Wait for both sides to confirm connection establishment
 		tokio::join!(wait_for_dialer_connection, wait_for_listener_connection);
+	}
+}
+
+// Default timeout for network operations and event waiting
+const DEFAULT_MESH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Minimum number of nodes required for a mesh network
+const MIN_MESH_SIZE: usize = 1;
+
+/// Errors that can occur during mesh operations
+#[derive(Debug, thiserror::Error)]
+pub enum MeshError {
+	#[error("Operation timed out: {0}")]
+	Timeout(&'static str),
+
+	#[error("Command execution failed: {0}")]
+	CommandFailed(String),
+
+	#[error("Invalid mesh configuration: {0}")]
+	InvalidConfiguration(String),
+}
+
+/// Represents a mesh network of interconnected libp2p nodes with homogeneous behavior.
+///
+/// The mesh provides a convenient abstraction for testing by managing multiple
+/// swarm instances of the same behavior type, connected in a random tree topology.
+/// This ensures all nodes are reachable while avoiding unnecessary connection overhead.
+///
+/// # Type Parameters
+/// * `B` - The NetworkBehaviour type that all nodes in the mesh will use
+pub struct TestMesh<B>
+where
+	B: NetworkBehaviour + Send,
+	B::ToSwarm: Debug + Send,
+{
+	/// Collection of all swarm instances in the mesh network
+	nodes: SelectAll<Swarm<B>>,
+}
+
+impl<B> TestMesh<B>
+where
+	B: NetworkBehaviour + Send,
+	B::ToSwarm: Debug + Send,
+{
+	/// Creates a new mesh network with the specified number of nodes.
+	///
+	/// All nodes will use the same behavior type, created by the provided factory function.
+	/// Nodes are connected using a random tree topology to ensure connectivity with
+	/// minimal connection overhead.
+	///
+	/// # Arguments
+	/// * `node_count` - Number of nodes in the mesh (must be >= 1)
+	/// * `seed` - Random seed for deterministic network topology
+	/// * `behavior_factory` - Closure that creates a behavior instance for each node
+	///
+	/// # Panics
+	/// Panics if `node_count` is 0, as a mesh requires at least one node.
+	pub async fn with_nodes<F>(node_count: usize, seed: u64, behavior_factory: F) -> Self
+	where
+		F: Fn(libp2p::identity::Keypair) -> B + Send + Clone,
+	{
+		if node_count < MIN_MESH_SIZE {
+			panic!(
+				"Mesh requires at least {MIN_MESH_SIZE} node(s), but {node_count} was requested"
+			);
+		}
+
+		let mut rng = StdRng::seed_from_u64(seed);
+
+		// Create all nodes concurrently and initially without connections
+		let nodes = Self::create_nodes_concurrently(node_count, behavior_factory).await;
+
+		// Connect nodes in a random tree topology
+		let connected_nodes = Self::connect_as_random_tree(nodes, &mut rng).await;
+
+		Self {
+			nodes: SelectAll::from_iter(connected_nodes),
+		}
+	}
+
+	/// Waits for a behavior event matching the specified condition.
+	///
+	/// This method polls all nodes in the mesh until one produces an event
+	/// that satisfies the predicate. Non-behavior events (connection events,
+	/// etc.) are automatically filtered out.
+	///
+	/// # Arguments
+	/// * `event_predicate` - Function that returns `true` for matching events
+	///
+	/// # Returns
+	/// * `Ok(())` - If a matching event was found within the timeout
+	/// * `Err(MeshError::Timeout)` - If no matching event occurred within the timeout
+	pub async fn wait_for_event<P>(&mut self, mut event_predicate: P) -> Result<(), MeshError>
+	where
+		P: FnMut(&B::ToSwarm) -> bool,
+	{
+		let event_condition = async {
+			loop {
+				let swarm_event = self.nodes.select_next_some().await;
+
+				// Only process behavior events, skip swarm-level events
+				if let Ok(behavior_event) = swarm_event.try_into_behaviour_event() {
+					if event_predicate(&behavior_event) {
+						return;
+					}
+				}
+			}
+		};
+
+		time::timeout(DEFAULT_MESH_TIMEOUT, event_condition)
+			.await
+			.map_err(|_| MeshError::Timeout("Event condition was not met within timeout"))
+	}
+
+	/// Executes a closure on the first node in the mesh.
+	///
+	/// This is useful for initiating actions that should propagate through
+	/// the network, such as publishing messages or starting DHT queries.
+	/// The closure receives mutable access to the swarm and can return a value.
+	///
+	/// # Arguments
+	/// * `operation` - Closure that operates on the swarm and returns a result
+	///
+	/// # Returns
+	/// The value returned by the closure
+	///
+	/// # Panics
+	/// Panics if the mesh has no nodes
+	pub fn execute_on_first<F, R>(&mut self, operation: F) -> R
+	where
+		F: FnOnce(&mut Swarm<B>) -> R,
+	{
+		let first_node = self
+			.nodes
+			.iter_mut()
+			.next()
+			.expect("Mesh should contain at least one node");
+
+		operation(first_node)
+	}
+
+	/// Executes the same closure on all nodes in the mesh.
+	///
+	/// Each node receives the same closure for execution. This is useful for
+	/// operations that need to be performed across the entire network, such as
+	/// subscribing to topics, configuring protocols, or gathering information.
+	///
+	/// # Arguments
+	/// * `operation` - Closure that operates on each swarm and returns a result
+	///
+	/// # Returns
+	/// Vector of results from each node in order
+	pub fn execute_on_all_nodes<F, R>(&mut self, operation: F) -> Vec<R>
+	where
+		F: Fn(&mut Swarm<B>) -> R,
+	{
+		self.nodes.iter_mut().map(operation).collect()
+	}
+
+	/// Returns the total number of nodes in the mesh network.
+	pub fn node_count(&self) -> usize {
+		self.nodes.len()
+	}
+
+	/// Creates the specified number of nodes concurrently using the behavior factory
+	async fn create_nodes_concurrently<F>(node_count: usize, behavior_factory: F) -> Vec<Swarm<B>>
+	where
+		F: Fn(libp2p::identity::Keypair) -> B + Send + Clone,
+	{
+		tokio_stream::iter(0..node_count)
+			.map(|_| {
+				// Create each node with memory transport and the provided behavior
+				async { Swarm::with_memory_transport(behavior_factory.clone()) }
+			})
+			.buffer_unordered(node_count)
+			.collect()
+			.await
+	}
+
+	/// Connects nodes in a random tree topology for optimal connectivity
+	///
+	/// This algorithm ensures:
+	/// - All nodes are reachable (connected graph)
+	/// - Minimal number of connections (n-1 edges for n nodes)
+	/// - Random topology for diverse testing scenarios
+	async fn connect_as_random_tree(
+		mut unconnected_nodes: Vec<Swarm<B>>,
+		rng: &mut StdRng,
+	) -> Vec<Swarm<B>> {
+		if unconnected_nodes.is_empty() {
+			return unconnected_nodes;
+		}
+
+		// Start with one node in the connected component
+		let mut connected_nodes = vec![unconnected_nodes.pop().unwrap()];
+
+		// Connect each remaining node to a random already-connected node
+		// This creates a spanning tree, ensuring connectivity with minimal edges
+		for mut new_node in unconnected_nodes {
+			let random_connected_node = connected_nodes
+				.choose_mut(rng)
+				.expect("Connected nodes list should not be empty");
+
+			new_node.connect_to_peer(random_connected_node).await;
+			connected_nodes.push(new_node);
+		}
+
+		connected_nodes
 	}
 }
