@@ -26,7 +26,7 @@ use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{
 	data::{BlockHeaderKey, Database},
@@ -136,8 +136,21 @@ pub async fn process_block(
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
 ) -> Result<Option<BlockVerified>> {
-	event_sender.send(OutputEvent::CountSessionBlocks)?;
-	event_sender.send(OutputEvent::RecordBlockHeight(header.number))?;
+	if let Err(error) = event_sender.send(OutputEvent::CountSessionBlocks) {
+		error!(
+			%error,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send count session blocks event"
+		);
+	}
+
+	if let Err(error) = event_sender.send(OutputEvent::RecordBlockHeight(header.number)) {
+		error!(
+			%error,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send record block height event"
+		);
+	}
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -145,7 +158,10 @@ pub async fn process_block(
 	info!(block_number, block_delay, "Processing finalized block",);
 
 	let Ok(block_verified) = BlockVerified::try_from((header, None)) else {
-		error!("Cannot create verified block from header");
+		error!(
+			event_type = "BLOCK_VERIFICATION",
+			block_number, "Failed to create verified block from header"
+		);
 		return Ok(None);
 	};
 
@@ -158,7 +174,11 @@ pub async fn process_block(
 	};
 
 	if extension.dimensions.cols().get() <= 2 {
-		error!(block_number, "More than 2 columns are required");
+		error!(
+			block_number,
+			event_type = "BLOCK_VALIDATION",
+			"Insufficient columns: more than 2 columns required"
+		);
 		return Ok(None);
 	}
 
@@ -198,11 +218,17 @@ pub async fn process_block(
 			let batch_rpc_fetched =
 				result.wrap_err(format!("Failed to fetch cells from node RPC at batch {i}"))?;
 
-			if let Err(e) = client
+			if let Err(error) = client
 				.insert_cells_into_dht(block_number, batch_rpc_fetched.clone())
 				.await
 			{
-				debug!("Error inserting cells into DHT: {e}");
+				error!(
+					%error,
+					block_number,
+					batch_index = i,
+					event_type = "DHT_CELL_INSERT",
+					"Failed to insert cells into DHT"
+				);
 			}
 
 			rpc_fetched.extend(batch_rpc_fetched);
@@ -218,9 +244,16 @@ pub async fn process_block(
 		"Partition cells received from RPC",
 	);
 
-	event_sender.send(OutputEvent::RecordRpcCallDuration(
+	if let Err(error) = event_sender.send(OutputEvent::RecordRpcCallDuration(
 		partition_rpc_retrieve_time_elapsed.as_secs_f64(),
-	))?;
+	)) {
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send RPC call duration event"
+		);
+	}
 
 	#[cfg(not(feature = "multiproof"))]
 	if rpc_fetched.len() >= extension.dimensions.cols().get() as usize {
@@ -233,8 +266,13 @@ pub async fn process_block(
 		let data_cells: Vec<&SingleCell> = cells.iter().collect();
 		let data_rows = data::rows(extension.dimensions, &data_cells);
 
-		if let Err(e) = client.insert_rows_into_dht(block_number, data_rows).await {
-			debug!("Error inserting rows into DHT: {e}");
+		if let Err(error) = client.insert_rows_into_dht(block_number, data_rows).await {
+			error!(
+				%error,
+				block_number,
+				event_type = "DHT_ROW_INSERT",
+				"Failed to insert rows into DHT"
+			);
 		}
 	} else {
 		// NOTE: Often rows will not be push into DHT,
@@ -272,7 +310,11 @@ pub async fn run(
 		let event = match channels.rpc_event_receiver.recv().await {
 			Ok(event) => event,
 			Err(error) => {
-				error!("Cannot receive message: {error}");
+				error!(
+					%error,
+					event_type = "RPC_EVENT_RECEIVE",
+					"Failed to receive RPC event"
+				);
 				return;
 			},
 		};
@@ -289,7 +331,11 @@ pub async fn run(
 				if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
 					seconds.as_secs_f64(),
 				)) {
-					error!("Failed to send RecordBlockProcessingDelay event: {error}");
+					error!(
+						%error,
+						event_type = "OUTPUT_EVENT_SEND",
+						"Failed to send block processing delay event"
+					);
 				}
 				tokio::time::sleep(seconds).await;
 			}
@@ -308,8 +354,14 @@ pub async fn run(
 				Ok(Some(blk_verified)) => blk_verified,
 				Ok(None) => continue,
 				Err(error) => {
-					error!("Cannot process block: {error}");
-					let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
+					error!(
+						%error,
+						block_number = %header.number,
+						event_type = "BLOCK_PROCESSING",
+						"Block processing failed"
+					);
+					let _ =
+						shutdown.trigger_shutdown(format!("Block processing failed: {error:#}"));
 					return;
 				},
 			};
@@ -317,7 +369,12 @@ pub async fn run(
 			// Notify dht-based application client
 			// that the newly mined block has been received
 			if let Err(error) = channels.block_sender.send(client_msg) {
-				error!("Cannot send block verified message: {error}");
+				error!(
+					%error,
+					block_number = %header.number,
+					event_type = "BLOCK_MESSAGE_SEND",
+					"Failed to send block verified message"
+				);
 				continue;
 			}
 		}
