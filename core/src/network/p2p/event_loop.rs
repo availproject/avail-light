@@ -10,7 +10,7 @@ use libp2p::{
 	},
 	ping,
 	swarm::SwarmEvent,
-	Multiaddr, PeerId, Swarm,
+	Multiaddr, PeerId, StreamProtocol, Swarm,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -42,6 +42,8 @@ struct EventLoopConfig {
 	is_fat_client: bool,
 	kad_record_ttl: TimeToLive,
 	is_local_test_mode: bool,
+	// List of address patterns to filter out
+	address_blacklist: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -143,6 +145,7 @@ impl EventLoop {
 				is_fat_client,
 				kad_record_ttl: TimeToLive(cfg.kademlia.kad_record_ttl),
 				is_local_test_mode: cfg.local_test_mode,
+				address_blacklist: cfg.address_blacklist,
 			},
 			kad_mode: cfg.kademlia.operation_mode.into(),
 		}
@@ -234,6 +237,56 @@ impl EventLoop {
 		for peer in connected_peers {
 			_ = self.swarm.disconnect_peer_id(peer);
 		}
+	}
+
+	fn should_allow_peer(
+		&mut self,
+		peer_id: PeerId,
+		agent_version: &str,
+		protocols: Vec<StreamProtocol>,
+		listen_addrs: Vec<Multiaddr>,
+		kad_protocol_name: StreamProtocol,
+	) -> Result<Vec<Multiaddr>> {
+		// Parse and validate agent version
+		let incoming_peer_agent_version =
+			AgentVersion::from_str(agent_version).map_err(|e| eyre!(e))?;
+
+		// Check if the release version is supported
+		if !incoming_peer_agent_version.is_supported() {
+			return Err(eyre!(
+				"Unsupported release version: {}",
+				incoming_peer_agent_version.release_version
+			));
+		}
+
+		// Check if peer supports the correct Kademlia protocol
+		if !protocols
+			.iter()
+			.any(|p| p.as_ref() == kad_protocol_name.as_ref())
+		{
+			return Err(eyre!("Incorrect peer Kademlia protocol name."));
+		}
+
+		// Early exit if any address matches the blacklist filters
+		for addr in &listen_addrs {
+			let addr_str = addr.to_string();
+			if self
+				.event_loop_config
+				.address_blacklist
+				.iter()
+				.any(|filter| addr_str.contains(filter))
+			{
+				return Err(eyre!("Peer {addr_str}/p2p/{peer_id} blacklisted."));
+			}
+		}
+
+		// Filter and collect valid addresses
+		let valid_addrs: Vec<Multiaddr> = listen_addrs
+			.into_iter()
+			.filter(|addr| self.event_loop_config.is_local_test_mode || is_global_address(addr))
+			.collect();
+
+		Ok(valid_addrs)
 	}
 
 	#[tracing::instrument(level = "trace", skip(self))]
@@ -402,51 +455,50 @@ impl EventLoop {
 							Info {
 								listen_addrs,
 								agent_version,
-								protocol_version,
+								protocol_version: _,
 								protocols,
 								..
 							},
 						connection_id: _,
 					} => {
-						trace!(
-						"Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}"
-					);
+						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
 						// KAD Discovery process
-						if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
-							let incoming_peer_agent_version =
-								match AgentVersion::from_str(&agent_version) {
-									Ok(agent) => agent,
-									Err(e) => {
-										debug!("Error parsing incoming agent version: {e}");
-										return;
-									},
-								};
+						let kad_protocol_name = self
+							.swarm
+							.behaviour_mut()
+							.kademlia
+							.as_ref()
+							.map(|kad| kad.protocol_names()[0].clone());
 
-							if !incoming_peer_agent_version.is_supported() {
-								debug!(
-									"Unsupported release version: {}",
-									incoming_peer_agent_version.release_version
-								);
-								kad.remove_peer(&peer_id);
-								return;
+						if let Some(kad_protocol_name) = kad_protocol_name {
+							match self.should_allow_peer(
+								peer_id,
+								&agent_version,
+								protocols,
+								listen_addrs,
+								kad_protocol_name,
+							) {
+								Ok(addreses) => {
+									if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut()
+									{
+										for addr in &addreses {
+											trace!(
+												"Adding peer {addr}/{peer_id} to routing table."
+											);
+											kad.add_address(&peer_id, addr.clone());
+										}
+									}
+								},
+								Err(e) => {
+									debug!("{e}");
+									self.swarm
+										.behaviour_mut()
+										.blocked_peers
+										.as_mut()
+										.unwrap()
+										.block_peer(peer_id);
+								},
 							}
-
-							let protocol = kad.protocol_names()[0].clone();
-							if protocols.contains(&protocol) {
-								listen_addrs
-									.into_iter()
-									.filter(|addr| {
-										self.event_loop_config.is_local_test_mode
-											|| is_global_address(addr)
-									})
-									.for_each(|addr| {
-										debug!("Adding peer {peer_id} to routing table.");
-										kad.add_address(&peer_id, addr);
-									});
-							} else {
-								debug!("Removing and blocking peer from routing table. Peer: {peer_id}. Agent: {agent_version}. Protocol: {protocol_version}");
-								kad.remove_peer(&peer_id);
-							};
 						}
 					},
 					identify::Event::Sent {
