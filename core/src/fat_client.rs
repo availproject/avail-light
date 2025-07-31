@@ -140,7 +140,6 @@ pub async fn process_block(
 		error!(
 			%error,
 			event_type = "OUTPUT_EVENT_SEND",
-			event_variant = "CountSessionBlocks",
 			"Failed to send count session blocks event"
 		);
 	}
@@ -149,7 +148,6 @@ pub async fn process_block(
 		error!(
 			%error,
 			event_type = "OUTPUT_EVENT_SEND",
-			event_variant = "RecordBlockHeight",
 			"Failed to send record block height event"
 		);
 	}
@@ -253,7 +251,6 @@ pub async fn process_block(
 			%error,
 			block_number,
 			event_type = "OUTPUT_EVENT_SEND",
-			event_variant = "RecordRpcCallDuration",
 			"Failed to send RPC call duration event"
 		);
 	}
@@ -337,7 +334,6 @@ pub async fn run(
 					error!(
 						%error,
 						event_type = "OUTPUT_EVENT_SEND",
-						event_variant = "RecordBlockProcessingDelay",
 						"Failed to send block processing delay event"
 					);
 				}
