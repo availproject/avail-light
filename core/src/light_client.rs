@@ -68,8 +68,23 @@ pub async fn process_block(
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 
-	event_sender.send(OutputEvent::CountSessionBlocks)?;
-	event_sender.send(OutputEvent::RecordBlockHeight(block_number))?;
+	if let Err(error) = event_sender.send(OutputEvent::CountSessionBlocks) {
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send count session blocks event"
+		);
+	}
+
+	if let Err(error) = event_sender.send(OutputEvent::RecordBlockHeight(block_number)) {
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send record block height event"
+		);
+	}
 
 	info!(
 		{ block_number, block_delay = received_at.elapsed().as_secs()},
@@ -94,7 +109,11 @@ pub async fn process_block(
 		Some((_, _, _, commitment)) => {
 			let Ok(block_verified) = types::BlockVerified::try_from((&header, Some(confidence)))
 			else {
-				error!("Cannot create verified block from header");
+				error!(
+					block_number,
+					event_type = "BLOCK_VERIFICATION",
+					"Cannot create verified block from header"
+				);
 				return Ok(None);
 			};
 
@@ -107,7 +126,11 @@ pub async fn process_block(
 			};
 
 			if extension.dimensions.cols().get() <= 2 {
-				error!(block_number, "More than 2 columns are required");
+				error!(
+					block_number,
+					event_type = "BLOCK_VALIDATION",
+					"Insufficient columns: more than 2 columns required"
+				);
 				return Ok(None);
 			}
 
@@ -139,18 +162,41 @@ pub async fn process_block(
 				db.put(DhtFetchedPercentageKey, fetch_stats.dht_fetched_percentage);
 			}
 
-			event_sender.send(OutputEvent::RecordDHTStats {
+			if let Err(error) = event_sender.send(OutputEvent::RecordDHTStats {
 				fetched: fetch_stats.dht_fetched,
 				fetched_percentage: fetch_stats.dht_fetched_percentage,
 				fetch_duration: fetch_stats.dht_fetch_duration,
-			})?;
+			}) {
+				error!(
+					%error,
+					block_number,
+					event_type = "OUTPUT_EVENT_SEND",
+					"Failed to send DHT stats event"
+				);
+			}
 
 			if let Some(rpc_fetched) = fetch_stats.rpc_fetched {
-				event_sender.send(OutputEvent::RecordRPCFetched(rpc_fetched))?;
+				if let Err(error) = event_sender.send(OutputEvent::RecordRPCFetched(rpc_fetched)) {
+					error!(
+						%error,
+						block_number,
+						event_type = "OUTPUT_EVENT_SEND",
+						"Failed to send RPC fetched count event"
+					);
+				}
 			}
 
 			if let Some(rpc_fetch_duration) = fetch_stats.rpc_fetch_duration {
-				event_sender.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))?;
+				if let Err(error) =
+					event_sender.send(OutputEvent::RecordRPCFetchDuration(rpc_fetch_duration))
+				{
+					error!(
+						%error,
+						block_number,
+						event_type = "OUTPUT_EVENT_SEND",
+						"Failed to send RPC fetch duration event"
+					);
+				}
 			}
 			(
 				block_verified,
@@ -162,7 +208,12 @@ pub async fn process_block(
 	};
 
 	if required > verified {
-		error!(block_number, "Failed to fetch {} cells", unverified);
+		error!(
+			block_number,
+			unverified_cells = unverified,
+			event_type = "CELL_FETCH_INSUFFICIENT",
+			"Failed to fetch sufficient cells for block verification"
+		);
 		return Ok(None);
 	}
 
@@ -185,7 +236,15 @@ pub async fn process_block(
 		"Confidence factor: {}",
 		confidence
 	);
-	event_sender.send(OutputEvent::RecordBlockConfidence(confidence))?;
+
+	if let Err(error) = event_sender.send(OutputEvent::RecordBlockConfidence(confidence)) {
+		error!(
+			%error,
+			block_number,
+			event_type = "OUTPUT_EVENT_SEND",
+			"Failed to send block confidence event"
+		);
+	}
 	block_verified.confidence = Some(confidence);
 
 	// push latest mined block's header into column family specified
@@ -228,7 +287,11 @@ pub async fn run(
 		let event = match channels.rpc_event_receiver.recv().await {
 			Ok(event) => event,
 			Err(error) => {
-				error!("Cannot receive message: {error}");
+				error!(
+					%error,
+					event_type = "RPC_EVENT_RECEIVE",
+					"Failed to receive RPC event"
+				);
 				return;
 			},
 		};
@@ -244,7 +307,11 @@ pub async fn run(
 				if let Err(error) = event_sender.send(OutputEvent::RecordBlockProcessingDelay(
 					seconds.as_secs_f64(),
 				)) {
-					error!("Cannot send OutputEvent message: {error}");
+					error!(
+						%error,
+						event_type = "OUTPUT_EVENT_SEND",
+						"Failed to send block processing delay event"
+					);
 				}
 				info!("Sleeping for {seconds:?} seconds");
 				tokio::time::sleep(seconds).await;
@@ -264,8 +331,14 @@ pub async fn run(
 				Ok(Some(blk_verified)) => blk_verified,
 				Ok(None) => continue,
 				Err(error) => {
-					error!("Cannot process block: {error}");
-					let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
+					error!(
+						%error,
+						block_number = header.number,
+						event_type = "BLOCK_PROCESSING",
+						"Block processing failed"
+					);
+					let _ =
+						shutdown.trigger_shutdown(format!("Block processing failed: {error:#}"));
 					return;
 				},
 			};
@@ -273,7 +346,12 @@ pub async fn run(
 			// Notify dht-based application client
 			// that the newly mined block has been received
 			if let Err(error) = channels.block_sender.send(client_msg) {
-				error!("Cannot send block verified message: {error}");
+				error!(
+					%error,
+					block_number = header.number,
+					event_type = "BLOCK_MESSAGE_SEND",
+					"Failed to send block verified message"
+				);
 				continue;
 			}
 		}

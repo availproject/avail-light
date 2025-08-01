@@ -43,6 +43,8 @@ mod kad_mem_store;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod memory_swarm;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod restart;
 
 pub use kad_mem_store::MemoryStoreConfig;
@@ -327,7 +329,7 @@ async fn build_swarm(
 			},
 		};
 
-		let blocked_peers = if cfg.behaviour.enable_blocked_peers {
+		let blocked_peers = if cfg.behaviour.enable_peer_blocking {
 			Some(allow_block_list::Behaviour::default())
 		} else {
 			None

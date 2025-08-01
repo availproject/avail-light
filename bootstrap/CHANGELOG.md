@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.4]
+
+- Update `avail-light-core` to 1.2.10
+
 ## [0.5.3](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.3) - 2025-07-18
 
 - Fixed bootstrap logging filter

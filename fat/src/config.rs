@@ -56,6 +56,9 @@ pub struct CliOpts {
 	/// HTTP port
 	#[arg(long)]
 	pub http_server_port: Option<u16>,
+	/// List of address patterns to filter out when adding peers to the routing table
+	#[arg(long, value_delimiter = ',')]
+	pub address_blacklist: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -158,6 +161,10 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 
 	if let Some(partition) = &opts.block_matrix_partition {
 		config.fat.block_matrix_partition = *partition
+	}
+
+	if let Some(address_blacklist) = &opts.address_blacklist {
+		config.libp2p.address_blacklist = address_blacklist.clone();
 	}
 
 	Ok(config)

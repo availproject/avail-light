@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-bootstrap"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-std",
  "async-trait",
@@ -1301,7 +1301,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "1.13.0"
+version = "1.13.1"
 dependencies = [
  "avail-core",
  "avail-light-core",
@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-core"
-version = "1.2.9"
+version = "1.2.10"
 dependencies = [
  "async-std",
  "async-stream",
@@ -1440,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-fat"
-version = "1.12.8"
+version = "1.12.9"
 dependencies = [
  "avail-light-core",
  "clap",
@@ -6362,6 +6362,7 @@ dependencies = [
  "libp2p-metrics",
  "libp2p-noise",
  "libp2p-ping",
+ "libp2p-plaintext",
  "libp2p-quic",
  "libp2p-relay",
  "libp2p-swarm",
@@ -6637,6 +6638,22 @@ dependencies = [
  "rand 0.8.5",
  "tracing",
  "web-time",
+]
+
+[[package]]
+name = "libp2p-plaintext"
+version = "0.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e659439578fc6d305da8303834beb9d62f155f40e7f5b9d81c9f2b2c69d1926"
+dependencies = [
+ "asynchronous-codec",
+ "bytes",
+ "futures",
+ "libp2p-core",
+ "libp2p-identity",
+ "quick-protobuf",
+ "quick-protobuf-codec",
+ "tracing",
 ]
 
 [[package]]
