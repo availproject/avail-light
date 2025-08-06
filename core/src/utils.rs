@@ -200,7 +200,7 @@ pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	let subscriber = FmtSubscriber::builder()
 		.json()
-		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level},warn")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish();
 
@@ -216,7 +216,7 @@ pub fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 
 pub fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	let subscriber = FmtSubscriber::builder()
-		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level},warn")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish();
 
