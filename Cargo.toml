@@ -19,10 +19,10 @@ repository = "https://github.com/availproject/avail-light"
 
 [workspace.dependencies]
 # Internal deps
-avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, rev = "174de07f24d5eb4f4a31ef20da6eed7dc8e59239", features = ["serde"] }
-avail-rust = { git = "https://github.com/availproject/avail-rust.git", rev = "44fe232878626f4a8a368fab9b2a26121df4907f", default-features = false }
-kate = { git = "https://github.com/availproject/avail-core", default-features = false, rev = "174de07f24d5eb4f4a31ef20da6eed7dc8e59239", features = ["serde"] }
-kate-recovery = { git = "https://github.com/availproject/avail-core", default-features = false, rev = "174de07f24d5eb4f4a31ef20da6eed7dc8e59239", features = ["serde"] }
+avail-core = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-11", features = ["serde"] }
+avail-rust = { git = "https://github.com/availproject/avail-rust.git", tag = "v0.1.14-rc", default-features = false }
+kate = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-11", features = ["serde"] }
+kate-recovery = { git = "https://github.com/availproject/avail-core", default-features = false, tag = "core-node-11", features = ["serde"] }
 avail-light-core = { path = "./core", default-features = false }
 sp-core = { git = "https://github.com/availproject/polkadot-sdk.git", tag = "polkadot-1.7.1-patch-12", default-features = false, features = ["serde"] }
 
@@ -36,7 +36,7 @@ confy = "0.5.1"
 hex = "0.4.3"
 rand = { version = "0.8.5", default-features = false }
 reqwest = { version = "0.12" }
-libp2p = { version = "0.56.0", features = ["kad", "identify", "ping", "autonat", "relay", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket"] }
+libp2p = { version = "0.56.0", features = ["kad", "identify", "ping", "autonat", "relay", "noise", "yamux", "dns", "metrics", "tokio", "macros", "tcp", "quic", "serde", "websocket", "plaintext"] }
 libp2p-allow-block-list = "0.6.0"
 libp2p-webrtc-websys = "0.4.0"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
