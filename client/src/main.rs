@@ -463,7 +463,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	// Flags override the config parameters
 	if let Some(network) = &opts.network {
-		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
+		let bootstrap = (
+			network.bootstrap_peer_id(),
+			network.bootstrap_multiaddr(&cfg.libp2p.listeners),
+		);
 		cfg.rpc.full_node_ws = network.full_node_ws();
 		cfg.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();

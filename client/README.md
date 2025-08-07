@@ -171,7 +171,7 @@ http_server_port = 7007
 # If set to key, a valid ed25519 private key must be provided, else the client will fail
 # If `secret_key` is not set, random seed will be used.
 secret_key = { seed={seed} }
-# P2P TCP listener port (default: 37000).
+# P2P TCP/UDP listener port (default: 37000).
 port = 37000
 # P2P WebRTC listener port (default: 37001).
 webrtc_port = 37001

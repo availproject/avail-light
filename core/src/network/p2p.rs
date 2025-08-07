@@ -14,7 +14,7 @@ use libp2p::{
 	Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p::{noise, tcp, yamux};
+use libp2p::{noise, quic, tcp, yamux};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
 use semver::Version;
@@ -367,18 +367,28 @@ async fn build_swarm(
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	} else {
-		let builder = tokio_swarm
-			.with_tcp(
-				tcp::Config::default().nodelay(false),
-				noise::Config::new,
-				yamux::Config::default,
-			)?
-			.with_dns()?;
+		use configuration::Listeners;
 
-		swarm = builder
-			.with_behaviour(make_behaviour)?
-			.with_swarm_config(|c| generate_config(c, cfg))
-			.build();
+		let builder = tokio_swarm.with_tcp(
+			tcp::Config::default().nodelay(false),
+			noise::Config::new,
+			yamux::Config::default,
+		)?;
+
+		if cfg.listeners == Listeners::Quic || cfg.listeners == Listeners::QuicTcp {
+			swarm = builder
+				.with_quic_config(|_| quic::Config::new(id_keys))
+				.with_dns()?
+				.with_behaviour(make_behaviour)?
+				.with_swarm_config(|c| generate_config(c, cfg))
+				.build();
+		} else {
+			swarm = builder
+				.with_dns()?
+				.with_behaviour(make_behaviour)?
+				.with_swarm_config(|c| generate_config(c, cfg))
+				.build();
+		}
 	}
 
 	debug!(config = ?cfg, "Building P2P swarm");

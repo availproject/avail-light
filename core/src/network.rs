@@ -10,6 +10,7 @@ use kate_recovery::{
 };
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
+use p2p::configuration::Listeners;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
@@ -386,13 +387,24 @@ impl Network {
 		PeerId::from_str(peer_id).expect("unable to parse default bootstrap peerID")
 	}
 
-	pub fn bootstrap_multiaddr(&self) -> Multiaddr {
-		let multiaddr = match self {
-			Network::Local => "/ip4/127.0.0.1/tcp/39000",
-			Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
-			Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
-			Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
+	pub fn bootstrap_multiaddr(&self, listeners: &p2p::configuration::Listeners) -> Multiaddr {
+		let multiaddr = match listeners {
+			Listeners::Tcp | Listeners::Ws => match self {
+				Network::Local => "/ip4/127.0.0.1/tcp/39000",
+				Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
+				Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
+				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
+			},
+			Listeners::Quic | Listeners::QuicTcp => match self {
+				Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
+				Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/udp/37000/quic-v1",
+				Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/udp/37000/quic-v1",
+				Network::Mainnet => {
+					"/dns/bootnode.1.lightclient.mainnet.avail.so/udp/37000/quic-v1"
+				},
+			},
 		};
+
 		Multiaddr::from_str(multiaddr).expect("unable to parse default bootstrap multi-address")
 	}
 
