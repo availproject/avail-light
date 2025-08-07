@@ -123,7 +123,10 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 	config.libp2p.identify.agent_role = "fat-client".to_string();
 
 	if let Some(network) = &opts.network {
-		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
+		let bootstrap = (
+			network.bootstrap_peer_id(),
+			network.bootstrap_multiaddr(&config.libp2p.listeners),
+		);
 		config.rpc.full_node_ws = network.full_node_ws();
 		config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		config.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();

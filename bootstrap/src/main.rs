@@ -67,7 +67,7 @@ async fn run(
 		.start_listening(cfg.libp2p.listeners())
 		.await
 		.wrap_err("Error starting listener.")?;
-	info!("TCP listener started on port {}", cfg.libp2p.port);
+	info!("P2P listeners started on port {}", cfg.libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
 

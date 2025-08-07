@@ -63,7 +63,7 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 		network = Network::from_str(&value, true).unwrap();
 	};
 
-	let mut bootstrap_multiaddr = network.bootstrap_multiaddr();
+	let mut bootstrap_multiaddr = network.bootstrap_multiaddr(&p2p::configuration::Listeners::Tcp);
 	if let Some(value) = bootstrap_param {
 		bootstrap_multiaddr = Multiaddr::from_str(&value).unwrap();
 	};

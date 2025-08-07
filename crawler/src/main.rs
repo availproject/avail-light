@@ -103,7 +103,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		.start_listening(config.libp2p.listeners())
 		.await
 		.wrap_err("Error starting listeners.")?;
-	info!("TCP listener started on port {}", config.libp2p.port);
+	info!("P2P listener started on port {}", config.libp2p.port);
 
 	let bootstrap_p2p_client = p2p_client.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
