@@ -295,22 +295,17 @@ impl Default for LibP2PConfig {
 }
 
 impl LibP2PConfig {
-	pub fn tcp_multiaddress(&self) -> Multiaddr {
-		let tcp_multiaddress = Multiaddr::empty()
-			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-			.with(Protocol::Tcp(self.port));
-
-		if self.ws_transport_enable {
-			tcp_multiaddress.with(Protocol::Ws(Cow::Borrowed("avail-light")))
+	pub fn listeners(&self) -> Vec<Multiaddr> {
+		vec![if self.ws_transport_enable {
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Tcp(self.port))
+				.with(Protocol::Ws(Cow::Borrowed("avail-light")))
 		} else {
-			tcp_multiaddress
-		}
-	}
-
-	pub fn webrtc_multiaddress(&self) -> Multiaddr {
-		Multiaddr::from(Ipv4Addr::UNSPECIFIED)
-			.with(Protocol::Udp(self.webrtc_port))
-			.with(Protocol::WebRTCDirect)
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Tcp(self.port))
+		}]
 	}
 
 	pub fn effective_max_negotiating_inbound_streams(&self) -> usize {

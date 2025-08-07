@@ -105,10 +105,8 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let addrs = vec![config.libp2p.tcp_multiaddress()];
-
 	p2p_client
-		.start_listening(addrs)
+		.start_listening(config.libp2p.listeners())
 		.await
 		.wrap_err("Listening on TCP not to fail.")?;
 	info!("TCP listener started on port {}", config.libp2p.port);

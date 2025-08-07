@@ -47,11 +47,9 @@ pub async fn init_and_start_p2p_client(
 	// Start the new event loop
 	spawn_in_span(p2p_event_loop.run());
 
-	let addrs = vec![libp2p_cfg.tcp_multiaddress()];
-
 	// Start the TCP and WebRTC listeners
 	p2p_client
-		.start_listening(addrs)
+		.start_listening(libp2p_cfg.listeners())
 		.await
 		.wrap_err("Error starting listener.")?;
 	info!("TCP listener started on port {}", libp2p_cfg.port);
