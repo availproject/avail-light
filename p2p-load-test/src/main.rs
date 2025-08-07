@@ -264,7 +264,7 @@ async fn main() -> Result<()> {
 		.start_listening(config.libp2p.listeners())
 		.await
 		.wrap_err("Error starting listener.")?;
-	info!("TCP listener started on port {}", config.libp2p.port);
+	info!("P2P listener started on port {}", config.libp2p.port);
 
 	// Bootstrap
 	p2p_client

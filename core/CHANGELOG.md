@@ -2,6 +2,7 @@
 
 ## [1.2.10]
 
+- Enable quic and make listener configurable
 - Added libp2p swarm peer blacklisting by partial string matching of multi-addresses
 - Updated the libp2p version to the latest stable release of 0.56.0
 

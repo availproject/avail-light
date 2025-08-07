@@ -176,7 +176,7 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 
 	let bootstrap = (
 		opts.network.bootstrap_peer_id(),
-		opts.network.bootstrap_multiaddr(),
+		opts.network.bootstrap_multiaddr(&config.libp2p.listeners),
 	);
 	config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 	config.genesis_hash = opts.network.genesis_hash().to_string();
