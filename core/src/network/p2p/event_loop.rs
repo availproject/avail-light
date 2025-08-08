@@ -6,7 +6,7 @@ use libp2p::{
 	identify::{self, Info},
 	kad::{
 		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
-		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult, RecordKey,
+		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult,
 	},
 	ping,
 	swarm::SwarmEvent,
@@ -99,29 +99,6 @@ pub struct EventLoop {
 	shutdown: Controller<String>,
 	event_loop_config: EventLoopConfig,
 	pub kad_mode: Mode,
-}
-
-#[derive(PartialEq, Debug)]
-enum DHTKey {
-	Cell(u32, u32, u32),
-	Row(u32, u32),
-}
-
-impl TryFrom<RecordKey> for DHTKey {
-	type Error = color_eyre::Report;
-
-	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
-		match *String::from_utf8(key.to_vec())?
-			.split(':')
-			.map(str::parse::<u32>)
-			.collect::<std::result::Result<Vec<_>, _>>()?
-			.as_slice()
-		{
-			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
-			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
-			_ => Err(eyre!("Invalid DHT key")),
-		}
-	}
 }
 
 impl EventLoop {
