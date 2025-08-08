@@ -134,7 +134,7 @@ impl RocksDBStore {
 
 impl RocksDBStore {
 	#[instrument(level = Level::TRACE, skip(self))]
-	pub fn get_cf(&self) -> Option<Arc<BoundColumnFamily>> {
+	pub fn get_cf(&self) -> Option<Arc<BoundColumnFamily<'_>>> {
 		let Some(cf) = self.records.cf_handle(KADEMLIA_STORE_CF) else {
 			error!("Couldn't get column family \"{KADEMLIA_STORE_CF}\" handle");
 			return None;

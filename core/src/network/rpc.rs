@@ -175,7 +175,7 @@ impl Nodes {
 		(first, second)
 	}
 
-	pub fn iter(&self) -> NodesIterator {
+	pub fn iter(&self) -> NodesIterator<'_> {
 		NodesIterator {
 			nodes: self,
 			current_index: 0,
