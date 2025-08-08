@@ -1,4 +1,5 @@
 use super::{protocol_name, AgentVersion, ProvidersConfig};
+#[cfg(not(feature = "rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::ServiceMode;
 use crate::types::{
@@ -390,6 +391,7 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	kad_cfg
 }
 
+#[cfg(not(feature = "rocksdb"))]
 impl From<&LibP2PConfig> for MemoryStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
 		MemoryStoreConfig {

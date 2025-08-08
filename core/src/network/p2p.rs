@@ -39,6 +39,7 @@ mod client;
 pub mod configuration;
 mod event_loop;
 mod kad_mem_providers;
+#[cfg(not(feature = "rocksdb"))]
 mod kad_mem_store;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
@@ -47,16 +48,17 @@ pub mod memory_swarm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod restart;
 
+#[cfg(not(feature = "rocksdb"))]
 pub use kad_mem_store::MemoryStoreConfig;
 #[cfg(feature = "rocksdb")]
 pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
 #[cfg(feature = "rocksdb")]
 pub use kad_rocksdb_store::RocksDBStoreConfig;
 
-#[cfg(not(feature = "rocksdb"))]
-pub type Store = kad_mem_store::MemoryStore;
 #[cfg(feature = "rocksdb")]
 pub type Store = kad_rocksdb_store::RocksDBStore;
+#[cfg(not(feature = "rocksdb"))]
+pub type Store = kad_mem_store::MemoryStore;
 
 use crate::{
 	data::{Database, P2PKeypairKey},
