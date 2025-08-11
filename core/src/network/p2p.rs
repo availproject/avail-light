@@ -73,6 +73,7 @@ use libp2p_allow_block_list as allow_block_list;
 pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager};
 
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.0";
+const MINIMUM_SUPPORTED_FAT_CLIENT_VERSION: &str = "1.9.2";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
 pub const MINIMUM_P2P_CLIENT_RESTART_INTERVAL: u64 = 60; // seconds
 
@@ -164,6 +165,8 @@ impl AgentVersion {
 	fn is_supported(&self) -> bool {
 		let minimum_version = if self.role == "bootstrap" {
 			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
+		} else if self.role == "fat-client" {
+			MINIMUM_SUPPORTED_FAT_CLIENT_VERSION
 		} else {
 			MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION
 		};
