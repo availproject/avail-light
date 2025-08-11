@@ -32,7 +32,7 @@ use super::{
 	OutputEvent, QueryChannel,
 };
 use crate::{
-	network::p2p::{is_global_address, AgentVersion},
+	network::p2p::{is_global_address, AgentVersion, KADEMLIA_PROTOCOL_BASE},
 	shutdown::Controller,
 	types::TimeToLive,
 };
@@ -237,11 +237,13 @@ impl EventLoop {
 		}
 
 		// Check if peer supports the correct Kademlia protocol
-		if !protocols
+		if let Some(protocol) = protocols
 			.iter()
-			.any(|p| p.as_ref() == kad_protocol_name.as_ref())
+			.find(|p| p.as_ref().starts_with(KADEMLIA_PROTOCOL_BASE))
 		{
-			return Err(eyre!("Incorrect peer Kademlia protocol name."));
+			if protocol.as_ref() != kad_protocol_name.as_ref() {
+				return Err(eyre!("Incorrect peer Kademlia protocol name."));
+			}
 		}
 
 		// Early exit if any address matches the blacklist filters
@@ -438,7 +440,8 @@ impl EventLoop {
 							},
 						connection_id: _,
 					} => {
-						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						trace!(agent_version,  "Identity received from {peer_id:?}, listen address: {listen_addrs:?}, protocols: {protocols:?}");
+
 						// KAD Discovery process
 						let kad_protocol_name = self
 							.swarm

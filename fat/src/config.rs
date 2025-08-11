@@ -120,6 +120,7 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 
 	config.log_level = opts.verbosity.unwrap_or(config.log_level);
 	config.log_format_json = opts.logs_json || config.log_format_json;
+	config.libp2p.identify.agent_role = "fat-client".to_string();
 
 	if let Some(network) = &opts.network {
 		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
