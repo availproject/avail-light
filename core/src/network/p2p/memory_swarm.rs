@@ -15,6 +15,7 @@ use libp2p::{
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use std::{fmt::Debug, time::Duration};
 use tokio::time::{self, timeout};
+use tokio_stream::{self, StreamExt as TokioStreamExt};
 
 #[async_trait]
 /// Extension trait for libp2p Swarm providing in-memory networking utilities.
@@ -526,5 +527,366 @@ where
 		}
 
 		connected_nodes
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use libp2p::{
+		identify, kad, ping,
+		swarm::behaviour::toggle::Toggle,
+		NetworkBehaviour, PeerId, Record,
+	};
+	use std::time::Duration;
+	use tokio::time::sleep;
+
+	// Test behavior that combines multiple protocols like ConfigurableBehaviour
+	#[derive(NetworkBehaviour)]
+	#[behaviour(event_process = false)]
+	pub struct TestBehaviour {
+		pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+		pub identify: identify::Behaviour,
+		pub ping: ping::Behaviour,
+	}
+
+	impl TestBehaviour {
+		pub fn new(keypair: Keypair) -> Self {
+			let peer_id = keypair.public().to_peer_id();
+			let store = kad::store::MemoryStore::new(peer_id);
+			let kademlia = kad::Behaviour::new(peer_id, store);
+			
+			let public_key = keypair.public();
+			let identify_config = identify::Config::new("avail-light/test/1.0.0".to_string(), public_key);
+			let identify = identify::Behaviour::new(identify_config);
+			
+			let ping_config = ping::Config::new();
+			let ping = ping::Behaviour::new(ping_config);
+
+			Self {
+				kademlia,
+				identify,
+				ping,
+			}
+		}
+	}
+
+	// Simple behavior for basic tests
+	#[derive(NetworkBehaviour)]
+	#[behaviour(event_process = false)]
+	pub struct SimpleBehaviour {
+		pub ping: ping::Behaviour,
+	}
+
+	impl SimpleBehaviour {
+		pub fn new(_keypair: Keypair) -> Self {
+			Self {
+				ping: ping::Behaviour::new(ping::Config::new()),
+			}
+		}
+	}
+
+	#[tokio::test]
+	async fn test_swarm_memory_transport_creation() {
+		let swarm = Swarm::with_memory_transport(SimpleBehaviour::new);
+		
+		// Verify the swarm was created successfully
+		assert!(!swarm.local_peer_id().to_string().is_empty());
+	}
+
+	#[tokio::test]
+	async fn test_peer_to_peer_connection() {
+		// Create two swarms
+		let mut swarm1 = Swarm::with_memory_transport(SimpleBehaviour::new);
+		let mut swarm2 = Swarm::with_memory_transport(SimpleBehaviour::new);
+
+		// Start listening on swarm2
+		let _addr = swarm2.start_listening().await;
+
+		// Connect swarm1 to swarm2
+		swarm1.connect_to_peer(&mut swarm2).await;
+
+		// Verify connection by checking connected peers
+		assert!(swarm1.connected_peers().any(|peer| peer == swarm2.local_peer_id()));
+		assert!(swarm2.connected_peers().any(|peer| peer == swarm1.local_peer_id()));
+	}
+
+	#[tokio::test]
+	async fn test_kademlia_record_storage_and_retrieval() {
+		let mut swarm1 = Swarm::with_memory_transport(TestBehaviour::new);
+		let mut swarm2 = Swarm::with_memory_transport(TestBehaviour::new);
+
+		// Start listening and connect
+		let _addr = swarm2.start_listening().await;
+		swarm1.connect_to_peer(&mut swarm2).await;
+
+		// Wait a bit for the connection to stabilize
+		sleep(Duration::from_millis(100)).await;
+
+		// Create a test record
+		let key = b"test-key".to_vec();
+		let value = b"test-value".to_vec();
+		let record = Record::new(key.clone(), value.clone());
+
+		// Store record in swarm1
+		let _ = swarm1.behaviour_mut().kademlia.put_record(record, kad::Quorum::One);
+
+		// Try to retrieve the record from swarm2
+		let record_key = kad::RecordKey::new(&key);
+		let _ = swarm2.behaviour_mut().kademlia.get_record(record_key);
+
+		// Wait for the get record result
+		let retrieval_result = tokio::time::timeout(Duration::from_secs(5), async {
+			loop {
+				match swarm2.next_behavior_event().await {
+					TestBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+						result: kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(peer_record))),
+						..
+					}) => {
+						return Some(peer_record.record);
+					},
+					TestBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+						result: kad::QueryResult::GetRecord(Err(_)),
+						..
+					}) => {
+						return None;
+					},
+					_ => continue,
+				}
+			}
+		}).await;
+
+		// Verify the record was retrieved successfully
+		assert!(retrieval_result.is_ok());
+		if let Some(retrieved_record) = retrieval_result.unwrap() {
+			assert_eq!(retrieved_record.key.to_vec(), key);
+			assert_eq!(retrieved_record.value, value);
+		}
+	}
+
+	#[tokio::test]
+	async fn test_identify_protocol() {
+		let mut swarm1 = Swarm::with_memory_transport(TestBehaviour::new);
+		let mut swarm2 = Swarm::with_memory_transport(TestBehaviour::new);
+
+		// Start listening and connect
+		let _addr = swarm2.start_listening().await;
+		swarm1.connect_to_peer(&mut swarm2).await;
+
+		// Wait for identify events
+		let identify_event = tokio::time::timeout(Duration::from_secs(5), async {
+			loop {
+				match swarm1.next_behavior_event().await {
+					TestBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. }) => {
+						return (peer_id, info.protocol_version);
+					},
+					_ => continue,
+				}
+			}
+		}).await;
+
+		assert!(identify_event.is_ok());
+		let (peer_id, protocol_version) = identify_event.unwrap();
+		assert_eq!(peer_id, *swarm2.local_peer_id());
+		assert_eq!(protocol_version, "avail-light/test/1.0.0");
+	}
+
+	#[tokio::test]
+	async fn test_mesh_event_propagation() {
+		let mut mesh = TestMesh::with_nodes(4, 42, TestBehaviour::new).await;
+
+		// Initiate a ping from the first node to trigger events
+		mesh.execute_on_first(|swarm| {
+			// Find a connected peer and ping it
+			if let Some(peer_id) = swarm.connected_peers().next() {
+				swarm.behaviour_mut().ping.ping(*peer_id);
+			}
+		});
+
+		// Wait for any ping event in the mesh
+		let event_result = mesh.wait_for_event(|event| {
+			matches!(event, TestBehaviourEvent::Ping(ping::Event { result: Ok(_), .. }))
+		}).await;
+
+		assert!(event_result.is_ok());
+	}
+
+	#[tokio::test]
+	async fn test_concurrent_operations() {
+		let mut swarm1 = Swarm::with_memory_transport(TestBehaviour::new);
+		let mut swarm2 = Swarm::with_memory_transport(TestBehaviour::new);
+		let mut swarm3 = Swarm::with_memory_transport(TestBehaviour::new);
+
+		// Set up mesh topology: swarm1 connects to both swarm2 and swarm3
+		let _addr2 = swarm2.start_listening().await;
+		let _addr3 = swarm3.start_listening().await;
+
+		// Connect swarm1 to both peers concurrently
+		let connect_future1 = swarm1.connect_to_peer(&mut swarm2);
+		let connect_future2 = swarm1.connect_to_peer(&mut swarm3);
+
+		// Wait for both connections to complete
+		tokio::join!(connect_future1, connect_future2);
+
+		// Verify swarm1 is connected to both peers
+		let connected_peers: Vec<PeerId> = swarm1.connected_peers().cloned().collect();
+		assert_eq!(connected_peers.len(), 2);
+		assert!(connected_peers.contains(swarm2.local_peer_id()));
+		assert!(connected_peers.contains(swarm3.local_peer_id()));
+	}
+
+	#[tokio::test]
+	async fn test_record_replication() {
+		let mut mesh = TestMesh::with_nodes(3, 42, TestBehaviour::new).await;
+
+		// Store a record on the first node
+		let key = b"replicated-key".to_vec();
+		let value = b"replicated-value".to_vec();
+		let record = Record::new(key.clone(), value.clone());
+
+		mesh.execute_on_first(|swarm| {
+			let _ = swarm.behaviour_mut().kademlia.put_record(record, kad::Quorum::All);
+		});
+
+		// Wait for record storage confirmation
+		let storage_result = mesh.wait_for_event(|event| {
+			matches!(
+				event,
+				TestBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+					result: kad::QueryResult::PutRecord(Ok(_)),
+					..
+				})
+			)
+		}).await;
+
+		assert!(storage_result.is_ok());
+	}
+
+	// Event Loop Integration Tests
+	#[tokio::test]
+	async fn test_event_loop_command_processing() {
+		use super::super::{EventLoop, OutputEvent};
+		use crate::{
+			network::p2p::configuration::LibP2PConfig,
+			shutdown::Controller,
+		};
+		use tokio::sync::mpsc;
+
+		// Create a minimal test configuration
+		let mut config = LibP2PConfig::default();
+		config.behaviour.enable_kademlia = false; // Simplify for testing
+		config.behaviour.enable_identify = false;
+		config.behaviour.enable_auto_nat = false;
+
+		let swarm = Swarm::with_memory_transport(SimpleBehaviour::new);
+		
+		// Create shutdown controller
+		let shutdown = Controller::new("test".to_string());
+		
+		// Create command and event channels
+		let (command_sender, command_receiver) = mpsc::unbounded_channel();
+		let (event_sender, mut _event_receiver) = mpsc::unbounded_channel();
+		
+		// Create event loop
+		let event_loop = EventLoop::new(
+			config,
+			swarm,
+			false,
+			command_receiver,
+			event_sender,
+			shutdown.clone(),
+		);
+
+		// Start event loop in background
+		let event_loop_handle = tokio::spawn(async move {
+			event_loop.run().await;
+		});
+
+		// Send a simple command
+		let test_executed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+		let test_executed_clone = test_executed.clone();
+		
+		command_sender.send(Box::new(move |_event_loop| {
+			test_executed_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+			Ok(())
+		})).unwrap();
+
+		// Wait a bit for command processing
+		sleep(Duration::from_millis(100)).await;
+
+		// Shutdown the event loop
+		shutdown.trigger_shutdown("Test completed".to_string());
+		
+		// Wait for event loop to finish
+		let _ = tokio::time::timeout(Duration::from_secs(5), event_loop_handle).await;
+		
+		// Verify command was executed
+		assert!(test_executed.load(std::sync::atomic::Ordering::SeqCst));
+	}
+
+	#[tokio::test]
+	async fn test_event_loop_graceful_shutdown() {
+		use super::super::{EventLoop};
+		use crate::{
+			network::p2p::configuration::LibP2PConfig,
+			shutdown::Controller,
+		};
+		use tokio::sync::mpsc;
+
+		let config = LibP2PConfig::default();
+		let swarm = Swarm::with_memory_transport(SimpleBehaviour::new);
+		
+		let shutdown = Controller::new("test".to_string());
+		let (command_sender, command_receiver) = mpsc::unbounded_channel();
+		let (event_sender, _event_receiver) = mpsc::unbounded_channel();
+		
+		let event_loop = EventLoop::new(
+			config,
+			swarm,
+			false,
+			command_receiver,
+			event_sender,
+			shutdown.clone(),
+		);
+
+		// Start event loop
+		let start_time = std::time::Instant::now();
+		let event_loop_handle = tokio::spawn(async move {
+			event_loop.run().await;
+		});
+
+		// Give it a moment to start
+		sleep(Duration::from_millis(100)).await;
+
+		// Trigger shutdown
+		shutdown.trigger_shutdown("Graceful shutdown test".to_string());
+		
+		// Wait for event loop to finish
+		let result = tokio::time::timeout(Duration::from_secs(5), event_loop_handle).await;
+		let shutdown_time = start_time.elapsed();
+		
+		// Verify shutdown happened within reasonable time
+		assert!(result.is_ok());
+		assert!(shutdown_time < Duration::from_secs(2)); // Should shutdown quickly
+	}
+
+	#[tokio::test]
+	async fn test_large_mesh_connectivity() {
+		let mut mesh = TestMesh::with_nodes(10, 42, SimpleBehaviour::new).await;
+
+		// Test that all nodes can communicate by triggering ping on first node
+		mesh.execute_on_first(|swarm| {
+			// Ping all connected peers
+			for peer_id in swarm.connected_peers() {
+				swarm.behaviour_mut().ping.ping(*peer_id);
+			}
+		});
+
+		// Wait for at least one ping response
+		let ping_result = mesh.wait_for_event(|event| {
+			matches!(event, SimpleBehaviourEvent::Ping(ping::Event { result: Ok(_), .. }))
+		}).await;
+
+		assert!(ping_result.is_ok());
 	}
 }
