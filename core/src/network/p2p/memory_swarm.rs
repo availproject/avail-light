@@ -534,9 +534,7 @@ where
 mod tests {
 	use super::*;
 	use libp2p::{
-		identify, kad, ping,
-		swarm::behaviour::toggle::Toggle,
-		NetworkBehaviour, PeerId, Record,
+		identify, kad, ping, swarm::behaviour::toggle::Toggle, NetworkBehaviour, PeerId, Record,
 	};
 	use std::time::Duration;
 	use tokio::time::sleep;
@@ -555,11 +553,12 @@ mod tests {
 			let peer_id = keypair.public().to_peer_id();
 			let store = kad::store::MemoryStore::new(peer_id);
 			let kademlia = kad::Behaviour::new(peer_id, store);
-			
+
 			let public_key = keypair.public();
-			let identify_config = identify::Config::new("avail-light/test/1.0.0".to_string(), public_key);
+			let identify_config =
+				identify::Config::new("avail-light/test/1.0.0".to_string(), public_key);
 			let identify = identify::Behaviour::new(identify_config);
-			
+
 			let ping_config = ping::Config::new();
 			let ping = ping::Behaviour::new(ping_config);
 
@@ -589,7 +588,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_swarm_memory_transport_creation() {
 		let swarm = Swarm::with_memory_transport(SimpleBehaviour::new);
-		
+
 		// Verify the swarm was created successfully
 		assert!(!swarm.local_peer_id().to_string().is_empty());
 	}
@@ -607,8 +606,12 @@ mod tests {
 		swarm1.connect_to_peer(&mut swarm2).await;
 
 		// Verify connection by checking connected peers
-		assert!(swarm1.connected_peers().any(|peer| peer == swarm2.local_peer_id()));
-		assert!(swarm2.connected_peers().any(|peer| peer == swarm1.local_peer_id()));
+		assert!(swarm1
+			.connected_peers()
+			.any(|peer| peer == swarm2.local_peer_id()));
+		assert!(swarm2
+			.connected_peers()
+			.any(|peer| peer == swarm1.local_peer_id()));
 	}
 
 	#[tokio::test]
@@ -629,7 +632,10 @@ mod tests {
 		let record = Record::new(key.clone(), value.clone());
 
 		// Store record in swarm1
-		let _ = swarm1.behaviour_mut().kademlia.put_record(record, kad::Quorum::One);
+		let _ = swarm1
+			.behaviour_mut()
+			.kademlia
+			.put_record(record, kad::Quorum::One);
 
 		// Try to retrieve the record from swarm2
 		let record_key = kad::RecordKey::new(&key);
@@ -640,7 +646,8 @@ mod tests {
 			loop {
 				match swarm2.next_behavior_event().await {
 					TestBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
-						result: kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(peer_record))),
+						result:
+							kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(peer_record))),
 						..
 					}) => {
 						return Some(peer_record.record);
@@ -654,7 +661,8 @@ mod tests {
 					_ => continue,
 				}
 			}
-		}).await;
+		})
+		.await;
 
 		// Verify the record was retrieved successfully
 		assert!(retrieval_result.is_ok());
@@ -677,13 +685,18 @@ mod tests {
 		let identify_event = tokio::time::timeout(Duration::from_secs(5), async {
 			loop {
 				match swarm1.next_behavior_event().await {
-					TestBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. }) => {
+					TestBehaviourEvent::Identify(identify::Event::Received {
+						peer_id,
+						info,
+						..
+					}) => {
 						return (peer_id, info.protocol_version);
 					},
 					_ => continue,
 				}
 			}
-		}).await;
+		})
+		.await;
 
 		assert!(identify_event.is_ok());
 		let (peer_id, protocol_version) = identify_event.unwrap();
@@ -704,9 +717,14 @@ mod tests {
 		});
 
 		// Wait for any ping event in the mesh
-		let event_result = mesh.wait_for_event(|event| {
-			matches!(event, TestBehaviourEvent::Ping(ping::Event { result: Ok(_), .. }))
-		}).await;
+		let event_result = mesh
+			.wait_for_event(|event| {
+				matches!(
+					event,
+					TestBehaviourEvent::Ping(ping::Event { result: Ok(_), .. })
+				)
+			})
+			.await;
 
 		assert!(event_result.is_ok());
 	}
@@ -745,19 +763,24 @@ mod tests {
 		let record = Record::new(key.clone(), value.clone());
 
 		mesh.execute_on_first(|swarm| {
-			let _ = swarm.behaviour_mut().kademlia.put_record(record, kad::Quorum::All);
+			let _ = swarm
+				.behaviour_mut()
+				.kademlia
+				.put_record(record, kad::Quorum::All);
 		});
 
 		// Wait for record storage confirmation
-		let storage_result = mesh.wait_for_event(|event| {
-			matches!(
-				event,
-				TestBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
-					result: kad::QueryResult::PutRecord(Ok(_)),
-					..
-				})
-			)
-		}).await;
+		let storage_result = mesh
+			.wait_for_event(|event| {
+				matches!(
+					event,
+					TestBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+						result: kad::QueryResult::PutRecord(Ok(_)),
+						..
+					})
+				)
+			})
+			.await;
 
 		assert!(storage_result.is_ok());
 	}
@@ -766,10 +789,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_event_loop_command_processing() {
 		use super::super::{EventLoop, OutputEvent};
-		use crate::{
-			network::p2p::configuration::LibP2PConfig,
-			shutdown::Controller,
-		};
+		use crate::{network::p2p::configuration::LibP2PConfig, shutdown::Controller};
 		use tokio::sync::mpsc;
 
 		// Create a minimal test configuration
@@ -779,14 +799,14 @@ mod tests {
 		config.behaviour.enable_auto_nat = false;
 
 		let swarm = Swarm::with_memory_transport(SimpleBehaviour::new);
-		
+
 		// Create shutdown controller
 		let shutdown = Controller::new("test".to_string());
-		
+
 		// Create command and event channels
 		let (command_sender, command_receiver) = mpsc::unbounded_channel();
 		let (event_sender, mut _event_receiver) = mpsc::unbounded_channel();
-		
+
 		// Create event loop
 		let event_loop = EventLoop::new(
 			config,
@@ -805,41 +825,40 @@ mod tests {
 		// Send a simple command
 		let test_executed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 		let test_executed_clone = test_executed.clone();
-		
-		command_sender.send(Box::new(move |_event_loop| {
-			test_executed_clone.store(true, std::sync::atomic::Ordering::SeqCst);
-			Ok(())
-		})).unwrap();
+
+		command_sender
+			.send(Box::new(move |_event_loop| {
+				test_executed_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+				Ok(())
+			}))
+			.unwrap();
 
 		// Wait a bit for command processing
 		sleep(Duration::from_millis(100)).await;
 
 		// Shutdown the event loop
 		shutdown.trigger_shutdown("Test completed".to_string());
-		
+
 		// Wait for event loop to finish
 		let _ = tokio::time::timeout(Duration::from_secs(5), event_loop_handle).await;
-		
+
 		// Verify command was executed
 		assert!(test_executed.load(std::sync::atomic::Ordering::SeqCst));
 	}
 
 	#[tokio::test]
 	async fn test_event_loop_graceful_shutdown() {
-		use super::super::{EventLoop};
-		use crate::{
-			network::p2p::configuration::LibP2PConfig,
-			shutdown::Controller,
-		};
+		use super::super::EventLoop;
+		use crate::{network::p2p::configuration::LibP2PConfig, shutdown::Controller};
 		use tokio::sync::mpsc;
 
 		let config = LibP2PConfig::default();
 		let swarm = Swarm::with_memory_transport(SimpleBehaviour::new);
-		
+
 		let shutdown = Controller::new("test".to_string());
 		let (command_sender, command_receiver) = mpsc::unbounded_channel();
 		let (event_sender, _event_receiver) = mpsc::unbounded_channel();
-		
+
 		let event_loop = EventLoop::new(
 			config,
 			swarm,
@@ -860,11 +879,11 @@ mod tests {
 
 		// Trigger shutdown
 		shutdown.trigger_shutdown("Graceful shutdown test".to_string());
-		
+
 		// Wait for event loop to finish
 		let result = tokio::time::timeout(Duration::from_secs(5), event_loop_handle).await;
 		let shutdown_time = start_time.elapsed();
-		
+
 		// Verify shutdown happened within reasonable time
 		assert!(result.is_ok());
 		assert!(shutdown_time < Duration::from_secs(2)); // Should shutdown quickly
@@ -883,9 +902,14 @@ mod tests {
 		});
 
 		// Wait for at least one ping response
-		let ping_result = mesh.wait_for_event(|event| {
-			matches!(event, SimpleBehaviourEvent::Ping(ping::Event { result: Ok(_), .. }))
-		}).await;
+		let ping_result = mesh
+			.wait_for_event(|event| {
+				matches!(
+					event,
+					SimpleBehaviourEvent::Ping(ping::Event { result: Ok(_), .. })
+				)
+			})
+			.await;
 
 		assert!(ping_result.is_ok());
 	}
