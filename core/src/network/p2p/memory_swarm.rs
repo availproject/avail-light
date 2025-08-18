@@ -581,19 +581,13 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_event_loop_with_init_and_start_p2p_client() {
-		// Create test configuration
 		let mut cfg = LibP2PConfig::default();
 		cfg.local_test_mode = true;
-		cfg.port = 9000;
 
-		// Generate keypair and peer ID
 		let keypair = Keypair::generate_ed25519();
 		let peer_id = keypair.public().to_peer_id();
-
-		// Create shutdown controller
 		let shutdown = Controller::new();
 
-		// Create temporary database for testing
 		let temp_dir = std::env::temp_dir().join("avail_test_db");
 		let db = DB::open(&temp_dir.to_string_lossy()).expect("Failed to create test database");
 
@@ -638,24 +632,19 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_swarm_testing_ext_event_handling() {
-		// Create a test mesh with 2 nodes
 		let mut mesh = TestMesh::with_nodes(2, 42, create_test_behaviour).await;
 
-		// Test that we can execute operations on the mesh
 		let node_count = mesh.node_count();
 		assert_eq!(node_count, 2);
 
-		// Test executing on first node
 		mesh.execute_on_first(|swarm| {
 			let peer_id = *swarm.local_peer_id();
 			info!("First node peer ID: {}", peer_id);
 		});
 
-		// Test executing on all nodes
 		let peer_ids = mesh.execute_on_all_nodes(|swarm| *swarm.local_peer_id());
 		assert_eq!(peer_ids.len(), 2);
 
-		// Ensure the peer IDs are different
 		assert_ne!(peer_ids[0], peer_ids[1]);
 
 		info!("Successfully tested mesh operations with ConfigurableBehaviour");
