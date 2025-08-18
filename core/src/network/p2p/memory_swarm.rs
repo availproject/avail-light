@@ -601,7 +601,7 @@ mod tests {
 		let result = init_and_start_p2p_client(
 			&cfg,
 			ProjectName::default(),
-			"DEV", 
+			"DEV",
 			keypair,
 			peer_id,
 			"test-1.0.0",
