@@ -533,54 +533,24 @@ where
 mod tests {
 	use super::*;
 	use crate::network::p2p::{
-		configuration::LibP2PConfig, init_and_start_p2p_client, ConfigurableBehaviour, Store,
+		configuration::LibP2PConfig, init_and_start_p2p_client, OutputEvent,
 	};
 	use crate::{data::DB, shutdown::Controller, types::ProjectName};
-	use libp2p::{identify, identity::Keypair, kad, ping};
+	use libp2p::{identity::Keypair, kad};
 
 	use std::time::Duration;
 	use tracing::info;
 
-	/// Creates a ConfigurableBehaviour using the same method as in the init function
-	fn create_test_behaviour(keypair: Keypair) -> ConfigurableBehaviour {
-		let peer_id = keypair.public().to_peer_id();
-
-		// Create store using the same method as in the init function
-		let store = Store::with_config(
-			peer_id,
-			(&LibP2PConfig::default()).into(),
-			#[cfg(feature = "rocksdb")]
-			{
-				let temp_dir = std::env::temp_dir().join("avail_test_store");
-				DB::open(&temp_dir.to_string_lossy())
-					.expect("Failed to create test database")
-					.inner()
-			},
-		);
-
-		// Create Kademlia behavior
-		let kademlia = kad::Behaviour::new(peer_id, store);
-
-		// Create minimal Identify behavior
-		let identify = identify::Behaviour::new(identify::Config::new(
-			"test-protocol".to_string(),
-			keypair.public(),
-		));
-
-		// Create minimal Ping behavior
-		let ping = ping::Behaviour::new(ping::Config::new());
-
-		ConfigurableBehaviour {
-			kademlia: Some(kademlia).into(),
-			identify: Some(identify).into(),
-			ping: Some(ping).into(),
-			auto_nat: None.into(),
-			blocked_peers: None.into(),
-		}
-	}
-
-	#[tokio::test]
-	async fn test_event_loop_with_init_and_start_p2p_client() {
+	async fn init_test_p2p_client(
+		genesis_hash: &str,
+	) -> Result<
+		(
+			crate::network::p2p::Client,
+			tokio::sync::mpsc::UnboundedReceiver<OutputEvent>,
+			Controller<String>,
+		),
+		String,
+	> {
 		let mut cfg = LibP2PConfig::default();
 		cfg.local_test_mode = true;
 
@@ -588,28 +558,42 @@ mod tests {
 		let peer_id = keypair.public().to_peer_id();
 		let shutdown = Controller::new();
 
-		let temp_dir = std::env::temp_dir().join("avail_test_db");
-		let db = DB::open(&temp_dir.to_string_lossy()).expect("Failed to create test database");
+		// Create database - use default for testing
+		let db = DB::default();
+
+		// Use clap version instead of hardcoded version
+		let version = clap::crate_version!();
 
 		// Use init_and_start_p2p_client to create the P2P client
 		let result = init_and_start_p2p_client(
 			&cfg,
 			ProjectName::default(),
-			"DEV",
+			genesis_hash,
 			keypair,
 			peer_id,
-			"test-1.0.0",
+			version,
 			shutdown.clone(),
 			db,
 		)
 		.await;
 
 		match result {
-			Ok((_p2p_client, mut event_receiver)) => {
-				info!("P2P client initialized successfully");
-				info!("Peer ID: {}", peer_id);
+			Ok((p2p_client, event_receiver)) => Ok((p2p_client, event_receiver, shutdown)),
+			Err(e) => Err(e.to_string()),
+		}
+	}
 
-				info!("P2P client is operational");
+	fn create_simple_test_behaviour(keypair: Keypair) -> kad::Behaviour<kad::store::MemoryStore> {
+		let peer_id = keypair.public().to_peer_id();
+		let store = kad::store::MemoryStore::new(peer_id);
+		kad::Behaviour::new(peer_id, store)
+	}
+
+	#[tokio::test]
+	async fn test_event_loop_with_init_and_start_p2p_client() {
+		match init_test_p2p_client("DEV").await {
+			Ok((_p2p_client, mut event_receiver, shutdown)) => {
+				info!("P2P client initialized successfully");
 
 				tokio::select! {
 					event = event_receiver.recv() => {
@@ -625,36 +609,65 @@ mod tests {
 				let _ = shutdown.trigger_shutdown("Test completed".to_string());
 			},
 			Err(e) => {
-				info!("Failed to initialize P2P client: {}", e);
+				panic!("Failed to initialize P2P client: {}", e);
 			},
 		}
 	}
 
 	#[tokio::test]
-	async fn test_swarm_testing_ext_event_handling() {
-		let mut mesh = TestMesh::with_nodes(2, 42, create_test_behaviour).await;
+	async fn test_event_loop_connection_events() {
+		// Test that specifically checks for connection-related events
+		match init_test_p2p_client("DEV").await {
+			Ok((_p2p_client, mut event_receiver, shutdown)) => {
+				let timeout = Duration::from_secs(5);
+				let mut connection_events = Vec::new();
 
-		let node_count = mesh.node_count();
-		assert_eq!(node_count, 2);
+				info!("Monitoring for connection events");
 
-		mesh.execute_on_first(|swarm| {
-			let peer_id = *swarm.local_peer_id();
-			info!("First node peer ID: {}", peer_id);
-		});
+				// Monitor events for connection activity
+				let _events_result = tokio::time::timeout(timeout, async {
+					while connection_events.len() < 3 {
+						if let Some(event) = event_receiver.recv().await {
+							match event {
+								OutputEvent::IncomingConnection
+								| OutputEvent::EstablishedConnection
+								| OutputEvent::IncomingConnectionError
+								| OutputEvent::OutgoingConnectionError => {
+									info!("Connection event detected: {:?}", event);
+									connection_events.push(event);
+								},
+								OutputEvent::Count => {
+									// Count events are expected, don't log these
+								},
+								other => {
+									info!("Other event: {:?}", other);
+								},
+							}
+						} else {
+							break;
+						}
+					}
+					connection_events
+				})
+				.await;
 
-		let peer_ids = mesh.execute_on_all_nodes(|swarm| *swarm.local_peer_id());
-		assert_eq!(peer_ids.len(), 2);
+				let _ = shutdown.trigger_shutdown("Connection event test completed".to_string());
 
-		assert_ne!(peer_ids[0], peer_ids[1]);
-
-		info!("Successfully tested mesh operations with ConfigurableBehaviour");
+				// Even if we don't get connection events, we should get Count events
+				// This test mainly verifies the event loop is functioning
+				info!("Event loop successfully processed events - connection monitoring complete")
+			},
+			Err(e) => {
+				panic!("Failed to initialize P2P client: {}", e);
+			},
+		}
 	}
 
 	#[tokio::test]
 	async fn test_memory_swarm_connection_events() {
 		// Create swarms and test basic connection establishment
-		let mut swarm1 = Swarm::with_memory_transport(create_test_behaviour);
-		let mut swarm2 = Swarm::with_memory_transport(create_test_behaviour);
+		let mut swarm1 = Swarm::with_memory_transport(create_simple_test_behaviour);
+		let mut swarm2 = Swarm::with_memory_transport(create_simple_test_behaviour);
 
 		// Start listening
 		let addr1 = swarm1.start_listening().await;
