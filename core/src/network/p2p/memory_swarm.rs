@@ -615,10 +615,8 @@ mod tests {
 				info!("P2P client initialized successfully");
 				info!("Peer ID: {}", peer_id);
 
-				// Test basic client functionality - client is working
 				info!("P2P client is operational");
 
-				// Wait for some events or timeout
 				tokio::select! {
 					event = event_receiver.recv() => {
 						if let Some(event) = event {
@@ -630,12 +628,10 @@ mod tests {
 					}
 				}
 
-				// Trigger shutdown
 				let _ = shutdown.trigger_shutdown("Test completed".to_string());
 			},
 			Err(e) => {
 				info!("Failed to initialize P2P client: {}", e);
-				// The test still passes as we're testing the integration
 			},
 		}
 	}
