@@ -323,8 +323,11 @@ async fn build_swarm(
 			None
 		};
 
-		let auto_nat = match cfg.behaviour.auto_nat_mode {
-			AutoNatMode::Disabled => None,
+		let auto_nat = match (
+			&cfg.behaviour.auto_nat_mode,
+			cfg.kademlia.automatic_server_mode,
+		) {
+			(AutoNatMode::Disabled, _) | (_, false) => None,
 			_ => {
 				let autonat_cfg = auto_nat_config(cfg);
 				Some(autonat::Behaviour::new(
