@@ -182,6 +182,11 @@ pub async fn run(
 	let started_at = Instant::now();
 
 	loop {
+		if block_receiver.is_closed() {
+			info!("Block receiver closed, exiting maintenance loop.");
+			return;
+		}
+
 		if let Some(delay) = restart_delay {
 			if started_at.elapsed() >= delay {
 				let mut restart = restart.lock().await;
