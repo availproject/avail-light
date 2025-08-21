@@ -558,13 +558,10 @@ mod tests {
 		let peer_id = keypair.public().to_peer_id();
 		let shutdown = Controller::new();
 
-		// Create database - use default for testing
 		let db = DB::default();
 
-		// Use clap version instead of hardcoded version
 		let version = clap::crate_version!();
 
-		// Use init_and_start_p2p_client to create the P2P client
 		let result = init_and_start_p2p_client(
 			&cfg,
 			ProjectName::default(),
@@ -616,7 +613,6 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_event_loop_connection_events() {
-		// Test that specifically checks for connection-related events
 		match init_test_p2p_client("DEV").await {
 			Ok((_p2p_client, mut event_receiver, shutdown)) => {
 				let timeout = Duration::from_secs(5);
@@ -637,7 +633,7 @@ mod tests {
 									connection_events.push(event);
 								},
 								OutputEvent::Count => {
-									// Count events are expected, don't log these
+									// Count events are expected
 								},
 								other => {
 									info!("Other event: {:?}", other);
@@ -665,18 +661,15 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_memory_swarm_connection_events() {
-		// Create swarms and test basic connection establishment
 		let mut swarm1 = Swarm::with_memory_transport(create_simple_test_behaviour);
 		let mut swarm2 = Swarm::with_memory_transport(create_simple_test_behaviour);
 
-		// Start listening
 		let addr1 = swarm1.start_listening().await;
 		let addr2 = swarm2.start_listening().await;
 
 		info!("Swarm1 listening on: {}", addr1);
 		info!("Swarm2 listening on: {}", addr2);
 
-		// Test connection establishment
 		swarm1.connect_to_peer(&mut swarm2).await;
 
 		// Verify connection by waiting for a behavior event or swarm event
