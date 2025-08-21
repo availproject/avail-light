@@ -440,7 +440,7 @@ impl EventLoop {
 							},
 						connection_id: _,
 					} => {
-						trace!(agent_version,  "Identity received from {peer_id:?}, listen address: {listen_addrs:?}, protocols: {protocols:?}");
+						info!(agent_version, "Identity received from {peer_id:?}, listen address: {listen_addrs:?}, protocols: {protocols:?}");
 
 						// KAD Discovery process
 						let kad_protocol_name = self
