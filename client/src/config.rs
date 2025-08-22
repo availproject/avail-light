@@ -2,11 +2,14 @@ use std::{ops::Range, time::Duration};
 
 use avail_light_core::{
 	api::configuration::{APIConfig, SharedConfig},
-	network::{p2p::configuration::LibP2PConfig, rpc::configuration::RPCConfig},
+	network::{
+		p2p::configuration::{AutoNatMode, LibP2PConfig},
+		rpc::configuration::RPCConfig,
+	},
 	telemetry::otlp::OtelConfig,
 	types::{
-		option_duration_seconds_format, tracing_level_format, AppClientConfig, MaintenanceConfig,
-		NetworkMode, Origin, ProjectName, SyncClientConfig,
+		option_duration_seconds_format, tracing_level_format, AppClientConfig, KademliaMode,
+		MaintenanceConfig, NetworkMode, Origin, ProjectName, SyncClientConfig,
 	},
 };
 use serde::{Deserialize, Serialize};
@@ -122,7 +125,7 @@ impl From<&RuntimeConfig> for SharedConfig {
 
 impl Default for RuntimeConfig {
 	fn default() -> Self {
-		RuntimeConfig {
+		let mut config = RuntimeConfig {
 			project_name: ProjectName::new("avail".to_string()),
 			operator_address: None,
 			api: Default::default(),
@@ -152,7 +155,14 @@ impl Default for RuntimeConfig {
 			maintenance_restart: false,
 			maintenance_restart_delay: 60 * 60,
 			p2p_client_restart_interval: None,
+		};
+
+		if config.libp2p.kademlia.automatic_server_mode == false
+			&& config.libp2p.kademlia.operation_mode == KademliaMode::Server
+		{
+			config.libp2p.behaviour.auto_nat_mode = AutoNatMode::Server;
 		}
+		config
 	}
 }
 

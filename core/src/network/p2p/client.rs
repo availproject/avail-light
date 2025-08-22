@@ -232,8 +232,6 @@ impl Client {
 				.await
 				.map_err(|e| eyre!("Failed to dial bootstrap peer: {e}"))?;
 			self.add_address(peer, addr.clone()).await?;
-
-			self.add_autonat_server(peer, addr).await?;
 		}
 		Ok(())
 	}
