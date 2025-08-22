@@ -6,8 +6,6 @@ use kate_recovery::{
 
 use color_eyre::eyre;
 #[cfg(feature = "multiproof")]
-use kate::couscous::multiproof_params;
-#[cfg(feature = "multiproof")]
 use kate::pmp::{ark_bls12_381::Bls12_381, method1::M1NoPrecomp, msm::blst::BlstMSMEngine};
 #[cfg(feature = "multiproof")]
 use kate_recovery::proof::verify_multi_proof;
@@ -23,6 +21,22 @@ use {
 	tokio::sync::OnceCell,
 	tracing::{info, warn},
 };
+
+#[cfg(feature = "multiproof")]
+use {
+	avail_core::AppExtrinsic,
+	kate::{
+		couscous::multiproof_params,
+		Seed,
+	},
+	kate_recovery::data::GCellBlock,
+};
+
+// Define additional types that may be needed
+#[cfg(feature = "multiproof")]
+pub type BlockLength = u32; // Simplified, adjust based on actual type
+
+
 
 #[cfg(not(feature = "multiproof"))]
 use {
@@ -166,4 +180,34 @@ pub async fn get_or_init_pmp() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine>
 }
 
 #[cfg(feature = "multiproof")]
+pub async fn get_or_init_srs() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine> {
+	SRS.get_or_init(|| async {
+		let srs = multiproof_params();
+		info!("SRS initialized successfully");
+		srs
+	})
+	.await
+}
+
+#[cfg(feature = "multiproof")]
 pub static PMP: OnceCell<M1NoPrecomp<Bls12_381, BlstMSMEngine>> = OnceCell::const_new();
+
+#[cfg(feature = "multiproof")]
+pub static SRS: OnceCell<M1NoPrecomp<Bls12_381, BlstMSMEngine>> = OnceCell::const_new();
+
+/// Generates multiproofs for given extrinsics and cell positions
+/// 
+#[cfg(feature = "multiproof")]
+pub async fn multiproof(
+	_extrinsics: Vec<AppExtrinsic>,
+	_block_len: BlockLength,
+	_seed: Seed,
+	_cells: Vec<(u32, u32)>,
+) -> eyre::Result<Vec<(Vec<u8>, GCellBlock)>> {
+	// TODO: Implement proper multiproof generation when std feature is available
+	// This requires EvaluationGrid and related types from kate::gridgen::core
+	Err(eyre::eyre!(
+		"Multiproof generation requires std feature for kate library. \
+		Enable std feature or implement with available no-std compatible types."
+	))
+}
