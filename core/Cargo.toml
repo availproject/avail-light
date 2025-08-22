@@ -81,7 +81,7 @@ tracing-error = "0.2"
 uuid = { workspace = true }
 void = { workspace = true }
 warp = { workspace = true }
-
+rayon = { workspace = true }
 # OpenTelemetry
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }

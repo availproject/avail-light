@@ -40,6 +40,7 @@ libp2p = { version = "0.56.0", features = ["kad", "identify", "ping", "autonat",
 libp2p-allow-block-list = "0.6.0"
 libp2p-webrtc-websys = "0.4.0"
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
+rayon = "1.11.0"
 semver = "1.0.23"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.35", default-features = false, features = ["sync", "macros", "io-util", "rt", "time"] }
