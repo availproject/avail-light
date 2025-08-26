@@ -56,7 +56,7 @@ impl Default for BehaviourConfig {
 			enable_kademlia: true,
 			enable_identify: true,
 			enable_ping: true,
-			auto_nat_mode: AutoNatMode::Client,
+			auto_nat_mode: AutoNatMode::Disabled,
 			enable_peer_blocking: true,
 		}
 	}
@@ -391,6 +391,7 @@ pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 		boot_delay: cfg.autonat.boot_delay,
 		throttle_server_period: cfg.autonat.throttle,
 		only_global_ips: cfg.autonat.only_global_ips,
+		use_connected: cfg.behaviour.auto_nat_mode == AutoNatMode::Client,
 		..Default::default()
 	}
 }

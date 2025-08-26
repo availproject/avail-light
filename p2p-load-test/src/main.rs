@@ -268,7 +268,7 @@ async fn main() -> Result<()> {
 
 	// Bootstrap
 	p2p_client
-		.bootstrap_on_startup(&config.libp2p.bootstraps)
+		.bootstrap_on_startup()
 		.await?;
 	info!("Connected to bootstrap nodes");
 

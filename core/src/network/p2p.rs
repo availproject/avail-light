@@ -262,6 +262,8 @@ pub async fn init(
 		command_sender,
 		cfg.dht_parallelization_limit,
 		cfg.kademlia.kad_record_ttl,
+		cfg.bootstraps.clone(),
+		cfg.behaviour.auto_nat_mode.clone(),
 	);
 	// create Store
 	let store = Store::with_config(

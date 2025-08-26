@@ -31,8 +31,8 @@ use tracing::{debug, info, trace, warn};
 use web_time::{Duration, Instant};
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global_address, Command, EventLoop, MultiAddressInfo,
-	OutputEvent, PeerInfo, QueryChannel,
+	configuration::AutoNatMode, event_loop::ConnectionEstablishedInfo, is_global_address, Command,
+	EventLoop, MultiAddressInfo, OutputEvent, PeerInfo, QueryChannel,
 };
 use crate::types::PeerAddress;
 
@@ -44,6 +44,10 @@ pub struct Client {
 	/// Cell time to live in DHT (in seconds)
 	ttl: Duration,
 	listeners: Vec<ListenerId>,
+	/// Bootstrap node addresses
+	bootstraps: Vec<PeerAddress>,
+	/// AutoNAT mode configuration
+	auto_nat_mode: AutoNatMode,
 }
 
 struct DHTCell(Cell);
@@ -84,12 +88,16 @@ impl Client {
 		sender: UnboundedSender<Command>,
 		dht_parallelization_limit: usize,
 		ttl: Duration,
+		bootstraps: Vec<PeerAddress>,
+		auto_nat_mode: AutoNatMode,
 	) -> Self {
 		Self {
 			command_sender: sender,
 			dht_parallelization_limit,
 			ttl,
 			listeners: vec![],
+			bootstraps,
+			auto_nat_mode,
 		}
 	}
 
@@ -226,14 +234,15 @@ impl Client {
 
 	// Bootstrap is triggered automatically on add_address call
 	// Bootstrap nodes are also used as autonat servers
-	pub async fn bootstrap_on_startup(&self, bootstraps: &[PeerAddress]) -> Result<()> {
-		for (peer, addr) in bootstraps.iter().map(Into::into) {
+	pub async fn bootstrap_on_startup(&self) -> Result<()> {
+		for (peer, addr) in self.bootstraps.iter().map(Into::into) {
 			self.dial_peer(peer, vec![addr.clone()], PeerCondition::Always)
 				.await
 				.map_err(|e| eyre!("Failed to dial bootstrap peer: {e}"))?;
 			self.add_address(peer, addr.clone()).await?;
-
-			self.add_autonat_server(peer, addr).await?;
+			if self.auto_nat_mode == AutoNatMode::Client {
+				self.add_autonat_server(peer, addr).await?;
+			}
 		}
 		Ok(())
 	}
