@@ -55,6 +55,8 @@ tar = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 avail-rust = { workspace = true, default-features = true }
+kate = { workspace = true, default-features = true }
+kate-recovery = { workspace = true, default-features = true }
 async-std = { workspace = true }
 color-eyre = { workspace = true, default-features = true }
 confy = { workspace = true }

@@ -1,14 +1,13 @@
-use kate_recovery::{
-	commons::ArkPublicParams,
-	data::Cell,
-	matrix::{Dimensions, Position},
-};
-
 use color_eyre::eyre;
 #[cfg(feature = "multiproof")]
 use kate::pmp::{ark_bls12_381::Bls12_381, method1::M1NoPrecomp, msm::blst::BlstMSMEngine};
 #[cfg(feature = "multiproof")]
 use kate_recovery::proof::verify_multi_proof;
+use kate_recovery::{
+	commons::ArkPublicParams,
+	data::Cell,
+	matrix::{Dimensions, Position},
+};
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::time::Instant;
@@ -24,28 +23,55 @@ use {
 
 #[cfg(feature = "multiproof")]
 use {
-	avail_core::AppExtrinsic,
-	kate::{
-		couscous::multiproof_params,
-		Seed,
-	},
+	avail_core::{AppExtrinsic, BlockLengthColumns, BlockLengthRows},
+	core::num::NonZeroU16,
+	kate::{couscous::multiproof_params, ArkScalar, Seed},
 	kate_recovery::data::GCellBlock,
+	rayon::iter::{IntoParallelIterator, ParallelIterator},
 };
 
-// Define additional types that may be needed
 #[cfg(feature = "multiproof")]
-pub type BlockLength = u32; // Simplified, adjust based on actual type
+use kate::{
+	com::Cell as KateCell,
+	gridgen::core::{AsBytes as _, EvaluationGrid as EGrid},
+};
 
+#[cfg(feature = "multiproof")]
+pub type GMultiProof = (Vec<GRawScalar>, GProof);
 
+#[cfg(feature = "multiproof")]
+#[derive(Clone, Debug)]
+pub struct GProof(pub [u8; 48]);
+
+#[cfg(feature = "multiproof")]
+#[derive(Clone, Debug)]
+pub struct GRawScalar(pub [u64; 4]);
+// Simplified block length for this implementation
+#[cfg(feature = "multiproof")]
+#[derive(Clone, Copy)]
+pub struct BlockLength {
+	pub rows: BlockLengthRows,
+	pub cols: BlockLengthColumns,
+}
+
+#[cfg(feature = "multiproof")]
+impl BlockLength {
+	pub fn new(rows: u32, cols: u32) -> Self {
+		Self {
+			rows: BlockLengthRows(rows),
+			cols: BlockLengthColumns(cols),
+		}
+	}
+}
+
+#[cfg(feature = "multiproof")]
+const MIN_WIDTH: usize = 4;
 
 #[cfg(not(feature = "multiproof"))]
 use {
 	futures::future::join_all,
 	itertools::{Either, Itertools},
-	kate_recovery::{
-		data::SingleCell,
-		proof::{verify_v2, Error},
-	},
+	kate_recovery::{data::SingleCell, proof::verify_v2},
 };
 
 #[cfg(not(feature = "multiproof"))]
@@ -57,9 +83,10 @@ async fn verify_proof(
 	dimensions: Dimensions,
 	commitment: [u8; 48],
 	cell: SingleCell,
-) -> Result<(Position, bool), Error> {
+) -> eyre::Result<(Position, bool)> {
 	verify_v2(&public_parameters, dimensions, &commitment, &cell)
 		.map(|verified| (cell.position, verified))
+		.map_err(|e| eyre::eyre!("Proof verification failed: {:?}", e))
 }
 
 /// Verifies proofs for given block, cells and commitments
@@ -96,10 +123,7 @@ pub async fn verify(
 		.into_iter()
 		.collect::<Result<_, _>>()?;
 
-	let results: Vec<(Position, bool)> = join_results
-		.into_iter()
-		.map(|r| r.map_err(|e| eyre::eyre!("{:?}", e)))
-		.collect::<Result<_, _>>()?;
+	let results: Vec<(Position, bool)> = join_results.into_iter().collect::<Result<_, _>>()?;
 
 	debug!(block_num, duration = ?start_time.elapsed(), "Proof verification completed");
 
@@ -180,34 +204,93 @@ pub async fn get_or_init_pmp() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine>
 }
 
 #[cfg(feature = "multiproof")]
-pub async fn get_or_init_srs() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine> {
-	SRS.get_or_init(|| async {
+pub fn get_or_init_srs() -> &'static M1NoPrecomp<Bls12_381, BlstMSMEngine> {
+	SRS.get_or_init(|| {
 		let srs = multiproof_params();
 		info!("SRS initialized successfully");
 		srs
 	})
-	.await
 }
 
 #[cfg(feature = "multiproof")]
 pub static PMP: OnceCell<M1NoPrecomp<Bls12_381, BlstMSMEngine>> = OnceCell::const_new();
 
 #[cfg(feature = "multiproof")]
-pub static SRS: OnceCell<M1NoPrecomp<Bls12_381, BlstMSMEngine>> = OnceCell::const_new();
+static SRS: std::sync::OnceLock<M1NoPrecomp<Bls12_381, BlstMSMEngine>> = std::sync::OnceLock::new();
 
-/// Generates multiproofs for given extrinsics and cell positions
-/// 
+/// Helper function to convert block length to width/height like in runtime
 #[cfg(feature = "multiproof")]
-pub async fn multiproof(
-	_extrinsics: Vec<AppExtrinsic>,
-	_block_len: BlockLength,
-	_seed: Seed,
-	_cells: Vec<(u32, u32)>,
-) -> eyre::Result<Vec<(Vec<u8>, GCellBlock)>> {
-	// TODO: Implement proper multiproof generation when std feature is available
-	// This requires EvaluationGrid and related types from kate::gridgen::core
-	Err(eyre::eyre!(
-		"Multiproof generation requires std feature for kate library. \
-		Enable std feature or implement with available no-std compatible types."
-	))
+fn to_width_height(block_len: &BlockLength) -> (usize, usize) {
+	let width = block_len.cols.0 as usize;
+	let height = block_len.rows.0 as usize;
+	(width, height)
+}
+
+/// Generates multiproofs for given extrinsics and cell positions using Kate polynomial commitments
+#[cfg(feature = "multiproof")]
+pub fn multiproof(
+	extrinsics: Vec<AppExtrinsic>,
+	block_len: BlockLength,
+	seed: Seed,
+	cells: Vec<(u32, u32)>,
+) -> eyre::Result<Vec<(GMultiProof, GCellBlock)>> {
+	let srs = SRS.get_or_init(multiproof_params);
+	let (max_width, max_height) = to_width_height(&block_len);
+	let grid = EGrid::from_extrinsics(extrinsics, MIN_WIDTH, max_width, max_height, seed)
+		.map_err(|e| eyre::eyre!("Failed to create grid from extrinsics: {:?}", e))?
+		.extend_columns(NonZeroU16::new(2).expect("2>0"))
+		.map_err(|_| eyre::eyre!("Column extension failed"))?;
+
+	let poly = grid
+		.make_polynomial_grid()
+		.map_err(|e| eyre::eyre!("Failed to create polynomial grid: {:?}", e))?;
+
+	let proofs = cells
+		.into_par_iter()
+		.map(|(row, col)| -> eyre::Result<(GMultiProof, GCellBlock)> {
+			let cell = KateCell::new(BlockLengthRows(row), BlockLengthColumns(col));
+			let target_dims = Dimensions::new(16, 64).expect("16,64>0");
+			if cell.row.0 >= grid.dims().height() as u32 || cell.col.0 >= grid.dims().width() as u32
+			{
+				return Err(eyre::eyre!("Missing cell at row: {}, col: {}", row, col));
+			}
+			let mp = poly
+				.multiproof(srs, &cell, &grid, target_dims)
+				.map_err(|e| eyre::eyre!("Multiproof generation failed: {:?}", e))?;
+			let data = mp
+				.evals
+				.into_iter()
+				.flatten()
+				.map(|e: ArkScalar| -> eyre::Result<GRawScalar> {
+					let bytes = e
+						.to_bytes()
+						.map_err(|_| eyre::eyre!("Invalid scalar at row: {}", row))?;
+					// Convert [u8; 32] to [u64; 4] by reading 8 bytes at a time
+					let mut u64_array = [0u64; 4];
+					for i in 0..4 {
+						let start = i * 8;
+						let end = start + 8;
+						u64_array[i] = u64::from_le_bytes(bytes[start..end].try_into().unwrap());
+					}
+					Ok(GRawScalar(u64_array))
+				})
+				.collect::<eyre::Result<Vec<GRawScalar>>>()?;
+
+			let proof_bytes: [u8; 48] = mp
+				.proof
+				.to_bytes()
+				.map_err(|_| eyre::eyre!("Proof conversion failed"))?;
+			let proof = GProof(proof_bytes);
+
+			let gcell_block = GCellBlock {
+				start_x: mp.block.start_x as u32,
+				start_y: mp.block.start_y as u32,
+				end_x: mp.block.end_x as u32,
+				end_y: mp.block.end_y as u32,
+			};
+			Ok(((data, proof), gcell_block))
+		})
+		.collect::<eyre::Result<Vec<_>>>()?;
+
+	Ok(proofs)
 }
