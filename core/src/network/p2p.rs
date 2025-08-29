@@ -410,6 +410,11 @@ async fn build_swarm(
 		kad.set_mode(Some(cfg.kademlia.operation_mode.into()))
 	}
 
+	if let Some(external_address) = &cfg.external_address {
+		swarm.add_external_address(external_address.clone());
+		info!("Added external address: {external_address}");
+	}
+
 	Ok(swarm)
 }
 
