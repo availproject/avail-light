@@ -93,4 +93,7 @@ pub struct CliOpts {
 	/// List of address patterns to filter out when adding peers to the routing table
 	#[arg(long, value_delimiter = ',')]
 	pub address_blacklist: Option<Vec<String>>,
+	/// External address for libp2p (e.g., /ip4/1.2.3.4/tcp/37000)
+	#[arg(long)]
+	pub external_address: Option<String>,
 }

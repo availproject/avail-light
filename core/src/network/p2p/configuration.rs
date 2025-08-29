@@ -269,6 +269,9 @@ pub struct LibP2PConfig {
 	pub address_blacklist: Vec<String>,
 	#[serde(rename = "p2p_listeners")]
 	pub listeners: Listeners,
+	/// External address for libp2p
+	/// If set, this address will be added as an external address for libp2p
+	pub external_address: Option<Multiaddr>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -302,6 +305,7 @@ impl Default for LibP2PConfig {
 			local_test_mode: false,
 			address_blacklist: vec![],
 			listeners: Listeners::Tcp,
+			external_address: None,
 		}
 	}
 }

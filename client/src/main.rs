@@ -548,6 +548,17 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.libp2p.address_blacklist = address_blacklist.clone();
 	}
 
+	if let Some(external_address) = &opts.external_address {
+		match external_address.parse() {
+			Ok(multiaddr) => cfg.libp2p.external_address = Some(multiaddr),
+			Err(error) => {
+				return Err(eyre!(
+					"Failed to parse external address {external_address}: {error}"
+				))
+			},
+		}
+	}
+
 	Ok(cfg)
 }
 
