@@ -2,7 +2,7 @@
 
 ## [1.2.11]
 
-- Disable autonat and automatic server mode by default
+- Disable autonat and automatic server mode by default, add external_address parameter for servers without autonat
 
 ## [1.2.10](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.10) - 2025-09-08
 
