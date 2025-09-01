@@ -226,7 +226,7 @@ fn to_width_height(block_len: &BlockLength) -> (usize, usize) {
 	(width, height)
 }
 
-/// Generates multiproofs for given extrinsics and cell positions using Kate polynomial commitments
+/// Generates multiproofs for given extrinsics and cell positions
 #[cfg(feature = "multiproof")]
 pub fn multiproof(
 	extrinsics: Vec<AppExtrinsic>,

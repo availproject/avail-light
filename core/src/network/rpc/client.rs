@@ -1,6 +1,10 @@
 use avail_core::AppId;
+use avail_rust::avail::runtime_types::frame_system::limits::BlockLength;
 use avail_rust::{
-	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
+	avail::{
+		self,
+		runtime_types::{frame_system, sp_core::crypto::KeyTypeId},
+	},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
@@ -756,6 +760,23 @@ impl<D: Database> Client<D> {
 			.await?;
 
 		Ok(ver)
+	}
+
+	pub async fn query_block_length(&self, block_hash: Option<H256>) -> Result<BlockLength> {
+		self.with_retries(|client| async move {
+			let mut params = rpc_params![];
+			if let Some(hash) = block_hash {
+				params.push(hash)?;
+			}
+
+			client
+				.client
+				.rpc_client
+				.request("kate_blockLength", params)
+				.await
+				.map_err(Into::into)
+		})
+		.await
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {

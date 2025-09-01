@@ -10,10 +10,13 @@
 //! In case delay is configured, block processing is delayed for configured time.
 
 use async_trait::async_trait;
+use avail_core::AppExtrinsic;
 use avail_rust::{AvailHeader, H256};
 use codec::Encode;
 use color_eyre::{eyre::WrapErr, Result};
 use futures::future::join_all;
+#[cfg(feature = "multiproof")]
+use kate::Seed;
 #[cfg(feature = "multiproof")]
 use kate_recovery::data::MultiProofCell;
 #[cfg(not(feature = "multiproof"))]
@@ -46,7 +49,12 @@ use crate::{
 pub trait Client {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<()>;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> Result<()>;
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
+	async fn get_kate_proof(
+		&self,
+		hash: H256,
+		positions: &[Position],
+		extrinsics: Vec<AppExtrinsic>,
+	) -> Result<Vec<Cell>>;
 }
 
 #[derive(Clone)]
@@ -102,13 +110,39 @@ impl<T: Database + Sync> Client for FatClient<T> {
 		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
 
-	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
+	async fn get_kate_proof(
+		&self,
+		hash: H256,
+		positions: &[Position],
+		extrinsics: Vec<AppExtrinsic>,
+	) -> Result<Vec<Cell>> {
 		#[cfg(feature = "multiproof")]
 		{
-			let cells: Vec<MultiProofCell> = self
-				.rpc_client
-				.request_kate_multi_proof(hash, positions)
-				.await?;
+			let block_length = self.rpc_client.query_block_length(Some(hash)).await?;
+			let seed = kate::Seed::default();
+
+			let cell_positions: Vec<(u32, u32)> =
+				positions.iter().map(|p| (p.row, p.col)).collect();
+
+			let multiproof_results =
+				crate::proof::multiproof(extrinsics, local_block_length, seed, cell_positions)?;
+
+			let cells: Vec<MultiProofCell> = multiproof_results
+				.into_iter()
+				.zip(positions.iter())
+				.map(|((proof, gcell_block), &position)| {
+					let (scalars, proof_bytes) = proof;
+					let raw_scalars: Vec<[u64; 4]> = scalars.into_iter().map(|s| s.0).collect();
+
+					MultiProofCell {
+						position,
+						scalars: raw_scalars,
+						proof: proof_bytes.0,
+						gcell_block,
+					}
+				})
+				.collect();
+
 			Ok(cells.into_iter().map(Cell::MultiProofCell).collect())
 		}
 
@@ -200,7 +234,7 @@ pub async fn process_block(
 	let positions = iter_partition_cells(partition, target_grid_dimensions);
 
 	let begin = Instant::now();
-	let get_kate_proof = |&n| client.get_kate_proof(header_hash, n);
+	let get_kate_proof = |&n| client.get_kate_proof(header_hash, n, vec![]);
 	let Partition { number, fraction } = cfg.block_matrix_partition;
 	info!(
 		block_number,
@@ -487,12 +521,14 @@ mod tests {
 		let mut mock_client = MockClient::new();
 		let cell_variants: Vec<Cell> = DEFAULT_CELLS.into_iter().collect();
 
-		mock_client.expect_get_kate_proof().returning(move |_, _| {
-			Box::pin({
-				let cells = cell_variants.clone();
-				async move { Ok(cells.to_vec()) }
-			})
-		});
+		mock_client
+			.expect_get_kate_proof()
+			.returning(move |_, _, _| {
+				Box::pin({
+					let cells = cell_variants.clone();
+					async move { Ok(cells.to_vec()) }
+				})
+			});
 		mock_client
 			.expect_insert_rows_into_dht()
 			.returning(|_, _| Box::pin(async move { Ok(()) }));
