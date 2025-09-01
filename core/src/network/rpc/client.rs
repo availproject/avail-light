@@ -1,10 +1,7 @@
 use avail_core::AppId;
 use avail_rust::avail::runtime_types::frame_system::limits::BlockLength;
 use avail_rust::{
-	avail::{
-		self,
-		runtime_types::{frame_system, sp_core::crypto::KeyTypeId},
-	},
+	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
 		chain::{get_block_hash, get_finalized_head},
