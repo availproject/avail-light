@@ -114,7 +114,7 @@ impl<T: Database + Sync> Client for FatClient<T> {
 		&self,
 		hash: H256,
 		positions: &[Position],
-		extrinsics: Vec<AppExtrinsic>,
+		_extrinsics: Vec<AppExtrinsic>,
 	) -> Result<Vec<Cell>> {
 		#[cfg(feature = "multiproof")]
 		{
