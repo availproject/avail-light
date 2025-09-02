@@ -2,6 +2,7 @@
 
 ## [1.2.10]
 
+- Increment minimum versions of p2p clients (1.13.0), outdated clients will not participate in the DHT
 - Added in-memory p2p tests
 - Enable quic and make listener configurable
 - Added libp2p swarm peer blacklisting by partial string matching of multi-addresses
