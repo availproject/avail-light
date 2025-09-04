@@ -218,7 +218,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, "client".to_string());
 
-	let mut state = FatState::new(metrics);
+	let mut state = FatState::new(metrics, p2p_client);
 
 	spawn_in_span(shutdown.with_cancel(async move {
 		state
@@ -281,13 +281,15 @@ impl BlockStat {
 
 struct FatState {
 	metrics: Metrics,
+	p2p_client: p2p::Client,
 	active_blocks: HashMap<u32, BlockStat>,
 }
 
 impl FatState {
-	fn new(metrics: Metrics) -> Self {
+	fn new(metrics: Metrics, p2p_client: p2p::Client) -> Self {
 		FatState {
 			metrics,
+			p2p_client,
 			active_blocks: Default::default(),
 		}
 	}
@@ -439,6 +441,9 @@ impl FatState {
 					match maintenance_event {
 						MaintenanceEvent::CountUps => {
 							self.metrics.count(MetricCounter::Up);
+							if let Ok((peers_num, _)) = self.p2p_client.count_dht_entries().await {
+								info!("Number of peers in the routing table: {}", peers_num);
+							};
 						},
 					}
 				}
