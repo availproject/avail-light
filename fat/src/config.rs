@@ -4,14 +4,17 @@ use avail_light_core::{
 	api::configuration::APIConfig,
 	fat_client,
 	network::{
-		p2p::{configuration::LibP2PConfig, BOOTSTRAP_LIST_EMPTY_MESSAGE},
+		p2p::{
+			configuration::{AutoNatMode, BehaviourConfig, KademliaConfig, LibP2PConfig},
+			BOOTSTRAP_LIST_EMPTY_MESSAGE,
+		},
 		rpc::configuration::RPCConfig,
 		Network,
 	},
 	telemetry::otlp::OtelConfig,
 	types::{
 		block_matrix_partition_format, option_duration_seconds_format, tracing_level_format,
-		PeerAddress, SecretKey,
+		KademliaMode, PeerAddress, SecretKey,
 	},
 };
 use clap::{command, Parser};
@@ -99,7 +102,18 @@ impl Default for Config {
 			log_format_json: false,
 			avail_path: "avail_path".to_string(),
 			client_alias: "fat".to_string(),
-			libp2p: Default::default(),
+			libp2p: LibP2PConfig {
+				behaviour: BehaviourConfig {
+					auto_nat_mode: AutoNatMode::Disabled,
+					..Default::default()
+				},
+				kademlia: KademliaConfig {
+					operation_mode: KademliaMode::Client,
+					automatic_server_mode: false,
+					..Default::default()
+				},
+				..Default::default()
+			},
 			rpc: Default::default(),
 			otel: Default::default(),
 			fat: Default::default(),
