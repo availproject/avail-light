@@ -166,6 +166,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		block_rx,
 		shutdown.clone(),
 		maintenance_sender,
+		p2p_client.clone(),
 	)));
 
 	let channels = ClientChannels {
@@ -479,7 +480,7 @@ impl FatState {
 }
 
 mod maintenance {
-	use avail_light_core::{shutdown::Controller, types::BlockVerified};
+	use avail_light_core::{network::p2p::Client, shutdown::Controller, types::BlockVerified};
 	use color_eyre::eyre::Report;
 	use tokio::sync::{broadcast, mpsc::UnboundedSender};
 	use tracing::{error, info};
@@ -492,17 +493,25 @@ mod maintenance {
 		mut block_receiver: broadcast::Receiver<BlockVerified>,
 		shutdown: Controller<String>,
 		event_sender: UnboundedSender<OutputEvent>,
+		p2p_client: Client,
 	) {
 		info!("Starting maintenance...");
 
 		loop {
 			match block_receiver.recv().await.map_err(Report::from) {
-				Ok(_) => {
+				Ok(block) => {
 					if let Err(error) = event_sender.send(OutputEvent::CountUps) {
 						error!(%error, event_type = "MAINTENANCE_EVENT", "Failed to send CountUps maintenance event");
 						let error_msg = format!("Failed to send CountUps event: {error:#}");
 						_ = shutdown.trigger_shutdown(error_msg);
 						break;
+					}
+					if block.block_num % 15 == 0 {
+						let block_number = block.block_num;
+						match p2p_client.count_dht_entries().await {
+							Ok((peers_num, pub_peers_num)) => info!("Number of peers in the routing table: {peers_num}. Number of peers with public IPs: {pub_peers_num}."),
+							Err(error) => error!(%error, block_number , event_type = "DHT_MAINTENANCE", "Failed to count DHT entries"),
+						}
 					}
 				},
 				Err(error) => {
