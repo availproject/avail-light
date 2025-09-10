@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.11]
+
+- Disable autonat and automatic server mode by default
+
 ## [1.2.10](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.10) - 2025-09-08
 
 - Increment minimum versions of p2p clients (1.13.0), outdated clients will not participate in the DHT
