@@ -56,7 +56,7 @@ impl Default for BehaviourConfig {
 			enable_kademlia: true,
 			enable_identify: true,
 			enable_ping: true,
-			auto_nat_mode: AutoNatMode::Client,
+			auto_nat_mode: AutoNatMode::Disabled,
 			enable_peer_blocking: true,
 		}
 	}
@@ -217,7 +217,7 @@ impl Default for KademliaConfig {
 			max_kad_record_size: 8192 * 2, // Maximum for 512 columns
 			max_kad_provided_keys: 1024,
 			operation_mode: KademliaMode::Client,
-			automatic_server_mode: true,
+			automatic_server_mode: false,
 			kbucket_pending_timeout: Duration::from_secs(60),
 		}
 	}
