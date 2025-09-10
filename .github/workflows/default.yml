@@ -71,3 +71,5 @@ jobs:
       - run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - run: wasm-pack build --target web --release
         working-directory: web
+        env:
+          RUSTFLAGS: "-D warnings --cfg getrandom_backend=\"wasm_js\""

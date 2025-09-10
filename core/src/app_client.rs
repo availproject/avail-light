@@ -30,7 +30,7 @@ use kate_recovery::{
 	},
 	commitments,
 	commons::ArkPublicParams,
-	data::{Cell, DataCell, SingleCell},
+	data::{Cell, DataCell},
 	matrix::{Dimensions, Position},
 };
 use mockall::automock;
@@ -123,11 +123,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			fetched.len(),
 			unfetched.len()
 		);
-		let fetched: Vec<SingleCell> = fetched
-			.into_iter()
-			.map(SingleCell::try_from)
-			.map(|res| res.map_err(|e| eyre!(e)))
-			.collect::<Result<_, _>>()?;
+
 		let mut rng = ChaChaRng::from_seed(Default::default());
 		let missing_cells = columns_positions(dimensions, &unfetched, 66u8, &mut rng);
 
@@ -140,11 +136,6 @@ impl<T: Database + Sync> Client for AppClient<T> {
 			&missing_cells,
 		)
 		.await?;
-		let missing_fetched: Vec<SingleCell> = missing_fetched
-			.into_iter()
-			.map(SingleCell::try_from)
-			.map(|res| res.map_err(|e| eyre!(e)))
-			.collect::<Result<_, _>>()?;
 
 		let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
@@ -180,7 +171,7 @@ impl<T: Database + Sync> Client for AppClient<T> {
 				let data = data_cells
 					.iter()
 					.filter(|&cell| cell.position.row == row)
-					.flat_map(|cell| cell.data)
+					.flat_map(|cell| cell.data.clone())
 					.collect::<Vec<_>>();
 
 				if data.len() != dimensions.width() * CHUNK_SIZE {
@@ -237,7 +228,7 @@ fn new_data_cell(row: usize, col: usize, data: &[u8]) -> Result<DataCell> {
 			row: row.try_into()?,
 			col: col.try_into()?,
 		},
-		data: data.try_into()?,
+		data: data.into(),
 	})
 }
 
@@ -270,7 +261,10 @@ fn data_cell(
 		.get(&position.col)
 		// Dividing with extension factor since reconstructed column is not extended
 		.and_then(|column| column.get(row / EXTENSION_FACTOR as usize))
-		.map(|&data| DataCell { position, data })
+		.map(|&data| DataCell {
+			position,
+			data: data.to_vec(),
+		})
 		.ok_or_else(|| eyre!("Data cell not found"))
 }
 
