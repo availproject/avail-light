@@ -208,7 +208,7 @@ async fn get_valset_at_genesis(
 
 pub async fn run(client: impl Client, shutdown: Controller<String>, from_header: AvailHeader) {
 	if let Err(error) = sync(client, from_header).await {
-		error!("Cannot sync finality {error}");
+		error!(%error, event_type = "FINALITY_SYNC", "Failed to sync finality");
 		let _ = shutdown.trigger_shutdown(format!("Cannot sync finality {error:#}"));
 	};
 }

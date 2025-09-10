@@ -6,7 +6,7 @@ use libp2p::{
 	identify::{self, Info},
 	kad::{
 		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
-		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult, RecordKey,
+		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult,
 	},
 	ping,
 	swarm::SwarmEvent,
@@ -32,7 +32,7 @@ use super::{
 	OutputEvent, QueryChannel,
 };
 use crate::{
-	network::p2p::{is_global_address, AgentVersion},
+	network::p2p::{is_global_address, AgentVersion, KADEMLIA_PROTOCOL_BASE},
 	shutdown::Controller,
 	types::TimeToLive,
 };
@@ -101,30 +101,15 @@ pub struct EventLoop {
 	pub kad_mode: Mode,
 }
 
-#[derive(PartialEq, Debug)]
-enum DHTKey {
-	Cell(u32, u32, u32),
-	Row(u32, u32),
-}
-
-impl TryFrom<RecordKey> for DHTKey {
-	type Error = color_eyre::Report;
-
-	fn try_from(key: RecordKey) -> std::result::Result<Self, Self::Error> {
-		match *String::from_utf8(key.to_vec())?
-			.split(':')
-			.map(str::parse::<u32>)
-			.collect::<std::result::Result<Vec<_>, _>>()?
-			.as_slice()
-		{
-			[block_num, row_num] => Ok(DHTKey::Row(block_num, row_num)),
-			[block_num, row_num, col_num] => Ok(DHTKey::Cell(block_num, row_num, col_num)),
-			_ => Err(eyre!("Invalid DHT key")),
-		}
-	}
-}
-
 impl EventLoop {
+	/// Check if a multiaddress is blacklisted
+	fn is_blacklisted(&self, addr: &Multiaddr) -> bool {
+		self.event_loop_config
+			.address_blacklist
+			.iter()
+			.any(|filter| addr.to_string().contains(filter))
+	}
+
 	#[allow(clippy::too_many_arguments)]
 	pub(crate) fn new(
 		cfg: LibP2PConfig,
@@ -260,33 +245,28 @@ impl EventLoop {
 		}
 
 		// Check if peer supports the correct Kademlia protocol
-		if !protocols
+		let Some(kad_protocol) = protocols
 			.iter()
-			.any(|p| p.as_ref() == kad_protocol_name.as_ref())
-		{
+			.find(|p| p.as_ref().starts_with(KADEMLIA_PROTOCOL_BASE))
+		else {
+			debug!("Peer {peer_id} does not support Kademlia protocol.");
+			return Ok(vec![]);
+		};
+
+		if kad_protocol.as_ref() != kad_protocol_name.as_ref() {
 			return Err(eyre!("Incorrect peer Kademlia protocol name."));
 		}
 
 		// Early exit if any address matches the blacklist filters
-		for addr in &listen_addrs {
-			let addr_str = addr.to_string();
-			if self
-				.event_loop_config
-				.address_blacklist
-				.iter()
-				.any(|filter| addr_str.contains(filter))
-			{
-				return Err(eyre!("Peer {addr_str}/p2p/{peer_id} blacklisted."));
-			}
+		if let Some(addr) = listen_addrs.iter().find(|addr| self.is_blacklisted(addr)) {
+			return Err(eyre!("Peer {addr}/p2p/{peer_id} blacklisted"));
 		}
 
 		// Filter and collect valid addresses
-		let valid_addrs: Vec<Multiaddr> = listen_addrs
+		Ok(listen_addrs
 			.into_iter()
 			.filter(|addr| self.event_loop_config.is_local_test_mode || is_global_address(addr))
-			.collect();
-
-		Ok(valid_addrs)
+			.collect())
 	}
 
 	#[tracing::instrument(level = "trace", skip(self))]
@@ -461,7 +441,8 @@ impl EventLoop {
 							},
 						connection_id: _,
 					} => {
-						trace!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						trace!(agent_version,  "Identity received from {peer_id:?}, listen address: {listen_addrs:?}, protocols: {protocols:?}");
+
 						// KAD Discovery process
 						let kad_protocol_name = self
 							.swarm

@@ -196,6 +196,7 @@ pub async fn process_block(
 	let target_grid_dimensions = block_verified
 		.target_grid_dimensions
 		.unwrap_or(extension.dimensions);
+	let block_size = target_grid_dimensions.rows().get() * target_grid_dimensions.cols().get();
 	let positions = iter_partition_cells(partition, target_grid_dimensions);
 
 	let begin = Instant::now();
@@ -203,6 +204,7 @@ pub async fn process_block(
 	let Partition { number, fraction } = cfg.block_matrix_partition;
 	info!(
 		block_number,
+		block_size,
 		"partition_cells_requested" = positions.len(),
 		"Fetching partition ({number}/{fraction}) from RPC",
 	);

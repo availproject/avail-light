@@ -134,9 +134,13 @@ impl RocksDBStore {
 
 impl RocksDBStore {
 	#[instrument(level = Level::TRACE, skip(self))]
-	pub fn get_cf(&self) -> Option<Arc<BoundColumnFamily>> {
+	pub fn get_cf(&self) -> Option<Arc<BoundColumnFamily<'_>>> {
 		let Some(cf) = self.records.cf_handle(KADEMLIA_STORE_CF) else {
-			error!("Couldn't get column family \"{KADEMLIA_STORE_CF}\" handle");
+			error!(
+				event_type = "ROCKSDB_COLUMN_FAMILY",
+				column_family = KADEMLIA_STORE_CF,
+				"Failed to get column family handle"
+			);
 			return None;
 		};
 		Some(cf)
@@ -170,7 +174,11 @@ impl RecordStore for RocksDBStore {
 				.map(into_kad_record)
 				.map(Cow::Owned),
 			Err(error) => {
-				error!("Failed to get record from database: {error}");
+				error!(
+					%error,
+					event_type = "ROCKSDB_RECORD_GET",
+					"Failed to get record from database"
+				);
 				None
 			},
 		}
@@ -189,7 +197,10 @@ impl RecordStore for RocksDBStore {
 		self.records
 			.put_cf(&cf, key, record.encode())
 			.map_err(|error| {
-				error!("Failed to put record into database: {error}");
+				error!(%error,
+					event_type = "ROCKSDB_RECORD_PUT",
+					"Record value exceeds maximum size limit"
+				);
 				RocksDBStoreError
 			})
 	}
@@ -202,7 +213,11 @@ impl RecordStore for RocksDBStore {
 		let Err(error) = self.records.delete_cf(&cf, k) else {
 			return;
 		};
-		error!("Failed to delete record from database: {error}");
+		error!(
+			%error,
+			event_type = "ROCKSDB_RECORD_REMOVE",
+			"Failed to delete record from database"
+		);
 	}
 
 	#[instrument(level = "trace", skip(self))]
@@ -216,7 +231,11 @@ impl RecordStore for RocksDBStore {
 				.full_iterator_cf(&cf, IteratorMode::Start)
 				.filter_map(|result| {
 					if let Err(error) = &result {
-						error!("Failed to read record from database: {error}");
+						error!(
+							%error,
+							event_type = "ROCKSDB_RECORD_ITER",
+							"Failed to read record from database during iteration"
+						);
 					}
 					result.ok()
 				})

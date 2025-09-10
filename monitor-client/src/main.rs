@@ -98,12 +98,11 @@ async fn main() -> Result<()> {
 
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
-	let addrs = vec![config.libp2p.tcp_multiaddress()];
 	p2p_client
-		.start_listening(addrs)
+		.start_listening(config.libp2p.listeners())
 		.await
 		.wrap_err("Error starting listener.")?;
-	info!("TCP listener started on port {}", config.libp2p.port);
+	info!("P2P listener started on port {}", config.libp2p.port);
 
 	// Extract bootstrap peer IDs
 	// These are tracked with the bootstrap monitor, not with server monitor

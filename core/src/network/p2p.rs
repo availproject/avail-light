@@ -14,7 +14,7 @@ use libp2p::{
 	Multiaddr, PeerId, Swarm, SwarmBuilder,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p::{noise, tcp, yamux};
+use libp2p::{noise, quic, tcp, yamux};
 #[cfg(not(target_arch = "wasm32"))]
 use multihash::{self, Hasher};
 use semver::Version;
@@ -39,6 +39,7 @@ mod client;
 pub mod configuration;
 mod event_loop;
 mod kad_mem_providers;
+#[cfg(not(feature = "rocksdb"))]
 mod kad_mem_store;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
@@ -47,16 +48,17 @@ pub mod memory_swarm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod restart;
 
+#[cfg(not(feature = "rocksdb"))]
 pub use kad_mem_store::MemoryStoreConfig;
 #[cfg(feature = "rocksdb")]
 pub use kad_rocksdb_store::ExpirationCompactionFilterFactory;
 #[cfg(feature = "rocksdb")]
 pub use kad_rocksdb_store::RocksDBStoreConfig;
 
-#[cfg(not(feature = "rocksdb"))]
-pub type Store = kad_mem_store::MemoryStore;
 #[cfg(feature = "rocksdb")]
 pub type Store = kad_rocksdb_store::RocksDBStore;
+#[cfg(not(feature = "rocksdb"))]
+pub type Store = kad_mem_store::MemoryStore;
 
 use crate::{
 	data::{Database, P2PKeypairKey},
@@ -70,8 +72,9 @@ use libp2p_allow_block_list as allow_block_list;
 #[cfg(not(target_arch = "wasm32"))]
 pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager};
 
-const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.0";
-const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.9.2";
+const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.3";
+const MINIMUM_SUPPORTED_FAT_CLIENT_VERSION: &str = "1.12.8";
+const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.13.0";
 pub const MINIMUM_P2P_CLIENT_RESTART_INTERVAL: u64 = 60; // seconds
 
 pub const BOOTSTRAP_LIST_EMPTY_MESSAGE: &str = r#"
@@ -162,6 +165,8 @@ impl AgentVersion {
 	fn is_supported(&self) -> bool {
 		let minimum_version = if self.role == "bootstrap" {
 			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
+		} else if self.role == "fat-client" {
+			MINIMUM_SUPPORTED_FAT_CLIENT_VERSION
 		} else {
 			MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION
 		};
@@ -369,18 +374,28 @@ async fn build_swarm(
 			.with_swarm_config(|c| generate_config(c, cfg))
 			.build();
 	} else {
-		let builder = tokio_swarm
-			.with_tcp(
-				tcp::Config::default().nodelay(false),
-				noise::Config::new,
-				yamux::Config::default,
-			)?
-			.with_dns()?;
+		use configuration::Listeners;
 
-		swarm = builder
-			.with_behaviour(make_behaviour)?
-			.with_swarm_config(|c| generate_config(c, cfg))
-			.build();
+		let builder = tokio_swarm.with_tcp(
+			tcp::Config::default().nodelay(false),
+			noise::Config::new,
+			yamux::Config::default,
+		)?;
+
+		if cfg.listeners == Listeners::Quic || cfg.listeners == Listeners::QuicTcp {
+			swarm = builder
+				.with_quic_config(|_| quic::Config::new(id_keys))
+				.with_dns()?
+				.with_behaviour(make_behaviour)?
+				.with_swarm_config(|c| generate_config(c, cfg))
+				.build();
+		} else {
+			swarm = builder
+				.with_dns()?
+				.with_behaviour(make_behaviour)?
+				.with_swarm_config(|c| generate_config(c, cfg))
+				.build();
+		}
 	}
 
 	debug!(config = ?cfg, "Building P2P swarm");

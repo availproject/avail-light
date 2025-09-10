@@ -1,4 +1,5 @@
 use super::{protocol_name, AgentVersion, ProvidersConfig};
+#[cfg(not(feature = "rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
 use crate::network::ServiceMode;
 use crate::types::{
@@ -230,11 +231,11 @@ pub struct LibP2PConfig {
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
 	pub secret_key: Option<SecretKey>,
-	/// P2P TCP listener port (default: 37000).
+	/// P2P TCP/UDP listener port (default: 37000).
 	pub port: u16,
 	/// P2P WebRTC listener port (default: 37001).
 	pub webrtc_port: u16,
-	/// P2P WebSocket switch. Note: it's mutually exclusive with the TCP listener (default: false)
+	/// P2P WebSocket switch. Note: it's mutually exclusive with the TCP/UDP listener (default: false)
 	pub ws_transport_enable: bool,
 	/// AutoNAT configuration
 	#[serde(flatten)]
@@ -266,6 +267,17 @@ pub struct LibP2PConfig {
 	pub local_test_mode: bool,
 	/// List of address patterns to filter out when adding peers to the routing table
 	pub address_blacklist: Vec<String>,
+	#[serde(rename = "p2p_listeners")]
+	pub listeners: Listeners,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Listeners {
+	Ws,
+	Tcp,
+	Quic,
+	QuicTcp,
 }
 
 impl Default for LibP2PConfig {
@@ -289,27 +301,39 @@ impl Default for LibP2PConfig {
 			ping_interval: Duration::from_secs(60),
 			local_test_mode: false,
 			address_blacklist: vec![],
+			listeners: Listeners::Tcp,
 		}
 	}
 }
 
 impl LibP2PConfig {
-	pub fn tcp_multiaddress(&self) -> Multiaddr {
-		let tcp_multiaddress = Multiaddr::empty()
+	fn ws_listener(&self) -> Multiaddr {
+		Multiaddr::empty()
 			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-			.with(Protocol::Tcp(self.port));
-
-		if self.ws_transport_enable {
-			tcp_multiaddress.with(Protocol::Ws(Cow::Borrowed("avail-light")))
-		} else {
-			tcp_multiaddress
-		}
+			.with(Protocol::Tcp(self.port))
+			.with(Protocol::Ws(Cow::Borrowed("avail-light")))
 	}
 
-	pub fn webrtc_multiaddress(&self) -> Multiaddr {
-		Multiaddr::from(Ipv4Addr::UNSPECIFIED)
-			.with(Protocol::Udp(self.webrtc_port))
-			.with(Protocol::WebRTCDirect)
+	fn tcp_listener(&self) -> Multiaddr {
+		Multiaddr::empty()
+			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+			.with(Protocol::Tcp(self.port))
+	}
+
+	fn quic_listener(&self) -> Multiaddr {
+		Multiaddr::empty()
+			.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+			.with(Protocol::Udp(self.port))
+			.with(Protocol::QuicV1)
+	}
+
+	pub fn listeners(&self) -> Vec<Multiaddr> {
+		match (self.ws_transport_enable, &self.listeners) {
+			(true, _) | (false, Listeners::Ws) => vec![self.ws_listener()],
+			(_, Listeners::Tcp) => vec![self.tcp_listener()],
+			(_, Listeners::Quic) => vec![self.quic_listener()],
+			(_, Listeners::QuicTcp) => vec![self.tcp_listener(), self.quic_listener()],
+		}
 	}
 
 	pub fn effective_max_negotiating_inbound_streams(&self) -> usize {
@@ -390,6 +414,7 @@ pub fn kad_config(cfg: &LibP2PConfig, genesis_hash: &str) -> kad::Config {
 	kad_cfg
 }
 
+#[cfg(not(feature = "rocksdb"))]
 impl From<&LibP2PConfig> for MemoryStoreConfig {
 	fn from(cfg: &LibP2PConfig) -> Self {
 		MemoryStoreConfig {

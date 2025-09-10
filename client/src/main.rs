@@ -463,7 +463,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	// Flags override the config parameters
 	if let Some(network) = &opts.network {
-		let bootstrap = (network.bootstrap_peer_id(), network.bootstrap_multiaddr());
+		let bootstrap = (
+			network.bootstrap_peer_id(),
+			network.bootstrap_multiaddr(&cfg.libp2p.listeners),
+		);
 		cfg.rpc.full_node_ws = network.full_node_ws();
 		cfg.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
@@ -699,76 +702,81 @@ impl ClientState {
 		self.metrics.count(MetricCounter::Starts);
 		loop {
 			select! {
-					Some(p2p_event) = p2p_receiver.recv() => {
-						match p2p_event {
-							P2pEvent::Count => {
-								self.metrics.count(MetricCounter::EventLoopEvent);
-							},
-							P2pEvent::IncomingGetRecord => {
-								self.metrics.count(MetricCounter::IncomingGetRecord);
-							},
-							P2pEvent::IncomingPutRecord => {
-								self.metrics.count(MetricCounter::IncomingPutRecord);
-							},
-							P2pEvent::KadModeChange(mode) => {
-								self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
+				Some(p2p_event) = p2p_receiver.recv() => {
+					match p2p_event {
+						P2pEvent::Count => {
+							self.metrics.count(MetricCounter::EventLoopEvent);
+						},
+						P2pEvent::IncomingGetRecord => {
+							self.metrics.count(MetricCounter::IncomingGetRecord);
+						},
+						P2pEvent::IncomingPutRecord => {
+							self.metrics.count(MetricCounter::IncomingPutRecord);
+						},
+						P2pEvent::KadModeChange(mode) => {
+							self.metrics.set_attribute(ATTRIBUTE_OPERATING_MODE, mode.to_string());
 
-								// Update libp2p config directly
-								let mut cfg = self.libp2p_config.lock().await;
-								cfg.kademlia.operation_mode = mode.into();
+							// Update libp2p config directly
+							let mut cfg = self.libp2p_config.lock().await;
+							cfg.kademlia.operation_mode = mode.into();
 
-								if let Err(e) = &self.restart_trigger.send(()) {
-									warn!("Failed to send restart trigger: {}", e);
-								}
+							// Check if restart is enabled
+							if self.restart_trigger.is_closed() {
+								continue;
 							}
-							P2pEvent::Ping{ rtt, .. } => {
-								self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
-							},
-							P2pEvent::IncomingConnection => {
-								self.metrics.count(MetricCounter::IncomingConnections);
-							},
-							P2pEvent::IncomingConnectionError => {
-								self.metrics.count(MetricCounter::IncomingConnectionErrors);
-							},
-							P2pEvent::ExternalMultiaddressUpdate(multi_addr) => {
-								db.put(MultiAddressKey, multi_addr.to_string());
-							},
-							P2pEvent::EstablishedConnection => {
-								self.metrics.count(MetricCounter::EstablishedConnections);
-							},
-							P2pEvent::OutgoingConnectionError => {
-								self.metrics.count(MetricCounter::OutgoingConnectionErrors);
-							},
-							P2pEvent::PutRecord { block_num, records } => {
-								self.handle_new_put_record(block_num, records);
-							},
-							P2pEvent::PutRecordSuccess {
-								record_key,
-								query_stats,
-							} => {
-								if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
-									error!(
-										%error,
-										event_type = "PUT_RECORD_HANDLER",
-										"Failed to process successful PUT record"
-									);
-								};
-							},
-							P2pEvent::PutRecordFailed {
-								record_key,
-								query_stats,
-							} => {
-								if let Err(error) = self.handle_failed_put_record(record_key, query_stats) {
-									error!(
-										%error,
-										event_type = "PUT_RECORD_HANDLER",
-										"Failed to process failed PUT record"
-									);
-								};
-							},
-							P2pEvent::DiscoveredPeers { .. } => {},
+
+							if let Err(e) = &self.restart_trigger.send(()) {
+								warn!("Failed to send restart trigger: {}", e);
+							}
 						}
+						P2pEvent::Ping{ rtt, .. } => {
+							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));
+						},
+						P2pEvent::IncomingConnection => {
+							self.metrics.count(MetricCounter::IncomingConnections);
+						},
+						P2pEvent::IncomingConnectionError => {
+							self.metrics.count(MetricCounter::IncomingConnectionErrors);
+						},
+						P2pEvent::ExternalMultiaddressUpdate(multi_addr) => {
+							db.put(MultiAddressKey, multi_addr.to_string());
+						},
+						P2pEvent::EstablishedConnection => {
+							self.metrics.count(MetricCounter::EstablishedConnections);
+						},
+						P2pEvent::OutgoingConnectionError => {
+							self.metrics.count(MetricCounter::OutgoingConnectionErrors);
+						},
+						P2pEvent::PutRecord { block_num, records } => {
+							self.handle_new_put_record(block_num, records);
+						},
+						P2pEvent::PutRecordSuccess {
+							record_key,
+							query_stats,
+						} => {
+						if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
+							error!(
+								%error,
+								event_type = "PUT_RECORD_HANDLER",
+								"Failed to process successful PUT record"
+							);
+						};
+						},
+						P2pEvent::PutRecordFailed {
+							record_key,
+							query_stats,
+						} => {
+						if let Err(error) = self.handle_failed_put_record(record_key, query_stats) {
+							error!(
+								%error,
+								event_type = "PUT_RECORD_HANDLER",
+								"Failed to process failed PUT record"
+							);
+						};
+						},
+						P2pEvent::DiscoveredPeers { .. } => {},
 					}
+				},
 				Some(maintenance_event) = maintenance_receiver.recv() => {
 					match maintenance_event {
 						MaintenanceEvent::RecordStats {
@@ -786,7 +794,7 @@ impl ClientState {
 							self.metrics.count(MetricCounter::Up);
 						},
 					}
-				}
+				},
 				Some(lc_event) = lc_receiver.recv() => {
 					match lc_event {
 						LcEvent::RecordBlockProcessingDelay(delay) => {
@@ -815,8 +823,7 @@ impl ClientState {
 							self.metrics.record(MetricValue::BlockConfidence(confidence));
 						},
 					}
-				}
-
+				},
 				Ok(rpc_event) = rpc_receiver.recv() => {
 					match rpc_event {
 						RpcEvent::InitialConnection(_) => {
@@ -828,7 +835,6 @@ impl ClientState {
 						_ => {}
 					}
 				},
-
 				// break the loop if all channels are closed
 				else => break,
 			}

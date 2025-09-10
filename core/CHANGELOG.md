@@ -1,9 +1,11 @@
 # Changelog
 
-## [1.2.10]
+## [1.2.10](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.10) - 2025-09-08
 
+- Increment minimum versions of p2p clients (1.13.0), outdated clients will not participate in the DHT
+- Added in-memory p2p tests
+- Enable quic and make listener configurable
 - Added libp2p swarm peer blacklisting by partial string matching of multi-addresses
-- Updated the libp2p version to the latest stable release of 0.56.0
 
 ## [1.2.9](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.9) - 2025-07-18
 

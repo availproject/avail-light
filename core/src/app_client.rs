@@ -482,8 +482,9 @@ pub async fn run(
 		let block = match block_receive.recv().await {
 			Ok(block) => block,
 			Err(error) => {
-				error!("Cannot receive message: {error}");
-				let _ = shutdown.trigger_shutdown(format!("Cannot receive message: {error:#}"));
+				error!(%error, event_type = "APP_CLIENT", "Failed to receive verified block data");
+				let _ = shutdown
+					.trigger_shutdown(format!("Failed to receive verified block data: {error:#}"));
 				return;
 			},
 		};
@@ -515,16 +516,16 @@ pub async fn run(
 			match process_block(app_client, db.clone(), &cfg, app_id, &block, pp.clone()).await {
 				Ok(data) => data,
 				Err(error) => {
-					error!(block_number, "Cannot process block: {error}");
+					error!(%error, event_type = "APP_CLIENT", block_number, "Failed to process block");
 					let _ = shutdown.trigger_shutdown(format!("Cannot process block: {error:#}"));
 					return;
 				},
 			};
 		set_data_verified_state(db.clone(), &sync_range, block_number);
 		if let Err(error) = data_verified_sender.send(ApiData(block_number, data)) {
-			error!("Cannot send data verified message: {error}");
-			let _ =
-				shutdown.trigger_shutdown(format!("Cannot send data verified message: {error:#}"));
+			error!(%error, event_type = "APP_CLIENT", "Failed to send data verified message");
+			let _ = shutdown
+				.trigger_shutdown(format!("Failed to send data verified message: {error:#}"));
 			return;
 		}
 		debug!(block_number, "Block processed");
