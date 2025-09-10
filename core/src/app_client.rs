@@ -228,7 +228,7 @@ fn new_data_cell(row: usize, col: usize, data: &[u8]) -> Result<DataCell> {
 			row: row.try_into()?,
 			col: col.try_into()?,
 		},
-		data: data.try_into()?,
+		data: data.into(),
 	})
 }
 

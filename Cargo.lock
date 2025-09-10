@@ -1501,7 +1501,7 @@ dependencies = [
  "clap",
  "console_error_panic_hook",
  "futures",
- "kate",
+ "getrandom 0.3.3",
  "libp2p",
  "serde_json",
  "sp-io 30.0.0",
