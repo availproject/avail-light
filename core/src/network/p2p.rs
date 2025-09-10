@@ -323,15 +323,14 @@ async fn build_swarm(
 			None
 		};
 
-		let auto_nat = match cfg.behaviour.auto_nat_mode {
-			AutoNatMode::Disabled => None,
-			_ => {
-				let autonat_cfg = auto_nat_config(cfg);
-				Some(autonat::Behaviour::new(
-					key.public().to_peer_id(),
-					autonat_cfg,
-				))
-			},
+		let auto_nat = if cfg.behaviour.auto_nat_mode != AutoNatMode::Disabled {
+			let autonat_cfg = auto_nat_config(cfg);
+			Some(autonat::Behaviour::new(
+				key.public().to_peer_id(),
+				autonat_cfg,
+			))
+		} else {
+			None
 		};
 
 		let blocked_peers = if cfg.behaviour.enable_peer_blocking {
