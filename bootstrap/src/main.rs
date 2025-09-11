@@ -6,7 +6,7 @@ use avail_light_core::{
 	data::{self, ClientIdKey, Database, DB},
 	network::{
 		p2p::{self, OutputEvent as P2pEvent},
-		Network,
+		AutoNatMode, Network,
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
@@ -79,13 +79,9 @@ async fn run(
 		info!("Running as standalone bootstrap node");
 	}
 
-	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		if let Err(error) = p2p_clone
-			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-			.await
-		{
+		if let Err(error) = p2p_clone.bootstrap_on_startup().await {
 			warn!("Bootstrap unsuccessful: {error:#}");
 		}
 	}));
@@ -138,6 +134,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	cfg.libp2p.identify.agent_role = "bootstrap".to_string();
 	cfg.libp2p.kademlia.automatic_server_mode = false;
 	cfg.libp2p.kademlia.operation_mode = KademliaMode::Server;
+	cfg.libp2p.behaviour.auto_nat_mode = AutoNatMode::Enabled;
 
 	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
 	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);

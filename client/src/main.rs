@@ -15,14 +15,12 @@ use avail_light_core::{
 	network::{
 		self,
 		p2p::{
-			self,
-			configuration::{AutoNatMode, LibP2PConfig},
-			extract_block_num, forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager,
-			OutputEvent as P2pEvent, BOOTSTRAP_LIST_EMPTY_MESSAGE,
-			MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
+			self, configuration::LibP2PConfig, extract_block_num, forward_p2p_events,
+			init_and_start_p2p_client, p2p_restart_manager, OutputEvent as P2pEvent,
+			BOOTSTRAP_LIST_EMPTY_MESSAGE, MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
 		},
 		rpc::{self, OutputEvent as RpcEvent},
-		Network,
+		AutoNatMode, Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
@@ -567,7 +565,7 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if !cfg.libp2p.local_test_mode
 		&& cfg.libp2p.external_address.is_none()
-		&& cfg.libp2p.behaviour.auto_nat_mode != AutoNatMode::Client
+		&& cfg.libp2p.behaviour.auto_nat_mode == AutoNatMode::Disabled
 		&& (cfg.libp2p.kademlia.operation_mode == KademliaMode::Server
 			|| cfg.libp2p.kademlia.automatic_server_mode)
 	{
