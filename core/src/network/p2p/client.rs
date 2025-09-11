@@ -31,10 +31,10 @@ use tracing::{debug, info, trace, warn};
 use web_time::{Duration, Instant};
 
 use super::{
-	event_loop::ConnectionEstablishedInfo, is_global_address, Command, EventLoop, MultiAddressInfo,
-	OutputEvent, PeerInfo, QueryChannel,
+	configuration::LibP2PConfig, event_loop::ConnectionEstablishedInfo, is_global_address, Command,
+	EventLoop, MultiAddressInfo, OutputEvent, PeerInfo, QueryChannel,
 };
-use crate::types::PeerAddress;
+use crate::{network::AutoNatMode, types::PeerAddress};
 
 #[derive(Clone)]
 pub struct Client {
@@ -44,6 +44,8 @@ pub struct Client {
 	/// Cell time to live in DHT (in seconds)
 	ttl: Duration,
 	listeners: Vec<ListenerId>,
+	bootstraps: Vec<PeerAddress>,
+	auto_nat_mode: AutoNatMode,
 }
 
 struct DHTCell(Cell);
@@ -80,16 +82,14 @@ impl DHTRow {
 }
 
 impl Client {
-	pub fn new(
-		sender: UnboundedSender<Command>,
-		dht_parallelization_limit: usize,
-		ttl: Duration,
-	) -> Self {
-		Self {
-			command_sender: sender,
-			dht_parallelization_limit,
-			ttl,
+	pub fn new(command_sender: UnboundedSender<Command>, cfg: &LibP2PConfig) -> Self {
+		Client {
+			command_sender,
+			dht_parallelization_limit: cfg.dht_parallelization_limit,
+			ttl: cfg.kademlia.kad_record_ttl,
 			listeners: vec![],
+			bootstraps: cfg.bootstraps.clone(),
+			auto_nat_mode: cfg.behaviour.auto_nat_mode.clone(),
 		}
 	}
 
@@ -226,14 +226,15 @@ impl Client {
 
 	// Bootstrap is triggered automatically on add_address call
 	// Bootstrap nodes are also used as autonat servers
-	pub async fn bootstrap_on_startup(&self, bootstraps: &[PeerAddress]) -> Result<()> {
-		for (peer, addr) in bootstraps.iter().map(Into::into) {
+	pub async fn bootstrap_on_startup(&self) -> Result<()> {
+		for (peer, addr) in self.bootstraps.iter().map(Into::into) {
 			self.dial_peer(peer, vec![addr.clone()], PeerCondition::Always)
 				.await
 				.map_err(|e| eyre!("Failed to dial bootstrap peer: {e}"))?;
 			self.add_address(peer, addr.clone()).await?;
-
-			self.add_autonat_server(peer, addr).await?;
+			if self.auto_nat_mode == AutoNatMode::Enabled {
+				self.add_autonat_server(peer, addr).await?;
+			}
 		}
 		Ok(())
 	}

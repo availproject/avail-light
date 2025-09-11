@@ -1,7 +1,7 @@
 use super::{protocol_name, AgentVersion, ProvidersConfig};
 #[cfg(not(feature = "rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
-use crate::network::ServiceMode;
+use crate::network::AutoNatMode;
 use crate::types::{
 	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress,
 	ProjectName, SecretKey,
@@ -17,27 +17,6 @@ use std::{
 };
 #[cfg(target_arch = "wasm32")]
 use web_time::Duration;
-
-/// Defines lip2p AutoNAT mode options
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum AutoNatMode {
-	/// AutoNAT disabled
-	Disabled,
-	/// AutoNAT client only mode
-	Client,
-	/// AutoNAT server only mode
-	Server,
-}
-
-impl From<ServiceMode> for AutoNatMode {
-	fn from(mode: ServiceMode) -> Self {
-		match mode {
-			ServiceMode::Disabled => AutoNatMode::Disabled,
-			ServiceMode::Client => AutoNatMode::Client,
-			ServiceMode::Server => AutoNatMode::Server,
-		}
-	}
-}
 
 /// Define a configuration struct for Behaviour components
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -395,7 +374,13 @@ pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 		boot_delay: cfg.autonat.boot_delay,
 		throttle_server_period: cfg.autonat.throttle,
 		only_global_ips: cfg.autonat.only_global_ips,
-		..Default::default()
+		use_connected: Default::default(),
+		timeout: Default::default(),
+		confidence_max: Default::default(),
+		max_peer_addresses: Default::default(),
+		throttle_clients_global_max: cfg.autonat.throttle_clients_global_max,
+		throttle_clients_peer_max: cfg.autonat.throttle_clients_peer_max,
+		throttle_clients_period: cfg.autonat.throttle_clients_period,
 	}
 }
 

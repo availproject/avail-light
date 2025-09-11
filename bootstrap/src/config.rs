@@ -1,7 +1,5 @@
 use avail_light_core::{
-	network::p2p::configuration::{
-		AutoNATConfig, AutoNatMode, BehaviourConfig, KademliaConfig, LibP2PConfig,
-	},
+	network::p2p::configuration::{AutoNATConfig, KademliaConfig, LibP2PConfig},
 	telemetry::otlp::OtelConfig,
 	types::{tracing_level_format, Origin, ProjectName, SecretKey},
 };
@@ -66,10 +64,7 @@ impl Default for RuntimeConfig {
 					query_timeout: Duration::from_secs(60),
 					..Default::default()
 				},
-				behaviour: BehaviourConfig {
-					auto_nat_mode: AutoNatMode::Server,
-					..Default::default()
-				},
+				behaviour: Default::default(),
 				connection_idle_timeout: Duration::from_secs(10),
 				max_negotiating_inbound_streams: Some(20),
 				task_command_buffer_size: Some(NonZero::new(30000).unwrap()),
