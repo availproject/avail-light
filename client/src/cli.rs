@@ -1,5 +1,5 @@
 use avail_light_core::{
-	network::{Network, ServiceMode},
+	network::{AutoNatMode, Network},
 	types::{KademliaMode, NetworkMode},
 };
 use clap::{command, ArgAction, Parser};
@@ -81,9 +81,9 @@ pub struct CliOpts {
 	pub no_update: bool,
 	#[arg(long)]
 	pub p2p_client_restart_interval: Option<u64>,
-	/// AutoNAT behaviour mode: client, server, or disabled
-	#[arg(long, value_enum, default_value = "server")]
-	pub auto_nat_mode: ServiceMode,
+	/// AutoNAT behaviour mode: enabled or disabled
+	#[arg(long, value_enum, default_value = "disabled")]
+	pub auto_nat_mode: AutoNatMode,
 	/// Kademlia operation mode: client or server
 	#[arg(long, value_enum)]
 	pub operation_mode: Option<KademliaMode>,
