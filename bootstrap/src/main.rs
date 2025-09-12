@@ -33,6 +33,10 @@ mod server;
 
 const CLIENT_ROLE: &str = "bootnode";
 
+const EXTERNAL_ADDRESS_NOT_SET_MESSAGE: &str = r#"
+External address must be set for the bootstrap node. Add 'external_address' parameter in the configuration file.
+"#;
+
 async fn run(
 	cfg: RuntimeConfig,
 	identity_cfg: IdentityConfig,
@@ -75,13 +79,9 @@ async fn run(
 		info!("Running as standalone bootstrap node");
 	}
 
-	let cfg_clone = cfg.to_owned();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		if let Err(error) = p2p_clone
-			.bootstrap_on_startup(&cfg_clone.libp2p.bootstraps)
-			.await
-		{
+		if let Err(error) = p2p_clone.bootstrap_on_startup().await {
 			warn!("Bootstrap unsuccessful: {error:#}");
 		}
 	}));
@@ -172,6 +172,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(address_blacklist) = &opts.address_blacklist {
 		cfg.libp2p.address_blacklist = address_blacklist.clone();
+	}
+
+	if cfg.libp2p.external_address.is_none() && !cfg.libp2p.local_test_mode {
+		return Err(eyre!("{EXTERNAL_ADDRESS_NOT_SET_MESSAGE}"));
 	}
 
 	Ok(cfg)

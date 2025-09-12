@@ -3,7 +3,7 @@ use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
-use configuration::{auto_nat_config, identify_config, kad_config, AutoNatMode, LibP2PConfig};
+use configuration::{auto_nat_config, identify_config, kad_config, LibP2PConfig};
 use libp2p::{
 	autonat, identify,
 	identity::{self, ed25519, Keypair},
@@ -62,6 +62,7 @@ pub type Store = kad_mem_store::MemoryStore;
 
 use crate::{
 	data::{Database, P2PKeypairKey},
+	network::AutoNatMode,
 	shutdown::Controller,
 	types::{ProjectName, SecretKey},
 };
@@ -258,11 +259,8 @@ pub async fn init(
 	// create sender channel for P2P event loop commands
 	let (command_sender, command_receiver) = mpsc::unbounded_channel();
 	// create P2P Client
-	let client = Client::new(
-		command_sender,
-		cfg.dht_parallelization_limit,
-		cfg.kademlia.kad_record_ttl,
-	);
+	let client = Client::new(command_sender, &cfg);
+
 	// create Store
 	let store = Store::with_config(
 		id_keys.public().to_peer_id(),
@@ -325,13 +323,10 @@ async fn build_swarm(
 
 		let auto_nat = match cfg.behaviour.auto_nat_mode {
 			AutoNatMode::Disabled => None,
-			_ => {
-				let autonat_cfg = auto_nat_config(cfg);
-				Some(autonat::Behaviour::new(
-					key.public().to_peer_id(),
-					autonat_cfg,
-				))
-			},
+			AutoNatMode::Enabled => Some(autonat::Behaviour::new(
+				key.public().to_peer_id(),
+				auto_nat_config(cfg),
+			)),
 		};
 
 		let blocked_peers = if cfg.behaviour.enable_peer_blocking {
@@ -409,6 +404,11 @@ async fn build_swarm(
 	// instead of relying on dynamic changes
 	if let Some(kad) = swarm.behaviour_mut().kademlia.as_mut() {
 		kad.set_mode(Some(cfg.kademlia.operation_mode.into()))
+	}
+
+	if let Some(external_address) = &cfg.external_address {
+		swarm.add_external_address(external_address.clone());
+		info!("Added external address: {external_address}");
 	}
 
 	Ok(swarm)
