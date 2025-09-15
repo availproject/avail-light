@@ -1532,10 +1532,11 @@ dependencies = [
 [[package]]
 name = "avail-rust"
 version = "0.1.11"
-source = "git+https://github.com/availproject/avail-rust.git?rev=b4a20046e6e216818c0ddbab8189d8aef32a03e0#b4a20046e6e216818c0ddbab8189d8aef32a03e0"
+source = "git+https://github.com/availproject/avail-rust.git?rev=e2e02a7b6d08fb7a8cffad8c2856b742b6587b1f#e2e02a7b6d08fb7a8cffad8c2856b742b6587b1f"
 dependencies = [
  "avail-core",
  "base58",
+ "base64ct",
  "bounded-collections",
  "derive_more 1.0.0",
  "env_logger 0.11.8",
@@ -1676,9 +1677,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
-version = "1.7.3"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e25b6adfb930f02d1981565a6e5d9c547ac15a96606256d3b59040e5cd4ca3"
+checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
 name = "beef"
