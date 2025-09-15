@@ -267,7 +267,9 @@ async fn main() -> Result<()> {
 	info!("P2P listener started on port {}", config.libp2p.port);
 
 	// Bootstrap
-	p2p_client.bootstrap_on_startup().await?;
+	p2p_client
+		.bootstrap_on_startup(&config.libp2p.bootstraps)
+		.await?;
 	info!("Connected to bootstrap nodes");
 
 	// Add manual peers to routing table

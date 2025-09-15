@@ -20,15 +20,15 @@ use avail_light_core::{
 			BOOTSTRAP_LIST_EMPTY_MESSAGE, MINIMUM_P2P_CLIENT_RESTART_INTERVAL,
 		},
 		rpc::{self, OutputEvent as RpcEvent},
-		AutoNatMode, Network,
+		Network,
 	},
 	shutdown::Controller,
 	sync_client::SyncClient,
 	sync_finality::SyncFinality,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
 	types::{
-		load_or_init_suri, Delay, IdentityConfig, KademliaMode, MaintenanceConfig, NetworkMode,
-		PeerAddress, SecretKey, Uuid,
+		load_or_init_suri, Delay, IdentityConfig, MaintenanceConfig, NetworkMode, PeerAddress,
+		SecretKey, Uuid,
 	},
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
@@ -41,10 +41,7 @@ use color_eyre::{
 };
 use config::RuntimeConfig;
 use kate::couscous;
-use libp2p::{
-	kad::{Mode, QueryStats, RecordKey},
-	Multiaddr,
-};
+use libp2p::kad::{Mode, QueryStats, RecordKey};
 use std::{collections::HashMap, fs, path::Path, sync::Arc, time::Duration};
 use tokio::{
 	select,
@@ -69,11 +66,6 @@ static GLOBAL: Jemalloc = Jemalloc;
 mod cli;
 mod config;
 mod tracking;
-
-const EXTERNAL_ADDRESS_NOT_SET_MESSAGE: &str = r#"
-External address must be set if auto nat is disabled, and automatic server mode is enabled or kademlia mode is 'server'.
-Either use a '--external-address' parameter or add 'external_address' in the configuration file.
-"#;
 
 /// Light Client for Avail Blockchain
 async fn run(
@@ -554,22 +546,6 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(address_blacklist) = &opts.address_blacklist {
 		cfg.libp2p.address_blacklist = address_blacklist.clone();
-	}
-
-	if let Some(external_address) = &opts.external_address {
-		let multiaddr: Multiaddr = external_address.parse().map_err(|error| {
-			eyre!("Failed to parse external address {external_address}: {error}")
-		})?;
-		cfg.libp2p.external_address = Some(multiaddr);
-	}
-
-	if !cfg.libp2p.local_test_mode
-		&& cfg.libp2p.external_address.is_none()
-		&& cfg.libp2p.behaviour.auto_nat_mode == AutoNatMode::Disabled
-		&& (cfg.libp2p.kademlia.operation_mode == KademliaMode::Server
-			|| cfg.libp2p.kademlia.automatic_server_mode)
-	{
-		return Err(eyre!("{EXTERNAL_ADDRESS_NOT_SET_MESSAGE}"));
 	}
 
 	Ok(cfg)

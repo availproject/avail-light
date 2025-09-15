@@ -1,7 +1,7 @@
 use super::{protocol_name, AgentVersion, ProvidersConfig};
 #[cfg(not(feature = "rocksdb"))]
 use crate::network::p2p::MemoryStoreConfig;
-use crate::network::AutoNatMode;
+use crate::network::ServiceMode;
 use crate::types::{
 	duration_seconds_format, option_duration_seconds_format, KademliaMode, PeerAddress,
 	ProjectName, SecretKey,
@@ -17,6 +17,27 @@ use std::{
 };
 #[cfg(target_arch = "wasm32")]
 use web_time::Duration;
+
+/// Defines lip2p AutoNAT mode options
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum AutoNatMode {
+	/// AutoNAT disabled
+	Disabled,
+	/// AutoNAT client only mode
+	Client,
+	/// AutoNAT server only mode
+	Server,
+}
+
+impl From<ServiceMode> for AutoNatMode {
+	fn from(mode: ServiceMode) -> Self {
+		match mode {
+			ServiceMode::Disabled => AutoNatMode::Disabled,
+			ServiceMode::Client => AutoNatMode::Client,
+			ServiceMode::Server => AutoNatMode::Server,
+		}
+	}
+}
 
 /// Define a configuration struct for Behaviour components
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -35,7 +56,7 @@ impl Default for BehaviourConfig {
 			enable_kademlia: true,
 			enable_identify: true,
 			enable_ping: true,
-			auto_nat_mode: AutoNatMode::Disabled,
+			auto_nat_mode: AutoNatMode::Client,
 			enable_peer_blocking: true,
 		}
 	}
@@ -196,7 +217,7 @@ impl Default for KademliaConfig {
 			max_kad_record_size: 8192 * 2, // Maximum for 512 columns
 			max_kad_provided_keys: 1024,
 			operation_mode: KademliaMode::Client,
-			automatic_server_mode: false,
+			automatic_server_mode: true,
 			kbucket_pending_timeout: Duration::from_secs(60),
 		}
 	}
@@ -248,9 +269,6 @@ pub struct LibP2PConfig {
 	pub address_blacklist: Vec<String>,
 	#[serde(rename = "p2p_listeners")]
 	pub listeners: Listeners,
-	/// External P2P address (e.g. `/ip4/1.1.1.1/tcp/37000`)
-	/// If set, this address will be added as an external address for libp2p (default: None).
-	pub external_address: Option<Multiaddr>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -284,7 +302,6 @@ impl Default for LibP2PConfig {
 			local_test_mode: false,
 			address_blacklist: vec![],
 			listeners: Listeners::Tcp,
-			external_address: None,
 		}
 	}
 }
@@ -374,13 +391,7 @@ pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 		boot_delay: cfg.autonat.boot_delay,
 		throttle_server_period: cfg.autonat.throttle,
 		only_global_ips: cfg.autonat.only_global_ips,
-		use_connected: Default::default(),
-		timeout: Default::default(),
-		confidence_max: Default::default(),
-		max_peer_addresses: Default::default(),
-		throttle_clients_global_max: cfg.autonat.throttle_clients_global_max,
-		throttle_clients_peer_max: cfg.autonat.throttle_clients_peer_max,
-		throttle_clients_period: cfg.autonat.throttle_clients_period,
+		..Default::default()
 	}
 }
 

@@ -72,7 +72,7 @@ async fn get_blacklisted_peers(
 
 	let peers: Vec<(String, PeerInfo)> = server_list
 		.iter()
-		.filter(|(_, info)| !info.is_blacklisted)
+		.filter(|(_, info)| info.is_blacklisted)
 		.map(|(peer_id, info)| {
 			let peer_id_str = peer_id.to_string();
 

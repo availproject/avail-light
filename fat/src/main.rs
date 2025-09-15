@@ -114,7 +114,8 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 	let bootstrap_p2p_client = p2p_client.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup().await {
+		let bootstraps = &config.libp2p.bootstraps;
+		if let Err(error) = bootstrap_p2p_client.bootstrap_on_startup(bootstraps).await {
 			warn!("Bootstrap unsuccessful: {error:#}");
 		}
 	}));

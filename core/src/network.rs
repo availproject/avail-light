@@ -11,7 +11,6 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use mockall::automock;
 use p2p::configuration::Listeners;
-use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
@@ -460,8 +459,14 @@ impl Network {
 	}
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, ValueEnum)]
-pub enum AutoNatMode {
+// Defines the Service mode as a ValueEnum for clap
+// currently used for: AutoNAT and Relay
+#[derive(Clone, Debug, PartialEq, ValueEnum)]
+pub enum ServiceMode {
+	/// Service disabled
 	Disabled,
-	Enabled,
+	/// Client only mode
+	Client,
+	/// Server only mode
+	Server,
 }

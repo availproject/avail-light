@@ -213,7 +213,6 @@ sync_finality_enable = false
 
 ## Notes
 
-- Server mode has autonat disabled by default, which makes mandatory to set external_address parameter, so clients knows how to reach the server. This parameter is required in any case when automatic switch to server mode is not possible.
 - Immediately after starting a fresh light client, block sync is executed from a starting block set with the `sync_start_block` config parameter. The sync process is using both the DHT and RPC for that purpose.
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
 - `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).

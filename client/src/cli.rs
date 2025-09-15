@@ -1,5 +1,5 @@
 use avail_light_core::{
-	network::{AutoNatMode, Network},
+	network::{Network, ServiceMode},
 	types::{KademliaMode, NetworkMode},
 };
 use clap::{command, ArgAction, Parser};
@@ -81,9 +81,9 @@ pub struct CliOpts {
 	pub no_update: bool,
 	#[arg(long)]
 	pub p2p_client_restart_interval: Option<u64>,
-	/// AutoNAT behaviour mode: enabled or disabled
-	#[arg(long, value_enum, default_value = "disabled")]
-	pub auto_nat_mode: AutoNatMode,
+	/// AutoNAT behaviour mode: client, server, or disabled
+	#[arg(long, value_enum, default_value = "server")]
+	pub auto_nat_mode: ServiceMode,
 	/// Kademlia operation mode: client or server
 	#[arg(long, value_enum)]
 	pub operation_mode: Option<KademliaMode>,
@@ -93,7 +93,4 @@ pub struct CliOpts {
 	/// List of address patterns to filter out when adding peers to the routing table
 	#[arg(long, value_delimiter = ',')]
 	pub address_blacklist: Option<Vec<String>>,
-	/// External P2P address (e.g. `/ip4/1.1.1.1/tcp/37000`)
-	#[arg(long)]
-	pub external_address: Option<String>,
 }

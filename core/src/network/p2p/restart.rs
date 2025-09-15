@@ -57,9 +57,10 @@ pub async fn init_and_start_p2p_client(
 	db.put(PeerIDKey, peer_id.to_string());
 
 	let p2p_clone = p2p_client.to_owned();
+	let bootstraps = libp2p_cfg.bootstraps.clone();
 	spawn_in_span(shutdown.with_cancel(async move {
 		info!("Bootstrapping the DHT with bootstrap nodes...");
-		if let Err(error) = p2p_clone.bootstrap_on_startup().await {
+		if let Err(error) = p2p_clone.bootstrap_on_startup(&bootstraps).await {
 			info!("Bootstrap unsuccessful: {error:#}");
 		}
 	}));

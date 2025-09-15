@@ -1,6 +1,6 @@
 [package]
 name = "avail-light-client"
-version = "1.13.2"
+version = "1.13.1"
 build = "../build.rs"
 edition = "2021"
 description = "Avail network p2p Light Client"
