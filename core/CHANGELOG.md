@@ -3,6 +3,7 @@
 ## [1.2.11]
 
 - Added polynomial multiproof features to app-clients
+- Disable autonat and automatic server mode by default, add external_address parameter for servers without autonat
 
 ## [1.2.10](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.10) - 2025-09-08
 
