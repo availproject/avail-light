@@ -41,6 +41,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.PAT_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo test --workspace --benches --tests --no-default-features
         env:
