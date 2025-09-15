@@ -14,10 +14,10 @@ default = ["console_error_panic_hook"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 avail-light-core = { workspace = true }
 avail-rust = { workspace = true }
-kate = { workspace = true }
 clap = { workspace = true }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 futures = { workspace = true }
+kate = { workspace = true }
 libp2p = { workspace = true }
 serde_json = "1.0.125"
 sp-io = { version = "30", features = ["disable_allocator", "disable_panic_handler"], default-features = false }

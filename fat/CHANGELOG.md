@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.12.10](https://github.com/availproject/avail-light/releases/tag/avail-light-fat-v1.12.10) - 2025-09-15
+
+- Update `avail-light-core` to 1.2.11
+
 ## [1.12.9](https://github.com/availproject/avail-light/releases/tag/avail-light-fat-v1.12.9) - 2025-09-08
 
 - Update `avail-light-core` to 1.2.10

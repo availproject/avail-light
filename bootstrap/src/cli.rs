@@ -1,4 +1,3 @@
-use avail_light_core::network::ServiceMode;
 use clap::{command, ArgAction, Parser};
 use tracing::Level;
 
@@ -46,9 +45,6 @@ pub struct CliOpts {
 	/// Set client alias for use in logs and metrics
 	#[arg(long)]
 	pub client_alias: Option<String>,
-	/// AutoNAT behaviour mode: client, server, or disabled
-	#[arg(long, value_enum, default_value = "server")]
-	pub auto_nat_mode: ServiceMode,
 	#[arg(long, action = ArgAction::SetTrue)]
 	/// Flag that is set when the client is running as a local test mode. [should be only used for testing!]
 	pub local_test_mode: bool,

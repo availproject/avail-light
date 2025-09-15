@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-bootstrap"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-std",
  "async-trait",
@@ -1314,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-client"
-version = "1.13.1"
+version = "1.13.2"
 dependencies = [
  "avail-core",
  "avail-light-core",
@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-core"
-version = "1.2.10"
+version = "1.2.11"
 dependencies = [
  "async-std",
  "async-stream",
@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "avail-light-fat"
-version = "1.12.9"
+version = "1.12.10"
 dependencies = [
  "avail-light-core",
  "clap",
@@ -1758,7 +1758,7 @@ dependencies = [
  "bitflags 2.9.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -4025,7 +4025,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5919,7 +5919,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.1",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11234,7 +11234,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11759,7 +11759,7 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11772,7 +11772,7 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11839,7 +11839,7 @@ dependencies = [
  "security-framework 3.2.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -15100,7 +15100,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -15807,7 +15807,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "digest 0.10.7",
  "rand 0.8.5",
  "static_assertions",
@@ -16600,7 +16600,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
