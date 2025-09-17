@@ -41,6 +41,7 @@ mod event_loop;
 mod kad_mem_providers;
 #[cfg(not(feature = "rocksdb"))]
 mod kad_mem_store;
+mod kad_no_reuse;
 #[cfg(feature = "rocksdb")]
 mod kad_rocksdb_store;
 #[cfg(not(target_arch = "wasm32"))]
@@ -69,6 +70,7 @@ use crate::{
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_providers::ProvidersConfig;
+pub use kad_no_reuse::NoReuse;
 use libp2p_allow_block_list as allow_block_list;
 #[cfg(not(target_arch = "wasm32"))]
 pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager};
@@ -195,7 +197,7 @@ type Command = Box<dyn FnOnce(&mut EventLoop) -> Result<(), Report> + Send>;
 #[behaviour(event_process = false)]
 pub struct ConfigurableBehaviour {
 	#[behaviour(optional)]
-	kademlia: Toggle<kad::Behaviour<Store>>,
+	kademlia: Toggle<NoReuse<Store>>,
 
 	#[behaviour(optional)]
 	identify: Toggle<identify::Behaviour>,
@@ -298,11 +300,11 @@ async fn build_swarm(
 	let make_behaviour = move |key: &identity::Keypair| {
 		let kademlia = if cfg.behaviour.enable_kademlia {
 			let kad_cfg: kad::Config = kad_config(cfg, genesis_hash);
-			Some(kad::Behaviour::with_config(
+			Some(NoReuse::new(kad::Behaviour::with_config(
 				key.public().to_peer_id(),
 				kad_store,
 				kad_cfg,
-			))
+			)))
 		} else {
 			None
 		};
