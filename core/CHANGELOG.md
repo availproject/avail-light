@@ -2,6 +2,7 @@
 
 ## [1.2.12]
 
+- Introduced Polynomial Multiproofs to app-clients
 - Fixed check that causes error log on inserting rows into the DHT
 
 ## [1.2.11](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.11) - 2025-09-15
