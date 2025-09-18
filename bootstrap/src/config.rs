@@ -1,11 +1,8 @@
-use avail_light_core::{
-	network::p2p::configuration::{AutoNATConfig, KademliaConfig, LibP2PConfig},
-	telemetry::otlp::OtelConfig,
-	types::{tracing_level_format, Origin, ProjectName, SecretKey},
-};
-use color_eyre::eyre::{self, Context};
+use avail_light_core::types::{tracing_level_format, Origin, ProjectName, SecretKey};
+use color_eyre::eyre::{self, Context, Result};
+use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, net::SocketAddr, num::NonZero, str::FromStr, time::Duration};
+use std::{fmt::Display, net::SocketAddr, str::FromStr};
 use tracing::Level;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -16,17 +13,13 @@ pub struct RuntimeConfig {
 	pub project_name: ProjectName,
 	/// Bootstrap HTTP server host name (default: 127.0.0.1).
 	pub http_server_host: String,
-	/// Bootstrap HTTP server port (default: 7700).
+	/// Bootstrap HTTP server port (default: 7900).
 	pub http_server_port: u16,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
 	#[serde(with = "tracing_level_format")]
 	pub log_level: Level,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
-	#[serde(flatten)]
-	pub libp2p: LibP2PConfig,
-	#[serde(flatten)]
-	pub otel: OtelConfig,
 	/// Default bootstrap peerID is 12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz
 	pub origin: Origin,
 	/// Genesis hash of the network to be connected to. Set to a string beginning with "DEV" to connect to any network.
@@ -35,6 +28,24 @@ pub struct RuntimeConfig {
 	pub client_alias: Option<String>,
 	/// File system path where RocksDB used by bootstrap client to stores its data.
 	pub avail_bootstrap_path: String,
+	/// See [`avail_light_core::network::p2p::configuration::LibP2PConfig::port`] for usage (default: 39000).
+	pub port: u16,
+	/// See [`avail_light_core::network::p2p::configuration::LibP2PConfig::webrtc_port`] for usage (default: 39001).
+	pub webrtc_port: u16,
+	/// See [`avail_light_core::network::p2p::configuration::LibP2PConfig::secret_key`] for usage (default: { seed: "1" }).
+	pub secret_key: Option<SecretKey>,
+	/// See [`avail_light_core::telemetry::otlp::OtelConfig::ot_collector_endpoint`] for usage (default: "http://127.0.0.1:4317").
+	pub ot_collector_endpoint: String,
+	/// See [`avail_light_core::network::p2p::configuration::IdentifyConfig::hide_listen_addrs`] for usage (default: true).
+	pub hide_listen_addrs: bool,
+	/// See [`avail_light_core::network::p2p::configuration::LibP2PConfig::external_address`] for usage (default: None).
+	pub external_address: Option<Multiaddr>,
+}
+
+impl RuntimeConfig {
+	pub fn load(path: &str) -> Result<RuntimeConfig> {
+		confy::load_path(path).wrap_err(format!("Failed to load configuration from: {path}"))
+	}
 }
 
 impl Default for RuntimeConfig {
@@ -42,38 +53,22 @@ impl Default for RuntimeConfig {
 		RuntimeConfig {
 			project_name: ProjectName::new("avail".to_string()),
 			http_server_host: "127.0.0.1".to_owned(),
-			http_server_port: 7700,
+			http_server_port: 7900,
 			log_level: Level::INFO,
 			log_format_json: false,
-			otel: Default::default(),
 			origin: Origin::External,
 			genesis_hash: "DEV".to_owned(),
-			libp2p: LibP2PConfig {
-				secret_key: Some(SecretKey::Seed {
-					seed: "1".to_string(),
-				}),
-				port: 39000,
-				webrtc_port: 39001,
-				autonat: AutoNATConfig {
-					throttle_clients_global_max: 120,
-					throttle_clients_peer_max: 4,
-					only_global_ips: false,
-					..Default::default()
-				},
-				kademlia: KademliaConfig {
-					query_timeout: Duration::from_secs(60),
-					..Default::default()
-				},
-				behaviour: Default::default(),
-				connection_idle_timeout: Duration::from_secs(10),
-				max_negotiating_inbound_streams: Some(20),
-				task_command_buffer_size: Some(NonZero::new(30000).unwrap()),
-				per_connection_event_buffer_size: Some(10000),
-				dial_concurrency_factor: NonZero::new(5).unwrap(),
-				..Default::default()
-			},
 			client_alias: None,
 			avail_bootstrap_path: "avail_bootstrap_path".to_owned(),
+			port: 39000,
+			webrtc_port: 39001,
+			secret_key: SecretKey::Seed {
+				seed: "1".to_string(),
+			}
+			.into(),
+			hide_listen_addrs: true,
+			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
+			external_address: None,
 		}
 	}
 }

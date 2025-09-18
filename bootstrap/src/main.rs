@@ -5,11 +5,19 @@ use std::time::Duration;
 use avail_light_core::{
 	data::{self, ClientIdKey, Database, DB},
 	network::{
-		p2p::{self, OutputEvent as P2pEvent},
+		p2p::{
+			self,
+			configuration::{BehaviourConfig, IdentifyConfig, KademliaConfig, LibP2PConfig},
+			OutputEvent as P2pEvent,
+		},
 		AutoNatMode, Network,
 	},
 	shutdown::Controller,
-	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
+	telemetry::{
+		self,
+		otlp::{Metrics, OtelConfig},
+		MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE,
+	},
 	types::{load_or_init_suri, IdentityConfig, KademliaMode, ProjectName, SecretKey, Uuid},
 	utils::{default_subscriber, json_subscriber, spawn_in_span},
 };
@@ -37,8 +45,11 @@ const EXTERNAL_ADDRESS_NOT_SET_MESSAGE: &str = r#"
 External address must be set for the bootstrap node. Add 'external_address' parameter in the configuration file.
 "#;
 
+#[allow(clippy::too_many_arguments)]
 async fn run(
 	cfg: RuntimeConfig,
+	cfg_libp2p: LibP2PConfig,
+	cfg_otel: OtelConfig,
 	identity_cfg: IdentityConfig,
 	db: DB,
 	shutdown: Controller<String>,
@@ -50,10 +61,10 @@ async fn run(
 	info!(version, rev, "Running {}", clap::crate_name!());
 	info!("Using config: {:?}", cfg);
 
-	let (id_keys, peer_id) = p2p::identity(&cfg.libp2p, db.clone())?;
+	let (id_keys, peer_id) = p2p::identity(&cfg_libp2p, db.clone())?;
 
 	let (mut p2p_client, p2p_event_loop, p2p_event_receiver) = p2p::init(
-		cfg.libp2p.clone(),
+		cfg_libp2p.clone(),
 		ProjectName::new("avail".to_string()),
 		id_keys,
 		version,
@@ -68,14 +79,14 @@ async fn run(
 	spawn_in_span(shutdown.with_cancel(p2p_event_loop.run()));
 
 	p2p_client
-		.start_listening(cfg.libp2p.listeners())
+		.start_listening(cfg_libp2p.listeners())
 		.await
 		.wrap_err("Error starting listener.")?;
-	info!("P2P listeners started on port {}", cfg.libp2p.port);
+	info!("P2P listeners started on port {}", cfg_libp2p.port);
 
 	let p2p_clone = p2p_client.to_owned();
 
-	if cfg.libp2p.bootstraps.is_empty() {
+	if cfg_libp2p.bootstraps.is_empty() {
 		info!("Running as standalone bootstrap node");
 	}
 
@@ -105,7 +116,7 @@ async fn run(
 	let mut metrics = telemetry::otlp::initialize(
 		cfg.project_name.clone(),
 		&cfg.origin,
-		cfg.otel.clone(),
+		cfg_otel.clone(),
 		resource_attributes,
 	)
 	.wrap_err("Unable to initialize OpenTelemetry service")?;
@@ -121,26 +132,47 @@ async fn run(
 	Ok(())
 }
 
-pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
-	let mut cfg = if let Some(cfg_path) = &opts.config {
-		confy::load_path(cfg_path)
-			.wrap_err(format!("Failed to load configuration from: {cfg_path}"))?
-	} else {
-		RuntimeConfig::default()
+pub fn load_runtime_config(opts: &CliOpts) -> Result<(RuntimeConfig, LibP2PConfig, OtelConfig)> {
+	let mut cfg = match &opts.config {
+		Some(path) => RuntimeConfig::load(path)?,
+		None => RuntimeConfig::default(),
 	};
 
-	// TODO: This is a temporary workaround to set the agent role and operation mode for the bootstrap node.
-	// Better solution would be to avoid exposing libp2p configuration directly.
-	cfg.libp2p.identify.agent_role = "bootstrap".to_string();
-	cfg.libp2p.kademlia.automatic_server_mode = false;
-	cfg.libp2p.kademlia.operation_mode = KademliaMode::Server;
-	cfg.libp2p.behaviour.auto_nat_mode = AutoNatMode::Enabled;
+	let mut cfg_libp2p = LibP2PConfig {
+		port: cfg.port,
+		webrtc_port: cfg.webrtc_port,
+		external_address: cfg.external_address.clone(),
+		secret_key: cfg.secret_key.clone(),
+		identify: IdentifyConfig {
+			agent_role: "bootstrap".into(),
+			..Default::default()
+		},
+		kademlia: KademliaConfig {
+			automatic_server_mode: false,
+			operation_mode: KademliaMode::Server,
+			..Default::default()
+		},
+		behaviour: BehaviourConfig {
+			auto_nat_mode: AutoNatMode::Enabled,
+			..Default::default()
+		},
+		..Default::default()
+	};
+
+	let cfg_otel = OtelConfig {
+		ot_collector_endpoint: cfg.ot_collector_endpoint.clone(),
+		..Default::default()
+	};
+
+	if opts.local_test_mode {
+		cfg_libp2p.identify.hide_listen_addrs = false;
+	}
 
 	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
 	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
 
 	if let Some(port) = opts.port {
-		cfg.libp2p.port = port;
+		cfg_libp2p.port = port;
 	}
 
 	if let Some(http_port) = opts.http_server_port {
@@ -152,13 +184,13 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	if let Some(secret_key) = &opts.private_key {
-		cfg.libp2p.secret_key = Some(SecretKey::Key {
+		cfg_libp2p.secret_key = Some(SecretKey::Key {
 			key: secret_key.to_string(),
 		});
 	}
 
 	if let Some(seed) = &opts.seed {
-		cfg.libp2p.secret_key = Some(SecretKey::Seed {
+		cfg_libp2p.secret_key = Some(SecretKey::Seed {
 			seed: seed.to_string(),
 		})
 	}
@@ -168,18 +200,18 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	if opts.local_test_mode {
-		cfg.libp2p.local_test_mode = true;
+		cfg_libp2p.local_test_mode = true;
 	}
 
 	if let Some(address_blacklist) = &opts.address_blacklist {
-		cfg.libp2p.address_blacklist = address_blacklist.clone();
+		cfg_libp2p.address_blacklist = address_blacklist.clone();
 	}
 
-	if cfg.libp2p.external_address.is_none() && !cfg.libp2p.local_test_mode {
+	if cfg_libp2p.external_address.is_none() && !cfg_libp2p.local_test_mode {
 		return Err(eyre!("{EXTERNAL_ADDRESS_NOT_SET_MESSAGE}"));
 	}
 
-	Ok(cfg)
+	Ok((cfg, cfg_libp2p, cfg_otel))
 }
 
 struct ClientState {
@@ -252,7 +284,7 @@ impl ClientState {
 async fn main() -> Result<()> {
 	let shutdown = Controller::new();
 	let opts = CliOpts::parse();
-	let cfg = load_runtime_config(&opts)?;
+	let (cfg, cfg_libp2p, cfg_otel) = load_runtime_config(&opts)?;
 
 	if cfg.log_format_json {
 		tracing::subscriber::set_global_default(json_subscriber(cfg.log_level))?;
@@ -277,6 +309,7 @@ async fn main() -> Result<()> {
 		None => load_or_init_suri(&opts.identity)?,
 		Some(suri) => suri,
 	};
+
 	let identity_cfg = IdentityConfig::from_suri(suri, opts.avail_passphrase)?;
 
 	let span = span!(
@@ -297,6 +330,8 @@ async fn main() -> Result<()> {
 
 	if let Err(error) = run(
 		cfg,
+		cfg_libp2p,
+		cfg_otel,
 		identity_cfg,
 		db,
 		shutdown.clone(),
