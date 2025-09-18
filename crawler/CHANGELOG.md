@@ -2,7 +2,7 @@
 
 ## 0.2.0
 
-- Update `avail-light-core` to 1.2.11
+- Update `avail-light-core` to 1.2.12
 - Remove `ot_flush_block_interval` from configuration
 
 ## 0.1.1

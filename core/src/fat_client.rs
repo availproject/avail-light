@@ -258,27 +258,29 @@ pub async fn process_block(
 	}
 
 	#[cfg(not(feature = "multiproof"))]
-	if rpc_fetched.len() >= extension.dimensions.cols().get() as usize {
+	{
 		let cells: Vec<Cell> = rpc_fetched
 			.into_iter()
 			.filter(|c| !c.position().is_extended())
 			.collect();
 
-		let data_cells: Vec<&Cell> = cells.iter().collect();
-		let data_rows = data::rows(extension.dimensions, &data_cells);
+		if cells.len() >= extension.dimensions.cols().get() as usize {
+			let data_cells: Vec<&Cell> = cells.iter().collect();
+			let data_rows = data::rows(extension.dimensions, &data_cells);
 
-		if let Err(error) = client.insert_rows_into_dht(block_number, data_rows).await {
-			error!(
-				%error,
-				block_number,
-				event_type = "DHT_ROW_INSERT",
-				"Failed to insert rows into DHT"
-			);
+			if let Err(error) = client.insert_rows_into_dht(block_number, data_rows).await {
+				error!(
+					%error,
+					block_number,
+					event_type = "DHT_ROW_INSERT",
+					"Failed to insert rows into DHT"
+				);
+			}
+		} else {
+			// NOTE: Often rows will not be push into DHT,
+			// but that's ok, because only application clients requests them
+			info!("No rows has been inserted into DHT since partition size is less than one row.")
 		}
-	} else {
-		// NOTE: Often rows will not be push into DHT,
-		// but that's ok, because only application clients requests them
-		info!("No rows has been inserted into DHT since partition size is less than one row.")
 	}
 
 	Ok(Some(block_verified))

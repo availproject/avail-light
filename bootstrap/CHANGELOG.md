@@ -1,9 +1,13 @@
 # Changelog
 
+## [0.5.6]
+
+- Update `avail-light-core` to 1.2.12
+
 ## [0.5.5](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.5) - 2025-09-15
 
 - Set autonat to enabled, flag external_address parameter as mandatory
-- Update `avail-light-core` to 1.2.11
+- Update `avail-light-core` to 1.2.11p
 
 ## [0.5.4](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.4) - 2025-09-08
 

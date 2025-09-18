@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.12]
+
+- Fixed check that causes error log on inserting rows into the DHT
+
 ## [1.2.11](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.11) - 2025-09-15
 
 - Disable autonat and automatic server mode by default, add external_address parameter for servers without autonat
