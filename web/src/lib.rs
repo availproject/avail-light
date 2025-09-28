@@ -8,7 +8,7 @@ use avail_light_core::shutdown::Controller;
 use avail_light_core::types::{Delay, NetworkMode, PeerAddress};
 use avail_light_core::utils::spawn_in_span;
 use avail_light_core::{api, data};
-use avail_rust::SDK;
+use avail_rust_next::prelude::Client;
 use clap::ValueEnum;
 use kate::couscous;
 use libp2p::Multiaddr;
@@ -293,15 +293,21 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 	};
 
 	let endpoint = network.full_node_ws().first().cloned().unwrap();
-	let sdk = SDK::new(&endpoint).await.unwrap();
+	let node_client = Client::new(&endpoint).await.unwrap();
 	let db = data::DB::default();
 	let shutdown = Controller::new();
 	let pp = Arc::new(couscous::multiproof_params());
 
 	info!("Fetching the latest block...");
 
-	let block = sdk.client.online_client.blocks().at_latest().await.unwrap();
-	let header = block.header().clone();
+	let block = node_client
+		.rpc()
+		.legacy_block(None)
+		.await
+		.unwrap()
+		.unwrap()
+		.block;
+	let header = block.header.clone();
 	let received_at = Instant::now();
 
 	let (lc_sender, mut lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
@@ -344,12 +350,23 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 
 	let network_client = network::new_rpc(rpc_client, pp);
 
-	let confidence =
-		light_client::process_block(db, &network_client, 99.9, header, received_at, lc_sender)
-			.await
-			.unwrap()
-			.map(|block_verified| format!("{:?}", block_verified.confidence))
-			.unwrap_or("none".to_string());
+	let legacy_header = avail_rust_conversion::from_next_to_legacy_header(header);
 
-	format!("Confidence for block {} is {confidence}.", block.number())
+	let confidence = light_client::process_block(
+		db,
+		&network_client,
+		99.9,
+		legacy_header,
+		received_at,
+		lc_sender,
+	)
+	.await
+	.unwrap()
+	.map(|block_verified| format!("{:?}", block_verified.confidence))
+	.unwrap_or("none".to_string());
+
+	format!(
+		"Confidence for block {} is {confidence}.",
+		block.header.number
+	)
 }

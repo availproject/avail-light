@@ -1,0 +1,13 @@
+[package]
+name = "avail-rust-conversion"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+avail-rust = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+avail-rust-next = { workspace = true, features = ["native", "reqwest"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+avail-rust-next = { workspace = true, features = ["wasm", "reqwest"] }
