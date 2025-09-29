@@ -1,3 +1,4 @@
+use crate::cli::CliOpts;
 use avail_light_core::{
 	network::{
 		p2p::configuration::{
@@ -88,6 +89,112 @@ impl Default for RuntimeConfig {
 			},
 			client_alias: None,
 			avail_bootstrap_path: "avail_bootstrap_path".to_owned(),
+		}
+	}
+}
+
+impl RuntimeConfig {
+	/// Applies bootstrap-specific overrides for libp2p fields that are NOT present in config file
+	pub fn apply_defaults(&mut self, toml: &toml::Value) {
+		let is_set = |key: &str| -> bool { toml.get(key).is_some() };
+
+		// Get the bootstrap defaults from RuntimeConfig::default()
+		let defaults = RuntimeConfig::default();
+
+		if !is_set("port") {
+			self.libp2p.port = defaults.libp2p.port;
+		}
+		if !is_set("webrtc_port") {
+			self.libp2p.webrtc_port = defaults.libp2p.webrtc_port;
+		}
+		if !is_set("throttle_clients_global_max") {
+			self.libp2p.autonat.throttle_clients_global_max =
+				defaults.libp2p.autonat.throttle_clients_global_max;
+		}
+		if !is_set("throttle_clients_peer_max") {
+			self.libp2p.autonat.throttle_clients_peer_max =
+				defaults.libp2p.autonat.throttle_clients_peer_max;
+		}
+		if !is_set("only_global_ips") {
+			self.libp2p.autonat.only_global_ips = defaults.libp2p.autonat.only_global_ips;
+		}
+		if !is_set("query_timeout") {
+			self.libp2p.kademlia.query_timeout = defaults.libp2p.kademlia.query_timeout;
+		}
+		if !is_set("connection_idle_timeout") {
+			self.libp2p.connection_idle_timeout = defaults.libp2p.connection_idle_timeout;
+		}
+		if !is_set("max_negotiating_inbound_streams") {
+			self.libp2p.max_negotiating_inbound_streams =
+				defaults.libp2p.max_negotiating_inbound_streams;
+		}
+		if !is_set("task_command_buffer_size") {
+			self.libp2p.task_command_buffer_size = defaults.libp2p.task_command_buffer_size;
+		}
+		if !is_set("per_connection_event_buffer_size") {
+			self.libp2p.per_connection_event_buffer_size =
+				defaults.libp2p.per_connection_event_buffer_size;
+		}
+		if !is_set("dial_concurrency_factor") {
+			self.libp2p.dial_concurrency_factor = defaults.libp2p.dial_concurrency_factor;
+		}
+		if !is_set("secret_key") {
+			self.libp2p.secret_key = defaults.libp2p.secret_key;
+		}
+		if !is_set("agent_role") {
+			self.libp2p.identify.agent_role = defaults.libp2p.identify.agent_role;
+		}
+		if !is_set("automatic_server_mode") {
+			self.libp2p.kademlia.automatic_server_mode =
+				defaults.libp2p.kademlia.automatic_server_mode;
+		}
+		if !is_set("operation_mode") {
+			self.libp2p.kademlia.operation_mode = defaults.libp2p.kademlia.operation_mode;
+		}
+		if !is_set("auto_nat_mode") {
+			self.libp2p.behaviour.auto_nat_mode = defaults.libp2p.behaviour.auto_nat_mode;
+		}
+	}
+
+	/// Applies CLI option overrides to the runtime configuration
+	pub fn apply_opts(&mut self, opts: &CliOpts) {
+		self.log_format_json = opts.logs_json || self.log_format_json;
+		self.log_level = opts.verbosity.unwrap_or(self.log_level);
+
+		if let Some(port) = opts.port {
+			self.libp2p.port = port;
+		}
+
+		if let Some(http_port) = opts.http_server_port {
+			self.http_server_port = http_port;
+		}
+
+		if let Some(http_host) = opts.http_server_host.clone() {
+			self.http_server_host = http_host;
+		}
+
+		if let Some(secret_key) = &opts.private_key {
+			self.libp2p.secret_key = Some(SecretKey::Key {
+				key: secret_key.to_string(),
+			});
+		}
+
+		if let Some(seed) = &opts.seed {
+			self.libp2p.secret_key = Some(SecretKey::Seed {
+				seed: seed.to_string(),
+			});
+		}
+
+		if let Some(client_alias) = &opts.client_alias {
+			self.client_alias = Some(client_alias.clone());
+		}
+
+		if opts.local_test_mode {
+			self.libp2p.local_test_mode = true;
+		}
+
+		if let Some(address_blacklist) = &opts.address_blacklist {
+			self.libp2p.address_blacklist = address_blacklist.clone();
 		}
 	}
 }
