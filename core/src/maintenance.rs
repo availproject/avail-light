@@ -66,7 +66,9 @@ pub async fn process_block(
 		}
 	};
 
-	if cfg!(not(feature = "rocksdb")) && block_number % maintenance_config.pruning_interval == 0 {
+	if cfg!(not(feature = "rocksdb"))
+		&& block_number.is_multiple_of(maintenance_config.pruning_interval)
+	{
 		info!(block_number, "Pruning...");
 		match p2p_client.prune_expired_records(Instant::now()).await {
 			Ok(pruned) => info!(block_number, pruned, "Pruning finished"),
