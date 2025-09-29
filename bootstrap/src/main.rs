@@ -6,11 +6,11 @@ use avail_light_core::{
 	data::{self, ClientIdKey, Database, DB},
 	network::{
 		p2p::{self, OutputEvent as P2pEvent},
-		AutoNatMode, Network,
+		Network,
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{load_or_init_suri, IdentityConfig, KademliaMode, ProjectName, SecretKey, Uuid},
+	types::{load_or_init_suri, IdentityConfig, ProjectName, SecretKey, Uuid},
 	utils::{default_subscriber, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -123,18 +123,21 @@ async fn run(
 
 pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	let mut cfg = if let Some(cfg_path) = &opts.config {
-		confy::load_path(cfg_path)
-			.wrap_err(format!("Failed to load configuration from: {cfg_path}"))?
+		let raw_config = std::fs::read_to_string(cfg_path)
+			.wrap_err(format!("Failed to read configuration file: {cfg_path}"))?;
+		let toml_value: toml::Value = raw_config
+			.parse()
+			.wrap_err(format!("Failed to parse TOML in: {cfg_path}"))?;
+
+		let mut cfg: RuntimeConfig = confy::load_path(cfg_path)
+			.wrap_err(format!("Failed to load configuration from: {cfg_path}"))?;
+
+		apply_defaults(&mut cfg, &toml_value);
+
+		cfg
 	} else {
 		RuntimeConfig::default()
 	};
-
-	// TODO: This is a temporary workaround to set the agent role and operation mode for the bootstrap node.
-	// Better solution would be to avoid exposing libp2p configuration directly.
-	cfg.libp2p.identify.agent_role = "bootstrap".to_string();
-	cfg.libp2p.kademlia.automatic_server_mode = false;
-	cfg.libp2p.kademlia.operation_mode = KademliaMode::Server;
-	cfg.libp2p.behaviour.auto_nat_mode = AutoNatMode::Enabled;
 
 	cfg.log_format_json = opts.logs_json || cfg.log_format_json;
 	cfg.log_level = opts.verbosity.unwrap_or(cfg.log_level);
@@ -180,6 +183,66 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	Ok(cfg)
+}
+
+/// Applies bootstrap-specific overrides for libp2p fields that are NOT present in config file
+fn apply_defaults(cfg: &mut RuntimeConfig, toml: &toml::Value) {
+	let is_set = |key: &str| -> bool { toml.get(key).is_some() };
+
+	let defaults = RuntimeConfig::default();
+
+	if !is_set("port") {
+		cfg.libp2p.port = defaults.libp2p.port;
+	}
+	if !is_set("webrtc_port") {
+		cfg.libp2p.webrtc_port = defaults.libp2p.webrtc_port;
+	}
+	if !is_set("throttle_clients_global_max") {
+		cfg.libp2p.autonat.throttle_clients_global_max =
+			defaults.libp2p.autonat.throttle_clients_global_max;
+	}
+	if !is_set("throttle_clients_peer_max") {
+		cfg.libp2p.autonat.throttle_clients_peer_max =
+			defaults.libp2p.autonat.throttle_clients_peer_max;
+	}
+	if !is_set("only_global_ips") {
+		cfg.libp2p.autonat.only_global_ips = defaults.libp2p.autonat.only_global_ips;
+	}
+	if !is_set("query_timeout") {
+		cfg.libp2p.kademlia.query_timeout = defaults.libp2p.kademlia.query_timeout;
+	}
+	if !is_set("connection_idle_timeout") {
+		cfg.libp2p.connection_idle_timeout = defaults.libp2p.connection_idle_timeout;
+	}
+	if !is_set("max_negotiating_inbound_streams") {
+		cfg.libp2p.max_negotiating_inbound_streams =
+			defaults.libp2p.max_negotiating_inbound_streams;
+	}
+	if !is_set("task_command_buffer_size") {
+		cfg.libp2p.task_command_buffer_size = defaults.libp2p.task_command_buffer_size;
+	}
+	if !is_set("per_connection_event_buffer_size") {
+		cfg.libp2p.per_connection_event_buffer_size =
+			defaults.libp2p.per_connection_event_buffer_size;
+	}
+	if !is_set("dial_concurrency_factor") {
+		cfg.libp2p.dial_concurrency_factor = defaults.libp2p.dial_concurrency_factor;
+	}
+	if !is_set("secret_key") {
+		cfg.libp2p.secret_key = defaults.libp2p.secret_key;
+	}
+	if !is_set("agent_role") {
+		cfg.libp2p.identify.agent_role = defaults.libp2p.identify.agent_role;
+	}
+	if !is_set("automatic_server_mode") {
+		cfg.libp2p.kademlia.automatic_server_mode = defaults.libp2p.kademlia.automatic_server_mode;
+	}
+	if !is_set("operation_mode") {
+		cfg.libp2p.kademlia.operation_mode = defaults.libp2p.kademlia.operation_mode;
+	}
+	if !is_set("auto_nat_mode") {
+		cfg.libp2p.behaviour.auto_nat_mode = defaults.libp2p.behaviour.auto_nat_mode;
+	}
 }
 
 struct ClientState {
