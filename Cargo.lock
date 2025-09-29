@@ -1306,6 +1306,7 @@ dependencies = [
  "semver 1.0.26",
  "serde",
  "tokio",
+ "toml 0.5.11",
  "tracing",
  "tracing-subscriber 0.3.19",
  "void",

@@ -1,7 +1,12 @@
 use avail_light_core::{
-	network::p2p::configuration::{AutoNATConfig, KademliaConfig, LibP2PConfig},
+	network::{
+		p2p::configuration::{
+			AutoNATConfig, BehaviourConfig, IdentifyConfig, KademliaConfig, LibP2PConfig,
+		},
+		AutoNatMode,
+	},
 	telemetry::otlp::OtelConfig,
-	types::{tracing_level_format, Origin, ProjectName, SecretKey},
+	types::{tracing_level_format, KademliaMode, Origin, ProjectName, SecretKey},
 };
 use color_eyre::eyre::{self, Context};
 use serde::{Deserialize, Serialize};
@@ -62,9 +67,18 @@ impl Default for RuntimeConfig {
 				},
 				kademlia: KademliaConfig {
 					query_timeout: Duration::from_secs(60),
+					automatic_server_mode: false,
+					operation_mode: KademliaMode::Server,
 					..Default::default()
 				},
-				behaviour: Default::default(),
+				identify: IdentifyConfig {
+					agent_role: "bootstrap".to_string(),
+					..Default::default()
+				},
+				behaviour: BehaviourConfig {
+					auto_nat_mode: AutoNatMode::Enabled,
+					..Default::default()
+				},
 				connection_idle_timeout: Duration::from_secs(10),
 				max_negotiating_inbound_streams: Some(20),
 				task_command_buffer_size: Some(NonZero::new(30000).unwrap()),
