@@ -68,7 +68,6 @@ impl Default for RuntimeConfig {
 				},
 				kademlia: KademliaConfig {
 					query_timeout: Duration::from_secs(60),
-					automatic_server_mode: false,
 					operation_mode: KademliaMode::Server,
 					..Default::default()
 				},
@@ -80,7 +79,6 @@ impl Default for RuntimeConfig {
 					auto_nat_mode: AutoNatMode::Enabled,
 					..Default::default()
 				},
-				connection_idle_timeout: Duration::from_secs(10),
 				max_negotiating_inbound_streams: Some(20),
 				task_command_buffer_size: Some(NonZero::new(30000).unwrap()),
 				per_connection_event_buffer_size: Some(10000),
@@ -98,7 +96,6 @@ impl RuntimeConfig {
 	pub fn apply_defaults(&mut self, toml: &toml::Value) {
 		let is_set = |key: &str| -> bool { toml.get(key).is_some() };
 
-		// Get the bootstrap defaults from RuntimeConfig::default()
 		let defaults = RuntimeConfig::default();
 
 		if !is_set("port") {
@@ -121,9 +118,6 @@ impl RuntimeConfig {
 		if !is_set("query_timeout") {
 			self.libp2p.kademlia.query_timeout = defaults.libp2p.kademlia.query_timeout;
 		}
-		if !is_set("connection_idle_timeout") {
-			self.libp2p.connection_idle_timeout = defaults.libp2p.connection_idle_timeout;
-		}
 		if !is_set("max_negotiating_inbound_streams") {
 			self.libp2p.max_negotiating_inbound_streams =
 				defaults.libp2p.max_negotiating_inbound_streams;
@@ -143,10 +137,6 @@ impl RuntimeConfig {
 		}
 		if !is_set("agent_role") {
 			self.libp2p.identify.agent_role = defaults.libp2p.identify.agent_role;
-		}
-		if !is_set("automatic_server_mode") {
-			self.libp2p.kademlia.automatic_server_mode =
-				defaults.libp2p.kademlia.automatic_server_mode;
 		}
 		if !is_set("operation_mode") {
 			self.libp2p.kademlia.operation_mode = defaults.libp2p.kademlia.operation_mode;
