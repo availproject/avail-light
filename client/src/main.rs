@@ -475,7 +475,11 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 			network.bootstrap_peer_id(),
 			network.bootstrap_multiaddr(&cfg.libp2p.listeners),
 		);
-		cfg.rpc.full_node_ws = network.full_node_ws();
+		cfg.rpc.full_node_ws_http = network
+			.full_node_ws()
+			.into_iter()
+			.zip(network.full_node_http())
+			.collect();
 		cfg.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		cfg.genesis_hash = network.genesis_hash().to_string();

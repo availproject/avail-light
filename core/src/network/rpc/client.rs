@@ -97,6 +97,7 @@ enum ClientCreationError {
 
 struct ConnectionAttempt<T> {
 	client: SDK,
+	client_next: avail_rust_next::Client,
 	node: Node,
 	result: T,
 }
@@ -146,6 +147,7 @@ type SubscriptionStream =
 #[derive(Clone)]
 pub struct Client<T: Database> {
 	subxt_client: Arc<RwLock<SDK>>,
+	subxt_client_next: Arc<RwLock<avail_rust_next::Client>>,
 	db: T,
 	nodes: Nodes,
 	retry_config: RetryConfig,
@@ -170,7 +172,7 @@ impl<D: Database> Client<D> {
 		shutdown: Controller<String>,
 		event_sender: Sender<RpcEvent>,
 	) -> Result<Self> {
-		let (client, node) = Self::initialize_connection(
+		let (client, client_next, node) = Self::initialize_connection(
 			&nodes,
 			expected_genesis_hash,
 			retry_config.clone(),
@@ -181,6 +183,7 @@ impl<D: Database> Client<D> {
 
 		let client = Self {
 			subxt_client: Arc::new(RwLock::new(client)),
+			subxt_client_next: Arc::new(RwLock::new(client_next)),
 			db,
 			nodes,
 			retry_config,
@@ -202,7 +205,7 @@ impl<D: Database> Client<D> {
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
 		event_sender: Sender<RpcEvent>,
-	) -> Result<(SDK, Node)> {
+	) -> Result<(SDK, avail_rust_next::Client, Node)> {
 		let (available_nodes, _) = nodes.shuffle(Default::default());
 		let connection_result = shutdown
 			.with_cancel(Retry::spawn(retry_config, || {
@@ -215,7 +218,12 @@ impl<D: Database> Client<D> {
 			.await;
 
 		match connection_result {
-			Ok(Ok(ConnectionAttempt { client, node, .. })) => Ok((client, node)),
+			Ok(Ok(ConnectionAttempt {
+				client,
+				client_next,
+				node,
+				..
+			})) => Ok((client, client_next, node)),
 			Ok(Err(err)) => Err(Report::msg(RetryError::ConnectionFailed(err))),
 			Err(err) => Err(Report::msg(RetryError::Shutdown(err.to_string()))),
 		}
@@ -289,8 +297,8 @@ impl<D: Database> Client<D> {
 		F: FnMut(SDK) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		match Self::create_rpc_client(&node.host, expected_genesis_hash).await {
-			Ok((client, node)) => {
+		match Self::create_rpc_client(&node.host, &node.host_next, expected_genesis_hash).await {
+			Ok((client, client_next, node)) => {
 				// Execute the provided  RPC function call with the created client
 				let result = f(client.clone()).await.map_err(|e| {
 					Report::msg(ClientCreationError::RpcCallFailed {
@@ -301,6 +309,7 @@ impl<D: Database> Client<D> {
 
 				Ok(ConnectionAttempt {
 					client,
+					client_next,
 					node,
 					result,
 				})
@@ -313,7 +322,11 @@ impl<D: Database> Client<D> {
 	}
 
 	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
-	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
+	async fn create_rpc_client(
+		host: &str,
+		host_next: &str,
+		expected_genesis_hash: &str,
+	) -> Result<(SDK, avail_rust_next::Client, Node)> {
 		let subxt_client = SubxtRpcClient::from_insecure_url(host).await?;
 		let online_client = AOnlineClient::from_rpc_client(subxt_client.clone()).await?;
 		let avail_client = AvailRpcClient::new(online_client, subxt_client);
@@ -342,15 +355,41 @@ impl<D: Database> Client<D> {
 
 		let runtime_version = client.client.online_client.runtime_version();
 
+		let client_next = Self::create_rpc_client_next(host_next, expected_genesis_hash).await?;
+
 		// Create Node variant
 		let node = Node::new(
 			host.to_string(),
+			host_next.to_string(),
 			system_version,
 			runtime_version.spec_version,
 			genesis_hash,
 		);
 
-		Ok((client, node))
+		Ok((client, client_next, node))
+	}
+
+	async fn create_rpc_client_next(
+		host: &str,
+		expected_genesis_hash: &str,
+	) -> Result<avail_rust_next::Client> {
+		let client = avail_rust_next::Client::new(host).await?;
+
+		// Verify genesis hash
+		let genesis_hash = client.online_client().genesis_hash();
+		info!("Genesis hash for {}: {:?}", host, genesis_hash);
+
+		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
+
+		if !expected_hash.matches(&genesis_hash) {
+			return Err(Report::msg(ClientCreationError::GenesisHashMismatch {
+				host: host.to_string(),
+				expected: expected_genesis_hash.to_string(),
+				found: format!("{genesis_hash:?}"),
+			}));
+		}
+
+		Ok(client)
 	}
 
 	// Provides the Retry strategy for the passed RPC function call
@@ -426,6 +465,7 @@ impl<D: Database> Client<D> {
 		{
 			Ok(Ok(ConnectionAttempt {
 				client,
+				client_next,
 				node,
 				result,
 			})) => {
@@ -434,6 +474,7 @@ impl<D: Database> Client<D> {
 				info!("Switched connection to a new RPC host: {}", node.host);
 
 				*self.subxt_client.write().await = client;
+				*self.subxt_client_next.write().await = client_next;
 				self.db.put(RpcNodeKey, node);
 				Ok(result)
 			},

@@ -87,6 +87,7 @@ impl<'de> Deserialize<'de> for WrappedProof {
 #[derive(Clone, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct Node {
 	pub host: String,
+	pub host_next: String,
 	pub system_version: String,
 	pub spec_version: u32,
 	pub genesis_hash: H256,
@@ -95,12 +96,14 @@ pub struct Node {
 impl Node {
 	pub fn new(
 		host: String,
+		host_next: String,
 		system_version: String,
 		spec_version: u32,
 		genesis_hash: H256,
 	) -> Self {
 		Self {
 			host,
+			host_next,
 			system_version,
 			spec_version,
 			genesis_hash,
@@ -121,6 +124,7 @@ impl Default for Node {
 	fn default() -> Self {
 		Self {
 			host: "{host}".to_string(),
+			host_next: "{host_next}".to_string(),
 			system_version: "{system_version}".to_string(),
 			spec_version: 0,
 			genesis_hash: Default::default(),
@@ -140,7 +144,7 @@ pub struct Nodes {
 }
 
 impl Nodes {
-	pub fn new(nodes: &[String]) -> Self {
+	pub fn new(nodes: &[(String, String)]) -> Self {
 		let candidates = nodes.to_owned();
 		Self {
 			list: candidates
@@ -149,7 +153,8 @@ impl Nodes {
 					genesis_hash: Default::default(),
 					spec_version: Default::default(),
 					system_version: Default::default(),
-					host: s.to_string(),
+					host: s.0.to_string(),
+					host_next: s.1.to_string(),
 				})
 				.collect(),
 		}
@@ -207,7 +212,7 @@ pub async fn init<T: Database + Clone>(
 ) -> Result<(Client<T>, SubscriptionLoop<T>)> {
 	let rpc_client = Client::new(
 		db.clone(),
-		Nodes::new(&rpc.full_node_ws),
+		Nodes::new(&rpc.full_node_ws_http),
 		genesis_hash,
 		rpc.retry.clone(),
 		shutdown,

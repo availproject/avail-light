@@ -54,6 +54,7 @@ flate2 = "1.1"
 tar = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+avail-rust-next = { workspace = true, features = ["native", "reqwest"] }
 avail-rust = { workspace = true, default-features = true }
 async-std = { workspace = true }
 color-eyre = { workspace = true, default-features = true }
@@ -88,6 +89,7 @@ opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+avail-rust-next = { workspace = true, features = ["wasm", "reqwest"] }
 avail-rust = { workspace = true, default-features = false, features = ["wasm"] }
 blake2b_simd = "1.0.2"
 color-eyre = { workspace = true }

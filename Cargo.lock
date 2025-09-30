@@ -1364,6 +1364,7 @@ dependencies = [
  "async-trait",
  "avail-core",
  "avail-rust",
+ "avail-rust-client",
  "base64 0.21.7",
  "better-panic",
  "blake2b_simd",
@@ -1565,9 +1566,9 @@ dependencies = [
 
 [[package]]
 name = "avail-rust-client"
-version = "0.4.0-rc.3"
+version = "0.4.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45d7641fc5db855cf3e1321420b857bac843f3213c28469eeaac3d7ddbe5f641"
+checksum = "f17a314612821066acd898bd92f3fcc43c55b68085b7923de4798b8d33a93236"
 dependencies = [
  "avail-rust-core",
  "const-hex",
@@ -1595,9 +1596,9 @@ dependencies = [
 
 [[package]]
 name = "avail-rust-core"
-version = "0.4.0-rc.3"
+version = "0.4.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd40d99e4bd2ac83cc6a064dc5b0fab9cd551221a287128f142ca4ef0f3d7d45"
+checksum = "419f7dee5c1fde7b6d38d24fd922d573d0037d722e16929341a15ab9c020e27a"
 dependencies = [
  "const-hex",
  "impl-serde 0.5.0",
