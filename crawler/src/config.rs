@@ -111,7 +111,11 @@ pub fn load(opts: &CliOpts) -> Result<Config> {
 			network.bootstrap_peer_id(),
 			network.bootstrap_multiaddr(&config.libp2p.listeners),
 		);
-		config.rpc.full_node_ws = network.full_node_ws();
+		config.rpc.full_node_ws_http = network
+			.full_node_ws()
+			.into_iter()
+			.zip(network.full_node_http())
+			.collect();
 		config.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		config.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		config.genesis_hash = network.genesis_hash().to_string();

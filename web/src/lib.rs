@@ -79,7 +79,11 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 	let pp = Arc::new(couscous::multiproof_params());
 
 	let cfg_rpc = rpc::configuration::RPCConfig {
-		full_node_ws: network.full_node_ws(),
+		full_node_ws_http: network
+			.full_node_ws()
+			.into_iter()
+			.zip(network.full_node_http())
+			.collect(),
 		..Default::default()
 	};
 
@@ -301,7 +305,7 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 	info!("Fetching the latest block...");
 
 	let block = node_client
-		.rpc()
+		.chain()
 		.legacy_block(None)
 		.await
 		.unwrap()
@@ -323,7 +327,11 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 	});
 
 	let cfg_rpc = rpc::configuration::RPCConfig {
-		full_node_ws: network.full_node_ws(),
+		full_node_ws_http: network
+			.full_node_ws()
+			.into_iter()
+			.zip(network.full_node_http())
+			.collect(),
 		..Default::default()
 	};
 

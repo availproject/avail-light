@@ -13,6 +13,7 @@ avail-core = { workspace = true }
 kate = { workspace = true }
 kate-recovery = { workspace = true }
 sp-core = { workspace = true }
+avail-rust-conversion = { workspace = true }
 
 # 3rd-party
 async-stream = "0.3.5"

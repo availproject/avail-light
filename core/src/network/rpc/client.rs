@@ -3,7 +3,6 @@ use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
-		chain::{get_block_hash, get_finalized_head},
 		kate::{query_proof, query_rows},
 		state::get_runtime_version,
 		system::version,
@@ -27,10 +26,7 @@ use kate_recovery::data::{GCellBlock, MultiProofCell};
 use kate_recovery::{data::SingleCell, matrix::Position};
 use sp_core::{bytes::from_hex, crypto, ed25519::Public};
 
-use color_eyre::{
-	eyre::{eyre, WrapErr},
-	Report, Result,
-};
+use color_eyre::{eyre::eyre, Report, Result};
 use futures::{Stream, TryStreamExt};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -523,6 +519,10 @@ impl<D: Database> Client<D> {
 		self.subxt_client.read().await.clone()
 	}
 
+	pub async fn current_next_client(&self) -> avail_rust_next::Client {
+		self.subxt_client_next.read().await.clone()
+	}
+
 	async fn create_rpc_subscriptions(client: SDK) -> Result<SubscriptionStream> {
 		// NOTE: current tokio stream implementation doesn't support timeouts on web
 		#[cfg(not(target_arch = "wasm32"))]
@@ -593,72 +593,47 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-		self.with_retries(|client| async move {
-			let opt = get_block_hash(&client.client, Some(block_number))
-				.await
-				.map_err(|e| Report::msg(format!("{e:?}")))?;
+		let client = self.current_next_client().await;
+		let hash = client.chain().block_hash(Some(block_number)).await?;
 
-			let hash =
-				opt.ok_or_else(|| eyre!("no block hash found for block {}", block_number))?;
-
-			Ok(hash)
-		})
-		.await
+		hash.ok_or_else(|| eyre!("no block hash found for block {}", block_number))
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
-		self.with_retries(|client| async move {
-			client
-				.client
-				.online_client
-				.backend()
-				.block_header(block_hash)
-				.await?
-				.ok_or_else(|| {
-					subxt::Error::Other(format!("Block Header with hash: {block_hash:?} not found"))
-				})
-				.map_err(Into::into)
-		})
-		.await
-		.wrap_err(format!("Block Header with hash: {block_hash:?} not found"))
+		let client = self.current_next_client().await;
+		let header = client.chain().block_header(Some(block_hash)).await?;
+		let Some(header) = header else {
+			let message = std::format!("Block Header with hash: {block_hash:?} not found");
+			return Err(eyre!(message));
+		};
+
+		let header = avail_rust_conversion::from_next_to_legacy_header(header);
+		Ok(header)
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
-		let res = self
-			.with_retries(|client| async move {
-				client
-					.client
-					.online_client
-					.runtime_api()
-					.at(block_hash)
-					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
-					.await
-					.map_err(Into::into)
-			})
-			.await?
-			.iter()
-			.map(|e| e.0)
-			.collect();
+		const METHOD: &str = "GrandpaApi_grandpa_authorities";
 
-		Ok(res)
+		let client = self.current_next_client().await;
+		let result = client
+			.chain()
+			.runtime_api_call::<Vec<(Public, u64)>>(METHOD, &[], Some(block_hash))
+			.await?;
+
+		let result = result.into_iter().map(|e| e.0).collect();
+		Ok(result)
 	}
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
-		let head = self
-			.with_retries(|client| async move {
-				get_finalized_head(&client.client)
-					.await
-					.map_err(|e| subxt::Error::Other(format!("{e:?}")))
-					.map_err(Into::into)
-			})
-			.await?;
-
-		Ok(head)
+		let client = self.current_next_client().await;
+		Ok(client.finalized().block_hash().await?)
 	}
 
 	pub async fn get_chain_head_header(&self) -> Result<AvailHeader> {
-		let finalized_hash = self.get_finalized_head_hash().await?;
-		self.get_header_by_hash(finalized_hash).await
+		let client = self.current_next_client().await;
+		let header = client.finalized().block_header().await?;
+		let header = avail_rust_conversion::from_next_to_legacy_header(header);
+		Ok(header)
 	}
 
 	pub async fn request_kate_rows(&self, rows: Rows, block_hash: H256) -> Result<Vec<Vec<u8>>> {
@@ -987,10 +962,9 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
 		let gen_hash = self
-			.current_client()
+			.current_next_client()
 			.await
-			.client
-			.online_client
+			.online_client()
 			.genesis_hash();
 
 		Ok(gen_hash)
