@@ -470,8 +470,8 @@ impl EventLoop {
 										}
 									}
 								},
-								Err(e) => {
-									debug!("{e}");
+								Err(error) => {
+									warn!("Blocking peer {peer_id} ({agent_version}) due to should allow peer check failure: {error:#}");
 									self.swarm
 										.behaviour_mut()
 										.blocked_peers
