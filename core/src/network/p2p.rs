@@ -76,6 +76,7 @@ pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_man
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.3";
 const MINIMUM_SUPPORTED_FAT_CLIENT_VERSION: &str = "1.12.8";
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.13.0";
+const MINIMUM_SUPPORTED_MONITOR_CLIENT_VERSION: &str = "0.1.0";
 pub const MINIMUM_P2P_CLIENT_RESTART_INTERVAL: u64 = 60; // seconds
 
 pub const BOOTSTRAP_LIST_EMPTY_MESSAGE: &str = r#"
@@ -168,6 +169,8 @@ impl AgentVersion {
 			MINIMUM_SUPPORTED_BOOTSTRAP_VERSION
 		} else if self.role == "fat-client" {
 			MINIMUM_SUPPORTED_FAT_CLIENT_VERSION
+		} else if self.role == "monitor-client" {
+			MINIMUM_SUPPORTED_MONITOR_CLIENT_VERSION
 		} else {
 			MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION
 		};

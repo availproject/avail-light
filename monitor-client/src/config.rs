@@ -1,10 +1,12 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use avail_light_core::network::p2p::configuration::IdentifyConfig;
 use avail_light_core::network::{p2p::configuration::LibP2PConfig, Network};
 use avail_light_core::types::{tracing_level_format, PeerAddress, SecretKey};
 use clap::Parser;
 use color_eyre::{eyre::eyre, Result};
+use libp2p::identify;
 use serde::{Deserialize, Serialize};
 use tracing::Level;
 
@@ -155,7 +157,13 @@ impl Default for Config {
 			log_level: Level::INFO,
 			log_format_json: false,
 			db_path: "./db".to_string(),
-			libp2p: Default::default(),
+			libp2p: LibP2PConfig {
+				identify: IdentifyConfig {
+					agent_role: "monitor-client".to_string(),
+					..Default::default()
+				},
+				..Default::default()
+			},
 			bootstrap_interval: 10,
 			peer_discovery_interval: 10,
 			peer_monitor_interval: 30,
