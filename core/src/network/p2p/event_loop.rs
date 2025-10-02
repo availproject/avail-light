@@ -6,7 +6,7 @@ use libp2p::{
 	identify::{self, Info},
 	kad::{
 		self, store::RecordStore, BootstrapOk, GetClosestPeersError, GetClosestPeersOk,
-		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult,
+		GetRecordError, GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult,
 	},
 	ping,
 	swarm::SwarmEvent,
@@ -340,6 +340,17 @@ impl EventLoop {
 								if let Some(QueryChannel::GetRecord(ch)) =
 									self.pending_kad_queries.remove(&id)
 								{
+									match err.clone() {
+										GetRecordError::NotFound { key, closest_peers } => {
+											warn!(?key, ?closest_peers, "Record not found")
+										},
+										GetRecordError::QuorumFailed { key, .. } => {
+											warn!("QuorumFailed for key {key:?}")
+										},
+										GetRecordError::Timeout { key } => {
+											warn!("GetRecord timeout for key: {key:?}")
+										},
+									}
 									_ = ch.send(Err(err.into()));
 								}
 							},
