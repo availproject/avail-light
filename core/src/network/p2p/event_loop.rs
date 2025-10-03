@@ -371,7 +371,11 @@ impl EventLoop {
 							},
 							Err(err) => {
 								// There will be peers even though the request timed out
-								let GetClosestPeersError::Timeout { key: _, peers } = err.clone();
+								let GetClosestPeersError::Timeout { key, peers } = err.clone();
+								warn!(
+									"GetClosestPeers timeout for key {key:?}, found {} peers",
+									peers.len()
+								);
 								let peer_addresses = collect_peer_addresses(peers);
 								if let Some(QueryChannel::GetClosestPeer(ch)) =
 									self.pending_kad_queries.remove(&id)
@@ -386,8 +390,29 @@ impl EventLoop {
 						},
 						QueryResult::PutRecord(Err(error)) => {
 							match error {
-								kad::PutRecordError::QuorumFailed { key, .. }
-								| kad::PutRecordError::Timeout { key, .. } => {
+								kad::PutRecordError::QuorumFailed {
+									key,
+									success,
+									quorum,
+								} => {
+									warn!("PutRecord QuorumFailed for key {key:?}, success: {success:?}, quorum: {quorum}");
+									// Remove local records for fat clients (memory optimization)
+									if self.event_loop_config.is_fat_client {
+										trace!("Pruning local records on fat client");
+										if let Some(kad) =
+											self.swarm.behaviour_mut().kademlia.as_mut()
+										{
+											kad.remove_record(&key)
+										}
+									}
+
+									_ = self.event_sender.send(OutputEvent::PutRecordFailed {
+										record_key: key,
+										query_stats: stats,
+									});
+								},
+								kad::PutRecordError::Timeout { key, .. } => {
+									warn!("PutRecord timeout for key: {key:?}");
 									// Remove local records for fat clients (memory optimization)
 									if self.event_loop_config.is_fat_client {
 										trace!("Pruning local records on fat client");
@@ -431,7 +456,7 @@ impl EventLoop {
 								}
 							},
 							Err(err) => {
-								debug!("Bootstrap error event. Error: {err:?}.");
+								warn!("Bootstrap error: {err:#}");
 							},
 						},
 						_ => {},
@@ -507,7 +532,7 @@ impl EventLoop {
 						error,
 						connection_id: _,
 					} => {
-						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+						warn!("Identify error for peer {peer_id:?}: {error:#}");
 					},
 				}
 			},
