@@ -225,6 +225,8 @@ async fn main() -> Result<()> {
 	} else {
 		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
 	};
+	#[cfg(not(target_arch = "wasm32"))]
+	tracing_log::LogTracer::init()?;
 
 	#[cfg(not(feature = "rocksdb"))]
 	let db = data::DB::default();
