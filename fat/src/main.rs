@@ -52,6 +52,9 @@ async fn main() -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(config.log_level))?;
 	}
 
+	#[cfg(not(target_arch = "wasm32"))]
+	tracing_log::LogTracer::init()?;
+
 	install_panic_hooks(shutdown.clone())?;
 
 	let span = span!(Level::INFO, "run", client_alias = config.client_alias);

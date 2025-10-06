@@ -22,6 +22,7 @@ serde = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
 toml = "0.5.11"
 tracing = { workspace = true }
+tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true }
 void = { workspace = true }
 warp = { workspace = true }

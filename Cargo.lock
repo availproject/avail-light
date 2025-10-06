@@ -1308,6 +1308,7 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
+ "tracing-log 0.2.0",
  "tracing-subscriber 0.3.19",
  "void",
  "warp",
@@ -1340,6 +1341,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-log 0.2.0",
  "tracing-subscriber 0.3.19",
  "uuid",
 ]
@@ -1466,6 +1468,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-log 0.2.0",
  "tracing-subscriber 0.3.19",
 ]
 

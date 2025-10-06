@@ -27,6 +27,7 @@ strip-ansi-escapes = "0.2.0"
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
+tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 

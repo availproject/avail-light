@@ -2,7 +2,8 @@
 
 ## [1.13.3]
 
-- Update `avail-light-core` to 1.2.12
+- Added log to tracing adapter
+- Updated `avail-light-core` to 1.2.12
 
 ## [1.13.2](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.13.2) - 2025-09-15
 

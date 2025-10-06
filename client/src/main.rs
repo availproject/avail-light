@@ -878,6 +878,9 @@ pub async fn main() -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(cfg.log_level))?;
 	};
 
+	#[cfg(not(target_arch = "wasm32"))]
+	tracing_log::LogTracer::init()?;
+
 	// install custom panic hooks
 	install_panic_hooks(shutdown.clone())?;
 
