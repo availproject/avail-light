@@ -2,6 +2,7 @@
 
 ## [1.2.12]
 
+- Set default replication factor to 3
 - Introduced Polynomial Multiproofs to app-clients
 - Fixed check that causes error log on inserting rows into the DHT
 

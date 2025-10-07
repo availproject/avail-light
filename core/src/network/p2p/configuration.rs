@@ -186,7 +186,7 @@ impl Default for KademliaConfig {
 			bootstrap_period: Duration::from_secs(5 * 60),
 			publication_interval: None,
 			record_replication_interval: None,
-			record_replication_factor: NonZeroUsize::new(5).unwrap(),
+			record_replication_factor: NonZeroUsize::new(3).unwrap(),
 			store_pruning_interval: 180,
 			query_timeout: Duration::from_secs(10),
 			query_parallelism: NonZeroUsize::new(3).unwrap(),
