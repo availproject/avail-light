@@ -15,8 +15,10 @@ use tokio::sync::broadcast;
 
 #[derive(Parser)]
 struct CommandArgs {
-	#[arg(short, long, value_name = "URL", default_value_t = String::from("ws://localhost:9944"))]
+	#[arg(short, long, value_name = "WS URL", default_value_t = String::from("ws://localhost:9944"))]
 	url: String,
+	#[arg(long, value_name = "HTTP URL", default_value_t = String::from("http://localhost:9944"))]
+	url_next: String,
 	#[arg(short, long, value_name = "path", default_value_t = String::from("avail_path"))]
 	avail_path: String,
 }
@@ -24,7 +26,8 @@ struct CommandArgs {
 #[tokio::main]
 async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
-	println!("Using URL: {}", command_args.url);
+	println!("Using WS URL: {}", command_args.url);
+	println!("Using HTTP URL: {}", command_args.url_next);
 	println!("Using Path: {}", command_args.avail_path);
 
 	#[cfg(not(feature = "rocksdb"))]
@@ -33,7 +36,7 @@ async fn main() -> Result<()> {
 	let db = DB::open(&command_args.avail_path)?;
 
 	let rpc_cfg = RPCConfig {
-		full_node_ws: vec![command_args.url],
+		full_node_ws_http: vec![(command_args.url, command_args.url_next)],
 		retry: RetryConfig::Exponential(ExponentialConfig {
 			base: 10,
 			max_delay: Duration::from_millis(4000),

@@ -33,7 +33,6 @@ use avail_light_core::{
 	updater,
 	utils::{self, default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
-use avail_rust::account;
 use clap::Parser;
 use color_eyre::{
 	eyre::{eyre, WrapErr},
@@ -199,10 +198,11 @@ async fn run(
 	.await?;
 
 	let account_id = identity_cfg.avail_key_pair.public_key().to_account_id();
-	let client = rpc_client.current_client().await;
+	let client_next = rpc_client.current_next_client().await;
 
-	let account_address = account_id.to_string();
-	let nonce = account::nonce_node(&client.client, &account_address)
+	let nonce = client_next
+		.chain()
+		.account_nonce(account_id.to_string())
 		.await
 		.map_err(|error| eyre!("{:?}", error))?;
 	db.put(SignerNonceKey, nonce);
@@ -475,7 +475,11 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 			network.bootstrap_peer_id(),
 			network.bootstrap_multiaddr(&cfg.libp2p.listeners),
 		);
-		cfg.rpc.full_node_ws = network.full_node_ws();
+		cfg.rpc.full_node_ws_http = network
+			.full_node_ws()
+			.into_iter()
+			.zip(network.full_node_http())
+			.collect();
 		cfg.libp2p.bootstraps = vec![PeerAddress::PeerIdAndMultiaddr(bootstrap)];
 		cfg.otel.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		cfg.genesis_hash = network.genesis_hash().to_string();

@@ -1367,6 +1367,8 @@ dependencies = [
  "async-trait",
  "avail-core",
  "avail-rust",
+ "avail-rust-client",
+ "avail-rust-conversion",
  "base64 0.21.7",
  "better-panic",
  "blake2b_simd",
@@ -1514,7 +1516,8 @@ name = "avail-light-web"
 version = "0.1.0"
 dependencies = [
  "avail-light-core",
- "avail-rust",
+ "avail-rust-client",
+ "avail-rust-conversion",
  "clap",
  "console_error_panic_hook",
  "futures",
@@ -1561,9 +1564,61 @@ dependencies = [
  "sp-core 28.0.0",
  "sp-io 30.0.0",
  "subxt",
- "subxt-core",
- "subxt-signer",
+ "subxt-core 0.39.0",
+ "subxt-signer 0.39.0",
  "tokio",
+]
+
+[[package]]
+name = "avail-rust-client"
+version = "0.4.0-rc.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dffd1c348de816f7af0676124ffd84952be628d8c3142f4cb6293c8fb9debec5"
+dependencies = [
+ "avail-rust-core",
+ "const-hex",
+ "frame-metadata 20.0.0",
+ "futures",
+ "impl-serde 0.5.0",
+ "parity-scale-codec",
+ "reqwest",
+ "scale-info",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "wasm-bindgen-futures",
+ "wasmtimer",
+]
+
+[[package]]
+name = "avail-rust-conversion"
+version = "0.1.0"
+dependencies = [
+ "avail-rust",
+ "avail-rust-client",
+]
+
+[[package]]
+name = "avail-rust-core"
+version = "0.4.0-rc.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb8704f28802164ad2a5390f874b55b062092f2ae954ce04d6c00af28ed584d7"
+dependencies = [
+ "const-hex",
+ "impl-serde 0.5.0",
+ "parity-scale-codec",
+ "primitive-types 0.13.1",
+ "scale-decode",
+ "scale-encode",
+ "scale-info",
+ "serde",
+ "serde_json",
+ "sp-crypto-hashing 0.1.0",
+ "subxt-core 0.41.0",
+ "subxt-rpcs",
+ "subxt-signer 0.41.0",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -1762,7 +1817,7 @@ dependencies = [
  "bitflags 2.9.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -2654,15 +2709,14 @@ dependencies = [
 
 [[package]]
 name = "const-hex"
-version = "1.14.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b0485bab839b018a8f1723fc5391819fea5f8f0f32288ef8a735fd096b6160c"
+checksum = "b6407bff74dea37e0fa3dc1c1c974e5d46405f0c987bf9997a0762adce71eda6"
 dependencies = [
  "cfg-if 1.0.0",
  "cpufeatures",
- "hex",
  "proptest",
- "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -4029,7 +4083,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4423,6 +4477,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "frame-decode"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7cb8796f93fa038f979a014234d632e9688a120e745f936e2635123c77537f7"
+dependencies = [
+ "frame-metadata 21.0.0",
+ "parity-scale-codec",
+ "scale-decode",
+ "scale-info",
+ "scale-type-resolver",
+ "sp-crypto-hashing 0.1.0",
+]
+
+[[package]]
 name = "frame-election-provider-solution-type"
 version = "14.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4492,6 +4560,29 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
+]
+
+[[package]]
+name = "frame-metadata"
+version = "20.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26de808fa6461f2485dc51811aefed108850064994fb4a62b3ac21ffa62ac8df"
+dependencies = [
+ "cfg-if 1.0.0",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+]
+
+[[package]]
+name = "frame-metadata"
+version = "21.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20dfd1d7eae1d94e32e869e2fb272d81f52dd8db57820a373adb83ea24d7d862"
+dependencies = [
+ "cfg-if 1.0.0",
+ "parity-scale-codec",
+ "scale-info",
 ]
 
 [[package]]
@@ -5923,7 +6014,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.1",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11238,7 +11329,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11763,7 +11854,7 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11776,7 +11867,7 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.9.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11843,7 +11934,7 @@ dependencies = [
  "security-framework 3.2.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12434,10 +12525,11 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.219"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0e2c6ed6606019b4e29e69dbaba95b11854410e5347d525002456dbbb786b6"
+checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
+ "serde_core",
  "serde_derive",
 ]
 
@@ -12460,10 +12552,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_derive"
-version = "1.0.219"
+name = "serde_core"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b0276cf7f2c73365f7157c8123c21cd9a50fbbd844757af28ca1f5925fc2a00"
+checksum = "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.228"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14804,10 +14905,10 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
- "subxt-core",
- "subxt-lightclient",
+ "subxt-core 0.39.0",
+ "subxt-lightclient 0.39.0",
  "subxt-macro",
- "subxt-metadata",
+ "subxt-metadata 0.39.0",
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
@@ -14830,7 +14931,7 @@ dependencies = [
  "quote",
  "scale-info",
  "scale-typegen",
- "subxt-metadata",
+ "subxt-metadata 0.39.0",
  "syn 2.0.101",
  "thiserror 2.0.12",
 ]
@@ -14844,7 +14945,7 @@ dependencies = [
  "base58",
  "blake2",
  "derive-where",
- "frame-decode",
+ "frame-decode 0.6.1",
  "frame-metadata 18.0.0",
  "hashbrown 0.14.5",
  "hex",
@@ -14860,7 +14961,37 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
- "subxt-metadata",
+ "subxt-metadata 0.39.0",
+ "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
+name = "subxt-core"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66ef00be9d64885ec94e478a58e4e39d222024b20013ae7df4fc6ece545391aa"
+dependencies = [
+ "base58",
+ "blake2",
+ "derive-where",
+ "frame-decode 0.7.1",
+ "frame-metadata 20.0.0",
+ "hashbrown 0.14.5",
+ "hex",
+ "impl-serde 0.5.0",
+ "keccak-hash",
+ "parity-scale-codec",
+ "primitive-types 0.13.1",
+ "scale-bits",
+ "scale-decode",
+ "scale-encode",
+ "scale-info",
+ "scale-value",
+ "serde",
+ "serde_json",
+ "sp-crypto-hashing 0.1.0",
+ "subxt-metadata 0.41.0",
  "thiserror 2.0.12",
  "tracing",
 ]
@@ -14870,6 +15001,33 @@ name = "subxt-lightclient"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcf5e44c8eb70f4f95e7017df85bc626356c633384b2615900ee09825ee79ef1"
+dependencies = [
+ "futures",
+ "futures-timer",
+ "futures-util",
+ "getrandom 0.2.16",
+ "js-sys",
+ "pin-project",
+ "send_wrapper 0.6.0",
+ "serde",
+ "serde_json",
+ "smoldot",
+ "smoldot-light",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+]
+
+[[package]]
+name = "subxt-lightclient"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce07c2515b2e63b85ec3043fe4461b287af0615d4832c2fe6e81ba780b906bc0"
 dependencies = [
  "futures",
  "futures-timer",
@@ -14914,13 +15072,53 @@ version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330f692b6e2c590265d222be717e9f88c017ee4b2ddb50907f31fffdf26072a5"
 dependencies = [
- "frame-decode",
+ "frame-decode 0.6.1",
  "frame-metadata 18.0.0",
  "hashbrown 0.14.5",
  "parity-scale-codec",
  "polkadot-sdk",
  "scale-info",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "subxt-metadata"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fff4591673600c4388e21305788282414d26c791b4dee21b7cb0b19c10076f98"
+dependencies = [
+ "frame-decode 0.7.1",
+ "frame-metadata 20.0.0",
+ "hashbrown 0.14.5",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-crypto-hashing 0.1.0",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "subxt-rpcs"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ba7494d250d65dc3439365ac5e8e0fbb9c3992e6e84b7aa01d69e082249b8b8"
+dependencies = [
+ "derive-where",
+ "finito",
+ "frame-metadata 20.0.0",
+ "futures",
+ "getrandom 0.2.16",
+ "hex",
+ "impl-serde 0.5.0",
+ "jsonrpsee",
+ "parity-scale-codec",
+ "primitive-types 0.13.1",
+ "serde",
+ "serde_json",
+ "subxt-lightclient 0.41.0",
+ "thiserror 2.0.12",
+ "tracing",
+ "url",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -14947,7 +15145,36 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "subxt-core",
+ "subxt-core 0.39.0",
+ "thiserror 2.0.12",
+ "zeroize",
+]
+
+[[package]]
+name = "subxt-signer"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a2370298a210ed1df26152db7209a85e0ed8cfbce035309c3b37f7b61755377"
+dependencies = [
+ "base64 0.22.1",
+ "bip39",
+ "cfg-if 1.0.0",
+ "crypto_secretbox",
+ "getrandom 0.2.16",
+ "hex",
+ "hmac 0.12.1",
+ "parity-scale-codec",
+ "pbkdf2 0.12.2",
+ "regex",
+ "schnorrkel",
+ "scrypt",
+ "secp256k1 0.30.0",
+ "secrecy 0.10.3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sp-crypto-hashing 0.1.0",
+ "subxt-core 0.41.0",
  "thiserror 2.0.12",
  "zeroize",
 ]
@@ -15104,7 +15331,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -16494,6 +16721,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmtimer"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c598d6b99ea013e35844697fc4670d08339d5cda15588f193c6beedd12f644b"
+dependencies = [
+ "futures",
+ "js-sys",
+ "parking_lot",
+ "pin-utils",
+ "slab",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16604,7 +16845,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

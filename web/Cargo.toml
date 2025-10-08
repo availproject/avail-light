@@ -11,9 +11,12 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["console_error_panic_hook"]
 
+[dependencies]
+avail-rust-conversion = { workspace = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 avail-light-core = { workspace = true }
-avail-rust = { workspace = true }
+avail-rust-next = { workspace = true, features = ["wasm", "reqwest"] }
 clap = { workspace = true }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 futures = { workspace = true }

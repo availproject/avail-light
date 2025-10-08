@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use avail_core::kate::COMMITMENT_SIZE;
 use avail_rust::H256;
+use avail_rust_next::constants::*;
 use clap::ValueEnum;
 use color_eyre::{eyre::WrapErr, Result};
 use kate_recovery::{
@@ -411,14 +412,25 @@ impl Network {
 
 	pub fn full_node_ws(&self) -> Vec<String> {
 		match self {
-			Network::Local => vec!["ws://127.0.0.1:9944".to_string()],
+			Network::Local => vec![LOCAL_WS_ENDPOINT.into()],
 			Network::Hex => vec!["wss://rpc-hex-devnet.avail.tools/ws".to_string()],
-			Network::Turing => vec!["wss://turing-rpc.avail.so/ws".to_string()],
+			Network::Turing => vec![TURING_WS_ENDPOINT.into()],
 			Network::Mainnet => vec![
-				"wss://mainnet.avail-rpc.com/".to_string(),
-				"wss://avail-mainnet.public.blastapi.io/".to_string(),
-				"wss://mainnet-rpc.avail.so/ws".to_string(),
+				// TODO Temp removed
+				//"wss://mainnet.avail-rpc.com/".to_string(),
+				//"wss://avail-mainnet.public.blastapi.io/".to_string(),
+				// "wss://mainnet-rpc.avail.so/ws".to_string(),
+				MAINNET_WS_ENDPOINT.into(),
 			],
+		}
+	}
+
+	pub fn full_node_http(&self) -> Vec<String> {
+		match self {
+			Network::Local => vec![LOCAL_ENDPOINT.into()],
+			Network::Hex => vec!["https://rpc-hex-devnet.avail.tools/rpc".to_string()],
+			Network::Turing => vec![TURING_ENDPOINT.into()],
+			Network::Mainnet => vec![MAINNET_ENDPOINT.into()],
 		}
 	}
 

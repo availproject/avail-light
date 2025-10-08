@@ -3,7 +3,6 @@ use avail_rust::{
 	avail::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	primitives::kate::{Cells, GProof, GRawScalar, Rows},
 	rpc::{
-		chain::{get_block_hash, get_finalized_head},
 		kate::{query_proof, query_rows},
 		state::get_runtime_version,
 		system::version,
@@ -27,10 +26,7 @@ use kate_recovery::data::{GCellBlock, MultiProofCell};
 use kate_recovery::{data::SingleCell, matrix::Position};
 use sp_core::{bytes::from_hex, crypto, ed25519::Public};
 
-use color_eyre::{
-	eyre::{eyre, WrapErr},
-	Report, Result,
-};
+use color_eyre::{eyre::eyre, Report, Result};
 use futures::{Stream, TryStreamExt};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -97,6 +93,7 @@ enum ClientCreationError {
 
 struct ConnectionAttempt<T> {
 	client: SDK,
+	client_next: avail_rust_next::Client,
 	node: Node,
 	result: T,
 }
@@ -146,6 +143,7 @@ type SubscriptionStream =
 #[derive(Clone)]
 pub struct Client<T: Database> {
 	subxt_client: Arc<RwLock<SDK>>,
+	subxt_client_next: Arc<RwLock<avail_rust_next::Client>>,
 	db: T,
 	nodes: Nodes,
 	retry_config: RetryConfig,
@@ -170,7 +168,7 @@ impl<D: Database> Client<D> {
 		shutdown: Controller<String>,
 		event_sender: Sender<RpcEvent>,
 	) -> Result<Self> {
-		let (client, node) = Self::initialize_connection(
+		let (client, client_next, node) = Self::initialize_connection(
 			&nodes,
 			expected_genesis_hash,
 			retry_config.clone(),
@@ -181,6 +179,7 @@ impl<D: Database> Client<D> {
 
 		let client = Self {
 			subxt_client: Arc::new(RwLock::new(client)),
+			subxt_client_next: Arc::new(RwLock::new(client_next)),
 			db,
 			nodes,
 			retry_config,
@@ -202,7 +201,7 @@ impl<D: Database> Client<D> {
 		retry_config: RetryConfig,
 		shutdown: Controller<String>,
 		event_sender: Sender<RpcEvent>,
-	) -> Result<(SDK, Node)> {
+	) -> Result<(SDK, avail_rust_next::Client, Node)> {
 		let (available_nodes, _) = nodes.shuffle(Default::default());
 		let connection_result = shutdown
 			.with_cancel(Retry::spawn(retry_config, || {
@@ -215,7 +214,12 @@ impl<D: Database> Client<D> {
 			.await;
 
 		match connection_result {
-			Ok(Ok(ConnectionAttempt { client, node, .. })) => Ok((client, node)),
+			Ok(Ok(ConnectionAttempt {
+				client,
+				client_next,
+				node,
+				..
+			})) => Ok((client, client_next, node)),
 			Ok(Err(err)) => Err(Report::msg(RetryError::ConnectionFailed(err))),
 			Err(err) => Err(Report::msg(RetryError::Shutdown(err.to_string()))),
 		}
@@ -289,8 +293,8 @@ impl<D: Database> Client<D> {
 		F: FnMut(SDK) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		match Self::create_rpc_client(&node.host, expected_genesis_hash).await {
-			Ok((client, node)) => {
+		match Self::create_rpc_client(&node.host, &node.host_next, expected_genesis_hash).await {
+			Ok((client, client_next, node)) => {
 				// Execute the provided  RPC function call with the created client
 				let result = f(client.clone()).await.map_err(|e| {
 					Report::msg(ClientCreationError::RpcCallFailed {
@@ -301,6 +305,7 @@ impl<D: Database> Client<D> {
 
 				Ok(ConnectionAttempt {
 					client,
+					client_next,
 					node,
 					result,
 				})
@@ -313,7 +318,11 @@ impl<D: Database> Client<D> {
 	}
 
 	// Creates the RPC client by connecting to the provided RPC host and checks if the provided genesis hash matches the one from the client
-	async fn create_rpc_client(host: &str, expected_genesis_hash: &str) -> Result<(SDK, Node)> {
+	async fn create_rpc_client(
+		host: &str,
+		host_next: &str,
+		expected_genesis_hash: &str,
+	) -> Result<(SDK, avail_rust_next::Client, Node)> {
 		let subxt_client = SubxtRpcClient::from_insecure_url(host).await?;
 		let online_client = AOnlineClient::from_rpc_client(subxt_client.clone()).await?;
 		let avail_client = AvailRpcClient::new(online_client, subxt_client);
@@ -342,15 +351,41 @@ impl<D: Database> Client<D> {
 
 		let runtime_version = client.client.online_client.runtime_version();
 
+		let client_next = Self::create_rpc_client_next(host_next, expected_genesis_hash).await?;
+
 		// Create Node variant
 		let node = Node::new(
 			host.to_string(),
+			host_next.to_string(),
 			system_version,
 			runtime_version.spec_version,
 			genesis_hash,
 		);
 
-		Ok((client, node))
+		Ok((client, client_next, node))
+	}
+
+	async fn create_rpc_client_next(
+		host: &str,
+		expected_genesis_hash: &str,
+	) -> Result<avail_rust_next::Client> {
+		let client = avail_rust_next::Client::new(host).await?;
+
+		// Verify genesis hash
+		let genesis_hash = client.online_client().genesis_hash();
+		info!("Genesis hash for {}: {:?}", host, genesis_hash);
+
+		let expected_hash = GenesisHash::from_hex(expected_genesis_hash)?;
+
+		if !expected_hash.matches(&genesis_hash) {
+			return Err(Report::msg(ClientCreationError::GenesisHashMismatch {
+				host: host.to_string(),
+				expected: expected_genesis_hash.to_string(),
+				found: format!("{genesis_hash:?}"),
+			}));
+		}
+
+		Ok(client)
 	}
 
 	// Provides the Retry strategy for the passed RPC function call
@@ -426,6 +461,7 @@ impl<D: Database> Client<D> {
 		{
 			Ok(Ok(ConnectionAttempt {
 				client,
+				client_next,
 				node,
 				result,
 			})) => {
@@ -434,6 +470,7 @@ impl<D: Database> Client<D> {
 				info!("Switched connection to a new RPC host: {}", node.host);
 
 				*self.subxt_client.write().await = client;
+				*self.subxt_client_next.write().await = client_next;
 				self.db.put(RpcNodeKey, node);
 				Ok(result)
 			},
@@ -480,6 +517,10 @@ impl<D: Database> Client<D> {
 
 	pub async fn current_client(&self) -> SDK {
 		self.subxt_client.read().await.clone()
+	}
+
+	pub async fn current_next_client(&self) -> avail_rust_next::Client {
+		self.subxt_client_next.read().await.clone()
 	}
 
 	async fn create_rpc_subscriptions(client: SDK) -> Result<SubscriptionStream> {
@@ -552,72 +593,47 @@ impl<D: Database> Client<D> {
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-		self.with_retries(|client| async move {
-			let opt = get_block_hash(&client.client, Some(block_number))
-				.await
-				.map_err(|e| Report::msg(format!("{e:?}")))?;
+		let client = self.current_next_client().await;
+		let hash = client.chain().block_hash(Some(block_number)).await?;
 
-			let hash =
-				opt.ok_or_else(|| eyre!("no block hash found for block {}", block_number))?;
-
-			Ok(hash)
-		})
-		.await
+		hash.ok_or_else(|| eyre!("no block hash found for block {}", block_number))
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<AvailHeader> {
-		self.with_retries(|client| async move {
-			client
-				.client
-				.online_client
-				.backend()
-				.block_header(block_hash)
-				.await?
-				.ok_or_else(|| {
-					subxt::Error::Other(format!("Block Header with hash: {block_hash:?} not found"))
-				})
-				.map_err(Into::into)
-		})
-		.await
-		.wrap_err(format!("Block Header with hash: {block_hash:?} not found"))
+		let client = self.current_next_client().await;
+		let header = client.chain().block_header(Some(block_hash)).await?;
+		let Some(header) = header else {
+			let message = std::format!("Block Header with hash: {block_hash:?} not found");
+			return Err(eyre!(message));
+		};
+
+		let header = avail_rust_conversion::from_next_to_legacy_header(header);
+		Ok(header)
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
-		let res = self
-			.with_retries(|client| async move {
-				client
-					.client
-					.online_client
-					.runtime_api()
-					.at(block_hash)
-					.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
-					.await
-					.map_err(Into::into)
-			})
-			.await?
-			.iter()
-			.map(|e| e.0)
-			.collect();
+		const METHOD: &str = "GrandpaApi_grandpa_authorities";
 
-		Ok(res)
+		let client = self.current_next_client().await;
+		let result = client
+			.chain()
+			.runtime_api_call::<Vec<(Public, u64)>>(METHOD, &[], Some(block_hash))
+			.await?;
+
+		let result = result.into_iter().map(|e| e.0).collect();
+		Ok(result)
 	}
 
 	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
-		let head = self
-			.with_retries(|client| async move {
-				get_finalized_head(&client.client)
-					.await
-					.map_err(|e| subxt::Error::Other(format!("{e:?}")))
-					.map_err(Into::into)
-			})
-			.await?;
-
-		Ok(head)
+		let client = self.current_next_client().await;
+		Ok(client.finalized().block_hash().await?)
 	}
 
 	pub async fn get_chain_head_header(&self) -> Result<AvailHeader> {
-		let finalized_hash = self.get_finalized_head_hash().await?;
-		self.get_header_by_hash(finalized_hash).await
+		let client = self.current_next_client().await;
+		let header = client.finalized().block_header().await?;
+		let header = avail_rust_conversion::from_next_to_legacy_header(header);
+		Ok(header)
 	}
 
 	pub async fn request_kate_rows(&self, rows: Rows, block_hash: H256) -> Result<Vec<Vec<u8>>> {
@@ -946,10 +962,9 @@ impl<D: Database> Client<D> {
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
 		let gen_hash = self
-			.current_client()
+			.current_next_client()
 			.await
-			.client
-			.online_client
+			.online_client()
 			.genesis_hash();
 
 		Ok(gen_hash)
