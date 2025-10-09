@@ -437,11 +437,18 @@ impl EventLoop {
 								agent_version,
 								protocol_version: _,
 								protocols,
+								observed_addr,
 								..
 							},
 						connection_id: _,
 					} => {
 						trace!(agent_version,  "Identity received from {peer_id:?}, listen address: {listen_addrs:?}, protocols: {protocols:?}");
+
+						if agent_version.to_lowercase().contains("fat-client") {
+							info!(
+								"[IDENTIFY EVENT] Received from target peer: {peer_id:?}, agent: {agent_version}, listen_addrs: {listen_addrs:?}, protocols: {protocols:?}, observed_addr: {observed_addr:?}"
+							);
+						}
 
 						// KAD Discovery process
 						let kad_protocol_name = self
@@ -487,9 +494,25 @@ impl EventLoop {
 						connection_id: _,
 					} => {
 						trace!("Identity Sent event to: {peer_id:?}");
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!("[IDENTIFY EVENT] Sent to target peer: {peer_id:?}");
+						}
 					},
-					identify::Event::Pushed { peer_id, .. } => {
+					identify::Event::Pushed {
+						peer_id,
+						info: Info { agent_version, .. },
+						..
+					} => {
 						trace!("Identify Pushed event. PeerId: {peer_id:?}");
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!("[IDENTIFY EVENT] Pushed to target peer: {peer_id:?}");
+						}
 					},
 					identify::Event::Error {
 						peer_id,
@@ -497,6 +520,12 @@ impl EventLoop {
 						connection_id: _,
 					} => {
 						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!("[IDENTIFY EVENT] Error with target peer: {peer_id:?}, error: {error:?}");
+						}
 					},
 				}
 			},
@@ -567,6 +596,15 @@ impl EventLoop {
 						..
 					} => {
 						_ = self.event_sender.send(OutputEvent::EstablishedConnection);
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+							|| true
+						{
+							info!(
+								"[CONNECTION ESTABLISHED] Target peer: {peer_id:?}, endpoint: {endpoint:?}, established_in: {established_in:?}, num_established: {num_established}"
+							);
+						}
 
 						// Notify the connections we're waiting on that we've connected successfully
 						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
