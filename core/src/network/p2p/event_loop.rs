@@ -443,6 +443,14 @@ impl EventLoop {
 					} => {
 						trace!(agent_version,  "Identity received from {peer_id:?}, listen address: {listen_addrs:?}, protocols: {protocols:?}");
 
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!(
+								"[IDENTIFY EVENT] Received from target peer: {peer_id:?}, agent: {agent_version}, listen_addrs: {listen_addrs:?}, protocols: {protocols:?}"
+							);
+						}
+
 						// KAD Discovery process
 						let kad_protocol_name = self
 							.swarm
@@ -487,9 +495,21 @@ impl EventLoop {
 						connection_id: _,
 					} => {
 						trace!("Identity Sent event to: {peer_id:?}");
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!("[IDENTIFY EVENT] Sent to target peer: {peer_id:?}");
+						}
 					},
 					identify::Event::Pushed { peer_id, .. } => {
 						trace!("Identify Pushed event. PeerId: {peer_id:?}");
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!("[IDENTIFY EVENT] Pushed to target peer: {peer_id:?}");
+						}
 					},
 					identify::Event::Error {
 						peer_id,
@@ -497,6 +517,12 @@ impl EventLoop {
 						connection_id: _,
 					} => {
 						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+
+						if peer_id.to_string().to_lowercase()
+							== "12d3koowmknijdrz5genwyk7bcg76cpctafpx489rvkubabm8qjr"
+						{
+							info!("[IDENTIFY EVENT] Error with target peer: {peer_id:?}, error: {error:?}");
+						}
 					},
 				}
 			},
