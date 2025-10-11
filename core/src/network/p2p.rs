@@ -73,8 +73,19 @@ use libp2p_allow_block_list as allow_block_list;
 #[cfg(not(target_arch = "wasm32"))]
 pub use restart::{forward_p2p_events, init_and_start_p2p_client, p2p_restart_manager};
 
+#[cfg(feature = "multiproof")]
+const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.5";
+#[cfg(not(feature = "multiproof"))]
 const MINIMUM_SUPPORTED_BOOTSTRAP_VERSION: &str = "0.5.3";
+
+#[cfg(feature = "multiproof")]
+const MINIMUM_SUPPORTED_FAT_CLIENT_VERSION: &str = "1.12.10";
+#[cfg(not(feature = "multiproof"))]
 const MINIMUM_SUPPORTED_FAT_CLIENT_VERSION: &str = "1.12.8";
+
+#[cfg(feature = "multiproof")]
+const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.13.2";
+#[cfg(not(feature = "multiproof"))]
 const MINIMUM_SUPPORTED_LIGHT_CLIENT_VERSION: &str = "1.13.0";
 pub const MINIMUM_P2P_CLIENT_RESTART_INTERVAL: u64 = 60; // seconds
 
