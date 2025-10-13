@@ -374,13 +374,10 @@ pub fn auto_nat_config(cfg: &LibP2PConfig) -> autonat::Config {
 		boot_delay: cfg.autonat.boot_delay,
 		throttle_server_period: cfg.autonat.throttle,
 		only_global_ips: cfg.autonat.only_global_ips,
-		use_connected: Default::default(),
-		timeout: Default::default(),
-		confidence_max: Default::default(),
-		max_peer_addresses: Default::default(),
 		throttle_clients_global_max: cfg.autonat.throttle_clients_global_max,
 		throttle_clients_peer_max: cfg.autonat.throttle_clients_peer_max,
 		throttle_clients_period: cfg.autonat.throttle_clients_period,
+		..Default::default()
 	}
 }
 
