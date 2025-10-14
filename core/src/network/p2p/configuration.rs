@@ -246,6 +246,8 @@ pub struct LibP2PConfig {
 	pub local_test_mode: bool,
 	/// List of address patterns to filter out when adding peers to the routing table
 	pub address_blacklist: Vec<String>,
+	/// List of peer IDs to block immediately when swarm is created
+	pub peer_blacklist: Vec<String>,
 	#[serde(rename = "p2p_listeners")]
 	pub listeners: Listeners,
 	/// External P2P address (e.g. `/ip4/1.1.1.1/tcp/37000`)
@@ -283,6 +285,7 @@ impl Default for LibP2PConfig {
 			ping_interval: Duration::from_secs(60),
 			local_test_mode: false,
 			address_blacklist: vec![],
+			peer_blacklist: vec![],
 			listeners: Listeners::Tcp,
 			external_address: None,
 		}
