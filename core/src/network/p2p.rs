@@ -416,6 +416,28 @@ async fn build_swarm(
 		info!("Added external address: {external_address}");
 	}
 
+	if cfg.peer_blacklist.is_empty() {
+		return Ok(swarm);
+	}
+
+	let Some(blocked_peers) = swarm.behaviour_mut().blocked_peers.as_mut() else {
+		warn!("Peer blocking is disabled, cannot apply peer blacklist");
+		return Ok(swarm);
+	};
+
+	for peer_id in &cfg.peer_blacklist {
+		let peer_id = match PeerId::from_str(peer_id) {
+			Ok(peer_id) => peer_id,
+			Err(error) => {
+				warn!("Failed to parse blacklist peer ID: {peer_id}: {error}");
+				continue;
+			},
+		};
+
+		blocked_peers.block_peer(peer_id);
+		info!(peer_id = peer_id.to_string(), "Blocked blacklisted peer");
+	}
+
 	Ok(swarm)
 }
 

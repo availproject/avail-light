@@ -2,6 +2,7 @@
 
 ## [1.2.12]
 
+- Added peer blacklist
 - Increase minimum supported versions for binaries built with multiproof feature
 - Set default replication factor to 3
 - Introduced Polynomial Multiproofs to app-clients
