@@ -18,9 +18,9 @@ use color_eyre::{
 	Result,
 };
 use config::Config;
-use libp2p::kad::{QueryStats, RecordKey};
+use libp2p::kad::RecordKey;
 use maintenance::OutputEvent as MaintenanceEvent;
-use std::{collections::HashMap, fs, path::Path, time::Duration};
+use std::{collections::HashMap, fs, path::Path, time::Instant};
 use tokio::{
 	select,
 	sync::{
@@ -243,7 +243,8 @@ struct BlockStat {
 	remaining_counter: usize,
 	success_counter: usize,
 	error_counter: usize,
-	time_stat: u64,
+	start_time: Instant,
+	end_time: Instant,
 }
 
 impl BlockStat {
@@ -268,12 +269,12 @@ impl BlockStat {
 		self.remaining_counter == 0
 	}
 
-	fn update_time_stat(&mut self, stats: &QueryStats) {
-		self.time_stat = stats
-			.duration()
-			.as_ref()
-			.map(Duration::as_secs)
-			.unwrap_or_default();
+	fn set_end_time(&mut self) {
+		self.end_time = Instant::now();
+	}
+
+	fn total_duration_secs(&self) -> f64 {
+		self.end_time.duration_since(self.start_time).as_secs_f64()
 	}
 
 	fn success_rate(&self) -> f64 {
@@ -304,66 +305,62 @@ impl FatState {
 		self.active_blocks
 			.entry(block_num)
 			.and_modify(|b| b.increase_cell_counters(records.len()))
-			.or_insert(BlockStat {
-				total_count: records.len(),
-				remaining_counter: records.len(),
-				success_counter: 0,
-				error_counter: 0,
-				time_stat: 0,
+			.or_insert_with(|| {
+				let now = Instant::now();
+				BlockStat {
+					total_count: records.len(),
+					remaining_counter: records.len(),
+					success_counter: 0,
+					error_counter: 0,
+					start_time: now,
+					end_time: now,
+				}
 			});
 	}
 
-	fn handle_successful_put_record(
-		&mut self,
-		record_key: RecordKey,
-		query_stats: QueryStats,
-	) -> Result<()> {
+	fn handle_successful_put_record(&mut self, record_key: RecordKey) -> Result<()> {
 		let block_num = extract_block_num(record_key)?;
 		let block = self.get_block_stat(block_num)?;
 
 		block.increment_success_counter();
 		block.decrement_remaining_counter();
-		block.update_time_stat(&query_stats);
+		block.set_end_time();
 
 		if block.is_completed() {
 			let success_rate = block.success_rate();
-			let time_stat = block.time_stat as f64;
+			let duration = block.total_duration_secs();
 
 			info!(
 				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, time_stat
+				block_num, success_rate, duration
 			);
 			self.metrics
 				.record(MetricValue::DHTPutSuccess(success_rate));
-			self.metrics.record(MetricValue::DHTPutDuration(time_stat));
+			self.metrics.record(MetricValue::DHTPutDuration(duration));
 		}
 
 		Ok(())
 	}
 
-	fn handle_failed_put_record(
-		&mut self,
-		record_key: RecordKey,
-		query_stats: QueryStats,
-	) -> Result<()> {
+	fn handle_failed_put_record(&mut self, record_key: RecordKey) -> Result<()> {
 		let block_num = extract_block_num(record_key)?;
 		let block = self.get_block_stat(block_num)?;
 
 		block.increment_error_counter();
 		block.decrement_remaining_counter();
-		block.update_time_stat(&query_stats);
+		block.set_end_time();
 
 		if block.is_completed() {
 			let success_rate = block.success_rate();
-			let time_stat = block.time_stat as f64;
+			let duration = block.total_duration_secs();
 
 			info!(
 				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, time_stat
+				block_num, success_rate, duration
 			);
 			self.metrics
 				.record(MetricValue::DHTPutSuccess(success_rate));
-			self.metrics.record(MetricValue::DHTPutDuration(time_stat));
+			self.metrics.record(MetricValue::DHTPutDuration(duration));
 		}
 
 		Ok(())
@@ -409,11 +406,8 @@ impl FatState {
 							self.metrics.count_n(MetricCounter::DHTPutRecords, records.len() as u64);
 							self.handle_new_put_record(block_num, records);
 						},
-						P2pEvent::PutRecordSuccess {
-							record_key,
-							query_stats,
-						} => {
-							if let Err(error) = self.handle_successful_put_record(record_key, query_stats){
+						P2pEvent::PutRecordSuccess { record_key, .. } => {
+							if let Err(error) = self.handle_successful_put_record(record_key){
 								error!(
 									%error,
 									event_type = "PUT_RECORD_HANDLER",
@@ -421,11 +415,8 @@ impl FatState {
 								);
 							};
 						},
-						P2pEvent::PutRecordFailed {
-							record_key,
-							query_stats,
-						} => {
-							if let Err(error) = self.handle_failed_put_record(record_key, query_stats) {
+						P2pEvent::PutRecordFailed { record_key, .. } => {
+							if let Err(error) = self.handle_failed_put_record(record_key) {
 								error!(
 									%error,
 									event_type = "PUT_RECORD_HANDLER",
