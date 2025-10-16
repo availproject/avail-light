@@ -612,7 +612,15 @@ impl EventLoop {
 					SwarmEvent::IncomingConnection { .. } => {
 						_ = self.event_sender.send(OutputEvent::IncomingConnection);
 					},
-					SwarmEvent::IncomingConnectionError { .. } => {
+					SwarmEvent::IncomingConnectionError {
+						local_addr,
+						send_back_addr,
+						error,
+						..
+					} => {
+						warn!(
+							"Incoming connection error from {send_back_addr} on {local_addr}: {error}"
+						);
 						_ = self.event_sender.send(OutputEvent::IncomingConnectionError);
 					},
 					SwarmEvent::ExternalAddrConfirmed { address } => {
@@ -651,6 +659,11 @@ impl EventLoop {
 						}
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+						if let Some(peer_id) = peer_id {
+							warn!("Outgoing connection error to {peer_id}: {error}");
+						} else {
+							warn!("Outgoing connection error: {error}");
+						}
 						_ = self.event_sender.send(OutputEvent::OutgoingConnectionError);
 
 						if let Some(peer_id) = peer_id {
