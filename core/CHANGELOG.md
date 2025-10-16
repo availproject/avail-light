@@ -2,6 +2,7 @@
 
 ## [1.2.12]
 
+- Added dedicated bootstraps for turing and mainnet for multiproof feature
 - Added peer blacklist
 - Increase minimum supported versions for binaries built with multiproof feature
 - Set default replication factor to 3
