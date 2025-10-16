@@ -382,7 +382,13 @@ impl Network {
 		let peer_id = match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
 			Network::Hex => "12D3KooWBMwfo5qyoLQDRat86kFcGAiJ2yxKM63rXHMw2rDuNZMA",
+			#[cfg(feature = "multiproof")]
+			Network::Turing => "12D3KooWGsdrGGv7BJjjuRTdDS2yZmSmqL5s3YRQREV6vz9cjrbx",
+			#[cfg(not(feature = "multiproof"))]
 			Network::Turing => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
+			#[cfg(feature = "multiproof")]
+			Network::Mainnet => "12D3KooWv4QrjYBIYGkzyz8LdmTi5eXJIukKDShVeAwaAPtWCP8x",
+			#[cfg(not(feature = "multiproof"))]
 			Network::Mainnet => "12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
 		};
 		PeerId::from_str(peer_id).expect("unable to parse default bootstrap peerID")
@@ -393,16 +399,26 @@ impl Network {
 			Listeners::Tcp | Listeners::Ws => match self {
 				Network::Local => "/ip4/127.0.0.1/tcp/39000",
 				Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/tcp/37000",
+				#[cfg(feature = "multiproof")]
+				Network::Turing => "/dns/bootnode.1.lightclient.turing-mmp.avail.so/tcp/37000",
+				#[cfg(not(feature = "multiproof"))]
 				Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/tcp/37000",
+				#[cfg(feature = "multiproof")]
+				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet-mmp.avail.so/tcp/37000",
+				#[cfg(not(feature = "multiproof"))]
 				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
 			},
 			Listeners::Quic | Listeners::QuicTcp => match self {
 				Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
 				Network::Hex => "/dns/bootnode.1.lightclient.hex.avail.so/udp/37000/quic-v1",
+				#[cfg(feature = "multiproof")]
+				Network::Turing => "/dns/bootnode.1.lightclient.turing-mmp.avail.so/udp/37000/quic-v1",
+				#[cfg(not(feature = "multiproof"))]
 				Network::Turing => "/dns/bootnode.1.lightclient.turing.avail.so/udp/37000/quic-v1",
-				Network::Mainnet => {
-					"/dns/bootnode.1.lightclient.mainnet.avail.so/udp/37000/quic-v1"
-				},
+				#[cfg(feature = "multiproof")]
+				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet-mmp.avail.so/udp/37000/quic-v1",
+				#[cfg(not(feature = "multiproof"))]
+				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/udp/37000/quic-v1",
 			},
 		};
 
