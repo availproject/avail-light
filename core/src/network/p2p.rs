@@ -102,7 +102,10 @@ pub enum OutputEvent {
 	ExternalMultiaddressUpdate(Multiaddr),
 	EstablishedConnection,
 	OutgoingConnectionError,
-	Count,
+	Count {
+		source: &'static str,
+		name: &'static str,
+	},
 	PutRecord {
 		block_num: u32,
 		records: Vec<Record>,

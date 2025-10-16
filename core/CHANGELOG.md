@@ -2,6 +2,7 @@
 
 ## [1.2.12]
 
+- Added event source and name to event count metric
 - Added peer blacklist
 - Increase minimum supported versions for binaries built with multiproof feature
 - Set default replication factor to 3

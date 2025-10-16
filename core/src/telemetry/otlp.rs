@@ -63,7 +63,11 @@ impl Metrics {
 		if !counter.is_allowed(&self.origin) {
 			return;
 		}
-		self.counters[&counter.name()].add(value, &self.attributes());
+		let mut attrs = self.attributes();
+		for (key, val) in counter.attributes() {
+			attrs.push(KeyValue::new(key, val.to_string()));
+		}
+		self.counters[&counter.name()].add(value, &attrs);
 	}
 
 	/// Puts metric to the metric buffer if it is allowed.
