@@ -378,8 +378,8 @@ impl FatState {
 			select! {
 				Some(p2p_event) = p2p_receiver.recv() => {
 					match p2p_event {
-						P2pEvent::Count => {
-							self.metrics.count(MetricCounter::EventLoopEvent)
+						P2pEvent::Count { source, name } => {
+							self.metrics.count(MetricCounter::EventLoopEvent { source, name })
 						},
 						P2pEvent::IncomingGetRecord => {
 							self.metrics.count(MetricCounter::IncomingGetRecord)

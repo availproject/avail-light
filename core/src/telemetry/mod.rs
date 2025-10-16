@@ -19,7 +19,10 @@ pub enum MetricCounter {
 	EstablishedConnections,
 	IncomingPutRecord,
 	IncomingGetRecord,
-	EventLoopEvent,
+	EventLoopEvent {
+		source: &'static str,
+		name: &'static str,
+	},
 	DHTPutRecords,
 	RpcConnected,
 	RpcConnectionSwitched,
@@ -42,7 +45,7 @@ impl MetricName for MetricCounter {
 			EstablishedConnections => "light.established_connections",
 			IncomingPutRecord => "light.incoming_put_record",
 			IncomingGetRecord => "light.incoming_get_record",
-			EventLoopEvent => "light.event_loop_event",
+			EventLoopEvent { .. } => "light.event_loop_event",
 			DHTPutRecords => "light.dht.put.records",
 			RpcConnected => "light.rpc.connected",
 			RpcConnectionSwitched => "light.rpc.connection_switched",
@@ -62,7 +65,10 @@ impl MetricCounter {
 			MetricCounter::EstablishedConnections,
 			MetricCounter::IncomingPutRecord,
 			MetricCounter::IncomingGetRecord,
-			MetricCounter::EventLoopEvent,
+			MetricCounter::EventLoopEvent {
+				source: Default::default(),
+				name: Default::default(),
+			},
 			MetricCounter::DHTPutRecords,
 			MetricCounter::RpcConnected,
 			MetricCounter::RpcConnectionSwitched,
@@ -76,6 +82,16 @@ impl MetricCounter {
 			(Origin::External, _) => false,
 			(Origin::Internal, MetricCounter::DHTPutRecords) => false,
 			(_, _) => true,
+		}
+	}
+
+	/// Returns attributes specific to this counter
+	pub fn attributes(&self) -> Vec<(&'static str, &'static str)> {
+		match self {
+			MetricCounter::EventLoopEvent { source, name } => {
+				vec![("source", *source), ("name", *name)]
+			},
+			_ => vec![],
 		}
 	}
 }

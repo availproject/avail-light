@@ -37,6 +37,68 @@ use crate::{
 	types::TimeToLive,
 };
 
+trait SwarmEventExt {
+	fn get_event_type(&self) -> (&'static str, &'static str);
+}
+
+impl SwarmEventExt for SwarmEvent<ConfigurableBehaviourEvent> {
+	fn get_event_type(&self) -> (&'static str, &'static str) {
+		match self {
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Kademlia(kad_event)) => {
+				match kad_event {
+					kad::Event::RoutingUpdated { .. } => ("Kademlia", "RoutingUpdated"),
+					kad::Event::RoutablePeer { .. } => ("Kademlia", "RoutablePeer"),
+					kad::Event::UnroutablePeer { .. } => ("Kademlia", "UnroutablePeer"),
+					kad::Event::PendingRoutablePeer { .. } => ("Kademlia", "PendingRoutablePeer"),
+					kad::Event::InboundRequest { request } => match request {
+						InboundRequest::GetRecord { .. } => {
+							("Kademlia", "InboundRequest::GetRecord")
+						},
+						InboundRequest::PutRecord { .. } => {
+							("Kademlia", "InboundRequest::PutRecord")
+						},
+						InboundRequest::FindNode { .. } => ("Kademlia", "InboundRequest::FindNode"),
+						_ => ("Kademlia", "InboundRequest::Other"),
+					},
+					kad::Event::ModeChanged { .. } => ("Kademlia", "ModeChanged"),
+					kad::Event::OutboundQueryProgressed { result, .. } => match result {
+						QueryResult::GetRecord(_) => ("Kademlia", "Query::GetRecord"),
+						QueryResult::GetClosestPeers(_) => ("Kademlia", "Query::GetClosestPeers"),
+						QueryResult::PutRecord(_) => ("Kademlia", "Query::PutRecord"),
+						QueryResult::Bootstrap(_) => ("Kademlia", "Query::Bootstrap"),
+						_ => ("Kademlia", "Query::Other"),
+					},
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Identify(identify_event)) => {
+				match identify_event {
+					identify::Event::Received { .. } => ("Identify", "Received"),
+					identify::Event::Sent { .. } => ("Identify", "Sent"),
+					identify::Event::Pushed { .. } => ("Identify", "Pushed"),
+					identify::Event::Error { .. } => ("Identify", "Error"),
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::AutoNat(autonat_event)) => {
+				match autonat_event {
+					autonat::Event::InboundProbe(_) => ("AutoNat", "InboundProbe"),
+					autonat::Event::OutboundProbe(_) => ("AutoNat", "OutboundProbe"),
+					autonat::Event::StatusChanged { .. } => ("AutoNat", "StatusChanged"),
+				}
+			},
+			SwarmEvent::Behaviour(ConfigurableBehaviourEvent::Ping(_)) => ("Ping", "Event"),
+			SwarmEvent::NewListenAddr { .. } => ("Swarm", "NewListenAddr"),
+			SwarmEvent::ConnectionClosed { .. } => ("Swarm", "ConnectionClosed"),
+			SwarmEvent::IncomingConnection { .. } => ("Swarm", "IncomingConnection"),
+			SwarmEvent::IncomingConnectionError { .. } => ("Swarm", "IncomingConnectionError"),
+			SwarmEvent::ExternalAddrConfirmed { .. } => ("Swarm", "ExternalAddrConfirmed"),
+			SwarmEvent::ConnectionEstablished { .. } => ("Swarm", "ConnectionEstablished"),
+			SwarmEvent::OutgoingConnectionError { .. } => ("Swarm", "OutgoingConnectionError"),
+			SwarmEvent::Dialing { .. } => ("Swarm", "Dialing"),
+			_ => ("Swarm", "Other"),
+		}
+	}
+}
+
 struct EventLoopConfig {
 	// Used for checking protocol version
 	is_fat_client: bool,
@@ -155,10 +217,11 @@ impl EventLoop {
 			#[cfg(not(target_arch = "wasm32"))]
 			tokio::select! {
 				event = self.swarm.next() => {
-					self.handle_event(event.expect("Swarm stream should be infinite")).await;
+					let event = event.expect("Swarm stream should be infinite");
+					let (source, name) = event.get_event_type();
+					self.handle_event(event).await;
 					event_counter.add_event();
-
-					_ = self.event_sender.send(OutputEvent::Count);
+					_ = self.event_sender.send(OutputEvent::Count { source, name });
 				},
 				command = self.command_receiver.recv() => match command {
 					Some(c) => _ = (c)(&mut self),
@@ -169,7 +232,11 @@ impl EventLoop {
 					},
 				},
 				_ = report_timer.tick() => {
-					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
+					info!(
+						count = format!("{:.2}", event_counter.count_events()),
+						"Events per {}s",
+						event_counter.duration_secs()
+					);
 					event_counter.reset_counter();
 				},
 				// if the shutdown was triggered,
@@ -186,10 +253,11 @@ impl EventLoop {
 			#[cfg(target_arch = "wasm32")]
 			tokio::select! {
 				event = self.swarm.next() => {
-					self.handle_event(event.expect("Swarm stream should be infinite")).await;
+					let event = event.expect("Swarm stream should be infinite");
+					let (source, name) = event.get_event_type();
+					self.handle_event(event).await;
 					event_counter.add_event();
-
-					_ = self.event_sender.send(OutputEvent::Count);
+					_ = self.event_sender.send(OutputEvent::Count { source, name });
 				},
 				command = self.command_receiver.recv() => match command {
 					Some(c) => _ = (c)(&mut self),
@@ -200,7 +268,11 @@ impl EventLoop {
 					},
 				},
 				_ = tokio::time::sleep(next_tick.checked_duration_since(now).unwrap_or_default()) => {
-					debug!("Events per {}s: {:.2}", event_counter.duration_secs(), event_counter.count_events());
+					info!(
+						count = format!("{:.2}", event_counter.count_events()),
+						"Events per {}s",
+						event_counter.duration_secs()
+					);
 					event_counter.reset_counter();
 					next_tick += event_counter.report_interval;
 				},
