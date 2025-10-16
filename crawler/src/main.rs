@@ -224,8 +224,8 @@ impl CrawlerState {
 			select! {
 				Some(p2p_event) = p2p_receiver.recv() => {
 					match p2p_event {
-						P2pEvent::Count => {
-							self.metrics.count(MetricCounter::EventLoopEvent);
+						P2pEvent::Count { source, name } => {
+							self.metrics.count(MetricCounter::EventLoopEvent { source, name });
 						},
 						P2pEvent::Ping{ rtt, .. } => {
 							self.metrics.record(MetricValue::DHTPingLatency(rtt.as_millis() as f64));

@@ -2,6 +2,7 @@
 
 ## [1.2.13]
 
+- Added event source and name to event count metric
 - Trigger maintenance on empty blocks
 
 ## [1.2.12](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.12) - 2025-10-21
