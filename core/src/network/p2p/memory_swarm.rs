@@ -641,7 +641,7 @@ mod tests {
 									info!("Connection event detected: {:?}", event);
 									connection_events.push(event);
 								},
-								OutputEvent::Count => {
+								OutputEvent::Count { .. } => {
 									// Count events are expected
 								},
 								other => {
