@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           ${{ matrix.extra_setup }}
-          cargo build --profile maxperf --features multiproof --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
           mv target/${{ matrix.rust_target }}/maxperf/${{ matrix.workspace }} target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}
           pushd target/${{ matrix.rust_target }}/maxperf/
           tar czf ${{ matrix.output_name }}.tar.gz ${{ matrix.output_name }}
@@ -69,7 +69,7 @@ jobs:
         shell: pwsh
         run: |
           ${{ matrix.extra_setup }}
-          cargo build --profile maxperf --features multiproof --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
+          cargo build --profile maxperf --target=${{ matrix.rust_target }} -p ${{ matrix.workspace }}
           Move-Item -Path "target\${{ matrix.rust_target }}\maxperf\${{ matrix.workspace }}.exe" -Destination "target\${{ matrix.rust_target }}\maxperf\${{ matrix.output_name }}"
           Push-Location -Path "target\${{ matrix.rust_target }}\maxperf\"
           Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
