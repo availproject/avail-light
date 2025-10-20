@@ -387,7 +387,7 @@ impl Network {
 			#[cfg(not(feature = "multiproof"))]
 			Network::Turing => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 			#[cfg(feature = "multiproof")]
-			Network::Mainnet => "12D3KooWv4QrjYBIYGkzyz8LdmTi5eXJIukKDShVeAwaAPtWCP8x",
+			Network::Mainnet => "12D3KooWHgPbEYcvZvZz4aT3KiBdjQmphG5qJ9StWoUps1ofKbJx",
 			#[cfg(not(feature = "multiproof"))]
 			Network::Mainnet => "12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
 		};
