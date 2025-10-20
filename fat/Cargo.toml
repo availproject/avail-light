@@ -23,4 +23,4 @@ tracing-subscriber.workspace = true
 [features]
 rocksdb = ["avail-light-core/rocksdb"]
 multiproof = ["avail-light-core/multiproof"]
-default = ["rocksdb"]
+default = ["rocksdb", "multiproof"]

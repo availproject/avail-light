@@ -22,7 +22,7 @@ on:
         description: 'Multiproof feature'
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
     build:
@@ -83,9 +83,9 @@ jobs:
           run: |
             source "$HOME/.cargo/env"
             if [ "${{ github.event.inputs.multiproof }}" = "true" ]; then
-              cargo build --release --features multiproof -p avail-light-client
-            else
               cargo build --release -p avail-light-client
+            else
+              cargo build --release --no-default-features --features rocksdb -p avail-light-client
             fi
             mkdir -p binaries
             cp target/release/avail-light-client binaries/avail-light-linux-amd64
@@ -97,9 +97,9 @@ jobs:
           run: |
             source "$HOME/.cargo/env"
             if [ "${{ github.event.inputs.multiproof }}" = "true" ]; then
-              cargo build --release -p avail-light-fat --features multiproof
-            else
               cargo build --release -p avail-light-fat
+            else
+              cargo build --release --no-default-features --features rocksdb -p avail-light-fat
             fi
             mkdir -p binaries
             ls -la target/release/
