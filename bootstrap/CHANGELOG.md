@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.6]
+## [0.5.6](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.6) - 2025-10-21
 
 - Added log to tracing adapter
 - Updated `avail-light-core` to 1.2.12

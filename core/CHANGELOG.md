@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.12]
+## [1.2.12](https://github.com/availproject/avail-light/tree/avail-light-core-v1.2.12) - 2025-10-21
 
 - Added dedicated bootstraps for turing and mainnet for multiproof feature
 - Added peer blacklist
