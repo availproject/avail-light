@@ -24,7 +24,7 @@ use tokio::{
 };
 use tracing::{debug, error, info};
 
-use crate::{shutdown::Controller, types::BlockVerified, utils};
+use crate::{shutdown::Controller, types::BlockProcessed, utils};
 
 mod github;
 
@@ -191,7 +191,7 @@ pub async fn run(
 	version: &str,
 	delay_sec: u64,
 	shutdown: Controller<String>,
-	mut block_receiver: broadcast::Receiver<BlockVerified>,
+	mut block_receiver: broadcast::Receiver<BlockProcessed>,
 	restart: Arc<Mutex<bool>>,
 	no_update: bool,
 ) -> Result<()> {
@@ -216,10 +216,12 @@ pub async fn run(
 	let mut newer_release: Option<Release> = None;
 
 	loop {
-		let Ok(BlockVerified { block_num, .. }) = block_receiver.recv().await else {
+		let Ok(block_processed) = block_receiver.recv().await else {
 			info!("Block receiver is closed, stopping updater...");
 			return Ok(());
 		};
+
+		let block_num = block_processed.block_num();
 
 		if let Some(release) = newer_release.as_ref() {
 			if no_update {

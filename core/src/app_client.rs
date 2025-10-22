@@ -51,7 +51,7 @@ use crate::{
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
 	proof,
 	shutdown::Controller,
-	types::{AppClientConfig, BlockRange, BlockVerified, NetworkMode},
+	types::{AppClientConfig, BlockProcessed, BlockRange, BlockVerified, NetworkMode},
 };
 
 #[async_trait]
@@ -444,7 +444,7 @@ pub async fn run(
 	network_client: Option<P2pClient>,
 	rpc_client: RpcClient<impl Database + Clone + Sync>,
 	app_id: AppId,
-	mut block_receive: broadcast::Receiver<BlockVerified>,
+	mut block_receive: broadcast::Receiver<BlockProcessed>,
 	pp: Arc<ArkPublicParams>,
 	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<ApiData>,
@@ -479,7 +479,7 @@ pub async fn run(
 	}
 
 	loop {
-		let block = match block_receive.recv().await {
+		let block_processed = match block_receive.recv().await {
 			Ok(block) => block,
 			Err(error) => {
 				error!(%error, event_type = "APP_CLIENT", "Failed to receive verified block data");
@@ -487,6 +487,11 @@ pub async fn run(
 					.trigger_shutdown(format!("Failed to receive verified block data: {error:#}"));
 				return;
 			},
+		};
+
+		// Only process verified blocks, skip empty/invalid blocks
+		let BlockProcessed::Verified(block) = block_processed else {
+			continue;
 		};
 
 		let block_number = block.block_num;

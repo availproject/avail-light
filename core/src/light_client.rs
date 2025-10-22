@@ -38,7 +38,7 @@ use crate::{
 		rpc::{self, OutputEvent as RpcEvent},
 	},
 	shutdown::Controller,
-	types::{self, BlockRange, BlockVerified, ClientChannels, Delay},
+	types::{self, BlockProcessed, BlockRange, ClientChannels, Delay},
 	utils::{blake2_256, calculate_confidence, extract_kate, is_flush_cycle},
 };
 
@@ -64,7 +64,7 @@ pub async fn process_block(
 	header: AvailHeader,
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
-) -> Result<Option<BlockVerified>> {
+) -> Result<BlockProcessed> {
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 
@@ -104,7 +104,7 @@ pub async fn process_block(
 			db.put(AchievedConfidenceKey, achieved_confidence);
 			db.put(BlockHeaderKey(block_number), header);
 
-			return Ok(None);
+			return Ok(BlockProcessed::Skipped { block_number });
 		},
 		Some((_, _, _, commitment)) => {
 			let Ok(block_verified) = types::BlockVerified::try_from((&header, Some(confidence)))
@@ -114,7 +114,7 @@ pub async fn process_block(
 					event_type = "BLOCK_VERIFICATION",
 					"Cannot create verified block from header"
 				);
-				return Ok(None);
+				return Ok(BlockProcessed::Skipped { block_number });
 			};
 
 			let Some(extension) = &block_verified.extension else {
@@ -122,7 +122,7 @@ pub async fn process_block(
 					block_number,
 					"Skipping block: no valid extension (cannot derive dimensions)"
 				);
-				return Ok(None);
+				return Ok(BlockProcessed::Skipped { block_number });
 			};
 
 			if extension.dimensions.cols().get() <= 2 {
@@ -131,7 +131,7 @@ pub async fn process_block(
 					event_type = "BLOCK_VALIDATION",
 					"Insufficient columns: more than 2 columns required"
 				);
-				return Ok(None);
+				return Ok(BlockProcessed::Skipped { block_number });
 			}
 
 			let commitments = commitments::from_slice(&commitment)?;
@@ -214,7 +214,7 @@ pub async fn process_block(
 			event_type = "CELL_FETCH_INSUFFICIENT",
 			"Failed to fetch sufficient cells for block verification"
 		);
-		return Ok(None);
+		return Ok(BlockProcessed::Skipped { block_number });
 	}
 
 	// write Verified Cell Count into on-disk db
@@ -257,7 +257,7 @@ pub async fn process_block(
 	// when this process started
 	db.put(BlockHeaderKey(block_number), header);
 
-	Ok(Some(block_verified))
+	Ok(BlockProcessed::Verified(block_verified))
 }
 
 /// Runs light client.
@@ -327,9 +327,8 @@ pub async fn run(
 			)
 			.await;
 
-			let client_msg = match process_block_result {
-				Ok(Some(blk_verified)) => blk_verified,
-				Ok(None) => continue,
+			let block_processed = match process_block_result {
+				Ok(processed) => processed,
 				Err(error) => {
 					error!(
 						%error,
@@ -343,16 +342,14 @@ pub async fn run(
 				},
 			};
 
-			// Notify dht-based application client
-			// that the newly mined block has been received
-			if let Err(error) = channels.block_sender.send(client_msg) {
+			// Send processed blocks to application client
+			if let Err(error) = channels.block_sender.send(block_processed) {
 				error!(
 					%error,
 					block_number = header.number,
 					event_type = "BLOCK_MESSAGE_SEND",
 					"Failed to send block verified message"
 				);
-				continue;
 			}
 		}
 	}
