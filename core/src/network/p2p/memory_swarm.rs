@@ -558,7 +558,16 @@ mod tests {
 		let peer_id = keypair.public().to_peer_id();
 		let shutdown = Controller::new();
 
+		#[cfg(not(feature = "rocksdb"))]
 		let db = DB::default();
+		#[cfg(feature = "rocksdb")]
+		let db = {
+			use std::sync::atomic::{AtomicU64, Ordering};
+			static COUNTER: AtomicU64 = AtomicU64::new(0);
+			let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+			let path = std::env::temp_dir().join(format!("avail_light_test_{}", id));
+			DB::open(&path.to_string_lossy()).expect("Failed to open test database")
+		};
 
 		let version = clap::crate_version!();
 
