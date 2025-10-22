@@ -143,7 +143,7 @@ pub async fn run(network_param: Option<String>, bootstrap_param: Option<String>)
 
 	let (lc_sender, mut lc_receiver) = mpsc::unbounded_channel::<LcEvent>();
 	let (block_tx, mut block_rx) =
-		broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
+		broadcast::channel::<avail_light_core::types::BlockProcessed>(1 << 7);
 
 	let channels = avail_light_core::types::ClientChannels {
 		block_sender: block_tx,
@@ -344,12 +344,17 @@ pub async fn latest_block(network_param: Option<String>) -> String {
 
 	let network_client = network::new_rpc(rpc_client, pp);
 
-	let confidence =
+	let block_processed =
 		light_client::process_block(db, &network_client, 99.9, header, received_at, lc_sender)
 			.await
-			.unwrap()
-			.map(|block_verified| format!("{:?}", block_verified.confidence))
-			.unwrap_or("none".to_string());
+			.unwrap();
+
+	let confidence = match block_processed {
+		avail_light_core::types::BlockProcessed::Verified(block_verified) => {
+			format!("{:?}", block_verified.confidence)
+		},
+		avail_light_core::types::BlockProcessed::Skipped { .. } => "none".to_string(),
+	};
 
 	format!("Confidence for block {} is {confidence}.", block.number())
 }

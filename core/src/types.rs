@@ -76,8 +76,27 @@ pub struct BlockVerified {
 	pub confidence: Option<f64>,
 	pub target_grid_dimensions: Option<Dimensions>,
 }
+
+/// Outcome of the block processing
+#[derive(Clone)]
+pub enum BlockProcessed {
+	/// Block was successfully verified and processed
+	Verified(BlockVerified),
+	/// Block skipped (e.g., empty block, no extension, insufficient columns)
+	Skipped { block_number: u32 },
+}
+
+impl BlockProcessed {
+	pub fn block_num(&self) -> u32 {
+		match self {
+			BlockProcessed::Verified(verified) => verified.block_num,
+			BlockProcessed::Skipped { block_number } => *block_number,
+		}
+	}
+}
+
 pub struct ClientChannels {
-	pub block_sender: broadcast::Sender<BlockVerified>,
+	pub block_sender: broadcast::Sender<BlockProcessed>,
 	pub rpc_event_receiver: broadcast::Receiver<OutputEvent>,
 }
 
