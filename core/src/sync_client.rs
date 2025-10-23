@@ -23,7 +23,7 @@ use crate::{
 		self,
 		rpc::{self, Client as RpcClient},
 	},
-	types::{BlockRange, BlockVerified, SyncClientConfig},
+	types::{BlockProcessed, BlockRange, BlockVerified, SyncClientConfig},
 	utils::{blake2_256, calculate_confidence, extract_kate},
 };
 
@@ -127,7 +127,7 @@ async fn process_block(
 	header: AvailHeader,
 	header_hash: H256,
 	cfg: &SyncClientConfig,
-	block_verified_sender: broadcast::Sender<BlockVerified>,
+	block_verified_sender: broadcast::Sender<BlockProcessed>,
 ) -> Result<()> {
 	let block_number = header.number;
 	let begin = Instant::now();
@@ -203,7 +203,7 @@ async fn process_block(
 	let confidence = Some(calculate_confidence(verified as u32));
 	block_verified.confidence = confidence;
 
-	if let Err(error) = block_verified_sender.send(block_verified) {
+	if let Err(error) = block_verified_sender.send(BlockProcessed::Verified(block_verified)) {
 		error!(
 			%error,
 			block_number,
@@ -228,7 +228,7 @@ pub async fn run(
 	network_client: impl network::Client,
 	cfg: SyncClientConfig,
 	sync_range: Range<u32>,
-	block_verified_sender: broadcast::Sender<BlockVerified>,
+	block_verified_sender: broadcast::Sender<BlockProcessed>,
 ) {
 	if sync_range.is_empty() {
 		warn!("There are no blocks to sync for range {sync_range:?}");
@@ -349,7 +349,7 @@ mod tests {
 
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
-		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
+		let (block_tx, _) = broadcast::channel::<BlockProcessed>(10);
 		let cfg = SyncClientConfig {
 			network_mode: types::NetworkMode::P2POnly,
 			..Default::default()
@@ -440,7 +440,7 @@ mod tests {
 
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
-		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
+		let (block_tx, _) = broadcast::channel::<BlockProcessed>(10);
 		let cfg = SyncClientConfig::default();
 		let mut mock_network_client = network::MockClient::new();
 		let mut mock_client = MockClient::new();

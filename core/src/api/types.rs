@@ -35,7 +35,7 @@ use crate::{
 		VerifiedSyncHeaderKey,
 	},
 	network::rpc::OutputEvent as RpcEvent,
-	types::{self, Base64, BlockVerified},
+	types::{self, Base64, BlockProcessed, BlockVerified},
 	utils::{blake2_256, decode_app_data, OptionalExtension},
 };
 
@@ -523,6 +523,22 @@ impl TryFrom<BlockVerified> for Option<PublishMessage> {
 				confidence: value.confidence,
 			},
 		)))
+	}
+}
+
+impl TryFrom<BlockProcessed> for Option<PublishMessage> {
+	type Error = Report;
+
+	fn try_from(value: BlockProcessed) -> Result<Self, Self::Error> {
+		match value {
+			BlockProcessed::Verified(block) => Ok(Some(PublishMessage::ConfidenceAchieved(
+				ConfidenceMessage {
+					block_number: block.block_num,
+					confidence: block.confidence,
+				},
+			))),
+			BlockProcessed::Skipped { .. } => Ok(None),
+		}
 	}
 }
 

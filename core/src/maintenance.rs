@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::{
 	network::p2p::Client as P2pClient,
 	shutdown::Controller,
-	types::{BlockVerified, MaintenanceConfig},
+	types::{BlockProcessed, MaintenanceConfig},
 };
 
 pub enum OutputEvent {
@@ -171,7 +171,7 @@ pub async fn process_block(
 
 pub async fn run(
 	p2p_client: Arc<Mutex<Option<P2pClient>>>,
-	mut block_receiver: broadcast::Receiver<BlockVerified>,
+	mut block_receiver: broadcast::Receiver<BlockProcessed>,
 	static_config_params: MaintenanceConfig,
 	shutdown: Controller<String>,
 	event_sender: UnboundedSender<OutputEvent>,
@@ -209,7 +209,7 @@ pub async fn run(
 		let result = match block_receiver.recv().await {
 			Ok(block) => {
 				process_block(
-					block.block_num,
+					block.block_num(),
 					p2p_client.clone(),
 					static_config_params,
 					event_sender.clone(),

@@ -269,7 +269,8 @@ async fn run(
 	};
 	spawn_in_span(shutdown.with_cancel(server.bind(cfg.api.clone())));
 
-	let (block_tx, block_rx) = broadcast::channel::<avail_light_core::types::BlockVerified>(1 << 7);
+	let (block_tx, block_rx) =
+		broadcast::channel::<avail_light_core::types::BlockProcessed>(1 << 7);
 
 	let data_rx = if let Some(app_id) = cfg.app_id.map(AppId) {
 		let (data_tx, data_rx) = broadcast::channel::<ApiData>(1 << 7);

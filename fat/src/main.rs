@@ -9,7 +9,7 @@ use avail_light_core::{
 	},
 	shutdown::Controller,
 	telemetry::{self, otlp::Metrics, MetricCounter, MetricValue, ATTRIBUTE_OPERATING_MODE},
-	types::{BlockVerified, ClientChannels, IdentityConfig, Origin, ProjectName},
+	types::{BlockProcessed, ClientChannels, IdentityConfig, Origin, ProjectName},
 	utils::{default_subscriber, install_panic_hooks, json_subscriber, spawn_in_span},
 };
 use clap::Parser;
@@ -161,7 +161,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 
 	db.put(LatestHeaderKey, block_header.number);
 
-	let (block_tx, block_rx) = broadcast::channel::<BlockVerified>(1 << 7);
+	let (block_tx, block_rx) = broadcast::channel::<BlockProcessed>(1 << 7);
 
 	let (maintenance_sender, maintenance_receiver) = mpsc::unbounded_channel::<MaintenanceEvent>();
 	spawn_in_span(shutdown.with_cancel(maintenance::run(
@@ -472,7 +472,7 @@ impl FatState {
 }
 
 mod maintenance {
-	use avail_light_core::{shutdown::Controller, types::BlockVerified};
+	use avail_light_core::{shutdown::Controller, types::BlockProcessed};
 	use color_eyre::eyre::Report;
 	use tokio::sync::{broadcast, mpsc::UnboundedSender};
 	use tracing::{error, info};
@@ -482,7 +482,7 @@ mod maintenance {
 	}
 
 	pub async fn run(
-		mut block_receiver: broadcast::Receiver<BlockVerified>,
+		mut block_receiver: broadcast::Receiver<BlockProcessed>,
 		shutdown: Controller<String>,
 		event_sender: UnboundedSender<OutputEvent>,
 	) {

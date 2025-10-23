@@ -36,7 +36,8 @@ use crate::{
 	},
 	shutdown::Controller,
 	types::{
-		block_matrix_partition_format, iter_partition_cells, BlockVerified, ClientChannels, Delay,
+		block_matrix_partition_format, iter_partition_cells, BlockProcessed, BlockVerified,
+		ClientChannels, Delay,
 	},
 	utils::blake2_256,
 };
@@ -135,7 +136,7 @@ pub async fn process_block(
 	header: &AvailHeader,
 	received_at: Instant,
 	event_sender: UnboundedSender<OutputEvent>,
-) -> Result<Option<BlockVerified>> {
+) -> Result<BlockProcessed> {
 	if let Err(error) = event_sender.send(OutputEvent::CountSessionBlocks) {
 		error!(
 			%error,
@@ -162,7 +163,7 @@ pub async fn process_block(
 			event_type = "BLOCK_VERIFICATION",
 			block_number, "Failed to create verified block from header"
 		);
-		return Ok(None);
+		return Ok(BlockProcessed::Skipped { block_number });
 	};
 
 	let Some(extension) = &block_verified.extension else {
@@ -170,7 +171,7 @@ pub async fn process_block(
 			block_number,
 			"Skipping block: no valid extension (cannot derive dimensions)"
 		);
-		return Ok(None);
+		return Ok(BlockProcessed::Skipped { block_number });
 	};
 
 	if extension.dimensions.cols().get() <= 2 {
@@ -179,7 +180,7 @@ pub async fn process_block(
 			event_type = "BLOCK_VALIDATION",
 			"Insufficient columns: more than 2 columns required"
 		);
-		return Ok(None);
+		return Ok(BlockProcessed::Skipped { block_number });
 	}
 
 	// push latest mined block's header into column family specified
@@ -283,7 +284,7 @@ pub async fn process_block(
 		}
 	}
 
-	Ok(Some(block_verified))
+	Ok(BlockProcessed::Verified(block_verified))
 }
 
 /// Runs the fat client.
@@ -353,9 +354,8 @@ pub async fn run(
 			)
 			.await;
 
-			let client_msg = match process_block_result {
-				Ok(Some(blk_verified)) => blk_verified,
-				Ok(None) => continue,
+			let block_processed = match process_block_result {
+				Ok(processed) => processed,
 				Err(error) => {
 					error!(
 						%error,
@@ -369,16 +369,14 @@ pub async fn run(
 				},
 			};
 
-			// Notify dht-based application client
-			// that the newly mined block has been received
-			if let Err(error) = channels.block_sender.send(client_msg) {
+			// Send processed blocks dht-based application client
+			if let Err(error) = channels.block_sender.send(block_processed) {
 				error!(
 					%error,
 					block_number = %header.number,
 					event_type = "BLOCK_MESSAGE_SEND",
 					"Failed to send block verified message"
 				);
-				continue;
 			}
 		}
 	}
