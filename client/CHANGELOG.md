@@ -2,6 +2,7 @@
 
 ## [1.13.4]
 
+- Added revision to telemetry
 - Updated `avail-light-core` to 1.2.13
 
 ## [1.13.3](https://github.com/availproject/avail-light/releases/tag/avail-light-client-v1.13.3) - 2025-10-21

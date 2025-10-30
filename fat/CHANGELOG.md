@@ -2,6 +2,7 @@
 
 ## [1.12.12]
 
+- Added revision to telemetry
 - Updated `avail-light-core` to 1.2.13
 
 ## [1.12.11](https://github.com/availproject/avail-light/releases/tag/avail-light-fat-v1.12.11) - 2025-10-21

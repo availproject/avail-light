@@ -2,6 +2,7 @@
 
 ## 0.2.0
 
+- Added revision to telemetry
 - Update `avail-light-core` to 1.2.13
 - Remove `ot_flush_block_interval` from configuration
 

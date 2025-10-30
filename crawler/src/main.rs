@@ -180,6 +180,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
 		("client_alias", config.client_alias),
+		("revision", rev.to_string()),
 	];
 
 	let mut metrics = otlp::initialize(

@@ -423,6 +423,7 @@ async fn run(
 			cfg.client_alias.clone().unwrap_or("".to_string()),
 		),
 		("network_mode", cfg.network_mode.to_string()),
+		("revision", rev.to_string()),
 	];
 
 	let mut metrics = telemetry::otlp::initialize(

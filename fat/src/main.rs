@@ -208,6 +208,7 @@ async fn run(config: Config, db: DB, shutdown: Controller<String>) -> Result<()>
 		("peerID", p2p_peer_id.to_string()),
 		("partition_size", partition_size),
 		("network", Network::name(&config.genesis_hash)),
+		("revision", rev.to_string()),
 	];
 
 	let mut metrics = telemetry::otlp::initialize(
