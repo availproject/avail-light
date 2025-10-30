@@ -2,6 +2,7 @@
 
 ## [0.5.7]
 
+- Added revision to telemetry
 - Updated `avail-light-core` to 1.2.13
 
 ## [0.5.6](https://github.com/availproject/avail-light/releases/tag/avail-light-bootstrap-v0.5.6) - 2025-10-21
