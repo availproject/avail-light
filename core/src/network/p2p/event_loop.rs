@@ -9,7 +9,7 @@ use libp2p::{
 		GetRecordOk, InboundRequest, Mode, PutRecordOk, QueryId, QueryResult,
 	},
 	ping,
-	swarm::SwarmEvent,
+	swarm::{DialError, ListenError, SwarmEvent},
 	Multiaddr, PeerId, StreamProtocol, Swarm,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -36,6 +36,28 @@ use crate::{
 	shutdown::Controller,
 	types::TimeToLive,
 };
+
+fn incoming_error_type(error: &ListenError) -> &'static str {
+	match error {
+		ListenError::Aborted => "connection_aborted",
+		ListenError::WrongPeerId { .. } => "peer_id_mismatch",
+		ListenError::LocalPeerId { .. } => "self_connection_attempt",
+		ListenError::Denied { .. } => "connection_denied_by_policy",
+		ListenError::Transport(_) => "transport_error",
+	}
+}
+
+fn outgoing_error_type(error: &DialError) -> &'static str {
+	match error {
+		DialError::Transport(_) => "transport_error",
+		DialError::NoAddresses => "no_addresses_available",
+		DialError::LocalPeerId { .. } => "self_connection_attempt",
+		DialError::WrongPeerId { .. } => "peer_id_mismatch",
+		DialError::Aborted => "connection_aborted",
+		DialError::Denied { .. } => "connection_denied_by_policy",
+		DialError::DialPeerConditionFalse(_) => "dial_condition_not_met",
+	}
+}
 
 trait SwarmEventExt {
 	fn get_event_type(&self) -> (&'static str, &'static str);
@@ -612,7 +634,22 @@ impl EventLoop {
 					SwarmEvent::IncomingConnection { .. } => {
 						_ = self.event_sender.send(OutputEvent::IncomingConnection);
 					},
-					SwarmEvent::IncomingConnectionError { .. } => {
+					SwarmEvent::IncomingConnectionError {
+						connection_id,
+						local_addr,
+						send_back_addr,
+						error,
+					} => {
+						let error_type = incoming_error_type(&error);
+						info!(
+							event_type = "INCOMING_CONNECTION_ERROR",
+							error_type = error_type,
+							connection_id = %connection_id,
+							local_addr = %local_addr,
+							send_back_addr = %send_back_addr,
+							error = %error,
+							"Incoming connection error"
+						);
 						_ = self.event_sender.send(OutputEvent::IncomingConnectionError);
 					},
 					SwarmEvent::ExternalAddrConfirmed { address } => {
@@ -650,12 +687,25 @@ impl EventLoop {
 							}));
 						}
 					},
-					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+					SwarmEvent::OutgoingConnectionError {
+						connection_id,
+						peer_id,
+						error,
+					} => {
+						let error_type = outgoing_error_type(&error);
+						info!(
+							event_type = "OUTGOING_CONNECTION_ERROR",
+							error_type = error_type,
+							connection_id = %connection_id,
+							peer_id = ?peer_id,
+							error = %error,
+							"Outgoing connection error"
+						);
 						_ = self.event_sender.send(OutputEvent::OutgoingConnectionError);
 
 						if let Some(peer_id) = peer_id {
 							// Notify the connections we're waiting on an error has occurred
-							if let libp2p::swarm::DialError::WrongPeerId { .. } = &error {
+							if let DialError::WrongPeerId { .. } = &error {
 								if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut() {
 									if let Some(peer) = kad.remove_peer(&peer_id) {
 										let removed_peer_id = peer.node.key.preimage();
