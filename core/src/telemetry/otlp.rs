@@ -6,7 +6,7 @@ use crate::{
 use color_eyre::Result;
 use opentelemetry::{
 	global,
-	metrics::{Counter, Meter},
+	metrics::{Counter, Histogram, Meter},
 	KeyValue,
 };
 use opentelemetry_otlp::{MetricExporter, Protocol, WithExportConfig};
@@ -34,6 +34,7 @@ type Attributes = HashMap<&'static str, String>;
 pub struct Metrics {
 	origin: Origin,
 	counters: HashMap<&'static str, Counter<u64>>,
+	histograms: HashMap<&'static str, Histogram<f64>>,
 	u64_gauges: Arc<Mutex<U64Gauges>>,
 	f64_gauges: Arc<Mutex<F64Gauges>>,
 	attributes: Arc<Mutex<Attributes>>,
@@ -98,6 +99,11 @@ impl Metrics {
 					})
 					.or_insert((value, 1, self.attributes()));
 			},
+			Record::Histogram(name, value) => {
+				if let Some(histogram) = self.histograms.get(name) {
+					histogram.record(value, &self.attributes());
+				}
+			},
 		}
 	}
 }
@@ -106,6 +112,7 @@ impl Metrics {
 pub enum Record {
 	MaxU64(&'static str, u64),
 	AvgF64(&'static str, f64),
+	Histogram(&'static str, f64),
 }
 
 impl From<MetricValue> for Record {
@@ -128,6 +135,7 @@ impl From<MetricValue> for Record {
 			DHTFetchDuration(number) => AvgF64(name, number),
 			DHTPutDuration(number) => AvgF64(name, number),
 			DHTPutSuccess(number) => AvgF64(name, number),
+			DHTPutRecordDuration(number) => Histogram(name, number),
 
 			DHTConnectedPeers(number) => AvgF64(name, number as f64),
 			DHTQueryTimeout(number) => AvgF64(name, number as f64),
@@ -156,13 +164,19 @@ fn init_counters(
 		.collect()
 }
 
-fn init_gauges(
+#[allow(clippy::type_complexity)]
+fn init_values(
 	meter: Meter,
 	origin: &Origin,
 	project_name: ProjectName,
-) -> (Arc<Mutex<U64Gauges>>, Arc<Mutex<F64Gauges>>) {
+) -> (
+	Arc<Mutex<U64Gauges>>,
+	Arc<Mutex<F64Gauges>>,
+	HashMap<&'static str, Histogram<f64>>,
+) {
 	let u64_gauges: Arc<Mutex<U64Gauges>> = Default::default();
 	let f64_gauges: Arc<Mutex<F64Gauges>> = Default::default();
+	let mut histograms: HashMap<&'static str, Histogram<f64>> = HashMap::new();
 
 	for value in MetricValue::default_values() {
 		if !value.is_allowed(origin) {
@@ -202,10 +216,14 @@ fn init_gauges(
 					})
 					.build();
 			},
+			Record::Histogram(name, _) => {
+				let histogram_name = format!("{project_name}.{name}");
+				histograms.insert(name, meter.f64_histogram(histogram_name).build());
+			},
 		}
 	}
 
-	(u64_gauges, f64_gauges)
+	(u64_gauges, f64_gauges, histograms)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -264,10 +282,11 @@ pub fn initialize(
 
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
 	let counters = init_counters(meter.clone(), origin, project_name.clone());
-	let (u64_gauges, f64_gauges) = init_gauges(meter, origin, project_name.clone());
+	let (u64_gauges, f64_gauges, histograms) = init_values(meter, origin, project_name.clone());
 	Ok(Metrics {
 		origin: origin.clone(),
 		counters,
+		histograms,
 		u64_gauges,
 		f64_gauges,
 		attributes: Default::default(),

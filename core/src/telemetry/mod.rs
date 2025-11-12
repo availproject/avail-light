@@ -110,6 +110,7 @@ pub enum MetricValue {
 	DHTFetchDuration(f64),
 	DHTPutDuration(f64),
 	DHTPutSuccess(f64),
+	DHTPutRecordDuration(f64),
 
 	DHTConnectedPeers(usize),
 	DHTQueryTimeout(u32),
@@ -133,6 +134,7 @@ impl MetricValue {
 			MetricValue::DHTFetchDuration(0.0),
 			MetricValue::DHTPutDuration(0.0),
 			MetricValue::DHTPutSuccess(0.0),
+			MetricValue::DHTPutRecordDuration(0.0),
 			MetricValue::DHTConnectedPeers(0),
 			MetricValue::DHTQueryTimeout(0),
 			MetricValue::DHTPingLatency(0.0),
@@ -159,6 +161,7 @@ impl MetricName for MetricValue {
 			DHTFetchDuration(_) => "light.dht.fetch_duration",
 			DHTPutDuration(_) => "light.dht.put_duration",
 			DHTPutSuccess(_) => "light.dht.put_success",
+			DHTPutRecordDuration(_) => "light.dht.put_record_duration",
 
 			DHTConnectedPeers(_) => "light.dht.connected_peers",
 			DHTQueryTimeout(_) => "light.dht.query_timeout",
