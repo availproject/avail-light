@@ -2,6 +2,7 @@
 
 ## [1.2.13]
 
+- Added put record duration histogram
 - Added event source and name to event count metric
 - Trigger maintenance on empty blocks
 

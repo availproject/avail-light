@@ -407,7 +407,11 @@ impl FatState {
 							self.metrics.count_n(MetricCounter::DHTPutRecords, records.len() as u64);
 							self.handle_new_put_record(block_num, records);
 						},
-						P2pEvent::PutRecordSuccess { record_key, .. } => {
+						P2pEvent::PutRecordSuccess { record_key, query_stats } => {
+							if let Some(duration) = query_stats.duration() {
+								self.metrics.record(MetricValue::DHTPutRecordDuration(duration.as_secs_f64()));
+							}
+
 							if let Err(error) = self.handle_successful_put_record(record_key){
 								error!(
 									%error,
@@ -416,7 +420,11 @@ impl FatState {
 								);
 							};
 						},
-						P2pEvent::PutRecordFailed { record_key, .. } => {
+						P2pEvent::PutRecordFailed { record_key, query_stats } => {
+							if let Some(duration) = query_stats.duration() {
+								self.metrics.record(MetricValue::DHTPutRecordDuration(duration.as_secs_f64()));
+							}
+
 							if let Err(error) = self.handle_failed_put_record(record_key) {
 								error!(
 									%error,
