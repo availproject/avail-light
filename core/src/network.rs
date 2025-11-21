@@ -375,6 +375,7 @@ pub enum Network {
 	Hex,
 	Turing,
 	Mainnet,
+	Infinity,
 }
 
 impl Network {
@@ -390,6 +391,10 @@ impl Network {
 			Network::Mainnet => "12D3KooWHgPbEYcvZvZz4aT3KiBdjQmphG5qJ9StWoUps1ofKbJx",
 			#[cfg(not(feature = "multiproof"))]
 			Network::Mainnet => "12D3KooW9x9qnoXhkHAjdNFu92kMvBRSiFBMAoC5NnifgzXjsuiM",
+			#[cfg(feature = "multiproof")]
+			Network::Infinity => "12D3KooWGsdrGGv7BJjjuRTdDS2yZmSmqL5s3YRQREV6vz9cjrbx",
+			#[cfg(not(feature = "multiproof"))]
+			Network::Infinity => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		};
 		PeerId::from_str(peer_id).expect("unable to parse default bootstrap peerID")
 	}
@@ -407,6 +412,10 @@ impl Network {
 				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet-mmp.avail.so/tcp/37000",
 				#[cfg(not(feature = "multiproof"))]
 				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/tcp/37000",
+				#[cfg(feature = "multiproof")]
+				Network::Infinity => "/dns/bootnode.1.lightclient.infinity-mmp.avail.so/tcp/37000",
+				#[cfg(not(feature = "multiproof"))]
+				Network::Infinity => "/dns/bootnode.1.lightclient.infinity.avail.so/tcp/37000",
 			},
 			Listeners::Quic | Listeners::QuicTcp => match self {
 				Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
@@ -419,6 +428,10 @@ impl Network {
 				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet-mmp.avail.so/udp/37000/quic-v1",
 				#[cfg(not(feature = "multiproof"))]
 				Network::Mainnet => "/dns/bootnode.1.lightclient.mainnet.avail.so/udp/37000/quic-v1",
+				#[cfg(feature = "multiproof")]
+				Network::Infinity => "/dns/bootnode.1.lightclient.infinity-mmp.avail.so/udp/37000/quic-v1",
+				#[cfg(not(feature = "multiproof"))]
+				Network::Infinity => "/dns/bootnode.1.lightclient.infinity.avail.so/udp/37000/quic-v1",
 			},
 		};
 
@@ -435,6 +448,7 @@ impl Network {
 				"wss://avail-mainnet.public.blastapi.io/".to_string(),
 				"wss://mainnet-rpc.avail.so/ws".to_string(),
 			],
+			Network::Infinity => vec!["wss://infinity-hetzner-rpc.avail.tools/ws".to_string()],
 		}
 	}
 
@@ -444,6 +458,7 @@ impl Network {
 			Network::Hex => "http://otel.lightclient.hex.avail.so:4317",
 			Network::Turing => "http://otel.lightclient.turing.avail.so:4317",
 			Network::Mainnet => "http://otel.lightclient.mainnet.avail.so:4317",
+			Network::Infinity => "http://otel.lightclient.infinity.avail.so:4317",
 		}
 	}
 
@@ -453,6 +468,7 @@ impl Network {
 			Network::Hex => "9d5ea6a5d7631e13028b684a1a0078e3970caa78bd677eaecaf2160304f174fb",
 			Network::Turing => "d3d2f3a3495dc597434a99d7d449ebad6616db45e4e4f178f31cc6fa14378b70",
 			Network::Mainnet => "b91746b45e0346cc2f815a520b9c6cb4d5c0902af848db0a80f85932d2e8276a",
+			Network::Infinity => "01b0903abd0d2675fa95a4005865ef65a2b51a3f271ff202a91b20975ebeebdc",
 		}
 	}
 

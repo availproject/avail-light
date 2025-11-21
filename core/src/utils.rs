@@ -4,7 +4,6 @@ use avail_core::{
 };
 use avail_rust::{
 	avail::runtime_types::{
-		avail_core::header::extension::{v3, HeaderExtension},
 		da_control::pallet::Call,
 		da_runtime::RuntimeCall,
 	},
@@ -12,6 +11,8 @@ use avail_rust::{
 	subxt::config::substrate,
 	AppUncheckedExtrinsic, AvailHeader, H256,
 };
+// HeaderExtension is re-exported from avail_rust_core when next feature is enabled
+use avail_rust::ext::avail_rust_core::HeaderExtension;
 use codec::Decode;
 use color_eyre::{
 	eyre::{self, eyre, WrapErr},
@@ -62,8 +63,11 @@ pub trait OptionalExtension {
 
 impl OptionalExtension for HeaderExtension {
 	fn option(&self) -> Option<&Self> {
-		let HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) = self;
-		(app_lookup.size > 0).then_some(self)
+		let size = match self {
+			HeaderExtension::V3(v3) => v3.app_lookup.size,
+			HeaderExtension::V4(v4) => v4.app_lookup.size,
+		};
+		(size > 0).then_some(self)
 	}
 }
 
@@ -72,13 +76,17 @@ impl OptionalExtension for HeaderExtension {
 /// Extract fields from extension header
 pub(crate) fn extract_kate(extension: &HeaderExtension) -> Option<(u16, u16, H256, Vec<u8>)> {
 	match &extension.option()? {
-		HeaderExtension::V3(v3::HeaderExtension {
-			commitment: kate, ..
-		}) => Some((
-			kate.rows,
-			kate.cols,
-			kate.data_root,
-			kate.commitment.clone(),
+		HeaderExtension::V3(v3) => Some((
+			v3.commitment.rows,
+			v3.commitment.cols,
+			v3.commitment.data_root,
+			v3.commitment.commitment.clone(),
+		)),
+		HeaderExtension::V4(v4) => Some((
+			v4.commitment.rows,
+			v4.commitment.cols,
+			v4.commitment.data_root,
+			v4.commitment.commitment.clone(),
 		)),
 	}
 }
@@ -90,13 +98,12 @@ pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> eyre::Result<Op
 		return Ok(None);
 	};
 
-	let compact = match &extension {
-		HeaderExtension::V3(v3::HeaderExtension { app_lookup, .. }) => app_lookup,
+	let (size, index) = match &extension {
+		HeaderExtension::V3(v3) => (v3.app_lookup.size, &v3.app_lookup.index),
+		HeaderExtension::V4(v4) => (v4.app_lookup.size, &v4.app_lookup.index),
 	};
 
-	let size = compact.size;
-	let index = compact
-		.index
+	let index = index
 		.iter()
 		.map(|item| DataLookupItem::new(AppId(item.app_id.0), item.start))
 		.collect::<Vec<_>>();

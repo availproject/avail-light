@@ -1,11 +1,11 @@
 use avail_core::kate::COMMITMENT_SIZE;
 use avail_rust::{
-	avail::runtime_types::avail_core::{
-		data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension,
-	},
+	avail::runtime_types::avail_core::data_lookup::compact::CompactDataLookup,
 	subxt::config::substrate::{Digest as ApiDigest, DigestItem as ApiDigestItem},
 	AvailHeader, H256,
 };
+// HeaderExtension is re-exported from avail_rust_core when next feature is enabled
+use avail_rust::ext::avail_rust_core::HeaderExtension;
 use codec::Encode;
 #[cfg(not(target_arch = "wasm32"))]
 use color_eyre::eyre::eyre;
@@ -443,6 +443,25 @@ impl TryFrom<HeaderExtension> for Extension {
 					data_root: v3.commitment.data_root,
 					commitments,
 					app_lookup: v3.app_lookup,
+				})
+			},
+			HeaderExtension::V4(v4) => {
+				let commitments = commitments::from_slice(&v4.commitment.commitment)?
+					.into_iter()
+					.map(Commitment)
+					.collect::<Vec<_>>();
+
+				let app_lookup = CompactDataLookup {
+					size: v4.app_lookup.size,
+					index: v4.app_lookup.index,
+				};
+
+				Ok(Extension {
+					rows: v4.commitment.rows,
+					cols: v4.commitment.cols,
+					data_root: v4.commitment.data_root,
+					commitments,
+					app_lookup,
 				})
 			},
 		}
