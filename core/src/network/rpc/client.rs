@@ -88,7 +88,7 @@ enum ClientCreationError {
 	#[error("Failed to connect to any RPC node")]
 	AllNodesFailed {
 		#[source]
-		last_error: Report,
+		_last_error: Report,
 	},
 
 	#[error("RPC function execution failed for host {host}: {error}")]
@@ -274,7 +274,7 @@ impl<D: Database> Client<D> {
 		}
 
 		Err(Report::msg(ClientCreationError::AllNodesFailed {
-			last_error: last_error.unwrap_or_else(|| eyre!("No error recorded")),
+			_last_error: last_error.unwrap_or_else(|| eyre!("No error recorded")),
 		}))
 	}
 
