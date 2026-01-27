@@ -2,7 +2,7 @@ use avail_light_core::{
 	network::{AutoNatMode, Network},
 	types::{KademliaMode, NetworkMode},
 };
-use clap::{command, ArgAction, Parser};
+use clap::{ArgAction, Parser};
 use tracing::Level;
 
 #[derive(Parser)]

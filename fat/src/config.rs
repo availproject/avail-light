@@ -14,7 +14,7 @@ use avail_light_core::{
 		PeerAddress, SecretKey,
 	},
 };
-use clap::{command, Parser};
+use clap::Parser;
 use color_eyre::{eyre::eyre, Result};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
