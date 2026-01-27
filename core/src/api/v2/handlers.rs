@@ -9,9 +9,9 @@ use crate::{
 	api::{
 		configuration::SharedConfig,
 		types::{
-			block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse,
-			DataTransaction, Error, FieldsQueryParameter, Header, Status, SubmitResponse,
-			Subscription, SubscriptionId, Transaction, Version, WsClients,
+			block_status, filter_fields, Block, BlockStatus, CellCountResponse, DataQuery,
+			DataResponse, DataTransaction, Error, FieldsQueryParameter, Header, Status,
+			SubmitResponse, Subscription, SubscriptionId, Transaction, Version, WsClients,
 		},
 	},
 	data::{
@@ -171,4 +171,19 @@ pub async fn block_data(
 		block_number,
 		data_transactions,
 	})
+}
+
+pub async fn cell_count(block_number: u32, db: impl Database + Clone) -> Result<impl Reply, Error> {
+	if let Some(count) = db.get(VerifiedCellCountKey(block_number)) {
+		if count > 0 {
+			return Ok(CellCountResponse {
+				block_number,
+				cell_count: count,
+			});
+		}
+	}
+
+	Err(Error::bad_request_unknown(
+		"Verified cell count is not available; sampling has not completed for this block",
+	))
 }

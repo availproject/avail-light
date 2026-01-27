@@ -58,6 +58,19 @@ impl Reply for Version {
 	}
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CellCountResponse {
+	pub block_number: u32,
+	pub cell_count: u32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Reply for CellCountResponse {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct BlockRange {
 	pub first: u32,

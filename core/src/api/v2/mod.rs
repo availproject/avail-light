@@ -96,6 +96,7 @@ pub fn routes(
 		.or(block_route(config.clone(), db.clone()))
 		.or(block_header_route(config.clone(), db.clone()))
 		.or(block_data_route(config.clone(), db.clone()))
+		.or(cell_count_route(db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(ws_clients, version, config, submitter, db.clone()))

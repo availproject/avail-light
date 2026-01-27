@@ -199,10 +199,40 @@ Content-Type: application/json
 ```
 
 If **block_status** is **incomplete**, data will be empty.
-If **block_status** is not **“finished”**, or **app** mode is not enabled, data is not available and the response is:
+If **block_status** is not **"finished"**, or **app** mode is not enabled, data is not available and the response is:
 
 ```yaml
 HTTP/1.1 400 Bad Request
+```
+
+## **GET** `/v2/blocks/{block_number}/cell-count`
+
+Gets the verified cell count for a specified block number. This endpoint returns the number of cells that have been successfully sampled and verified for data availability.
+
+If the verified cell count is available (greater than zero), the response is:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "block_number": {block-number},
+  "cell_count": {cell-count}
+}
+```
+
+- **block_number** - the block number for which the cell count is requested
+- **cell_count** - the number of cells that have been successfully sampled and verified for this block
+
+If the verified cell count is zero or not available (sampling has not completed for this block), the response is:
+
+```yaml
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "error": "Verified cell count is not available; sampling has not completed for this block"
+}
 ```
 
 ## POST `/v2/submit`

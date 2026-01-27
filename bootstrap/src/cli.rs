@@ -1,4 +1,4 @@
-use clap::{command, ArgAction, Parser};
+use clap::{ArgAction, Parser};
 use tracing::Level;
 
 #[derive(Parser)]
