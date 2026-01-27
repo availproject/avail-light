@@ -88,6 +88,16 @@ pub fn block_data_route(
 		.map(log_internal_server_error_v2)
 }
 
+pub fn cell_count_route(
+	db: impl Database + Clone + Send,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "blocks" / u32 / "cell-count")
+		.and(warp::get())
+		.and(with_db(db))
+		.then(handlers::cell_count)
+		.map(log_internal_server_error_v2)
+}
+
 pub fn submit_route(
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
