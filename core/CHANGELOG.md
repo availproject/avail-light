@@ -2,7 +2,7 @@
 
 ## [1.2.13]
 
-- Added verified cell count query API on light client  
+- Added verified cell count query API on light client
 - Added put record duration histogram
 - Added event source and name to event count metric
 - Trigger maintenance on empty blocks
