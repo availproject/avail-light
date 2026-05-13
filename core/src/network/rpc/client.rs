@@ -669,7 +669,7 @@ impl<D: Database> Client<D> {
 
 		let cells = positions
 			.iter()
-			.zip(proofs.into_iter())
+			.zip(proofs)
 			.map(|(&position, (proof, gcell_block))| {
 				let (scalars, proof) = proof;
 				let proof_bytes: [u8; 48] = proof.0;

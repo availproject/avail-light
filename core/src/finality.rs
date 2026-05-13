@@ -51,7 +51,7 @@ pub fn check_finality(
 	justification_clone
 		.commit
 		.precommits
-		.sort_by(|a, b| a.id.cmp(&b.id));
+		.sort_by_key(|a| a.id);
 	justification_clone
 		.commit
 		.precommits
