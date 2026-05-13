@@ -48,10 +48,7 @@ pub fn check_finality(
 
 	// Make sure the justification ALSO contains only unique signers
 	let mut justification_clone = justification.clone();
-	justification_clone
-		.commit
-		.precommits
-		.sort_by_key(|a| a.id);
+	justification_clone.commit.precommits.sort_by_key(|a| a.id);
 	justification_clone
 		.commit
 		.precommits
