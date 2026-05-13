@@ -44,7 +44,7 @@ use tokio_retry::Retry;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio_stream::Elapsed;
 use tokio_stream::{StreamExt, StreamMap};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use super::{configuration::RetryConfig, Node, Nodes, Subscription, WrappedProof};
 use crate::{
