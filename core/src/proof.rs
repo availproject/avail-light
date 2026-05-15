@@ -1,3 +1,5 @@
+#[cfg(feature = "multiproof")]
+use kate_recovery::data::GCellBlock;
 use kate_recovery::{
 	commons::ArkPublicParams,
 	data::Cell,
@@ -118,7 +120,8 @@ pub async fn verify(
 	let cols = dimensions.cols().get();
 
 	let mut proof_pairs = Vec::with_capacity(cells.len());
-	let mut positions = Vec::with_capacity(cells.len());
+	let mut candidate_positions = Vec::with_capacity(cells.len());
+	let mut unverified: Vec<Position> = Vec::new();
 
 	for cell in cells {
 		let mcell = match cell {
@@ -129,6 +132,17 @@ pub async fn verify(
 			},
 		};
 
+		if !gcell_block_contains(&mcell.gcell_block, mcell.position) {
+			warn!(
+				block_num,
+				position = ?mcell.position,
+				gcell_block = ?mcell.gcell_block,
+				"gcell_block does not cover sampled position; rejecting cell",
+			);
+			unverified.push(mcell.position);
+			continue;
+		}
+
 		let scalars: Vec<[u8; 32]> = mcell
 			.scalars
 			.iter()
@@ -136,7 +150,7 @@ pub async fn verify(
 			.collect();
 
 		proof_pairs.push(((scalars, mcell.proof), mcell.gcell_block.clone()));
-		positions.push(mcell.position);
+		candidate_positions.push(mcell.position);
 	}
 
 	let commitments = commitments.iter().flatten().copied().collect::<Vec<u8>>();
@@ -148,11 +162,22 @@ pub async fn verify(
 		block_num,
 		verified = is_verified,
 		duration = ?start_time.elapsed(),
-		"Multiproof verification completed"
+		"Multiproof verification completed",
 	);
 
-	let (verified, unverified) = positions.into_iter().partition(|_| is_verified);
-	Ok((verified, unverified))
+	if is_verified {
+		Ok((candidate_positions, unverified))
+	} else {
+		unverified.extend(candidate_positions);
+		Ok((Vec::new(), unverified))
+	}
+}
+
+#[cfg(feature = "multiproof")]
+pub(crate) fn gcell_block_contains(block: &GCellBlock, position: Position) -> bool {
+	let col = u32::from(position.col);
+	let row = position.row;
+	(block.start_x..block.end_x).contains(&col) && (block.start_y..block.end_y).contains(&row)
 }
 
 #[cfg(feature = "multiproof")]

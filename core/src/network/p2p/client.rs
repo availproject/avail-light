@@ -637,6 +637,14 @@ impl Client {
 							})
 							.ok()?;
 
+					if !crate::proof::gcell_block_contains(&mcell.gcell_block, position) {
+						debug!(
+							"Cell {reference}: gcell_block {:?} does not cover requested position {:?}; discarding",
+							mcell.gcell_block, position,
+						);
+						return None;
+					}
+
 					Some(Cell::MultiProofCell(mcell))
 				}
 			},
