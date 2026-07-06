@@ -2,6 +2,7 @@
 
 ## [1.2.13]
 
+- Patched high-severity advisories in transitive dependencies: `openssl` 0.10.80 (GHSA-8c75-8mhr-p7r9, GHSA-ghm9-cr32-g9qj, GHSA-hppc-g8h3-xhp3, GHSA-pqf5-4pqq-29f5, GHSA-xp3w-r5p5-63rr), `quinn-proto` 0.11.14 (GHSA-6xvm-j4wr-6v98), `rustls-webpki` 0.103.13 (GHSA-82j2-j2ch-gfr8) and `yamux` 0.13.10 (GHSA-4w32-2493-32g7, GHSA-vxx9-2994-q338)
 - Added verified cell count query API on light client
 - Added put record duration histogram
 - Added event source and name to event count metric
