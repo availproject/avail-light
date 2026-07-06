@@ -92,6 +92,7 @@ avail-rust = { workspace = true, default-features = false, features = ["wasm"] }
 blake2b_simd = "1.0.2"
 color-eyre = { workspace = true }
 ed25519-compact = "2.1.1"
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 hyper = { version = "0.14.23", features = ["http1"] }
 libp2p = { workspace = true, features = ["wasm-bindgen"] }
 libp2p-webrtc-websys = { workspace = true }
