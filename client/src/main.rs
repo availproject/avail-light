@@ -536,10 +536,12 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 		cfg.tracking_service_ping_interval = tracking_service_ping_interval
 	}
 
-	cfg.no_update = opts.no_update;
+	cfg.no_update |= opts.no_update;
 
-	cfg.tracking_service_enable = opts.tracking_service_enable;
-	cfg.operator_address = opts.operator_address.clone();
+	cfg.tracking_service_enable |= opts.tracking_service_enable;
+	if let Some(operator_address) = &opts.operator_address {
+		cfg.operator_address = Some(operator_address.clone());
+	}
 
 	if let Some(p2p_client_restart_interval) = opts.p2p_client_restart_interval {
 		cfg.p2p_client_restart_interval = Some(Duration::from_secs(p2p_client_restart_interval));
@@ -554,6 +556,10 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 
 	if let Some(operation_mode) = opts.operation_mode {
 		cfg.libp2p.kademlia.operation_mode = operation_mode;
+	}
+
+	if let Some(auto_nat_mode) = &opts.auto_nat_mode {
+		cfg.libp2p.behaviour.auto_nat_mode = auto_nat_mode.clone();
 	}
 
 	if opts.local_test_mode {
@@ -581,6 +587,66 @@ pub fn load_runtime_config(opts: &CliOpts) -> Result<RuntimeConfig> {
 	}
 
 	Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::path::PathBuf;
+
+	fn load_config(config: &str, extra_args: &[&str]) -> RuntimeConfig {
+		let path = PathBuf::from(std::env::temp_dir()).join(format!(
+			"avail-light-client-test-{}.toml",
+			uuid::Uuid::new_v4()
+		));
+		fs::write(&path, config).unwrap();
+
+		let mut args = vec![
+			"avail-light-client".to_string(),
+			"--config".to_string(),
+			path.to_string_lossy().into_owned(),
+			"--network".to_string(),
+			"local".to_string(),
+		];
+		args.extend(extra_args.iter().map(ToString::to_string));
+
+		let opts = CliOpts::try_parse_from(args).unwrap();
+		let result = load_runtime_config(&opts).unwrap();
+		fs::remove_file(path).unwrap();
+		result
+	}
+
+	#[test]
+	fn config_auto_nat_mode_is_preserved_without_cli_override() {
+		let loaded = load_config(r#"auto_nat_mode = "Enabled""#, &[]);
+
+		assert_eq!(loaded.libp2p.behaviour.auto_nat_mode, AutoNatMode::Enabled);
+	}
+
+	#[test]
+	fn cli_auto_nat_mode_overrides_config() {
+		let loaded = load_config(
+			r#"auto_nat_mode = "Disabled""#,
+			&["--auto-nat-mode", "enabled"],
+		);
+
+		assert_eq!(loaded.libp2p.behaviour.auto_nat_mode, AutoNatMode::Enabled);
+	}
+
+	#[test]
+	fn config_boolean_flags_are_preserved_without_cli_overrides() {
+		let loaded = load_config("no_update = true\ntracking_service_enable = true", &[]);
+
+		assert!(loaded.no_update);
+		assert!(loaded.tracking_service_enable);
+	}
+
+	#[test]
+	fn config_operator_address_is_preserved_without_cli_override() {
+		let loaded = load_config(r#"operator_address = "config-operator""#, &[]);
+
+		assert_eq!(loaded.operator_address.as_deref(), Some("config-operator"));
+	}
 }
 
 #[derive(Debug, Clone)]
