@@ -51,7 +51,7 @@ jobs:
       - uses: SierraSoftworks/setup-grcov@v1
         name: Install grcov
         with:
-          github-token: ${{ secrets.PAT_TOKEN }}
+          github-token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           version: latest
       - name: Generate test code coverage report
         run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
