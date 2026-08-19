@@ -647,6 +647,73 @@ mod tests {
 
 		assert_eq!(loaded.operator_address.as_deref(), Some("config-operator"));
 	}
+
+	fn block_stats(cell_count: usize) -> BlockStat {
+		BlockStat::new(cell_count)
+	}
+
+	#[test]
+	fn completed_block_stats_are_evicted_after_all_successes() {
+		let mut active_blocks = HashMap::from([(1, block_stats(2))]);
+
+		assert!(process_put_record_result(&mut active_blocks, 1, true)
+			.unwrap()
+			.is_none());
+		assert!(process_put_record_result(&mut active_blocks, 1, true)
+			.unwrap()
+			.is_some());
+		assert!(active_blocks.is_empty());
+	}
+
+	#[test]
+	fn completed_block_stats_are_evicted_after_mixed_results() {
+		let mut active_blocks = HashMap::from([(1, block_stats(2))]);
+
+		assert!(process_put_record_result(&mut active_blocks, 1, true)
+			.unwrap()
+			.is_none());
+		assert!(process_put_record_result(&mut active_blocks, 1, false)
+			.unwrap()
+			.is_some());
+		assert!(active_blocks.is_empty());
+	}
+
+	#[test]
+	fn parallel_blocks_have_independent_statistics() {
+		let mut active_blocks = HashMap::from([(1, block_stats(1)), (2, block_stats(1))]);
+
+		assert!(process_put_record_result(&mut active_blocks, 1, true)
+			.unwrap()
+			.is_some());
+		assert!(active_blocks.contains_key(&2));
+		assert!(process_put_record_result(&mut active_blocks, 2, false)
+			.unwrap()
+			.is_some());
+		assert!(active_blocks.is_empty());
+	}
+
+	#[test]
+	fn duplicate_completion_returns_an_error() {
+		let mut active_blocks = HashMap::from([(1, block_stats(1))]);
+
+		process_put_record_result(&mut active_blocks, 1, true).unwrap();
+		let error = process_put_record_result(&mut active_blocks, 1, true).unwrap_err();
+		assert!(error
+			.to_string()
+			.contains("unknown or already completed block"));
+	}
+
+	#[test]
+	fn a_new_cycle_can_start_after_completion() {
+		let mut active_blocks = HashMap::from([(1, block_stats(1))]);
+
+		process_put_record_result(&mut active_blocks, 1, true).unwrap();
+		active_blocks.insert(1, block_stats(1));
+		assert!(process_put_record_result(&mut active_blocks, 1, false)
+			.unwrap()
+			.is_some());
+		assert!(active_blocks.is_empty());
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -660,6 +727,18 @@ struct BlockStat {
 }
 
 impl BlockStat {
+	fn new(cell_count: usize) -> Self {
+		let now = Instant::now();
+		Self {
+			total_count: cell_count,
+			remaining_counter: cell_count,
+			success_counter: 0,
+			error_counter: 0,
+			start_time: now,
+			end_time: now,
+		}
+	}
+
 	fn increase_cell_counters(&mut self, cell_number: usize) {
 		self.total_count += cell_number;
 		self.remaining_counter += cell_number;
@@ -673,8 +752,12 @@ impl BlockStat {
 		self.error_counter += 1;
 	}
 
-	fn decrement_remaining_counter(&mut self) {
-		self.remaining_counter -= 1;
+	fn decrement_remaining_counter(&mut self) -> Result<()> {
+		self.remaining_counter = self
+			.remaining_counter
+			.checked_sub(1)
+			.ok_or_else(|| eyre!("Received duplicate PUT completion event"))?;
+		Ok(())
 	}
 
 	fn is_completed(&self) -> bool {
@@ -692,6 +775,46 @@ impl BlockStat {
 	fn success_rate(&self) -> f64 {
 		self.success_counter as f64 / self.total_count as f64
 	}
+}
+
+#[derive(Debug)]
+struct CompletedBlockStats {
+	success_rate: f64,
+	duration: f64,
+}
+
+fn process_put_record_result(
+	active_blocks: &mut HashMap<u32, BlockStat>,
+	block_num: u32,
+	successful: bool,
+) -> Result<Option<CompletedBlockStats>> {
+	let completed = {
+		let block = active_blocks.get_mut(&block_num).ok_or_else(|| {
+			eyre!(
+				"Received PUT completion for unknown or already completed block {}",
+				block_num
+			)
+		})?;
+
+		block.decrement_remaining_counter()?;
+		if successful {
+			block.increment_success_counter();
+		} else {
+			block.increment_error_counter();
+		}
+		block.set_end_time();
+
+		block.is_completed().then(|| CompletedBlockStats {
+			success_rate: block.success_rate(),
+			duration: block.total_duration_secs(),
+		})
+	};
+
+	if completed.is_some() {
+		active_blocks.remove(&block_num);
+	}
+
+	Ok(completed)
 }
 
 struct ClientState {
@@ -715,48 +838,26 @@ impl ClientState {
 		}
 	}
 
-	fn get_block_stat(&mut self, block_num: u32) -> Result<&mut BlockStat> {
-		self.active_blocks
-			.get_mut(&block_num)
-			.ok_or_else(|| eyre!("Can't find block: {} in active block list", block_num))
-	}
-
 	fn handle_new_put_record(&mut self, block_num: u32, records: Vec<libp2p::kad::Record>) {
 		self.active_blocks
 			.entry(block_num)
 			.and_modify(|b| b.increase_cell_counters(records.len()))
-			.or_insert_with(|| {
-				let now = Instant::now();
-				BlockStat {
-					total_count: records.len(),
-					remaining_counter: records.len(),
-					success_counter: 0,
-					error_counter: 0,
-					start_time: now,
-					end_time: now,
-				}
-			});
+			.or_insert_with(|| BlockStat::new(records.len()));
 	}
 
 	fn handle_successful_put_record(&mut self, record_key: RecordKey) -> Result<()> {
 		let block_num = extract_block_num(record_key)?;
-		let block = self.get_block_stat(block_num)?;
-
-		block.increment_success_counter();
-		block.decrement_remaining_counter();
-		block.set_end_time();
-
-		if block.is_completed() {
-			let success_rate = block.success_rate();
-			let duration = block.total_duration_secs();
-
+		if let Some(completed) =
+			process_put_record_result(&mut self.active_blocks, block_num, true)?
+		{
 			info!(
 				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, duration
+				block_num, completed.success_rate, completed.duration
 			);
 			self.metrics
-				.record(MetricValue::DHTPutSuccess(success_rate));
-			self.metrics.record(MetricValue::DHTPutDuration(duration));
+				.record(MetricValue::DHTPutSuccess(completed.success_rate));
+			self.metrics
+				.record(MetricValue::DHTPutDuration(completed.duration));
 		}
 
 		Ok(())
@@ -764,23 +865,17 @@ impl ClientState {
 
 	fn handle_failed_put_record(&mut self, record_key: RecordKey) -> Result<()> {
 		let block_num = extract_block_num(record_key)?;
-		let block = self.get_block_stat(block_num)?;
-
-		block.increment_error_counter();
-		block.decrement_remaining_counter();
-		block.set_end_time();
-
-		if block.is_completed() {
-			let success_rate = block.success_rate();
-			let duration = block.total_duration_secs();
-
+		if let Some(completed) =
+			process_put_record_result(&mut self.active_blocks, block_num, false)?
+		{
 			info!(
 				"Cell upload success rate for block {}: {}. Duration: {}",
-				block_num, success_rate, duration
+				block_num, completed.success_rate, completed.duration
 			);
 			self.metrics
-				.record(MetricValue::DHTPutSuccess(success_rate));
-			self.metrics.record(MetricValue::DHTPutDuration(duration));
+				.record(MetricValue::DHTPutSuccess(completed.success_rate));
+			self.metrics
+				.record(MetricValue::DHTPutDuration(completed.duration));
 		}
 
 		Ok(())

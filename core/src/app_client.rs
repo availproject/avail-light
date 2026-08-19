@@ -234,7 +234,9 @@ fn new_data_cell(row: usize, col: usize, data: &[u8]) -> Result<DataCell> {
 
 fn data_cells_from_row(row: usize, row_data: &[u8]) -> Result<Vec<DataCell>> {
 	row_data
-		.chunks_exact(CHUNK_SIZE)
+		.as_chunks::<CHUNK_SIZE>()
+		.0
+		.iter()
 		.enumerate()
 		.map(move |(col, data)| new_data_cell(row, col, data))
 		.collect::<Result<Vec<DataCell>>>()
