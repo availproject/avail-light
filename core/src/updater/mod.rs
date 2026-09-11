@@ -200,7 +200,7 @@ pub async fn run(
 	// Check for new releases every 180 blocks (1 hour)
 	const CHECK_INTERVAL: u64 = 180;
 
-	// Use randomized delays_sec to pospone check interval and distribute the GitHub API requests
+	// Use randomized delays_sec to postpone check interval and distribute the GitHub API requests
 	let delay_blocks = (delay_sec % CHECK_INTERVAL) as u32;
 
 	let version = Version::parse(version).expect("Version is valid");

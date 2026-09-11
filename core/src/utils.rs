@@ -179,7 +179,7 @@ pub fn install_panic_hooks(shutdown: Controller<String>) -> Result<()> {
 
 	std::panic::set_hook(Box::new(move |panic_info| {
 		// trigger shutdown to stop other tasks if panic occurs
-		let _ = shutdown.trigger_shutdown("Panic occurred, shuting down".to_string());
+		let _ = shutdown.trigger_shutdown("Panic occurred, shutting down".to_string());
 
 		let msg = format!("{}", panic_hook.panic_report(panic_info));
 		error!("Error: {}", strip_ansi_escapes::strip_str(msg));

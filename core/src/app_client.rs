@@ -431,7 +431,7 @@ async fn process_block(
 /// # Arguments
 ///
 /// * `cfg` - Application client configuration
-/// * `db` - Database to store data inot DB
+/// * `db` - Database to store data into DB
 /// * `network_client` - Reference to a libp2p custom network client
 /// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `app_id` - Application ID
