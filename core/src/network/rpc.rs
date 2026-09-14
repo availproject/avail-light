@@ -297,7 +297,7 @@ pub async fn wait_for_finalized_header(
 			}
 			// silently skip ConnectedHost event
 		}
-		Err(eyre!("RPC event receiver chanel closed"))
+		Err(eyre!("RPC event receiver channel closed"))
 	})
 	.await;
 

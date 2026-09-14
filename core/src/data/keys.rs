@@ -1,4 +1,4 @@
-/// Keys predefined for persistance:
+/// Keys predefined for persistence:
 /// App ID prefix used with App Data key
 pub const APP_ID_PREFIX: &str = "app_id";
 /// Prefix used with current Block Header key

@@ -733,7 +733,7 @@ impl Client {
 
 	async fn insert_into_dht(&self, records: Vec<(String, Record)>, block_num: u32) -> Result<()> {
 		if records.is_empty() {
-			return Err(eyre!("Cant send empty record list."));
+			return Err(eyre!("Can't send empty record list."));
 		}
 		self.put_kad_record(
 			records.into_iter().map(|e| e.1).collect(),
@@ -750,7 +750,7 @@ impl Client {
 		peers: Vec<PeerId>,
 	) -> Result<()> {
 		if records.is_empty() {
-			return Err(eyre!("Cant send empty record list."));
+			return Err(eyre!("Can't send empty record list."));
 		}
 		self.put_kad_record_to(
 			records.into_iter().map(|e| e.1).collect(),

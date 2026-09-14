@@ -553,10 +553,10 @@ impl EventLoop {
 								listen_addrs,
 								kad_protocol_name,
 							) {
-								Ok(addreses) => {
+								Ok(addresses) => {
 									if let Some(kad) = self.swarm.behaviour_mut().kademlia.as_mut()
 									{
-										for addr in &addreses {
+										for addr in &addresses {
 											trace!(
 												"Adding peer {addr}/{peer_id} to routing table."
 											);

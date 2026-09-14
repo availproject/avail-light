@@ -130,7 +130,7 @@ pub struct KademliaConfig {
 	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
 	///
 	/// Time-to-live for DHT entries in seconds (default: 24h).
-	/// Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this
+	/// Default value is set for light clients. Due to the heavy-duty nature of fat clients, it is recommended to be set far below this
 	/// value - not greater than 1hr.
 	/// Record TTL, publication and replication intervals are co-dependent, meaning that TTL >> publication_interval >> replication_interval.
 	#[serde(with = "duration_seconds_format")]
