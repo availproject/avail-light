@@ -155,6 +155,12 @@ impl RuntimeConfig {
 			self.libp2p.port = port;
 		}
 
+		if let Some(webrtc_port) = opts.webrtc_port {
+			self.libp2p.webrtc_port = webrtc_port;
+		}
+
+		self.libp2p.ws_transport_enable |= opts.ws_transport_enable;
+
 		if let Some(http_port) = opts.http_server_port {
 			self.http_server_port = http_port;
 		}
@@ -214,5 +220,63 @@ impl TryInto<SocketAddr> for Addr {
 impl Display for Addr {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}:{}", self.host, self.port)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use clap::Parser;
+
+	#[test]
+	fn cli_webrtc_port_overrides_config() {
+		let mut cfg: RuntimeConfig = toml::from_str("webrtc_port = 39002").unwrap();
+		let opts =
+			CliOpts::try_parse_from(["avail-light-bootstrap", "--webrtc-port", "39010"]).unwrap();
+
+		cfg.apply_opts(&opts);
+
+		assert_eq!(cfg.libp2p.webrtc_port, 39010);
+	}
+
+	#[test]
+	fn config_webrtc_port_is_preserved_without_cli_override() {
+		let mut cfg: RuntimeConfig = toml::from_str("webrtc_port = 39002").unwrap();
+		let opts = CliOpts::try_parse_from(["avail-light-bootstrap"]).unwrap();
+
+		cfg.apply_opts(&opts);
+
+		assert_eq!(cfg.libp2p.webrtc_port, 39002);
+	}
+
+	#[test]
+	fn cli_ws_transport_enable_enables_websocket_transport() {
+		let mut cfg: RuntimeConfig =
+			toml::from_str("port = 39002\nws_transport_enable = false").unwrap();
+		let opts =
+			CliOpts::try_parse_from(["avail-light-bootstrap", "--ws-transport-enable"]).unwrap();
+
+		cfg.apply_opts(&opts);
+
+		assert!(cfg.libp2p.ws_transport_enable);
+		assert_eq!(
+			cfg.libp2p.listeners(),
+			vec!["/ip4/0.0.0.0/tcp/39002/x-parity-ws/avail-light"
+				.parse()
+				.unwrap()]
+		);
+	}
+
+	#[test]
+	fn config_ws_transport_enable_is_preserved_without_cli_override() {
+		let opts = CliOpts::try_parse_from(["avail-light-bootstrap"]).unwrap();
+		for enabled in [false, true] {
+			let mut cfg: RuntimeConfig =
+				toml::from_str(&format!("ws_transport_enable = {enabled}")).unwrap();
+
+			cfg.apply_opts(&opts);
+
+			assert_eq!(cfg.libp2p.ws_transport_enable, enabled);
+		}
 	}
 }
