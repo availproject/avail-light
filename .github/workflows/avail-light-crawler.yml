@@ -46,7 +46,7 @@ jobs:
               rustup target add x86_64-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install cargo and setup
         if: runner.os != 'Windows'
         shell: bash
@@ -75,7 +75,7 @@ jobs:
           Push-Location -Path "target\${{ matrix.rust_target }}\maxperf\"
           Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
           
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.output_name }}
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
@@ -84,7 +84,7 @@ jobs:
     needs: [build]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: binaries
           pattern: avail-light*

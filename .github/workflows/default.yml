@@ -16,8 +16,8 @@ jobs:
     name: cargo fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: rustfmt
       - name: Check Rust formatting
@@ -29,8 +29,8 @@ jobs:
     name: cargo clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: clippy
       - run: cargo clippy --workspace -- -D warnings
@@ -39,11 +39,11 @@ jobs:
     name: cargo test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.PAT_TOKEN }}
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - run: cargo test --workspace --benches --tests --no-default-features
         env:
           RUSTFLAGS: "-C instrument-coverage"
@@ -56,7 +56,7 @@ jobs:
       - name: Generate test code coverage report
         run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
       - name: Upload test code coverage report to codecov.io
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v7
         with:
           files: lcov.info
       - name: Cleanup
@@ -66,8 +66,8 @@ jobs:
     name: web
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           target: wasm32-unknown-unknown
       - run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
