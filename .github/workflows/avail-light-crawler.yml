@@ -46,7 +46,7 @@ jobs:
               rustup target add x86_64-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install cargo and setup
         if: runner.os != 'Windows'
         shell: bash
@@ -75,7 +75,7 @@ jobs:
           Push-Location -Path "target\${{ matrix.rust_target }}\maxperf\"
           Compress-Archive -Path "${{ matrix.output_name }}" -DestinationPath "${{ matrix.output_name }}.tar.gz"
           
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.output_name }}
           path: target/${{ matrix.rust_target }}/maxperf/${{ matrix.output_name }}.tar.gz
@@ -84,14 +84,14 @@ jobs:
     needs: [build]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: binaries
           pattern: avail-light*
           merge-multiple: true
 
       - name: publish binaries
-        uses: svenstaro/upload-release-action@v2
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
          repo_token: ${{ secrets.PAT_TOKEN }}
          file: /home/runner/work/avail-light/avail-light/binaries/avail-light*
